@@ -26,8 +26,10 @@ export async function load(_name: string) {
   console.log(`[${pluginName}] 插件已加载`)
 
   // ========================================
-  // 1. 注册命令：开始 SRS 复习会话
+  // 1. 注册命令
   // ========================================
+
+  // 命令：开始 SRS 复习会话
   orca.commands.registerCommand(
     `${pluginName}.startReviewSession`,
     () => {
@@ -35,6 +37,16 @@ export async function load(_name: string) {
       startReviewSession()
     },
     "SRS: 开始复习"
+  )
+
+  // 命令：扫描带标签的块并转换为卡片
+  orca.commands.registerCommand(
+    `${pluginName}.scanCardsFromTags`,
+    () => {
+      console.log(`[${pluginName}] 执行标签扫描`)
+      scanCardsFromTags()
+    },
+    "SRS: 扫描带标签的卡片"
   )
 
   // ========================================
@@ -82,6 +94,8 @@ export async function load(_name: string) {
   // ========================================
   // 3. 注册斜杠命令
   // ========================================
+
+  // 斜杠命令：开始复习
   orca.slashCommands.registerSlashCommand(`${pluginName}.review`, {
     icon: "ti ti-cards",
     group: "SRS",
@@ -95,6 +109,14 @@ export async function load(_name: string) {
     group: "SRS",
     title: "转换为记忆卡片",
     command: `${pluginName}.makeCardFromBlock`
+  })
+
+  // 斜杠命令：扫描带标签的卡片
+  orca.slashCommands.registerSlashCommand(`${pluginName}.scanTags`, {
+    icon: "ti ti-scan",
+    group: "SRS",
+    title: "扫描带标签的卡片",
+    command: `${pluginName}.scanCardsFromTags`
   })
 
   // ========================================
@@ -137,6 +159,7 @@ export async function unload() {
 
   // 移除注册的命令
   orca.commands.unregisterCommand(`${pluginName}.startReviewSession`)
+  orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
 
   // 移除工具栏按钮
@@ -145,6 +168,7 @@ export async function unload() {
   // 移除斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.review`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.scanTags`)
 
   // 移除块渲染器
   orca.renderers.unregisterBlock("srs.card")
@@ -216,6 +240,132 @@ function closeReviewSession() {
   }
 
   console.log(`[${pluginName}] SRS 复习会话已关闭`)
+}
+
+// ========================================
+// 辅助函数：扫描带标签的块并转换为 SRS 卡片
+// ========================================
+/**
+ * 扫描所有带 #card 标签的块，并将它们转换为 SRS 卡片
+ *
+ * 处理逻辑：
+ * 1. 获取所有带 #card 标签的块
+ * 2. 对每个块：
+ *    - 父块文本作为题目（front）
+ *    - 第一个子块文本作为答案（back）
+ *    - 从 #deck/xxx 标签中解析 deck 名称
+ *    - 设置 _repr.type = "srs.card"
+ *    - 设置初始 SRS 属性
+ */
+async function scanCardsFromTags() {
+  console.log(`[${pluginName}] 开始扫描带 #card 标签的块...`)
+
+  try {
+    // 1. 获取所有带 #card 标签的块
+    const taggedBlocks = await orca.invokeBackend("get-blocks-with-tags", ["card"]) as Block[]
+
+    if (!taggedBlocks || taggedBlocks.length === 0) {
+      orca.notify("info", "没有找到带 #card 标签的块", { title: "SRS 扫描" })
+      console.log(`[${pluginName}] 未找到任何带 #card 标签的块`)
+      return
+    }
+
+    console.log(`[${pluginName}] 找到 ${taggedBlocks.length} 个带 #card 标签的块`)
+
+    let convertedCount = 0
+    let skippedCount = 0
+
+    // 2. 处理每个块
+    for (const block of taggedBlocks) {
+      const blockWithRepr = block as BlockWithRepr
+
+      // 如果已经是 srs.card 类型，跳过
+      if (blockWithRepr._repr?.type === "srs.card") {
+        console.log(`[${pluginName}] 跳过：块 #${block.id} 已经是 SRS 卡片`)
+        skippedCount++
+        continue
+      }
+
+      // a. 读取父块内容作为题目（front）
+      const front = block.text || "（无题目）"
+
+      // b. 读取第一个子块内容作为答案（back）
+      let back = "（无答案）"
+      if (block.children && block.children.length > 0) {
+        const firstChildId = block.children[0]
+        const firstChild = orca.state.blocks[firstChildId]
+        if (firstChild && firstChild.text) {
+          back = firstChild.text
+        }
+      }
+
+      // c. 从标签中解析 deck 名称
+      // 遍历 block.refs，找到标签引用（type === 2），检查是否是 deck 标签
+      let deckName: string | undefined = undefined
+      if (block.refs && block.refs.length > 0) {
+        for (const ref of block.refs) {
+          // type === 2 表示这是一个标签引用（Property reference）
+          if (ref.type === 2) {
+            const tagAlias = ref.alias || ""
+            // 检查是否是 deck 标签（格式：deck/名称）
+            if (tagAlias.startsWith("deck/")) {
+              deckName = tagAlias.substring(5) // 提取 "deck/" 之后的部分
+              break
+            }
+          }
+        }
+      }
+
+      // d. 设置 _repr（直接修改，Valtio 会触发响应式更新）
+      blockWithRepr._repr = {
+        type: "srs.card",
+        front: front,
+        back: back,
+        ...(deckName && { deck: deckName }) // 如果有 deck，则添加
+      }
+
+      // e. 设置初始 SRS 属性（如果块还没有这些属性）
+      // 检查块是否已有 SRS 属性
+      const hasSrsProperties = block.properties?.some(
+        prop => prop.name.startsWith("srs.")
+      )
+
+      if (!hasSrsProperties) {
+        // 设置初始 SRS 属性
+        await orca.commands.invokeEditorCommand(
+          "core.editor.setProperties",
+          null,
+          [block.id],
+          [
+            { name: "srs.isCard", value: true, type: 4 },        // type: 4 = Boolean
+            { name: "srs.due", value: new Date(), type: 5 },     // type: 5 = DateTime
+            { name: "srs.interval", value: 1, type: 3 },         // type: 3 = Number
+            { name: "srs.ease", value: 2.5, type: 3 },           // type: 3 = Number
+            { name: "srs.reps", value: 0, type: 3 },             // type: 3 = Number
+            { name: "srs.lapses", value: 0, type: 3 }            // type: 3 = Number
+          ]
+        )
+      }
+
+      console.log(`[${pluginName}] 已转换：块 #${block.id}`)
+      console.log(`  题目: ${front}`)
+      console.log(`  答案: ${back}`)
+      if (deckName) {
+        console.log(`  Deck: ${deckName}`)
+      }
+
+      convertedCount++
+    }
+
+    // 显示结果通知
+    const message = `转换了 ${convertedCount} 张卡片${skippedCount > 0 ? `，跳过 ${skippedCount} 张已有卡片` : ""}`
+    orca.notify("success", message, { title: "SRS 扫描完成" })
+    console.log(`[${pluginName}] 扫描完成：${message}`)
+
+  } catch (error) {
+    console.error(`[${pluginName}] 扫描失败:`, error)
+    orca.notify("error", `扫描失败: ${error}`, { title: "SRS 扫描" })
+  }
 }
 
 // ========================================

@@ -145,7 +145,111 @@ type SrsCardBlockRendererProps = {
 
 ---
 
-### 4. 插件入口集成 (`main.ts`)
+### 4. 标签自动识别卡片功能 (`scanCardsFromTags`)
+
+**文件位置**: `src/main.ts`（新增函数）
+
+**功能**:
+- 自动扫描所有带 `#card` 标签的块，并将它们转换为 SRS 卡片
+- 支持 `#deck/xxx` 标签来指定卡片分组（deck）
+- 自动提取题目和答案
+- 自动设置初始 SRS 属性
+
+**用户使用方式**:
+
+1. **创建卡片块结构**：
+   ```
+   什么是量子纠缠？ #card #deck/物理
+     - 答案：量子纠缠是指两个或多个粒子在量子态上相互关联...
+   ```
+   - 父块 = 题目文本 + `#card` 标签
+   - 第一个子块 = 答案文本
+   - 可选：添加 `#deck/xxx` 标签指定分组
+
+2. **触发扫描**（3 种方式）：
+   - **命令面板**：`Ctrl+P` → 搜索 "SRS: 扫描带标签的卡片"
+   - **斜杠命令**：输入 `/` → 搜索 "扫描带标签的卡片"
+   - **直接执行**：通过插件 API 调用 `scanCardsFromTags()`
+
+**处理逻辑**:
+
+```typescript
+async function scanCardsFromTags() {
+  // 1. 获取所有带 #card 标签的块
+  const taggedBlocks = await orca.invokeBackend("get-blocks-with-tags", ["card"])
+
+  // 2. 对每个块处理：
+  for (const block of taggedBlocks) {
+    // a. 提取题目（父块文本）
+    const front = block.text || "（无题目）"
+
+    // b. 提取答案（第一个子块文本）
+    const back = firstChild?.text || "（无答案）"
+
+    // c. 解析 deck 名称（从 #deck/xxx 标签）
+    const deckName = parseTagsForDeck(block.refs)
+
+    // d. 设置 _repr
+    block._repr = {
+      type: "srs.card",
+      front: front,
+      back: back,
+      ...(deckName && { deck: deckName })
+    }
+
+    // e. 设置初始 SRS 属性
+    await setInitialSrsProperties(block.id)
+  }
+}
+```
+
+**数据结构**:
+
+1. **标签解析**（从 `block.refs`）：
+   ```typescript
+   // BlockRef.type === 2 表示标签引用
+   for (const ref of block.refs) {
+     if (ref.type === 2 && ref.alias?.startsWith("deck/")) {
+       deckName = ref.alias.substring(5)  // "deck/物理" → "物理"
+     }
+   }
+   ```
+
+2. **SRS 属性设置**：
+   ```typescript
+   [
+     { name: "srs.isCard", value: true, type: 4 },       // Boolean
+     { name: "srs.due", value: new Date(), type: 5 },    // DateTime
+     { name: "srs.interval", value: 1, type: 3 },        // Number
+     { name: "srs.ease", value: 2.5, type: 3 },          // Number
+     { name: "srs.reps", value: 0, type: 3 },            // Number
+     { name: "srs.lapses", value: 0, type: 3 }           // Number
+   ]
+   ```
+
+**智能跳过机制**:
+- 如果块已经是 `srs.card` 类型，自动跳过（避免重复转换）
+- 如果块已有 SRS 属性，不会覆盖（保留复习进度）
+
+**控制台日志**:
+```
+[插件名] 开始扫描带 #card 标签的块...
+[插件名] 找到 3 个带 #card 标签的块
+[插件名] 已转换：块 #123
+  题目: 什么是量子纠缠？
+  答案: 量子纠缠是指...
+  Deck: 物理
+[插件名] 扫描完成：转换了 3 张卡片
+```
+
+**通知反馈**:
+- 成功：显示转换数量和跳过数量
+- 无卡片：提示"没有找到带 #card 标签的块"
+- 错误：显示具体错误信息
+
+---
+
+### 5. 插件入口集成 (`main.ts`)
 
 **文件位置**: `src/main.ts`
 
@@ -153,10 +257,18 @@ type SrsCardBlockRendererProps = {
 
 #### 1. 命令注册
 ```typescript
+// 命令 1: 开始复习会话
 orca.commands.registerCommand(
   `${pluginName}.startReviewSession`,
   startReviewSession,
   "SRS: 开始复习"
+)
+
+// 命令 2: 扫描带标签的卡片（新增）
+orca.commands.registerCommand(
+  `${pluginName}.scanCardsFromTags`,
+  scanCardsFromTags,
+  "SRS: 扫描带标签的卡片"
 )
 ```
 
@@ -208,6 +320,14 @@ orca.slashCommands.registerSlashCommand(`${pluginName}.makeCard`, {
   group: "SRS",
   title: "转换为记忆卡片",
   command: `${pluginName}.makeCardFromBlock`
+})
+
+// 斜杠命令 3: 扫描带标签的卡片（新增）
+orca.slashCommands.registerSlashCommand(`${pluginName}.scanTags`, {
+  icon: "ti ti-scan",
+  group: "SRS",
+  title: "扫描带标签的卡片",
+  command: `${pluginName}.scanCardsFromTags`
 })
 ```
 
@@ -385,7 +505,127 @@ npm run build
 
 ---
 
-### 方式 B: 测试块渲染器（编辑器内渲染）
+### 方式 B: 测试标签自动识别功能
+
+#### 1. 构建插件
+
+与方式 A 相同（确保 `dist/index.js` 已生成）
+
+#### 2. 在 Orca 中启用插件
+
+与方式 A 相同
+
+#### 3. 创建带标签的块
+
+在 Orca 编辑器中创建以下结构：
+
+```
+什么是量子纠缠？ #card #deck/物理
+  - 量子纠缠是指两个或多个粒子在量子态上相互关联的现象
+
+什么是时间复杂度？ #card #deck/计算机
+  - 时间复杂度是算法运行时间随输入规模增长的速度
+
+What is closure? #card #deck/JavaScript
+  - A closure is a function that has access to variables in its outer scope
+```
+
+**注意事项**：
+- 每个题目块必须打 `#card` 标签
+- 第一个子块的内容会被作为答案
+- `#deck/xxx` 标签是可选的，用于分组
+
+#### 4. 执行扫描
+
+有 3 种方式可以触发扫描：
+
+##### 方式 1: 命令面板
+- 按 `Ctrl+P` (Windows) 或 `Cmd+P` (macOS)
+- 搜索 "**SRS: 扫描带标签的卡片**"
+- 回车执行
+
+##### 方式 2: 斜杠命令
+- 在编辑器中输入 `/`
+- 搜索 "**扫描带标签的卡片**"
+- 选择执行
+
+##### 方式 3: 插件 API（开发者）
+```typescript
+await orca.commands.invokeCommand(`${pluginName}.scanCardsFromTags`)
+```
+
+#### 5. 观察结果
+
+**预期效果**：
+
+1. **通知显示**：
+   - 成功：显示 "转换了 3 张卡片" 的通知
+   - 无卡片：显示 "没有找到带 #card 标签的块"
+
+2. **块外观变化**：
+   - 所有带 `#card` 标签的块变为卡片样式
+   - 显示卡片图标 🃏 和 "SRS 记忆卡片" 文字
+   - 题目区域显示父块文本
+   - 初始状态只显示"显示答案"按钮
+
+3. **块属性添加**（可以在块属性面板中查看）：
+   - `srs.isCard: true`
+   - `srs.due: [当前时间]`
+   - `srs.interval: 1`
+   - `srs.ease: 2.5`
+   - `srs.reps: 0`
+   - `srs.lapses: 0`
+
+4. **Deck 信息**（如果有 #deck/xxx 标签）：
+   - 卡片的 `_repr.deck` 字段会被设置为 deck 名称
+   - 例如：`#deck/物理` → `deck: "物理"`
+
+#### 6. 查看调试日志
+
+打开 Orca 开发者工具 (`Ctrl+Shift+I` / `Cmd+Option+I`)，在 Console 面板查看：
+
+```
+[虎鲸标记 内置闪卡] 执行标签扫描
+[虎鲸标记 内置闪卡] 开始扫描带 #card 标签的块...
+[虎鲸标记 内置闪卡] 找到 3 个带 #card 标签的块
+
+[虎鲸标记 内置闪卡] 已转换：块 #123
+  题目: 什么是量子纠缠？
+  答案: 量子纠缠是指两个或多个粒子在量子态上相互关联的现象
+  Deck: 物理
+
+[虎鲸标记 内置闪卡] 已转换：块 #124
+  题目: 什么是时间复杂度？
+  答案: 时间复杂度是算法运行时间随输入规模增长的速度
+  Deck: 计算机
+
+[虎鲸标记 内置闪卡] 已转换：块 #125
+  题目: What is closure?
+  答案: A closure is a function that has access to variables in its outer scope
+  Deck: JavaScript
+
+[虎鲸标记 内置闪卡] 扫描完成：转换了 3 张卡片
+```
+
+#### 7. 测试智能跳过功能
+
+再次执行扫描命令，观察：
+
+**预期效果**：
+- 显示通知：**"转换了 0 张卡片，跳过 3 张已有卡片"**
+- 控制台输出：
+  ```
+  [虎鲸标记 内置闪卡] 跳过：块 #123 已经是 SRS 卡片
+  [虎鲸标记 内置闪卡] 跳过：块 #124 已经是 SRS 卡片
+  [虎鲸标记 内置闪卡] 跳过：块 #125 已经是 SRS 卡片
+  [虎鲸标记 内置闪卡] 扫描完成：转换了 0 张卡片，跳过 3 张已有卡片
+  ```
+
+这说明插件会智能跳过已经转换过的块，避免重复处理。
+
+---
+
+### 方式 C: 测试块渲染器（编辑器内渲染）
 
 #### 1. 构建插件
 
@@ -863,5 +1103,10 @@ function myFunction(paramName: string): void {
   - ✅ 转换命令实现
   - ✅ 支持撤销/重做
   - ⏸ SRS 状态显示（待实现）
+- ✅ **新增功能**：通过标签自动识别卡片
+  - ✅ 扫描 #card 标签功能
+  - ✅ 自动提取题目和答案
+  - ✅ 支持 #deck/xxx 分组标签
+  - ✅ 自动设置初始 SRS 属性
 
 **下一步**: 🚧 阶段 2 - 实现 SRS 算法模块
