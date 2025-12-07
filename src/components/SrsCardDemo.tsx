@@ -11,6 +11,7 @@
 const { useState } = window.React
 const { Button, ModalOverlay } = orca.components
 
+import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 
 // 组件 Props 类型定义
@@ -21,6 +22,8 @@ type SrsCardDemoProps = {
   onClose?: () => void  // 关闭回调
   srsInfo?: Partial<SrsState>  // 显示在卡片底部的 SRS 信息
   isGrading?: boolean         // 正在写入 SRS 状态时禁用按钮
+  blockId?: DbId              // 块 ID，用于跳转与编辑
+  onJumpToCard?: (blockId: DbId) => void
 }
 
 export default function SrsCardDemo({
@@ -29,7 +32,9 @@ export default function SrsCardDemo({
   onGrade,
   onClose,
   srsInfo,
-  isGrading = false
+  isGrading = false,
+  blockId,
+  onJumpToCard
 }: SrsCardDemoProps) {
   // 状态：是否已显示答案
   const [showAnswer, setShowAnswer] = useState(false)
@@ -60,6 +65,30 @@ export default function SrsCardDemo({
         width: '90%',
         boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
       }}>
+
+        {/* 工具栏：跳转按钮 */}
+        {blockId && onJumpToCard && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginBottom: '12px'
+          }}>
+            <Button
+              variant="soft"
+              onClick={() => onJumpToCard(blockId)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <i className="ti ti-arrow-right" />
+              跳转到卡片
+            </Button>
+          </div>
+        )}
 
         {/* 题目区域 */}
         <div className="srs-card-front" style={{

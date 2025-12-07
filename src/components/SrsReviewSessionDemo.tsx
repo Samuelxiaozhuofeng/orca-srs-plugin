@@ -1,6 +1,7 @@
 /**
  * SRS 复习会话组件（使用真实数据队列）
  */
+import type { DbId } from "../orca.d.ts"
 import type { Grade, ReviewCard } from "../srs/types"
 import { updateSrsState } from "../srs/storage"
 import SrsCardDemo from "./SrsCardDemo"
@@ -59,6 +60,16 @@ export default function SrsReviewSession({
     setReviewedCount((prev: number) => prev + 1)
     setIsGrading(false)
     setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+  }
+
+  const handleJumpToCard = (blockId: DbId) => {
+    console.log(`[SRS Review Session] 跳转到卡片 #${blockId}`)
+    orca.nav.goTo("block", { blockId })
+    orca.notify(
+      "info",
+      "已跳转到卡片，复习界面仍然保留",
+      { title: "SRS 复习" }
+    )
   }
 
   const handleFinishSession = () => {
@@ -224,6 +235,8 @@ export default function SrsReviewSession({
         onClose={onClose}
         srsInfo={currentCard.srs}
         isGrading={isGrading}
+        blockId={currentCard.id}
+        onJumpToCard={handleJumpToCard}
       />
     </div>
   )
