@@ -31,6 +31,24 @@
 ### 4. Bug 修复
 - 再次扫描/启动复习时，因 `orca.state.blocks` 中空位导致 `_repr` 读取报错的问题已过滤空值。
 
+### 5. 卡片浏览器（阶段 7）
+- **新增文件**: `src/components/SrsCardBrowser.tsx`（卡片浏览器组件，模态窗口形式）
+- **功能**：
+  - 显示所有 SRS 卡片列表，从 `orca.state.blocks` 中读取卡片信息
+  - 支持按到期状态筛选：全部、已到期、今天到期、未来到期、新卡
+  - 显示卡片基础信息：题目、上次复习时间、下次复习时间
+  - 点击卡片跳转到对应块并聚焦（使用 `orca.nav.goTo("block", { blockId })`）
+  - 颜色标识：已到期（红色）、今天到期（橙色）、新卡（蓝色）、未来到期（灰色）
+- **入口**：
+  - 命令：`SRS: 打开卡片浏览器`
+  - 工具栏按钮：列表图标（`ti ti-list`）
+  - 斜杠命令：`/srs-browser`
+- **main.ts 新增**：
+  - 注册命令 `${pluginName}.openCardBrowser`
+  - 注册工具栏按钮 `${pluginName}.browserButton`
+  - 注册斜杠命令 `${pluginName}.browser`
+  - 实现 `openCardBrowser()` 和 `closeCardBrowser()` 函数
+
 ---
 
 ## ✅ 已完成功能 (阶段 1: 前端 UI)
@@ -374,6 +392,250 @@ orca.converters.registerBlock(
 
 ---
 
+### 6. 卡片浏览器组件 (`SrsCardBrowser`)
+
+**文件位置**: `src/components/SrsCardBrowser.tsx`
+
+**功能**:
+- 显示所有 SRS 卡片列表（从 `orca.state.blocks` 中读取）
+- 支持按到期状态筛选卡片
+- 显示卡片基础信息（题目、上次复习时间、下次复习时间）
+- 点击卡片跳转到对应块并聚焦
+
+**Props 接口**:
+```typescript
+type SrsCardBrowserProps = {
+  onClose: () => void  // 关闭回调
+}
+```
+
+**筛选类型**:
+```typescript
+type FilterType = "all" | "overdue" | "today" | "future" | "new"
+
+// 筛选规则：
+// - 全部 (all): 显示所有卡片
+// - 已到期 (overdue): srs.due < 今天 00:00
+// - 今天到期 (today): srs.due 在今天 00:00 - 23:59 之间
+// - 未来到期 (future): srs.due > 今天 23:59
+// - 新卡 (new): srs.lastReviewed === null 或 srs.reps === 0
+```
+
+**卡片信息类型**:
+```typescript
+type CardInfo = {
+  blockId: DbId           // 块 ID
+  front: string           // 题目（从 _repr.front 读取）
+  lastReviewed: Date | null  // 上次复习时间（从 srs.lastReviewed 属性读取）
+  due: Date               // 下次复习时间（从 srs.due 属性读取）
+  reps: number            // 复习次数（从 srs.reps 属性读取）
+}
+```
+
+**UI 设计**:
+
+```
+┌─────────────────────────────────────────────┐
+│  🃏 SRS 卡片浏览器                     [关闭] │
+├─────────────────────────────────────────────┤
+│  [ 全部 ] [ 已到期 ] [ 今天到期 ] [ 未来 ] [ 新卡 ] │  ← 筛选标签
+├─────────────────────────────────────────────┤
+│                                             │
+│  ┌───────────────────────────────────────┐ │
+│  │ 什么是量子纠缠？                        │ │ ← 卡片项
+│  │ 上次复习：2025-12-05 14:30            │ │
+│  │ 下次复习：2025-12-08 14:30            │ │
+│  └───────────────────────────────────────┘ │
+│                                             │
+│  共 15 张卡片                               │
+└─────────────────────────────────────────────┘
+```
+
+**界面组成**:
+1. **标题栏**:
+   - 卡片图标 🃏 + "SRS 卡片浏览器" 文字
+   - 关闭按钮（右上角）
+
+2. **筛选标签栏**:
+   - 5 个筛选按钮，每个显示分类名称和卡片数量
+   - 激活的标签显示蓝色背景
+   - 示例：`全部 (15)`, `已到期 (3)`, `今天到期 (2)`, `未来到期 (5)`, `新卡 (5)`
+
+3. **卡片列表区域**:
+   - 可滚动的卡片列表
+   - 每张卡片显示：
+     - 题目（粗体，14px）
+     - 上次复习时间（灰色，12px）
+     - 下次复习时间（根据状态显示不同颜色，12px）
+   - 鼠标悬停效果：边框变蓝色，背景变浅
+   - 点击卡片跳转到对应块
+
+4. **底部统计栏**:
+   - 显示当前筛选结果的卡片总数
+   - 示例：`共 15 张卡片`
+
+**颜色标识**:
+- **已到期**: 红色 (`var(--orca-color-danger-7)`)
+- **今天到期**: 橙色 (`var(--orca-color-warning-7)`)
+- **新卡**: 蓝色 (`var(--orca-color-primary-7)`)
+- **未来到期**: 灰色 (`var(--orca-color-text-3)`)
+
+**核心功能实现**:
+
+1. **加载卡片数据**:
+```typescript
+const allCards = useMemo<CardInfo[]>(() => {
+  const cardList: CardInfo[] = []
+
+  for (const blockId in blocks) {
+    const block = blocks[blockId] as BlockWithRepr | undefined
+    if (!block || block._repr?.type !== "srs.card") continue
+
+    // 从块属性中读取 SRS 状态
+    const lastReviewedProp = block.properties?.find(p => p.name === "srs.lastReviewed")
+    const dueProp = block.properties?.find(p => p.name === "srs.due")
+    const repsProp = block.properties?.find(p => p.name === "srs.reps")
+
+    cardList.push({
+      blockId: block.id,
+      front: block._repr.front || "（无题目）",
+      lastReviewed: lastReviewedProp?.value ? new Date(lastReviewedProp.value) : null,
+      due: dueProp?.value ? new Date(dueProp.value) : new Date(),
+      reps: repsProp?.value ?? 0
+    })
+  }
+
+  // 按下次复习时间排序（最早到期的在前）
+  cardList.sort((a, b) => a.due.getTime() - b.due.getTime())
+
+  return cardList
+}, [blocks])
+```
+
+2. **筛选卡片**:
+```typescript
+const filteredCards = useMemo(() => {
+  if (currentFilter === "all") return allCards
+
+  return allCards.filter((card: CardInfo) =>
+    getCardFilterType(card) === currentFilter
+  )
+}, [allCards, currentFilter])
+```
+
+3. **跳转功能**:
+```typescript
+const handleCardClick = (blockId: DbId) => {
+  // 使用 Orca API 跳转到块并聚焦
+  orca.nav.goTo("block", { blockId })
+
+  // 关闭浏览器
+  onClose()
+}
+```
+
+**技术实现**:
+- 使用 `ModalOverlay` 模态窗口（全屏覆盖）
+- 使用 `useSnapshot(orca.state)` 监听 blocks 变化
+- 使用 `useMemo` 优化性能（避免重复计算）
+- 自适应 Orca 主题（使用主题变量）
+
+**入口注册**（在 `main.ts` 中）:
+
+1. **命令注册**:
+```typescript
+orca.commands.registerCommand(
+  `${pluginName}.openCardBrowser`,
+  () => {
+    console.log(`[${pluginName}] 打开卡片浏览器`)
+    openCardBrowser()
+  },
+  "SRS: 打开卡片浏览器"
+)
+```
+
+2. **工具栏按钮**:
+```typescript
+orca.toolbar.registerToolbarButton(`${pluginName}.browserButton`, {
+  icon: "ti ti-list",      // Tabler Icons 列表图标
+  tooltip: "打开卡片浏览器",
+  command: `${pluginName}.openCardBrowser`
+})
+```
+
+3. **斜杠命令**:
+```typescript
+orca.slashCommands.registerSlashCommand(`${pluginName}.browser`, {
+  icon: "ti ti-list",
+  group: "SRS",
+  title: "打开卡片浏览器",
+  command: `${pluginName}.openCardBrowser`
+})
+```
+
+4. **渲染逻辑**:
+```typescript
+function openCardBrowser() {
+  // 创建容器
+  cardBrowserContainer = document.createElement("div")
+  cardBrowserContainer.id = "srs-card-browser-container"
+  document.body.appendChild(cardBrowserContainer)
+
+  // 使用 React 18 的 createRoot API 渲染组件
+  const React = window.React
+  const { createRoot } = window
+  cardBrowserRoot = createRoot(cardBrowserContainer)
+
+  cardBrowserRoot.render(
+    React.createElement(SrsCardBrowser, {
+      onClose: () => {
+        console.log(`[${pluginName}] 用户关闭卡片浏览器`)
+        closeCardBrowser()
+      }
+    })
+  )
+
+  console.log(`[${pluginName}] 卡片浏览器已打开`)
+}
+```
+
+5. **清理逻辑**:
+```typescript
+function closeCardBrowser() {
+  if (cardBrowserRoot) {
+    cardBrowserRoot.unmount()
+    cardBrowserRoot = null
+  }
+
+  if (cardBrowserContainer) {
+    cardBrowserContainer.remove()
+    cardBrowserContainer = null
+  }
+
+  console.log(`[${pluginName}] 卡片浏览器已关闭`)
+}
+```
+
+**使用方式**:
+
+有 **3 种方式**可以打开卡片浏览器：
+
+1. **工具栏按钮**:
+   - 在编辑器顶部找到列表图标 📋
+   - 点击按钮
+
+2. **命令面板**:
+   - 按 `Ctrl+P` (Windows) 或 `Cmd+P` (macOS)
+   - 搜索 "SRS: 打开卡片浏览器"
+   - 回车执行
+
+3. **斜杠命令**:
+   - 在编辑器中输入 `/`
+   - 搜索 "打开卡片浏览器"
+   - 选择执行
+
+---
+
 ## 📁 当前文件结构
 
 ```
@@ -382,12 +644,17 @@ orca.converters.registerBlock(
 │   ├── components/
 │   │   ├── SrsCardDemo.tsx              # 单卡组件 (模态框显示题目/答案/评分)
 │   │   ├── SrsReviewSessionDemo.tsx     # 复习会话组件 (管理多张卡片)
-│   │   └── SrsCardBlockRenderer.tsx     # 自定义块渲染器 (在编辑器中渲染 SRS 卡片)
+│   │   ├── SrsCardBlockRenderer.tsx     # 自定义块渲染器 (在编辑器中渲染 SRS 卡片)
+│   │   └── SrsCardBrowser.tsx           # 卡片浏览器组件 (浏览所有卡片/筛选/跳转)
+│   ├── srs/
+│   │   ├── algorithm.ts                 # FSRS 算法实现 (nextReviewState)
+│   │   ├── storage.ts                   # SRS 数据存储 (读写块属性)
+│   │   └── types.ts                     # SRS 类型定义 (Grade, SrsState, ReviewCard)
 │   ├── libs/
 │   │   └── l10n.ts                      # 国际化工具 (未修改)
 │   ├── translations/
 │   │   └── zhCN.ts                      # 中文翻译 (未修改)
-│   ├── main.ts                          # 插件入口 (已集成复习会话和块渲染器)
+│   ├── main.ts                          # 插件入口 (已集成复习会话、块渲染器、卡片浏览器)
 │   ├── orca.d.ts                        # Orca API 类型定义 (5000+ 行)
 │   └── vite-env.d.ts                    # Vite 环境类型
 ├── dist/
@@ -698,6 +965,122 @@ await orca.commands.invokeCommand(`${pluginName}.scanCardsFromTags`)
 
 [SRS Card Block Renderer] 卡片 #123 评分: good
 ```
+
+---
+
+### 方式 D: 测试卡片浏览器
+
+#### 1. 构建插件
+
+与方式 A 相同（确保 `dist/index.js` 已生成）
+
+#### 2. 在 Orca 中启用插件
+
+与方式 A 相同
+
+#### 3. 打开卡片浏览器
+
+有 **3 种方式**可以打开：
+
+##### 方式 1: 工具栏按钮
+- 在编辑器顶部找到 **列表图标** (📋)
+- 点击按钮
+
+##### 方式 2: 命令面板
+- 按 `Ctrl+P` (Windows) 或 `Cmd+P` (macOS)
+- 搜索 "**SRS: 打开卡片浏览器**"
+- 回车执行
+
+##### 方式 3: 斜杠命令
+- 在编辑器中输入 `/`
+- 搜索 "**打开卡片浏览器**"
+- 选择执行
+
+#### 4. 测试浏览器功能
+
+**预期行为**：
+
+1. **浏览器打开**
+   - 显示模态窗口，居中显示
+   - 顶部显示 "🃏 SRS 卡片浏览器"
+   - 显示 5 个筛选标签，每个标签显示卡片数量
+   - 示例：`全部 (15)`, `已到期 (3)`, `今天到期 (2)`, `未来到期 (5)`, `新卡 (5)`
+
+2. **筛选功能**
+   - 点击不同筛选标签，卡片列表动态更新
+   - 激活的标签显示蓝色背景
+   - 底部统计数字随筛选结果变化
+
+3. **卡片显示**
+   - 每张卡片显示题目（粗体）
+   - 上次复习时间（灰色小字，新卡显示"从未复习"）
+   - 下次复习时间（用不同颜色标识状态）
+     - 已到期：红色
+     - 今天到期：橙色
+     - 新卡：蓝色
+     - 未来到期：灰色
+
+4. **跳转功能**
+   - 鼠标悬停卡片时，边框变蓝色，背景变浅
+   - 点击任意卡片
+   - 浏览器自动关闭
+   - 编辑器跳转并聚焦到对应块
+
+5. **关闭浏览器**
+   - 点击右上角"关闭"按钮
+   - 或点击浏览器外部区域（模态背景）
+   - 浏览器消失，返回编辑器
+
+#### 5. 查看调试日志
+
+打开 Orca 开发者工具 (`Ctrl+Shift+I` / `Cmd+Option+I`)，在 Console 面板查看：
+
+```
+[虎鲸标记 内置闪卡] 插件已加载
+[虎鲸标记 内置闪卡] 命令、UI 组件和渲染器已注册
+
+[虎鲸标记 内置闪卡] 打开卡片浏览器
+[虎鲸标记 内置闪卡] 卡片浏览器已打开
+
+[虎鲸标记 内置闪卡] 用户关闭卡片浏览器
+[虎鲸标记 内置闪卡] 卡片浏览器已关闭
+```
+
+#### 6. 测试筛选功能
+
+**测试步骤**：
+
+1. 确保你有不同状态的卡片：
+   - 创建一些新卡（从未复习过）
+   - 复习一些卡片，让它们有不同的到期时间
+   - 等待一些卡片到期
+
+2. 打开卡片浏览器
+
+3. 依次点击不同的筛选标签：
+   - **全部**：显示所有卡片
+   - **已到期**：只显示 `srs.due < 今天 00:00` 的卡片
+   - **今天到期**：只显示今天需要复习的卡片
+   - **未来到期**：只显示未来到期的卡片
+   - **新卡**：只显示从未复习过的卡片
+
+4. 观察：
+   - 卡片列表随筛选条件变化
+   - 底部统计数字更新
+   - 激活的标签显示蓝色背景
+
+#### 7. 测试跳转功能
+
+**测试步骤**：
+
+1. 打开卡片浏览器
+2. 在列表中找到任意一张卡片
+3. 点击该卡片
+4. 观察：
+   - 浏览器立即关闭
+   - 编辑器跳转到该卡片对应的块
+   - 光标聚焦在该块上
+   - 块可能会高亮显示（取决于 Orca 的默认行为）
 
 ---
 
@@ -1087,11 +1470,15 @@ function myFunction(paramName: string): void {
 - ✅ 阶段 1 完成 (前端 UI)
 - ✅ 阶段 2/3 完成 (FSRS 算法 + 存储读写，ts-fsrs 默认参数)
 - ✅ 阶段 6 已接通真实数据（到期/新卡队列，2 旧 1 新）
+- ✅ 阶段 7 完成 (卡片浏览器)
 - ✅ 标签扫描/手动转换写入完整 FSRS 属性；复习评分写回 FSRS 字段
 - ✅ 块渲染器评分接入 FSRS，底部展示当前 SRS 状态
 - ✅ 修复重复扫描/复习因空块导致 `_repr` 报错的问题
+- ✅ 卡片浏览器支持按到期状态筛选（全部、已到期、今天到期、未来、新卡）
+- ✅ 卡片浏览器点击跳转到对应块并聚焦
 
 **下一步**:
 1. 支持 deck/标签筛选与排序；增加每日新卡/旧卡上限配置。
 2. 在复习界面展示复习统计与历史记录，允许查看/撤销最近评分。
 3. 完善错误提示与加载态（队列构建、评分保存）。
+4. 在卡片浏览器中添加更多功能（deck 筛选、搜索、批量操作等）。

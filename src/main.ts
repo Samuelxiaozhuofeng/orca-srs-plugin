@@ -2,6 +2,7 @@ import { setupL10N, t } from "./libs/l10n"
 import zhCN from "./translations/zhCN"
 import SrsReviewSessionDemo from "./components/SrsReviewSessionDemo"
 import SrsCardBlockRenderer from "./components/SrsCardBlockRenderer"
+import SrsCardBrowser from "./components/SrsCardBrowser"
 import type { BlockForConversion, Repr, CursorData, DbId, Block } from "./orca.d.ts"
 import { loadCardSrsState, writeInitialSrsState } from "./srs/storage"
 import type { ReviewCard } from "./srs/types"
@@ -14,6 +15,10 @@ let pluginName: string
 // 用于存储当前显示的复习会话组件的容器和 root
 let reviewSessionContainer: HTMLDivElement | null = null
 let reviewSessionRoot: any = null
+
+// 用于存储当前显示的卡片浏览器组件的容器和 root
+let cardBrowserContainer: HTMLDivElement | null = null
+let cardBrowserRoot: any = null
 
 /**
  * 插件加载函数
@@ -49,6 +54,16 @@ export async function load(_name: string) {
       scanCardsFromTags()
     },
     "SRS: 扫描带标签的卡片"
+  )
+
+  // 命令：打开卡片浏览器
+  orca.commands.registerCommand(
+    `${pluginName}.openCardBrowser`,
+    () => {
+      console.log(`[${pluginName}] 打开卡片浏览器`)
+      openCardBrowser()
+    },
+    "SRS: 打开卡片浏览器"
   )
 
   // ========================================
@@ -93,6 +108,12 @@ export async function load(_name: string) {
     command: `${pluginName}.startReviewSession`
   })
 
+  orca.toolbar.registerToolbarButton(`${pluginName}.browserButton`, {
+    icon: "ti ti-list",  // 使用 Tabler Icons 的列表图标
+    tooltip: "打开卡片浏览器",
+    command: `${pluginName}.openCardBrowser`
+  })
+
   // ========================================
   // 3. 注册斜杠命令
   // ========================================
@@ -119,6 +140,14 @@ export async function load(_name: string) {
     group: "SRS",
     title: "扫描带标签的卡片",
     command: `${pluginName}.scanCardsFromTags`
+  })
+
+  // 斜杠命令：打开卡片浏览器
+  orca.slashCommands.registerSlashCommand(`${pluginName}.browser`, {
+    icon: "ti ti-list",
+    group: "SRS",
+    title: "打开卡片浏览器",
+    command: `${pluginName}.openCardBrowser`
   })
 
   // ========================================
@@ -159,18 +188,24 @@ export async function unload() {
   // 清理复习会话组件
   closeReviewSession()
 
+  // 清理卡片浏览器组件
+  closeCardBrowser()
+
   // 移除注册的命令
   orca.commands.unregisterCommand(`${pluginName}.startReviewSession`)
   orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
+  orca.commands.unregisterCommand(`${pluginName}.openCardBrowser`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
 
   // 移除工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.reviewButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.browserButton`)
 
   // 移除斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.review`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.scanTags`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.browser`)
 
   // 移除块渲染器
   orca.renderers.unregisterBlock("srs.card")
@@ -481,4 +516,55 @@ async function makeCardFromBlock(cursor: CursorData) {
 
   // 返回结果供 undo 使用
   return { blockId, originalRepr }
+}
+
+// ========================================
+// 辅助函数：打开和关闭卡片浏览器
+// ========================================
+/**
+ * 打开卡片浏览器
+ */
+function openCardBrowser() {
+  // 如果浏览器已经打开，先关闭
+  if (cardBrowserContainer) {
+    closeCardBrowser()
+  }
+
+  // 创建容器
+  cardBrowserContainer = document.createElement("div")
+  cardBrowserContainer.id = "srs-card-browser-container"
+  document.body.appendChild(cardBrowserContainer)
+
+  // 使用 React 18 的 createRoot API 渲染组件
+  const React = window.React
+  const { createRoot } = window
+  cardBrowserRoot = createRoot(cardBrowserContainer)
+
+  cardBrowserRoot.render(
+    React.createElement(SrsCardBrowser, {
+      onClose: () => {
+        console.log(`[${pluginName}] 用户关闭卡片浏览器`)
+        closeCardBrowser()
+      }
+    })
+  )
+
+  console.log(`[${pluginName}] 卡片浏览器已打开`)
+}
+
+/**
+ * 关闭卡片浏览器
+ */
+function closeCardBrowser() {
+  if (cardBrowserRoot) {
+    cardBrowserRoot.unmount()
+    cardBrowserRoot = null
+  }
+
+  if (cardBrowserContainer) {
+    cardBrowserContainer.remove()
+    cardBrowserContainer = null
+  }
+
+  console.log(`[${pluginName}] 卡片浏览器已关闭`)
 }
