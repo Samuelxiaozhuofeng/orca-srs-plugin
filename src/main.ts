@@ -12,6 +12,14 @@ type BlockWithRepr = Block & { _repr?: Repr }
 
 let pluginName: string
 
+/**
+ * 去除文本中的 # 标签，用于展示时的视觉过滤
+ */
+const removeHashTags = (text: string): string => {
+  if (!text) return text
+  return text.replace(/#[\w/\u4e00-\u9fa5]+/g, "").trim()
+}
+
 // 用于存储当前显示的复习会话组件的容器和 root
 let reviewSessionContainer: HTMLDivElement | null = null
 let reviewSessionRoot: any = null
@@ -305,8 +313,10 @@ const getFirstChildText = (block: BlockWithRepr) => {
 }
 
 const resolveFrontBack = (block: BlockWithRepr) => {
-  const front = block._repr?.front ?? block.text ?? "（无题目）"
-  const back = block._repr?.back ?? getFirstChildText(block)
+  const frontRaw = block._repr?.front ?? block.text ?? "（无题目）"
+  const backRaw = block._repr?.back ?? getFirstChildText(block)
+  const front = removeHashTags(frontRaw)
+  const back = removeHashTags(backRaw)
   return { front, back }
 }
 
