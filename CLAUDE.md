@@ -22,17 +22,20 @@ npm run preview
 ## 项目架构
 
 ### 核心技术栈
+
 - **TypeScript** - 主要开发语言,必须使用静态类型
 - **React 18** - UI 组件库 (通过 `window.React` 全局访问,无需导入)
 - **Valtio** - 状态管理库 (通过 `window.Valtio` 全局访问)
 - **Vite** - 构建工具,使用 SWC 进行快速编译
 
 ### 构建配置
+
 - 插件构建为 ES 模块格式 (`formats: ["es"]`)
 - React 和 Valtio 标记为外部依赖 (由 Orca 应用提供)
 - 使用 `rollup-plugin-external-globals` 映射全局变量
 
 ### 目录结构
+
 ```
 ├── src/
 │   ├── main.ts              # 插件入口,包含 load/unload 函数
@@ -56,6 +59,7 @@ npm run preview
 ## 插件开发关键概念
 
 ### 1. 插件生命周期
+
 ```typescript
 // 必须导出这两个函数
 export async function load(pluginName: string) {
@@ -75,12 +79,14 @@ export async function unload() {
 ```
 
 ### 2. 全局 API 访问
+
 - `orca` - 主 API 对象 (全局可用)
 - `orca.state` - 应用状态 (包含 blocks, panels, settings 等)
 - `window.React` - React 库 (无需 import)
 - `window.Valtio` - Valtio 状态库
 
 ### 3. 命名约定
+
 - **避免下划线前缀** (`_`) - 系统保留
 - **使用插件前缀** - 所有标识符加前缀 (如 `myplugin.commandName`)
 - **唯一性** - 确保命令、渲染器名称全局唯一
@@ -88,19 +94,21 @@ export async function unload() {
 ## 核心 API 模式
 
 ### 命令系统
+
 ```typescript
 // 注册普通命令
-orca.commands.registerCommand(id, fn, label)
+orca.commands.registerCommand(id, fn, label);
 
 // 注册编辑器命令 (支持撤销/重做)
-orca.commands.registerEditorCommand(id, doFn, undoFn, {label, hasArgs})
+orca.commands.registerEditorCommand(id, doFn, undoFn, { label, hasArgs });
 
 // 执行命令
-await orca.commands.invokeCommand(id, ...args)
-await orca.commands.invokeEditorCommand(id, cursor, ...args)
+await orca.commands.invokeCommand(id, ...args);
+await orca.commands.invokeEditorCommand(id, cursor, ...args);
 ```
 
 ### 渲染系统
+
 ```typescript
 // 注册块渲染器
 orca.renderers.registerBlock(type, isEditable, Component, assetFields?, useChildren?)
@@ -110,79 +118,89 @@ orca.renderers.registerInline(type, isEditable, Component)
 ```
 
 ### 转换系统
+
 ```typescript
 // 注册块转换器 (用于导出)
-orca.converters.registerBlock(format, type, convertFn)
+orca.converters.registerBlock(format, type, convertFn);
 
 // 注册内联转换器
-orca.converters.registerInline(format, type, convertFn)
+orca.converters.registerInline(format, type, convertFn);
 ```
 
 ### UI 扩展
+
 ```typescript
 // 工具栏按钮
-orca.toolbar.registerToolbarButton(id, {icon, tooltip, command, menu?})
+orca.toolbar.registerToolbarButton(id, { icon, tooltip, command, menu });
 
 // 顶栏按钮
-orca.headbar.registerHeadbarButton(id, renderFn)
+orca.headbar.registerHeadbarButton(id, renderFn);
 
 // 斜杠命令
-orca.slashCommands.registerSlashCommand(id, {icon, group, title, command})
+orca.slashCommands.registerSlashCommand(id, { icon, group, title, command });
 
 // 块菜单命令
-orca.blockMenuCommands.registerBlockMenuCommand(id, {worksOnMultipleBlocks, render})
+orca.blockMenuCommands.registerBlockMenuCommand(id, {
+  worksOnMultipleBlocks,
+  render,
+});
 
 // 标签菜单命令
-orca.tagMenuCommands.registerTagMenuCommand(id, {render})
+orca.tagMenuCommands.registerTagMenuCommand(id, { render });
 
 // 编辑器侧边工具
-orca.editorSidetools.registerEditorSidetool(id, {render})
+orca.editorSidetools.registerEditorSidetool(id, { render });
 ```
 
 ### 后端 API
+
 ```typescript
 // 查询块
-const block = await orca.invokeBackend("get-block", blockId)
-const blocks = await orca.invokeBackend("get-blocks", [id1, id2])
+const block = await orca.invokeBackend("get-block", blockId);
+const blocks = await orca.invokeBackend("get-blocks", [id1, id2]);
 
 // 搜索
-const results = await orca.invokeBackend("search-blocks-by-text", keyword)
+const results = await orca.invokeBackend("search-blocks-by-text", keyword);
 
 // 复杂查询
-const results = await orca.invokeBackend("query", {q, sort, pageSize})
+const results = await orca.invokeBackend("query", { q, sort, pageSize });
 
 // 文件操作
-await orca.invokeBackend("shell-open", url)
-await orca.invokeBackend("show-in-folder", filePath)
+await orca.invokeBackend("shell-open", url);
+await orca.invokeBackend("show-in-folder", filePath);
 
 // 资源上传
-const path = await orca.invokeBackend("upload-asset-binary", mimeType, data)
+const path = await orca.invokeBackend("upload-asset-binary", mimeType, data);
 ```
 
 ### 数据存储
+
 ```typescript
 // 插件数据持久化
-await orca.plugins.setData(pluginName, key, value)
-const value = await orca.plugins.getData(pluginName, key)
-await orca.plugins.removeData(pluginName, key)
+await orca.plugins.setData(pluginName, key, value);
+const value = await orca.plugins.getData(pluginName, key);
+await orca.plugins.removeData(pluginName, key);
 ```
 
 ### 通知系统
+
 ```typescript
-orca.notify(type, message, {title?, action?})
+orca.notify(type, message, { title, action });
 // type: "info" | "success" | "warn" | "error"
 ```
 
 ## React 组件开发
 
 ### 使用 Orca 内置组件
+
 ```typescript
-const {Button, Menu, MenuText, Input, Select} = orca.components
+const { Button, Menu, MenuText, Input, Select } = orca.components;
 
 // 所有可用组件见 orca.d.ts 的 components 部分
 ```
 
 ### 自定义块渲染器示例
+
 ```typescript
 import type {Block, DbId} from "./orca.d.ts"
 
@@ -218,40 +236,43 @@ export default function CustomBlock({
 ## 重要类型定义
 
 ### Block (块)
+
 ```typescript
 interface Block {
-  id: DbId                    // 块 ID
-  content?: ContentFragment[] // 富文本内容
-  text?: string              // 纯文本
-  created: Date              // 创建时间
-  modified: Date             // 修改时间
-  parent?: DbId              // 父块
-  children: DbId[]           // 子块列表
-  aliases: string[]          // 别名
-  properties: BlockProperty[] // 属性
-  refs: BlockRef[]           // 引用
-  backRefs: BlockRef[]       // 反向引用
+  id: DbId; // 块 ID
+  content?: ContentFragment[]; // 富文本内容
+  text?: string; // 纯文本
+  created: Date; // 创建时间
+  modified: Date; // 修改时间
+  parent?: DbId; // 父块
+  children: DbId[]; // 子块列表
+  aliases: string[]; // 别名
+  properties: BlockProperty[]; // 属性
+  refs: BlockRef[]; // 引用
+  backRefs: BlockRef[]; // 反向引用
 }
 ```
 
 ### ContentFragment (内容片段)
+
 ```typescript
 type ContentFragment = {
-  t: string   // 类型 ("text", "code", "link" 等)
-  v: any      // 值
-  f?: string  // 格式化
-  fa?: Record<string, any> // 格式化参数
-}
+  t: string; // 类型 ("text", "code", "link" 等)
+  v: any; // 值
+  f?: string; // 格式化
+  fa?: Record<string, any>; // 格式化参数
+};
 ```
 
 ### CursorData (光标位置)
+
 ```typescript
 interface CursorData {
-  anchor: CursorNodeData  // 起始位置
-  focus: CursorNodeData   // 结束位置
-  isForward: boolean      // 选择方向
-  panelId: string         // 面板 ID
-  rootBlockId: DbId       // 根块 ID
+  anchor: CursorNodeData; // 起始位置
+  focus: CursorNodeData; // 结束位置
+  isForward: boolean; // 选择方向
+  panelId: string; // 面板 ID
+  rootBlockId: DbId; // 根块 ID
 }
 ```
 
@@ -284,6 +305,7 @@ interface CursorData {
 - **自定义渲染器**: `plugin-docs/documents/Custom-Renderers.md`
 
 ---
+
 # 项目说明：Orca SRS 插件
 
 ## 1. 项目目标
@@ -295,6 +317,7 @@ interface CursorData {
   - 提供前端复习界面（卡片正反面 + 评分按钮）
 
 我本人 **不会写代码**，所以你（AI）在写代码时需要：
+
 - 用清晰的中文注释解释关键逻辑；
 - 在每次修改后，用自然语言说明「改了哪些文件、每个文件负责什么」。
 
@@ -328,12 +351,14 @@ interface CursorData {
 需要实现的命令和入口：
 
 1. 命令 `SRS: Make Card From Current Block`
+
    - 将当前块 + 第一个子块变成一张卡片
    - 自动添加 `#card` 标签
    - 初始化 SRS 属性
    - 设置 `_repr.type = "srs.card"`
 
 2. 命令 `SRS: Start Review`
+
    - 查找所有「今天到期」的卡片
    - 打开一个复习界面，一张一张显示
    - 卡片 UI 包含：
@@ -342,6 +367,7 @@ interface CursorData {
      - 四个评分按钮：Again / Hard / Good / Easy
 
 3. 工具栏按钮
+
    - 在编辑器顶部增加一个按钮，例如“Start SRS Review”，调用 `SRS: Start Review`。
 
 4. Slash 命令
@@ -357,11 +383,13 @@ interface CursorData {
 插件开发约定：
 
 1. 使用一个自定义 block 渲染器：
+
    - 类型：`"srs.card"`
    - 组件名：例如 `SrsCardBlockRenderer`
    - 行为：显示 front/back + 评分按钮
 
 2. SRS 状态存储：
+
    - 使用 `core.editor.setProperties` 为每个卡片块设置属性，例如：
      - `srs.isCard: boolean`
      - `srs.due: DateTime`
@@ -371,6 +399,7 @@ interface CursorData {
      - `srs.lapses: number`
 
 3. SRS 算法：
+
    - 抽象出一个纯函数，例如：
      - `nextReviewState(prevState, grade) -> newState`
    - grade 为 `"again" | "hard" | "good" | "easy"`
@@ -388,20 +417,24 @@ interface CursorData {
 每次你（AI）修改代码时，请遵守：
 
 1. **说明修改范围**
+
    - 列出所有修改过或新增的文件路径。
    - 对每个文件，介绍它负责什么。
 
 2. **提供完整代码**
+
    - 对修改较大的文件，直接给出完整最终版本，而不是只给 diff。
    - 保证我可以复制粘贴覆盖。
 
 3. **解释逻辑**
+
    - 用中文解释关键逻辑与数据流：
      - 卡片是如何从标签识别出来的
      - 复习界面如何选择下一张卡
      - SRS 算法如何更新属性
 
 4. **给操作指引**
+
    - 告诉我在终端需要运行什么命令（如 `npm install`, `npm run dev`, `npm run build`）。
    - 告诉我在 Orca 里需要点击哪些地方才能看到你实现的功能。
 
@@ -426,5 +459,25 @@ interface CursorData {
 
 > 若未来实现方式有改动，请同步更新本节，确保与真实行为一致。
 
+---
 
+## 6. 文档维护规则
 
+本项目在 `模块文档/` 目录下维护了各功能模块的详细技术文档。AI 在进行代码修改时必须遵守以下规则：
+
+1. **修改前阅读文档**：修改代码前，请先阅读 `模块文档/` 目录下的相关文档，了解模块的设计思路和实现细节
+2. **修改后更新文档**：修改代码后，请同步更新对应的模块文档，确保文档与代码保持一致
+3. **新模块需配套文档**：添加新模块时，请在 `模块文档/` 目录下创建对应的文档文件
+
+### 模块文档目录
+
+| 文档                    | 对应模块                                                  |
+| ----------------------- | --------------------------------------------------------- |
+| `SRS_记忆算法.md`       | `src/srs/algorithm.ts`                                    |
+| `SRS_数据存储.md`       | `src/srs/storage.ts`                                      |
+| `SRS_卡片创建与管理.md` | `src/main.ts` 中的卡片创建函数                            |
+| `SRS_卡片复习窗口.md`   | `src/components/SrsReviewSession*.tsx`、`SrsCardDemo.tsx` |
+| `SRS_卡片浏览器.md`     | `src/components/SrsCardBrowser.tsx`                       |
+| `SRS_块渲染器.md`       | `src/components/SrsCardBlockRenderer.tsx`                 |
+| `SRS_插件入口与命令.md` | `src/main.ts` 中的 load/unload 函数                       |
+| `SRS_复习队列管理.md`   | `src/main.ts` 和 `src/srs/reviewSessionManager.ts`        |
