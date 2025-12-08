@@ -264,7 +264,7 @@ export default function SrsReviewSession({
           )}
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "16px" }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "8px" }}>
           <SrsCardDemo
             front={currentCard.front}
             back={currentCard.back}

@@ -53,7 +53,7 @@ function ReviewBlock({ blockId, panelId, fallback, hideChildren = false }: Revie
       ref={containerRef}
       className={containerClassName}
       style={{
-        padding: "12px",
+        padding: "8px",
         backgroundColor: "var(--orca-color-bg-0)",
         borderRadius: "6px",
         border: "1px solid var(--orca-color-border-1)"
@@ -132,11 +132,10 @@ export default function SrsCardDemo({
     <div className="srs-card-container" style={{
       backgroundColor: "var(--orca-color-bg-1)",
       borderRadius: "12px",
-      padding: "32px",
-      maxWidth: inSidePanel ? "720px" : "600px",
+      padding: "16px",
       width: inSidePanel ? "100%" : "90%",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      margin: inSidePanel ? "0 auto" : undefined
+      minWidth: inSidePanel ? "0" : "600px",
+      boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
     }}>
 
       {blockId && onJumpToCard && (
@@ -163,11 +162,11 @@ export default function SrsCardDemo({
       )}
 
       <div className="srs-card-front" style={{
-        marginBottom: "24px",
-        padding: "20px",
+        marginBottom: "16px",
+        padding: "12px",
         backgroundColor: "var(--orca-color-bg-2)",
         borderRadius: "8px",
-        minHeight: "100px"
+        minHeight: "80px"
       }}>
         <div style={{
           fontSize: "14px",
@@ -182,7 +181,7 @@ export default function SrsCardDemo({
       </div>
 
       {!showAnswer ? (
-        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+        <div style={{ textAlign: "center", marginBottom: "12px" }}>
           <Button
             variant="solid"
             onClick={() => setShowAnswer(true)}
@@ -197,11 +196,11 @@ export default function SrsCardDemo({
       ) : (
         <>
           <div className="srs-card-back" style={{
-            marginBottom: "24px",
-            padding: "20px",
+            marginBottom: "16px",
+            padding: "12px",
             backgroundColor: "var(--orca-color-bg-2)",
             borderRadius: "8px",
-            minHeight: "100px",
+            minHeight: "80px",
             borderLeft: "4px solid var(--orca-color-primary-5)"
           }}>
             <div style={{
@@ -219,7 +218,7 @@ export default function SrsCardDemo({
           <div className="srs-card-grade-buttons" style={{
             display: "grid",
             gridTemplateColumns: "repeat(4, 1fr)",
-            gap: "12px"
+            gap: "8px"
           }}>
             <Button
               variant="dangerous"
@@ -302,11 +301,11 @@ export default function SrsCardDemo({
 
       {srsInfo && (
         <div style={{
-          marginTop: "16px",
+          marginTop: "12px",
           fontSize: "12px",
           color: "var(--orca-color-text-2)",
           backgroundColor: "var(--orca-color-bg-2)",
-          padding: "10px 12px",
+          padding: "8px 10px",
           borderRadius: "8px"
         }}>
           <div>下次复习：{srsInfo.due ? new Date(srsInfo.due).toLocaleString() : "未安排"}</div>
