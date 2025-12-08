@@ -408,5 +408,23 @@ interface CursorData {
 5. **优先前端可见性**
    - 开发顺序应为：先让前端 UI（卡片 + 复习会话）跑起来（可用假数据），再逐步接入真实的 Orca 数据与 SRS 算法。
 
+---
+
+## 5. 当前实现概述（2025-12-08）
+
+- **卡片识别**：父块打 `#card` 标签即视为题目，首个子块作为答案。`extractDeckName()` 从标签属性 `deck` 中读取分组，支持多选值数组或字符串，默认 `Default`。
+- **自定义渲染器**：`SrsCardBlockRenderer` 负责编辑器内的卡片展示，保留“显示答案 + 评分”交互，并写入 `srs.*` 属性。
+- **复习面板**：
+  - `SrsReviewSessionRenderer` 在右侧创建专用面板并记录 `reviewHostPanelId`，子组件收到该 ID 后，复习界面内的 `<orca.components.Block>` 可以直接编辑原始块并即刻同步保存。
+  - 会话队列由 `collectReviewCards()` 与 `buildReviewQueue()` 生成（两旧一新交织），评分调用 `updateSrsState()`（FSRS）并立刻跳至下一张。
+- **SrsCardDemo 行为**：
+  - “题目”区域渲染 `blockId` 对应的 Block，且使用 `renderingMode="simple"` + MutationObserver 隐藏所有子块，因此答案内容不会提前出现在正面区域。
+  - “显示答案”后才渲染首个子块（答案 Block），同样可直接编辑并由 Orca 自动保存。
+  - 若缺少 block 信息，则回退到传入的纯文本 front/back。
+- **命令入口**：`SRS: startReviewSession`、`SRS: scanCardsFromTags`、`SRS: openCardBrowser`、`SRS: makeCardFromBlock` 及对应工具栏按钮/斜杠命令均已注册，可在 Orca 里直接触发。
+- **构建与调试**：`npm run build` 产出 `dist/index.js`；开发阶段若需热更新可运行 `npm run dev` 并在 Orca 中加载未打包脚本。
+
+> 若未来实现方式有改动，请同步更新本节，确保与真实行为一致。
+
 
 

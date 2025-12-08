@@ -4,8 +4,8 @@
 
 - **项目名称**: Orca SRS 插件 (虎鲸标记 内置闪卡)
 - **技术栈**: TypeScript + React 18 + Vite + FSRS 算法
-- **当前版本**: v0.9 (Deck 分组已迁移至标签属性系统)
-- **最后更新**: 2025-12-07
+- **当前版本**: v0.9.1（复习界面支持块内编辑）
+- **最后更新**: 2025-12-08
 
 ---
 
@@ -54,6 +54,12 @@
 - ✅ 命令面板：所有功能均可通过命令面板访问
 - ✅ 主题适配：自动适配 Orca 浅色/深色主题
 
+### 7. 复习界面重构（2025-12-08）
+- ✅ `SrsCardDemo` 改为直接嵌入 `<orca.components.Block>`，复习时即可编辑题目与答案；
+- ✅ 正面使用 `renderingMode="simple"` 并自动隐藏子块，答案需点击“显示答案”后才渲染首个子块；
+- ✅ 通过 `reviewHostPanelId` 将面板上下文透传至复习面板，解决“只能查看不能编辑/不保存”的问题；
+- 📁 文件：[`src/components/SrsCardDemo.tsx`](src/components/SrsCardDemo.tsx)、[`src/components/SrsReviewSessionDemo.tsx`](src/components/SrsReviewSessionDemo.tsx)、[`src/components/SrsReviewSessionRenderer.tsx`](src/components/SrsReviewSessionRenderer.tsx)
+
 ---
 
 ## 📁 项目结构
@@ -62,7 +68,7 @@
 src/
 ├── main.ts                          # 插件入口（命令注册、渲染器注册）
 ├── components/
-│   ├── SrsCardDemo.tsx              # 单卡组件（题目/答案/评分）
+│   ├── SrsCardDemo.tsx              # 单卡组件（嵌入 Block，题目/答案/评分）
 │   ├── SrsReviewSessionDemo.tsx     # 复习会话（队列管理）
 │   ├── SrsCardBlockRenderer.tsx     # 块渲染器（编辑器内显示）
 │   └── SrsCardBrowser.tsx           # 卡片浏览器（Deck 管理）
@@ -143,6 +149,12 @@ npm run build
 
 ## 📋 开发计划
 
+### ✅ 已完成：复习界面重构（2025-12-08）
+- ✅ `SrsCardDemo` 使用 Block 组件直接显示原始题目/答案，用户可在复习时即时编辑。
+- ✅ 正面隐藏子块、答案延迟显示，杜绝“题目区提前露出答案”。
+- ✅ `reviewHostPanelId` 透传保证复习面板编辑上下文正确，配合自动保存替代旧的 textarea/保存按钮。
+- 📄 详细方案：[`srs_window.md`](srs_window.md)
+
 ### ✅ 已完成：Deck 分组迁移（2025-12-07）
 - ✅ 迁移到 Orca 标签属性系统
 - ✅ 重写 [`extractDeckName()`](src/main.ts:454) 函数
@@ -203,5 +215,5 @@ npm run build
 
 ---
 
-**最后更新**: 2025-12-07
-**当前状态**: Deck 分组迁移已完成，下一步优化配额限制和统计功能
+**最后更新**: 2025-12-08
+**当前状态**: 复习面板已完成块级编辑/前后面拆分，下一步优化配额限制和统计功能

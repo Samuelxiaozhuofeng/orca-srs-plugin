@@ -15,13 +15,15 @@ type SrsReviewSessionProps = {
   onClose?: () => void
   onJumpToCard?: (blockId: DbId) => void
   inSidePanel?: boolean
+  panelId?: string
 }
 
 export default function SrsReviewSession({
   cards,
   onClose,
   onJumpToCard,
-  inSidePanel = false
+  inSidePanel = false,
+  panelId
 }: SrsReviewSessionProps) {
   const [queue, setQueue] = useState<ReviewCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -273,6 +275,7 @@ export default function SrsReviewSession({
             blockId={currentCard.id}
             onJumpToCard={handleJumpToCard}
             inSidePanel={true}
+            panelId={panelId}
           />
         </div>
       </div>
@@ -345,6 +348,7 @@ export default function SrsReviewSession({
         isGrading={isGrading}
         blockId={currentCard.id}
         onJumpToCard={handleJumpToCard}
+        panelId={panelId}
       />
     </div>
   )

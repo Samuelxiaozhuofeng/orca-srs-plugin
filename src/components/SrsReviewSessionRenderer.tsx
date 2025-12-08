@@ -31,6 +31,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const [cards, setCards] = useState<ReviewCard[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [cardPanelId, setCardPanelId] = useState(panelId)
 
   useEffect(() => {
     void loadReviewQueue()
@@ -41,10 +42,12 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     setErrorMessage(null)
 
     try {
-      const { collectReviewCards, buildReviewQueue } = await import("../main")
+      const { collectReviewCards, buildReviewQueue, getReviewHostPanelId } = await import("../main")
       const allCards = await collectReviewCards()
       const queue = buildReviewQueue(allCards)
       setCards(queue)
+      const hostPanelId = typeof getReviewHostPanelId === "function" ? getReviewHostPanelId() : null
+      setCardPanelId(hostPanelId ?? panelId)
     } catch (error) {
       console.error("[SRS Review Session Renderer] 加载复习队列失败:", error)
       setErrorMessage(error instanceof Error ? error.message : `${error}`)
@@ -119,6 +122,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
         onClose={handleClose}
         onJumpToCard={handleJumpToCard}
         inSidePanel={true}
+        panelId={cardPanelId}
       />
     )
   }
