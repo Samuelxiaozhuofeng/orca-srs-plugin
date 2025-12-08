@@ -13,11 +13,15 @@ const { Button, ModalOverlay } = orca.components
 type SrsReviewSessionProps = {
   cards: ReviewCard[]
   onClose?: () => void
+  onJumpToCard?: (blockId: DbId) => void
+  inSidePanel?: boolean
 }
 
 export default function SrsReviewSession({
   cards,
-  onClose
+  onClose,
+  onJumpToCard,
+  inSidePanel = false
 }: SrsReviewSessionProps) {
   const [queue, setQueue] = useState<ReviewCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -63,6 +67,10 @@ export default function SrsReviewSession({
   }
 
   const handleJumpToCard = (blockId: DbId) => {
+    if (onJumpToCard) {
+      onJumpToCard(blockId)
+      return
+    }
     console.log(`[SRS Review Session] 跳转到卡片 #${blockId}`)
     orca.nav.goTo("block", { blockId })
     orca.notify(
@@ -87,22 +95,43 @@ export default function SrsReviewSession({
   }
 
   if (totalCards === 0) {
+    const emptyContent = (
+      <div style={{
+        backgroundColor: "var(--orca-color-bg-1)",
+        borderRadius: "12px",
+        padding: "32px",
+        maxWidth: "480px",
+        width: "100%",
+        textAlign: "center",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.08)"
+      }}>
+        <h3 style={{ marginBottom: "12px" }}>今天没有到期或新卡</h3>
+        <div style={{ color: "var(--orca-color-text-2)", marginBottom: "20px" }}>
+          请先创建或等待卡片到期，然后再次开始复习
+        </div>
+        {onClose && (
+          <Button variant="solid" onClick={onClose}>关闭</Button>
+        )}
+      </div>
+    )
+
+    if (inSidePanel) {
+      return (
+        <div style={{
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px"
+        }}>
+          {emptyContent}
+        </div>
+      )
+    }
+
     return (
       <ModalOverlay visible={true} canClose={true} onClose={onClose}>
-        <div style={{
-          backgroundColor: 'var(--orca-color-bg-1)',
-          borderRadius: '12px',
-          padding: '32px',
-          maxWidth: '480px',
-          width: '90%',
-          textAlign: 'center'
-        }}>
-          <h3 style={{ marginBottom: '12px' }}>今天没有到期或新卡</h3>
-          <div style={{ color: 'var(--orca-color-text-2)', marginBottom: '20px' }}>
-            请先创建或等待卡片到期，然后再次开始复习
-          </div>
-          <Button variant="solid" onClick={onClose}>关闭</Button>
-        </div>
+        {emptyContent}
       </ModalOverlay>
     )
   }
@@ -111,6 +140,69 @@ export default function SrsReviewSession({
   // 渲染：复习结束界面
   // ========================================
   if (isSessionComplete) {
+    const completeContent = (
+      <div className="srs-session-complete-container" style={{
+        backgroundColor: "var(--orca-color-bg-1)",
+        borderRadius: "12px",
+        padding: "48px",
+        maxWidth: "500px",
+        width: "100%",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+        textAlign: "center"
+      }}>
+        <div style={{
+          fontSize: "64px",
+          marginBottom: "24px"
+        }}>
+          ?
+        </div>
+
+        <h2 style={{
+          fontSize: "24px",
+          fontWeight: "600",
+          color: "var(--orca-color-text-1)",
+          marginBottom: "16px"
+        }}>
+          本次复习结束！
+        </h2>
+
+        <div style={{
+          fontSize: "16px",
+          color: "var(--orca-color-text-2)",
+          marginBottom: "32px",
+          lineHeight: "1.6"
+        }}>
+          <p>共复习了 <strong style={{ color: "var(--orca-color-primary-5)" }}>{reviewedCount}</strong> 张卡片</p>
+          <p style={{ marginTop: "8px" }}>坚持复习，持续进步！</p>
+        </div>
+
+        <Button
+          variant="solid"
+          onClick={handleFinishSession}
+          style={{
+            padding: "12px 32px",
+            fontSize: "16px"
+          }}
+        >
+          完成
+        </Button>
+      </div>
+    )
+
+    if (inSidePanel) {
+      return (
+        <div style={{
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px"
+        }}>
+          {completeContent}
+        </div>
+      )
+    }
+
     return (
       <ModalOverlay
         visible={true}
@@ -118,52 +210,7 @@ export default function SrsReviewSession({
         onClose={onClose}
         className="srs-session-complete-modal"
       >
-        <div className="srs-session-complete-container" style={{
-          backgroundColor: 'var(--orca-color-bg-1)',
-          borderRadius: '12px',
-          padding: '48px',
-          maxWidth: '500px',
-          width: '90%',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          textAlign: 'center'
-        }}>
-          <div style={{
-            fontSize: '64px',
-            marginBottom: '24px'
-          }}>
-            ✅
-          </div>
-
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: '600',
-            color: 'var(--orca-color-text-1)',
-            marginBottom: '16px'
-          }}>
-            本次复习结束！
-          </h2>
-
-          <div style={{
-            fontSize: '16px',
-            color: 'var(--orca-color-text-2)',
-            marginBottom: '32px',
-            lineHeight: '1.6'
-          }}>
-            <p>共复习了 <strong style={{ color: 'var(--orca-color-primary-5)' }}>{reviewedCount}</strong> 张卡片</p>
-            <p style={{ marginTop: '8px' }}>坚持复习，持续进步！</p>
-          </div>
-
-          <Button
-            variant="solid"
-            onClick={handleFinishSession}
-            style={{
-              padding: '12px 32px',
-              fontSize: '16px'
-            }}
-          >
-            完成
-          </Button>
-        </div>
+        {completeContent}
       </ModalOverlay>
     )
   }
@@ -171,6 +218,67 @@ export default function SrsReviewSession({
   // ========================================
   // 渲染：正在进行的复习会话
   // ========================================
+  if (inSidePanel) {
+    return (
+      <div className="srs-review-session-panel" style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        backgroundColor: "var(--orca-color-bg-0)"
+      }}>
+        <div style={{
+          height: "4px",
+          backgroundColor: "var(--orca-color-bg-2)"
+        }}>
+          <div style={{
+            height: "100%",
+            width: `${(currentIndex / totalCards) * 100}%`,
+            backgroundColor: "var(--orca-color-primary-5)",
+            transition: "width 0.3s ease"
+          }} />
+        </div>
+
+        <div style={{
+          padding: "12px 16px",
+          borderBottom: "1px solid var(--orca-color-border-1)",
+          backgroundColor: "var(--orca-color-bg-1)"
+        }}>
+          <div style={{
+            fontSize: "14px",
+            color: "var(--orca-color-text-2)",
+            fontWeight: 500
+          }}>
+            卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
+          </div>
+          {lastLog && (
+            <div style={{
+              marginTop: "6px",
+              fontSize: "12px",
+              color: "var(--orca-color-text-2)",
+              opacity: 0.8
+            }}>
+              {lastLog}
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: 1, overflow: "auto", padding: "16px" }}>
+          <SrsCardDemo
+            front={currentCard.front}
+            back={currentCard.back}
+            onGrade={handleGrade}
+            onClose={onClose}
+            srsInfo={currentCard.srs}
+            isGrading={isGrading}
+            blockId={currentCard.id}
+            onJumpToCard={handleJumpToCard}
+            inSidePanel={true}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="srs-review-session">
       {/* 复习进度条 */}

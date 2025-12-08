@@ -1,10 +1,11 @@
 import { setupL10N, t } from "./libs/l10n"
 import zhCN from "./translations/zhCN"
-import SrsReviewSessionDemo from "./components/SrsReviewSessionDemo"
+import SrsReviewSessionRenderer from "./components/SrsReviewSessionRenderer"
 import SrsCardBlockRenderer from "./components/SrsCardBlockRenderer"
 import SrsCardBrowser from "./components/SrsCardBrowser"
 import type { BlockForConversion, Repr, CursorData, DbId, Block } from "./orca.d.ts"
 import { loadCardSrsState, writeInitialSrsState } from "./srs/storage"
+import { getOrCreateReviewSessionBlock, cleanupReviewSessionBlock } from "./srs/reviewSessionManager"
 import type { ReviewCard, DeckInfo, DeckStats } from "./srs/types"
 
 // 扩展 Block 类型以包含 _repr 属性（运行时存在但类型定义中缺失）
@@ -19,10 +20,6 @@ const removeHashTags = (text: string): string => {
   if (!text) return text
   return text.replace(/#[\w/\u4e00-\u9fa5]+/g, "").trim()
 }
-
-// 用于存储当前显示的复习会话组件的容器和 root
-let reviewSessionContainer: HTMLDivElement | null = null
-let reviewSessionRoot: any = null
 
 // 用于存储当前显示的卡片浏览器组件的容器和 root
 let cardBrowserContainer: HTMLDivElement | null = null
@@ -169,6 +166,15 @@ export async function load(_name: string) {
     false                 // 不使用自定义子块布局
   )
 
+  // 复习会话渲染器：用于侧边面板
+  orca.renderers.registerBlock(
+    "srs.review-session",
+    false,
+    SrsReviewSessionRenderer,
+    [],
+    false
+  )
+
   // ========================================
   // 5. 注册 plain 转换器（必需）
   // ========================================
@@ -183,6 +189,12 @@ export async function load(_name: string) {
     }
   )
 
+  orca.converters.registerBlock(
+    "plain",
+    "srs.review-session",
+    () => "[SRS 复习会话面板块]"
+  )
+
   console.log(`[${pluginName}] 命令、UI 组件和渲染器已注册`)
 }
 
@@ -193,11 +205,10 @@ export async function load(_name: string) {
 export async function unload() {
   console.log(`[${pluginName}] 开始卸载插件`)
 
-  // 清理复习会话组件
-  closeReviewSession()
-
   // 清理卡片浏览器组件
   closeCardBrowser()
+
+  await cleanupReviewSessionBlock(pluginName)
 
   // 移除注册的命令
   orca.commands.unregisterCommand(`${pluginName}.startReviewSession`)
@@ -217,9 +228,11 @@ export async function unload() {
 
   // 移除块渲染器
   orca.renderers.unregisterBlock("srs.card")
+  orca.renderers.unregisterBlock("srs.review-session")
 
   // 移除转换器
   orca.converters.unregisterBlock("plain", "srs.card")
+  orca.converters.unregisterBlock("plain", "srs.review-session")
 
   console.log(`[${pluginName}] 插件已卸载`)
 }
@@ -231,74 +244,103 @@ export async function unload() {
  * 显示 SRS 复习会话组件（使用真实队列）
  */
 async function startReviewSession(deckName?: string) {
-  if (reviewSessionContainer) {
-    closeReviewSession()
-  }
-
   try {
-    const allCards = await collectReviewCards()
-    
-    // 按 deck 过滤
-    const deckCards = deckName !== undefined
-      ? allCards.filter(card => card.deck === deckName)
-      : allCards
-      
-    const queue = buildReviewQueue(deckCards)
+    const reviewSessionBlockId = await getOrCreateReviewSessionBlock(pluginName)
+    const activePanelId = orca.state.activePanel
 
-    if (queue.length === 0) {
-      orca.notify("info", "今天没有需要复习的到期卡或新卡", { title: "SRS 复习" })
+    if (!activePanelId) {
+      orca.notify("warn", "当前没有可用的面板", { title: "SRS 复习" })
       return
     }
 
-    reviewSessionContainer = document.createElement("div")
-    reviewSessionContainer.id = "srs-review-session-container"
-    document.body.appendChild(reviewSessionContainer)
+    let rightPanelId = findRightPanel(orca.state.panels, activePanelId)
 
-    const React = window.React
-    const { createRoot } = window
-    reviewSessionRoot = createRoot(reviewSessionContainer)
-
-    reviewSessionRoot.render(
-      React.createElement(SrsReviewSessionDemo, {
-        cards: queue,
-        onClose: () => {
-          console.log(`[${pluginName}] 用户关闭复习会话`)
-          closeReviewSession()
-        }
+    if (!rightPanelId) {
+      rightPanelId = orca.nav.addTo(activePanelId, "right", {
+        view: "block",
+        viewArgs: { blockId: reviewSessionBlockId },
+        viewState: {}
       })
-    )
 
-    const dueCount = queue.filter(card => !card.isNew).length
-    const newCount = queue.filter(card => card.isNew).length
+      if (!rightPanelId) {
+        orca.notify("error", "无法创建侧边面板", { title: "SRS 复习" })
+        return
+      }
 
-    console.log(`[${pluginName}] SRS 复习会话已开始，队列 ${queue.length} 张（到期 ${dueCount} / 新卡 ${newCount}）`)
-    orca.notify(
-      "info",
-      `复习会话已开始，到期 ${dueCount} 张，新卡 ${newCount} 张`,
-      { title: "SRS 复习" }
-    )
+      schedulePanelResize(activePanelId)
+    } else {
+      orca.nav.goTo("block", { blockId: reviewSessionBlockId }, rightPanelId)
+    }
+
+    if (rightPanelId) {
+      const targetPanelId = rightPanelId
+      setTimeout(() => {
+        orca.nav.switchFocusTo(targetPanelId)
+      }, 100)
+    }
+
+    const message = deckName
+      ? `已打开 ${deckName} 复习会话`
+      : "复习会话已在右侧面板打开"
+
+    orca.notify("success", message, { title: "SRS 复习" })
+    console.log(`[${pluginName}] 复习会话已启动，面板ID: ${rightPanelId}`)
   } catch (error) {
     console.error(`[${pluginName}] 启动复习失败:`, error)
     orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" })
   }
 }
 
-/**
- * 关闭 SRS 复习会话组件
- * 清理 DOM 和 React root
- */
-function closeReviewSession() {
-  if (reviewSessionRoot) {
-    reviewSessionRoot.unmount()
-    reviewSessionRoot = null
+function findRightPanel(node: any, currentPanelId: string): string | null {
+  if (!node) return null
+
+  if (node.type === "hsplit" && node.children?.length === 2) {
+    const [leftPanel, rightPanel] = node.children
+    if (containsPanel(leftPanel, currentPanelId)) {
+      return typeof rightPanel?.id === "string" ? rightPanel.id : extractPanelId(rightPanel)
+    }
   }
 
-  if (reviewSessionContainer) {
-    reviewSessionContainer.remove()
-    reviewSessionContainer = null
+  if (node.children) {
+    for (const child of node.children) {
+      const result = findRightPanel(child, currentPanelId)
+      if (result) return result
+    }
   }
 
-  console.log(`[${pluginName}] SRS 复习会话已关闭`)
+  return null
+}
+
+function containsPanel(node: any, panelId: string): boolean {
+  if (!node) return false
+  if (node.id === panelId) return true
+  if (!node.children) return false
+  return node.children.some((child: any) => containsPanel(child, panelId))
+}
+
+function extractPanelId(node: any): string | null {
+  if (!node) return null
+  if (typeof node.id === "string") return node.id
+  if (node.children) {
+    for (const child of node.children) {
+      const result = extractPanelId(child)
+      if (result) return result
+    }
+  }
+  return null
+}
+
+function schedulePanelResize(basePanelId: string) {
+  setTimeout(() => {
+    try {
+      const totalWidth = window.innerWidth || 1200
+      const leftWidth = Math.max(700, Math.floor(totalWidth * 0.6))
+      const rightWidth = Math.max(360, totalWidth - leftWidth)
+      orca.nav.changeSizes(basePanelId, [leftWidth, rightWidth])
+    } catch (error) {
+      console.warn(`[${pluginName}] 调整面板宽度失败:`, error)
+    }
+  }, 80)
 }
 
 const isSrsCardBlock = (block: BlockWithRepr) =>
@@ -834,4 +876,4 @@ function closeCardBrowser() {
 }
 
 // 导出供浏览器组件使用
-export { calculateDeckStats, collectReviewCards, extractDeckName, startReviewSession }
+export { calculateDeckStats, collectReviewCards, extractDeckName, startReviewSession, buildReviewQueue }

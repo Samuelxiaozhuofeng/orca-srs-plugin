@@ -24,6 +24,7 @@ type SrsCardDemoProps = {
   isGrading?: boolean         // 正在写入 SRS 状态时禁用按钮
   blockId?: DbId              // 块 ID，用于跳转与编辑
   onJumpToCard?: (blockId: DbId) => void
+  inSidePanel?: boolean
 }
 
 export default function SrsCardDemo({
@@ -34,7 +35,8 @@ export default function SrsCardDemo({
   srsInfo,
   isGrading = false,
   blockId,
-  onJumpToCard
+  onJumpToCard,
+  inSidePanel = false
 }: SrsCardDemoProps) {
   // 状态：是否已显示答案
   const [showAnswer, setShowAnswer] = useState(false)
@@ -176,21 +178,16 @@ export default function SrsCardDemo({
     }
   }
 
-  return (
-    <ModalOverlay
-      visible={true}
-      canClose={true}
-      onClose={onClose}
-      className="srs-card-modal"
-    >
-      <div className="srs-card-container" style={{
-        backgroundColor: 'var(--orca-color-bg-1)',
-        borderRadius: '12px',
-        padding: '32px',
-        maxWidth: '600px',
-        width: '90%',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
-      }}>
+  const cardContent = (
+    <div className="srs-card-container" style={{
+      backgroundColor: 'var(--orca-color-bg-1)',
+      borderRadius: '12px',
+      padding: '32px',
+      maxWidth: inSidePanel ? '720px' : '600px',
+      width: inSidePanel ? '100%' : '90%',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+      margin: inSidePanel ? '0 auto' : undefined
+    }}>
 
         {/* 工具栏：跳转按钮 */}
         {blockId && onJumpToCard && (
@@ -475,6 +472,24 @@ export default function SrsCardDemo({
           </div>
         )}
       </div>
+  )
+
+  if (inSidePanel) {
+    return (
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+        {cardContent}
+      </div>
+    )
+  }
+
+  return (
+    <ModalOverlay
+      visible={true}
+      canClose={true}
+      onClose={onClose}
+      className="srs-card-modal"
+    >
+      {cardContent}
     </ModalOverlay>
   )
 }
