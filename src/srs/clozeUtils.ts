@@ -5,6 +5,8 @@
  */
 
 import type { CursorData, Block, ContentFragment } from "../orca.d.ts"
+import { BlockWithRepr } from "./blockUtils"
+import { writeInitialSrsState } from "./storage"
 
 /**
  * 将包含 {cN:: 文本} 格式的纯文本解析为 ContentFragment 数组
@@ -255,6 +257,31 @@ export async function createCloze(
         console.error(`[${pluginName}] 更新 #card 标签属性失败:`, error)
         // 属性更新失败不影响 cloze 创建，只记录错误
       }
+    }
+
+    // ========================================
+    // 自动加入复习队列（与 makeCardFromBlock 一致）
+    // ========================================
+    try {
+      // 获取更新后的块
+      const finalBlock = orca.state.blocks[blockId] as BlockWithRepr
+
+      // 设置 _repr（虽然不会持久化，但在当前会话可用）
+      finalBlock._repr = {
+        type: "srs.cloze-card",
+        front: blockText,
+        back: "（填空卡）",
+        cardType: "cloze"
+      }
+
+      // 写入初始 SRS 属性（这是关键 - 自动加入复习队列）
+      await writeInitialSrsState(blockId)
+
+      console.log(`[${pluginName}] ✓ 块 #${blockId} 已自动加入复习队列`)
+      console.log(`[${pluginName}] 最终 block._repr:`, finalBlock._repr)
+    } catch (error) {
+      console.error(`[${pluginName}] 自动加入复习队列失败:`, error)
+      // 这个错误不影响 cloze 创建，只记录
     }
 
     // 显示通知

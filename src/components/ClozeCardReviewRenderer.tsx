@@ -38,29 +38,18 @@ function renderFragments(
   showAnswers: boolean,
   pluginName: string
 ): React.ReactNode[] {
-  console.log(`[renderFragments] 开始渲染，showAnswers: ${showAnswers}, pluginName: ${pluginName}`)
-  console.log(`[renderFragments] fragments:`, fragments)
-
   if (!fragments || fragments.length === 0) {
-    console.log(`[renderFragments] 片段为空`)
     return [<span key="empty">（空白内容）</span>]
   }
 
   return fragments.map((fragment, index) => {
-    console.log(`[renderFragments] 处理片段 ${index}:`, fragment)
-    console.log(`[renderFragments] fragment.t: "${fragment.t}"`)
-    console.log(`[renderFragments] 期望的 cloze 类型: "${pluginName}.cloze"`)
-    console.log(`[renderFragments] 是否匹配: ${fragment.t === `${pluginName}.cloze`}`)
-
     // 普通文本片段
     if (fragment.t === "t") {
-      console.log(`[renderFragments] 普通文本: "${fragment.v}"`)
       return <span key={index}>{fragment.v}</span>
     }
 
     // Cloze 片段
     if (fragment.t === `${pluginName}.cloze`) {
-      console.log(`[renderFragments] Cloze 片段，showAnswers: ${showAnswers}`)
       if (showAnswers) {
         // 显示答案：高亮显示填空内容
         return (
@@ -123,42 +112,25 @@ export default function ClozeCardReviewRenderer({
   const blocks = snapshot?.blocks ?? {}
   const block = blocks[blockId]
 
-  // 调试信息
-  console.log(`[Cloze Card Review] 组件已加载`)
-  console.log(`[Cloze Card Review] blockId: ${blockId}`)
-  console.log(`[Cloze Card Review] pluginName: ${pluginName}`)
-  console.log(`[Cloze Card Review] block:`, block)
-  console.log(`[Cloze Card Review] block.content:`, block?.content)
-  console.log(`[Cloze Card Review] block._repr:`, block?._repr)
-
   const handleGrade = async (grade: Grade) => {
     if (isGrading) return
-    console.log(`[Cloze Card Review] 用户选择评分: ${grade}`)
     await onGrade(grade)
     setShowAnswer(false)
   }
 
   // 从 block.content 中提取内容片段
   const contentFragments = useMemo(() => {
-    const fragments = block?.content ?? []
-    console.log(`[Cloze Card Review] contentFragments (${fragments.length} 个):`, fragments)
-    return fragments
+    return block?.content ?? []
   }, [block?.content])
 
   // 渲染题目（隐藏答案）
   const questionContent = useMemo(() => {
-    console.log(`[Cloze Card Review] 渲染题目（隐藏答案），pluginName: ${pluginName}`)
-    const result = renderFragments(contentFragments, false, pluginName)
-    console.log(`[Cloze Card Review] 题目渲染结果:`, result)
-    return result
+    return renderFragments(contentFragments, false, pluginName)
   }, [contentFragments, pluginName])
 
   // 渲染答案（显示答案）
   const answerContent = useMemo(() => {
-    console.log(`[Cloze Card Review] 渲染答案（显示答案），pluginName: ${pluginName}`)
-    const result = renderFragments(contentFragments, true, pluginName)
-    console.log(`[Cloze Card Review] 答案渲染结果:`, result)
-    return result
+    return renderFragments(contentFragments, true, pluginName)
   }, [contentFragments, pluginName])
 
   const cardContent = (

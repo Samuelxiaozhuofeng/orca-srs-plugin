@@ -125,18 +125,8 @@ export default function SrsCardDemo({
   const inferredCardType = questionBlock ? extractCardType(questionBlock) : "basic"
   const reprType = inferredCardType === "cloze" ? "srs.cloze-card" : "srs.card"
 
-  // 调试信息
-  console.log(`[SrsCardDemo] blockId: ${blockId}`)
-  console.log(`[SrsCardDemo] questionBlock:`, questionBlock)
-  console.log(`[SrsCardDemo] questionBlock._repr:`, questionBlock?._repr)
-  console.log(`[SrsCardDemo] inferredCardType (从标签推断): "${inferredCardType}"`)
-  console.log(`[SrsCardDemo] reprType: "${reprType}"`)
-  console.log(`[SrsCardDemo] pluginName: "${pluginName}"`)
-  console.log(`[SrsCardDemo] 是否是 cloze 卡片: ${reprType === "srs.cloze-card"}`)
-
   // 如果是 cloze 卡片，使用专门的 Cloze 渲染器
   if (reprType === "srs.cloze-card" && blockId) {
-    console.log(`[SrsCardDemo] 使用 ClozeCardReviewRenderer 渲染`)
     return (
       <ClozeCardReviewRenderer
         blockId={blockId}
@@ -151,8 +141,6 @@ export default function SrsCardDemo({
       />
     )
   }
-
-  console.log(`[SrsCardDemo] 使用默认的 Basic 卡片渲染`)
 
   const handleGrade = async (grade: Grade) => {
     if (isGrading) return
