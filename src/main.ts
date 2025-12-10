@@ -136,34 +136,11 @@ async function openFlashcardHome() {
       return
     }
 
-    let rightPanelId = findRightPanel(orca.state.panels, activePanelId)
-
-    if (!rightPanelId) {
-      rightPanelId = orca.nav.addTo(activePanelId, "right", {
-        view: "block",
-        viewArgs: { blockId: flashcardHomeBlockId },
-        viewState: {}
-      })
-
-      if (!rightPanelId) {
-        orca.notify("error", "无法创建侧边面板", { title: "Flashcard Home" })
-        return
-      }
-
-      schedulePanelResize(activePanelId, pluginName)
-    } else {
-      orca.nav.goTo("block", { blockId: flashcardHomeBlockId }, rightPanelId)
-    }
-
-    const targetPanelId = rightPanelId
-    if (targetPanelId) {
-      setTimeout(() => {
-        orca.nav.switchFocusTo(targetPanelId)
-      }, 80)
-    }
-
-    orca.notify("success", "Flashcard Home 已在右侧面板打开", { title: "Flashcard Home" })
-    console.log(`[${pluginName}] Flashcard Home opened in panel ${targetPanelId}`)
+    // 直接在当前面板中打开，而不是创建新面板
+    orca.nav.goTo("block", { blockId: flashcardHomeBlockId }, activePanelId)
+    
+    orca.notify("success", "Flashcard Home 已打开", { title: "Flashcard Home" })
+    console.log(`[${pluginName}] Flashcard Home opened in panel ${activePanelId}`)
   } catch (error) {
     console.error(`[${pluginName}] 打开 Flashcard Home 失败:`, error)
     orca.notify("error", `无法打开 Flashcard Home: ${error}`, { title: "Flashcard Home" })
