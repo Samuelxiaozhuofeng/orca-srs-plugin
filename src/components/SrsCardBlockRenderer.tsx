@@ -49,9 +49,14 @@ export default function SrsCardBlockRenderer({
   front,
   back,
 }: SrsCardBlockRendererProps) {
-  const { blocks } = useSnapshot(orca.state)
+  // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
+  const snapshot = useSnapshot(orca.state)
   const targetBlockId = mirrorId ?? blockId
-  const block = blocks[targetBlockId]
+
+  // 使用 useMemo 缓存派生数据，明确依赖关系
+  const block = useMemo(() => {
+    return snapshot?.blocks?.[targetBlockId]
+  }, [snapshot?.blocks, targetBlockId])
 
   const readProp = (name: string) =>
     block?.properties?.find((prop: BlockProperty) => prop.name === name)?.value

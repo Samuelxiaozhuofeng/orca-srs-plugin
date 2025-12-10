@@ -120,9 +120,15 @@ export default function ClozeCardReviewRenderer({
   clozeNumber
 }: ClozeCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(false)
+
+  // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state)
-  const blocks = snapshot?.blocks ?? {}
-  const block = blocks[blockId]
+
+  // 使用 useMemo 缓存派生数据，明确依赖关系
+  const block = useMemo(() => {
+    const blocks = snapshot?.blocks ?? {}
+    return blocks[blockId]
+  }, [snapshot?.blocks, blockId])
 
   const handleGrade = async (grade: Grade) => {
     if (isGrading) return

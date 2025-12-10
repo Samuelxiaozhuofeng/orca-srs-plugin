@@ -10,7 +10,7 @@
  */
 
 // 从全局 window 对象获取 React 与 Valtio（Orca 插件约定）
-const { useState, useEffect, useRef } = window.React
+const { useState, useEffect, useRef, useMemo } = window.React
 const { useSnapshot } = window.Valtio
 const { Block, Button, ModalOverlay } = orca.components
 
@@ -159,14 +159,23 @@ export default function SrsCardDemo({
   clozeNumber
 }: SrsCardDemoProps) {
   const [showAnswer, setShowAnswer] = useState(false)
-  const snapshot = useSnapshot(orca.state)
-  const blocks = snapshot?.blocks ?? {}
-  const questionBlock = blockId ? blocks[blockId] : null
-  const answerBlockId: DbId | undefined = questionBlock?.children?.[0]
 
-  // 识别卡片类型：从块的标签属性中重新推断
-  // 注意：_repr.type 是临时属性，不会被持久化，所以需要重新推断
-  const inferredCardType = questionBlock ? extractCardType(questionBlock) : "basic"
+  // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
+  const snapshot = useSnapshot(orca.state)
+
+  // 使用 useMemo 缓存派生数据，明确依赖关系
+  const { questionBlock, answerBlockId, inferredCardType } = useMemo(() => {
+    const blocks = snapshot?.blocks ?? {}
+    const qBlock = blockId ? blocks[blockId] : null
+    const aBlockId = qBlock?.children?.[0] as DbId | undefined
+    const cardType = qBlock ? extractCardType(qBlock) : "basic"
+    return {
+      questionBlock: qBlock,
+      answerBlockId: aBlockId,
+      inferredCardType: cardType
+    }
+  }, [snapshot?.blocks, blockId])
+
   const reprType = inferredCardType === "cloze" ? "srs.cloze-card" : "srs.card"
 
   // 如果是 cloze 卡片，使用专门的 Cloze 渲染器
