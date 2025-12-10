@@ -65,11 +65,14 @@ DeckListView 是默认视图，聚合仪表板、快速复习入口、Deck 列�
 
 | 指标 | 数据来源 | 说明 |
 | ---- | -------- | ---- |
-| 今日待复习 | `TodayStats.todayCount` | 今天到期的复习卡片 |
-| 新卡待学 | `TodayStats.newCount` | 从未复习过的卡片 |
-| 总卡片数 | `DeckStats.totalCards` | 所有 Deck 的卡片总数 |
+| 今日待复习 | `TodayStats.todayCount` | 今天到期的复习卡片（**不含新卡**） |
+| 新卡待学 | `TodayStats.newCount` | 从未复习过的卡片（**单独统计**） |
+| 总卡片数 | `DeckStats.totalCards` | 所有 Deck 的卡片总数（新卡 + 复习卡） |
 
-`TodayStats` 由 `calculateHomeStats()` 基于 `ReviewCard[]` 计算，包含 `pendingCount`（<= 今天全部卡片）。
+`TodayStats` 由 `calculateHomeStats()` 基于 `ReviewCard[]` 计算：
+- **新卡与复习卡分开统计**：新卡只计入 `newCount`，不计入 `todayCount` 或 `pendingCount`
+- `pendingCount`：<= 今天结束时间的复习卡片（不含新卡）
+- `todayCount`：今天到期的复习卡片（不含新卡）
 
 ### 3. 快速复习区
 

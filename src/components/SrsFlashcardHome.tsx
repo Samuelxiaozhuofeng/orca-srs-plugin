@@ -659,10 +659,13 @@ function calculateHomeStats(cards: ReviewCard[]): TodayStats {
   let newCount = 0
 
   for (const card of cards) {
+    // 新卡单独统计，不计入待复习数量
     if (card.isNew) {
       newCount++
+      continue  // 跳过后续统计，避免重复计数
     }
 
+    // 只有非新卡才计入待复习统计
     if (card.srs.due <= end) {
       pendingCount++
     }
