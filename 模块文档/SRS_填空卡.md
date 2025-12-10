@@ -178,71 +178,86 @@ const newBlockText =
 
 ## 🔄 下一步计划
 
-### ⏳ 阶段 2：Cloze 卡片复习渲染（待实现）
+### ✅ 阶段 2：Cloze 卡片复习渲染（已完成）
 
 **目标**：在复习界面正确渲染填空卡片，支持隐藏/显示答案
 
-**任务**：
+**实现内容**：
 
 1. ✅ **编辑器内渲染** - 已完成（阶段 1.5）
    - 在编辑器中隐藏 `{cN::}` 符号
    - 显示浅灰色 + 蓝色下划线样式
 
-2. **复习界面渲染** - 待实现
-   - 创建 Cloze 卡片复习组件
-   - 题目状态：将填空部分替换为 `[...]`
-   - 答案状态：显示完整内容，高亮填空部分
-   - 支持多个填空的独立显示/隐藏
+2. ✅ **复习界面渲染** - 已完成（阶段 2）
+   - 创建了 `ClozeCardReviewRenderer` 组件 (`src/components/ClozeCardReviewRenderer.tsx`)
+   - 题目状态：将填空部分替换为 `[...]`（灰色虚线边框）
+   - 答案状态：显示完整内容，高亮填空部分（蓝色背景 + 深蓝色文字）
+   - 支持多个填空同时显示/隐藏
+
+3. ✅ **卡片类型路由** - 已完成
+   - 在 `SrsCardDemo` 中集成卡片类型识别
+   - 通过 `block._repr.type` 判断卡片类型
+   - `srs.cloze-card` 类型自动路由到 `ClozeCardReviewRenderer`
+   - `srs.card` 类型使用原有的正面/反面渲染逻辑
 
 **示例效果**：
 
 ```
 题目（隐藏状态）：
-[...] 首都是 [...]
+中国的首都是 [...] ，最大的城市是 [...]
 
 答案（显示状态）：
-中国 首都是 北京
-   ↑         ↑
-  高亮显示
+中国的首都是 北京 ，最大的城市是 上海
+            ↑                 ↑
+         高亮显示          高亮显示
 ```
 
-**技术方案**：
+**技术实现**：
 
-- 创建 `ClozeCardReviewRenderer` 组件
-- 在复习模式下，将 `pluginName.cloze` 类型的 fragment 渲染为：
-  - 题目状态：`[...]` 占位符
-  - 答案状态：高亮的原始内容
-- 与现有的 `SrsCardDemo` 组件集成
+1. **`ClozeCardReviewRenderer` 组件**
+   - 接收 `blockId` 和 `pluginName` 参数
+   - 从 `block.content` 读取 ContentFragment 数组
+   - 使用 `renderFragments()` 函数渲染内容：
+     - 普通文本片段（`t: "t"`）：直接显示
+     - Cloze 片段（`t: "pluginName.cloze"`）：
+       - 隐藏时：显示 `[...]`（灰色虚线边框）
+       - 显示时：高亮显示（蓝色背景 + 下划线）
+
+2. **`SrsCardDemo` 组件改进**
+   - 新增 `pluginName` 属性
+   - 在渲染前检查 `block._repr.type`
+   - 如果是 `srs.cloze-card`，直接返回 `<ClozeCardReviewRenderer>`
+   - 否则使用原有的正面/反面渲染逻辑
+
+3. **插件名称传递**
+   - 在 `main.ts` 中导出 `getPluginName()` 函数
+   - `SrsReviewSessionRenderer` 加载时获取插件名称
+   - 将插件名称传递给 `SrsReviewSessionDemo` → `SrsCardDemo` → `ClozeCardReviewRenderer`
+
+**视觉设计**：
+
+- **卡片类型标识**：顶部显示"填空卡"标签（蓝色图标 + 文字）
+- **题目状态**：
+  - `[...]` 占位符：灰色文字，虚线边框，浅色背景
+- **答案状态**：
+  - 高亮填空：浅蓝色背景，深蓝色文字，粗体，蓝色下划线
 
 ---
 
-### ⏳ 阶段 3：Cloze 卡片类型支持（待实现）
+### ⏳ 阶段 3：多填空独立复习（待实现）
 
-**目标**：将 Cloze 作为独立的卡片类型
+**目标**：支持同一卡片的多个填空分别复习
 
 **任务**：
 
-1. 定义 `_repr.type = "srs.cloze"` 卡片类型
-2. 自动检测文本中的 cloze 标记
+1. 为每个 cloze 编号生成独立的复习项
+2. 复习时只显示当前 cloze 编号对应的 `[...]`，其他填空显示答案
 3. 将带有 cloze 标记的块转换为 cloze 卡片
 4. 注册 cloze 卡片的渲染器和转换器
 
 ---
 
-### ⏳ 阶段 4：复习逻辑集成（待实现）
-
-**目标**：在 SRS 复习系统中支持 Cloze 卡片
-
-**任务**：
-
-1. 在 `buildReviewQueue` 中支持 cloze 卡片
-2. 为每个 cloze 标记生成独立的复习项
-3. 跟踪每个填空的 SRS 数据
-4. 支持按填空编号区分复习进度
-
----
-
-### ⏳ 阶段 5：高级功能（待实现）
+### ⏳ 阶段 4：高级功能（待实现）
 
 **任务**：
 
@@ -262,12 +277,11 @@ const newBlockText =
   - `createCloze()` - 创建 cloze 标记
   - `parseClozeText()` - 解析 cloze 文本为 ContentFragment 数组
 - `src/components/ClozeInlineRenderer.tsx` - Cloze Inline 渲染器（编辑器内）
+- `src/components/ClozeCardReviewRenderer.tsx` - Cloze 卡片复习渲染器（复习界面）
+- `src/components/SrsCardDemo.tsx` - 卡片复习组件（集成卡片类型路由）
+- `src/components/SrsReviewSessionDemo.tsx` - 复习会话组件
+- `src/components/SrsReviewSessionRenderer.tsx` - 复习会话块渲染器
 - `src/main.ts` - 命令、按钮、渲染器注册
-
-### 待创建
-
-- `src/components/ClozeCardReviewRenderer.tsx` - Cloze 卡片复习渲染器
-- `src/srs/clozeCardCreator.ts` - Cloze 卡片创建逻辑（可选）
 
 ### 参考文档
 
@@ -310,15 +324,24 @@ const newBlockText =
 
 ### 新增功能（2025-12-10）
 
+#### 阶段 1 & 1.5（已完成）
 - ✅ **类型识别与扫描**：扫描功能自动识别 `type=cloze` 的卡片，设置为 `srs.cloze-card` 类型
 - ✅ **独立卡片类型**：定义了 `srs.cloze-card` 类型，与普通卡片 `srs.card` 区分
 - ✅ **自动类型设置**：创建 cloze 时自动设置标签属性 `type=cloze`
 - ✅ **复习队列集成**：填空卡已集成到 SRS 复习系统，可正常复习
+- ✅ **编辑器内渲染**：`ClozeInlineRenderer` 隐藏 `{cN::}` 符号，显示蓝色下划线样式
+
+#### 阶段 2（2025-12-10 新增）
+- ✅ **复习界面渲染**：创建 `ClozeCardReviewRenderer` 组件，实现填空卡专用复习界面
+- ✅ **填空隐藏/显示**：题目状态显示 `[...]`，答案状态高亮显示填空内容
+- ✅ **卡片类型路由**：`SrsCardDemo` 根据 `_repr.type` 自动选择渲染器
+- ✅ **插件名称传递**：通过 `getPluginName()` 函数向下传递插件名称
+- ✅ **多填空同时显示**：支持一个卡片内多个填空同时隐藏/显示
 
 ### 当前限制
 
-- ⚠️ **复习界面渲染**：尚未实现填空隐藏/显示逻辑（需要在复习界面特殊处理）
-- ⚠️ **多填空支持**：未实现同一卡片多个填空的分别复习
+- ⚠️ **多填空独立复习**：未实现同一卡片多个填空的分别复习（计划在阶段 3）
+- ⚠️ **提示文本**：暂不支持 `{c1::答案::提示}` 格式（计划在阶段 4）
 
 ### 技术亮点
 
@@ -329,6 +352,6 @@ const newBlockText =
 
 ---
 
-**最后更新**: 2025-12-09
-**当前阶段**: 阶段 1.5 ✅ 完成（编辑器内 Inline 渲染）
-**下一步**: 阶段 2 - 实现复习界面的填空隐藏/显示功能
+**最后更新**: 2025-12-10
+**当前阶段**: 阶段 2 ✅ 完成（复习界面填空渲染）
+**下一步**: 阶段 3 - 实现多填空独立复习功能

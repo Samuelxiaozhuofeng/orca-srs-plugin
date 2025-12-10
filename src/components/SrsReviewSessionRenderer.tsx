@@ -32,6 +32,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [cardPanelId, setCardPanelId] = useState(panelId)
+  const [pluginName, setPluginName] = useState("orca-srs")
 
   useEffect(() => {
     void loadReviewQueue()
@@ -42,12 +43,14 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     setErrorMessage(null)
 
     try {
-      const { collectReviewCards, buildReviewQueue, getReviewHostPanelId } = await import("../main")
+      const { collectReviewCards, buildReviewQueue, getReviewHostPanelId, getPluginName } = await import("../main")
       const allCards = await collectReviewCards()
       const queue = buildReviewQueue(allCards)
       setCards(queue)
       const hostPanelId = typeof getReviewHostPanelId === "function" ? getReviewHostPanelId() : null
       setCardPanelId(hostPanelId ?? panelId)
+      const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
+      setPluginName(currentPluginName)
     } catch (error) {
       console.error("[SRS Review Session Renderer] 加载复习队列失败:", error)
       setErrorMessage(error instanceof Error ? error.message : `${error}`)
@@ -123,6 +126,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
         onJumpToCard={handleJumpToCard}
         inSidePanel={true}
         panelId={cardPanelId}
+        pluginName={pluginName}
       />
     )
   }

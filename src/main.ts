@@ -393,10 +393,10 @@ export function getPluginName(): string {
 }
 
 // 导出供浏览器组件和其他模块使用
-export { 
-  calculateDeckStats, 
-  collectReviewCards, 
-  extractDeckName, 
-  startReviewSession, 
-  buildReviewQueue 
+export {
+  calculateDeckStats,
+  collectReviewCards,
+  extractDeckName,
+  startReviewSession,
+  buildReviewQueue
 }

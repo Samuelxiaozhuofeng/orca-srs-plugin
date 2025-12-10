@@ -16,6 +16,7 @@ type SrsReviewSessionProps = {
   onJumpToCard?: (blockId: DbId) => void
   inSidePanel?: boolean
   panelId?: string
+  pluginName?: string
 }
 
 export default function SrsReviewSession({
@@ -23,7 +24,8 @@ export default function SrsReviewSession({
   onClose,
   onJumpToCard,
   inSidePanel = false,
-  panelId
+  panelId,
+  pluginName = "orca-srs"
 }: SrsReviewSessionProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [queue, setQueue] = useState<ReviewCard[]>(cards)
@@ -347,6 +349,7 @@ export default function SrsReviewSession({
             onJumpToCard={handleJumpToCard}
             inSidePanel={true}
             panelId={panelId}
+            pluginName={pluginName}
           />
         </div>
       </div>
@@ -420,6 +423,7 @@ export default function SrsReviewSession({
         blockId={currentCard.id}
         onJumpToCard={handleJumpToCard}
         panelId={panelId}
+        pluginName={pluginName}
       />
     </div>
   )

@@ -3,6 +3,10 @@
  *
  * 题目与答案区域直接嵌入 Orca Block，用户可以像在正文中一样编辑，
  * 不再需要单独的 textarea 与保存逻辑。
+ *
+ * 支持两种卡片类型：
+ * - basic 卡片（srs.card）：正面/反面模式
+ * - cloze 卡片（srs.cloze-card）：填空模式
  */
 
 // 从全局 window 对象获取 React 与 Valtio（Orca 插件约定）
@@ -12,6 +16,8 @@ const { Block, Button, ModalOverlay } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
+import ClozeCardReviewRenderer from "./ClozeCardReviewRenderer"
+import { extractCardType } from "../srs/deckUtils"
 
 type ReviewBlockProps = {
   blockId?: DbId
@@ -92,6 +98,7 @@ type SrsCardDemoProps = {
   onJumpToCard?: (blockId: DbId) => void
   inSidePanel?: boolean
   panelId?: string
+  pluginName?: string
 }
 
 export default function SrsCardDemo({
@@ -104,13 +111,48 @@ export default function SrsCardDemo({
   blockId,
   onJumpToCard,
   inSidePanel = false,
-  panelId
+  panelId,
+  pluginName = "orca-srs"
 }: SrsCardDemoProps) {
   const [showAnswer, setShowAnswer] = useState(false)
   const snapshot = useSnapshot(orca.state)
   const blocks = snapshot?.blocks ?? {}
   const questionBlock = blockId ? blocks[blockId] : null
   const answerBlockId: DbId | undefined = questionBlock?.children?.[0]
+
+  // 识别卡片类型：从块的标签属性中重新推断
+  // 注意：_repr.type 是临时属性，不会被持久化，所以需要重新推断
+  const inferredCardType = questionBlock ? extractCardType(questionBlock) : "basic"
+  const reprType = inferredCardType === "cloze" ? "srs.cloze-card" : "srs.card"
+
+  // 调试信息
+  console.log(`[SrsCardDemo] blockId: ${blockId}`)
+  console.log(`[SrsCardDemo] questionBlock:`, questionBlock)
+  console.log(`[SrsCardDemo] questionBlock._repr:`, questionBlock?._repr)
+  console.log(`[SrsCardDemo] inferredCardType (从标签推断): "${inferredCardType}"`)
+  console.log(`[SrsCardDemo] reprType: "${reprType}"`)
+  console.log(`[SrsCardDemo] pluginName: "${pluginName}"`)
+  console.log(`[SrsCardDemo] 是否是 cloze 卡片: ${reprType === "srs.cloze-card"}`)
+
+  // 如果是 cloze 卡片，使用专门的 Cloze 渲染器
+  if (reprType === "srs.cloze-card" && blockId) {
+    console.log(`[SrsCardDemo] 使用 ClozeCardReviewRenderer 渲染`)
+    return (
+      <ClozeCardReviewRenderer
+        blockId={blockId}
+        onGrade={onGrade}
+        onClose={onClose}
+        srsInfo={srsInfo}
+        isGrading={isGrading}
+        onJumpToCard={onJumpToCard}
+        inSidePanel={inSidePanel}
+        panelId={panelId}
+        pluginName={pluginName}
+      />
+    )
+  }
+
+  console.log(`[SrsCardDemo] 使用默认的 Basic 卡片渲染`)
 
   const handleGrade = async (grade: Grade) => {
     if (isGrading) return
