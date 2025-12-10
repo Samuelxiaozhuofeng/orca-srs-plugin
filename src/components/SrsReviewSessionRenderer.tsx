@@ -1,6 +1,7 @@
 import type { DbId } from "../orca.d.ts"
 import type { ReviewCard } from "../srs/types"
 import SrsReviewSessionDemo from "./SrsReviewSessionDemo"
+import SrsErrorBoundary from "./SrsErrorBoundary"
 
 const { useEffect, useState } = window.React
 const { BlockShell, Button } = orca.components
@@ -130,14 +131,16 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     }
 
     return (
-      <SrsReviewSessionDemo
-        cards={cards}
-        onClose={handleClose}
-        onJumpToCard={handleJumpToCard}
-        inSidePanel={true}
-        panelId={cardPanelId}
-        pluginName={pluginName}
-      />
+      <SrsErrorBoundary componentName="复习会话" errorTitle="复习会话加载出错">
+        <SrsReviewSessionDemo
+          cards={cards}
+          onClose={handleClose}
+          onJumpToCard={handleJumpToCard}
+          inSidePanel={true}
+          panelId={cardPanelId}
+          pluginName={pluginName}
+        />
+      </SrsErrorBoundary>
     )
   }
 

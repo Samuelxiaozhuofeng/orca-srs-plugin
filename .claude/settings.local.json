@@ -5,7 +5,8 @@
       "Bash(npm run build:*)",
       "Bash(for f in src/srs/*.ts src/components/*.tsx)",
       "Bash(done)",
-      "Bash(sort:*)"
+      "Bash(sort:*)",
+      "Bash(gh pr list:*)"
     ],
     "deny": [],
     "ask": []

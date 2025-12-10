@@ -18,6 +18,7 @@ import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import ClozeCardReviewRenderer from "./ClozeCardReviewRenderer"
 import { extractCardType } from "../srs/deckUtils"
+import SrsErrorBoundary from "./SrsErrorBoundary"
 
 type ReviewBlockProps = {
   blockId?: DbId
@@ -130,18 +131,20 @@ export default function SrsCardDemo({
   // 如果是 cloze 卡片，使用专门的 Cloze 渲染器
   if (reprType === "srs.cloze-card" && blockId) {
     return (
-      <ClozeCardReviewRenderer
-        blockId={blockId}
-        onGrade={onGrade}
-        onClose={onClose}
-        srsInfo={srsInfo}
-        isGrading={isGrading}
-        onJumpToCard={onJumpToCard}
-        inSidePanel={inSidePanel}
-        panelId={panelId}
-        pluginName={pluginName}
-        clozeNumber={clozeNumber}  // 传递填空编号
-      />
+      <SrsErrorBoundary componentName="填空卡片" errorTitle="填空卡片加载出错">
+        <ClozeCardReviewRenderer
+          blockId={blockId}
+          onGrade={onGrade}
+          onClose={onClose}
+          srsInfo={srsInfo}
+          isGrading={isGrading}
+          onJumpToCard={onJumpToCard}
+          inSidePanel={inSidePanel}
+          panelId={panelId}
+          pluginName={pluginName}
+          clozeNumber={clozeNumber}  // 传递填空编号
+        />
+      </SrsErrorBoundary>
     )
   }
 
@@ -338,20 +341,24 @@ export default function SrsCardDemo({
 
   if (inSidePanel) {
     return (
-      <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-        {cardContent}
-      </div>
+      <SrsErrorBoundary componentName="复习卡片" errorTitle="卡片加载出错">
+        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+          {cardContent}
+        </div>
+      </SrsErrorBoundary>
     )
   }
 
   return (
-    <ModalOverlay
-      visible={true}
-      canClose={true}
-      onClose={onClose}
-      className="srs-card-modal"
-    >
-      {cardContent}
-    </ModalOverlay>
+    <SrsErrorBoundary componentName="复习卡片" errorTitle="卡片加载出错">
+      <ModalOverlay
+        visible={true}
+        canClose={true}
+        onClose={onClose}
+        className="srs-card-modal"
+      >
+        {cardContent}
+      </ModalOverlay>
+    </SrsErrorBoundary>
   )
 }

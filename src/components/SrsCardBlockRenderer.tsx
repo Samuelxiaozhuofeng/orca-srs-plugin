@@ -16,6 +16,7 @@
 import type { Block, BlockProperty, DbId } from "../orca.d.ts"
 import type { Grade } from "../srs/types"
 import { updateSrsState } from "../srs/storage"
+import SrsErrorBoundary from "./SrsErrorBoundary"
 
 // 从全局 window 对象获取 React
 const { useState, useMemo, useEffect } = window.React
@@ -498,8 +499,12 @@ export default function SrsCardBlockRenderer({
       renderingMode={renderingMode}
       reprClassName="srs-repr-card"
       contentClassName="srs-repr-card-content"
-      contentAttrs={{ contentEditable: false }}  // 不可编辑
-      contentJsx={contentJsx}
+      contentAttrs={{ contentEditable: false }}
+      contentJsx={
+        <SrsErrorBoundary componentName="SRS卡片" errorTitle="卡片加载出错">
+          {contentJsx}
+        </SrsErrorBoundary>
+      }
       childrenJsx={childrenJsx}
     />
   )
