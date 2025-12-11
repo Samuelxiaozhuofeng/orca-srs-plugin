@@ -75,22 +75,32 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     orca.nav.close(panelId)
   }
 
+  // 记录主面板 ID（复习面板左侧的面板）
+  const [hostPanelId, setHostPanelId] = useState<string | null>(null)
+
   const handleJumpToCard = async (cardBlockId: DbId) => {
     try {
       const { findLeftPanel, schedulePanelResize } = await import("../srs/panelUtils")
       const { getPluginName } = await import("../main")
       const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
       
+      // 如果已经有记录的主面板，直接使用
+      if (hostPanelId) {
+        orca.nav.goTo("block", { blockId: cardBlockId }, hostPanelId)
+        orca.nav.switchFocusTo(hostPanelId)
+        return
+      }
+      
       // 查找当前面板（复习面板）左侧是否已有面板
       let leftPanelId = findLeftPanel(orca.state.panels, panelId)
       
       if (leftPanelId) {
-        // 左侧已有面板，直接在左侧面板打开卡片
+        // 左侧已有面板，将其作为主面板
+        setHostPanelId(leftPanelId)
         orca.nav.goTo("block", { blockId: cardBlockId }, leftPanelId)
         orca.nav.switchFocusTo(leftPanelId)
-        orca.notify("info", "已在左侧面板打开卡片", { title: "SRS 复习" })
       } else {
-        // 左侧没有面板，在左侧创建新面板
+        // 左侧没有面板，创建主面板（复习面板变为侧面板）
         leftPanelId = orca.nav.addTo(panelId, "left", {
           view: "block",
           viewArgs: { blockId: cardBlockId },
@@ -98,14 +108,15 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
         })
         
         if (leftPanelId) {
+          // 记录主面板 ID
+          setHostPanelId(leftPanelId)
           // 调整面板大小为 50/50
           schedulePanelResize(leftPanelId, currentPluginName)
           orca.nav.switchFocusTo(leftPanelId)
-          orca.notify("info", "已在新面板打开卡片", { title: "SRS 复习" })
         } else {
           // 创建失败，回退到当前面板打开（会覆盖复习界面）
           orca.nav.goTo("block", { blockId: cardBlockId })
-          orca.notify("warn", "无法创建左侧面板，已在当前面板打开卡片", { title: "SRS 复习" })
+          orca.notify("warn", "无法创建主面板，已在当前面板打开卡片", { title: "SRS 复习" })
         }
       }
     } catch (error) {
