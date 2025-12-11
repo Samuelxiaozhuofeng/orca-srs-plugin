@@ -70,8 +70,10 @@ export function schedulePanelResize(basePanelId: string, pluginName: string) {
   setTimeout(() => {
     try {
       const totalWidth = window.innerWidth || 1200
-      const leftWidth = Math.max(700, Math.floor(totalWidth * 0.6))
-      const rightWidth = Math.max(360, totalWidth - leftWidth)
+      // 50/50 分割：左右各 50%，左侧最小 600px 最大 1200px，右侧最小 600px
+      const halfWidth = Math.floor(totalWidth * 0.5)
+      const leftWidth = Math.max(600, Math.min(1200, halfWidth))
+      const rightWidth = Math.max(600, totalWidth - leftWidth)
       orca.nav.changeSizes(basePanelId, [leftWidth, rightWidth])
     } catch (error) {
       console.warn(`[${pluginName}] 调整面板宽度失败:`, error)

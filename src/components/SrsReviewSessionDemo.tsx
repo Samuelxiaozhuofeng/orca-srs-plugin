@@ -44,7 +44,7 @@ export default function SrsReviewSession({
   const [reviewedCount, setReviewedCount] = useState(0)
   const [isGrading, setIsGrading] = useState(false)
   const [lastLog, setLastLog] = useState<string | null>(null)
-  const [isMaximized, setIsMaximized] = useState(false)
+  const [isMaximized, setIsMaximized] = useState(true)  // 默认最大化
 
   // 当最大化状态变化时，设置父级 .orca-block-editor 的 maximize 属性并隐藏 query tabs
   useEffect(() => {
@@ -75,6 +75,87 @@ export default function SrsReviewSession({
       // 隐藏块手柄和折叠按钮（在 repr 层级）
       if (reprNoneEditable) reprNoneEditable.style.display = 'none'
       if (breadcrumb) breadcrumb.style.display = 'none'
+      
+      // 修改 4：批量隐藏块手柄、bullet、拖拽手柄、折叠按钮
+      const blockHandles = blockEditor.querySelectorAll('.orca-block-handle, .orca-repr-handle')
+      blockHandles.forEach((el: Element) => {
+        (el as HTMLElement).style.display = 'none'
+      })
+      
+      const bullets = blockEditor.querySelectorAll('.orca-block-bullet, [data-role="bullet"]')
+      bullets.forEach((el: Element) => {
+        (el as HTMLElement).style.display = 'none'
+      })
+      
+      const dragHandles = blockEditor.querySelectorAll('.orca-block-drag-handle')
+      dragHandles.forEach((el: Element) => {
+        (el as HTMLElement).style.display = 'none'
+      })
+      
+      const collapseButtons = blockEditor.querySelectorAll('.orca-repr-collapse, [class*="collapse"]')
+      collapseButtons.forEach((el: Element) => {
+        (el as HTMLElement).style.display = 'none'
+      })
+      
+      // 注入 CSS 让复习界面撑满整个 block-editor
+      const fullscreenStyleId = 'srs-fullscreen-styles'
+      if (!document.getElementById(fullscreenStyleId)) {
+        const style = document.createElement('style')
+        style.id = fullscreenStyleId
+        style.textContent = `
+          /* 让复习界面撑满整个 block-editor */
+          .orca-block-editor[maximize="1"] {
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .orca-block-editor[maximize="1"] .orca-block-editor-main {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+          }
+          .orca-block-editor[maximize="1"] .orca-block-editor-blocks {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+          }
+          .orca-block-editor[maximize="1"] .orca-block[data-type="srs.review-session"] {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .orca-block-editor[maximize="1"] .srs-repr-review-session {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .orca-block-editor[maximize="1"] .orca-repr-main {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .orca-block-editor[maximize="1"] .srs-repr-review-session-content {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .orca-block-editor[maximize="1"] .srs-review-session-panel {
+            flex: 1 !important;
+            height: 100% !important;
+          }
+        `
+        document.head.appendChild(style)
+      }
     } else {
       blockEditor.removeAttribute('maximize')
       // 恢复显示
@@ -358,6 +439,8 @@ export default function SrsReviewSession({
               </div>
             )}
           </div>
+          {/* 最大化按钮已隐藏，默认最大化状态 */}
+          {false && (
           <Button
             variant="plain"
             onClick={() => setIsMaximized(!isMaximized)}
@@ -366,9 +449,11 @@ export default function SrsReviewSession({
           >
             <i className={`ti ${isMaximized ? 'ti-maximize-off' : 'ti-maximize'}`} />
           </Button>
+          )}
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "8px" }}>
+        {/* 修改 5：移除主内容区 padding，让卡片内容占满面板 */}
+        <div style={{ flex: 1, overflow: "auto", padding: "0" }}>
           <SrsCardDemo
             front={currentCard.front}
             back={currentCard.back}

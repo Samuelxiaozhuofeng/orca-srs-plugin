@@ -6,7 +6,8 @@
       "Bash(for f in src/srs/*.ts src/components/*.tsx)",
       "Bash(done)",
       "Bash(sort:*)",
-      "Bash(gh pr list:*)"
+      "Bash(gh pr list:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
