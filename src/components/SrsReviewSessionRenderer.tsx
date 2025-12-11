@@ -81,13 +81,22 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const handleJumpToCard = async (cardBlockId: DbId) => {
     try {
       const { findLeftPanel, schedulePanelResize } = await import("../srs/panelUtils")
-      const { getPluginName } = await import("../main")
+      const { getPluginName, getReviewHostPanelId } = await import("../main")
       const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
       
-      // 如果已经有记录的主面板，直接使用
+      // 如果已经有记录的主面板（本组件状态），直接使用
       if (hostPanelId) {
         orca.nav.goTo("block", { blockId: cardBlockId }, hostPanelId)
         orca.nav.switchFocusTo(hostPanelId)
+        return
+      }
+      
+      // 检查是否有通过 startReviewSession 设置的主面板（从命令面板启动的情况）
+      const savedHostPanelId = typeof getReviewHostPanelId === "function" ? getReviewHostPanelId() : null
+      if (savedHostPanelId) {
+        setHostPanelId(savedHostPanelId)
+        orca.nav.goTo("block", { blockId: cardBlockId }, savedHostPanelId)
+        orca.nav.switchFocusTo(savedHostPanelId)
         return
       }
       
