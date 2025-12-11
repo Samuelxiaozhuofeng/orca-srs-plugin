@@ -19,6 +19,7 @@ import { registerUIComponents, unregisterUIComponents } from "./srs/registry/uiC
 import { registerRenderers, unregisterRenderers } from "./srs/registry/renderers"
 import { registerConverters, unregisterConverters } from "./srs/registry/converters"
 import { aiSettingsSchema } from "./srs/ai/aiSettingsSchema"
+import { reviewSettingsSchema } from "./srs/settings/reviewSettingsSchema"
 
 // 插件全局状态
 let pluginName: string
@@ -35,12 +36,15 @@ export async function load(_name: string) {
   // 设置国际化
   setupL10N(orca.state.locale, { "zh-CN": zhCN })
 
-  // 注册 AI 设置
+  // 注册插件设置（合并 AI 设置和复习设置）
   try {
-    await orca.plugins.setSettingsSchema(pluginName, aiSettingsSchema)
-    console.log(`[${pluginName}] AI 设置已注册`)
+    await orca.plugins.setSettingsSchema(pluginName, {
+      ...aiSettingsSchema,
+      ...reviewSettingsSchema
+    })
+    console.log(`[${pluginName}] 插件设置已注册（AI + 复习）`)
   } catch (error) {
-    console.warn(`[${pluginName}] 注册 AI 设置失败:`, error)
+    console.warn(`[${pluginName}] 注册插件设置失败:`, error)
   }
 
   console.log(`[${pluginName}] 插件已加载`)

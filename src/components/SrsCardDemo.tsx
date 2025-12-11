@@ -23,6 +23,7 @@ import { extractCardType } from "../srs/deckUtils"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, formatInterval } from "../srs/algorithm"
+import { getReviewSettings } from "../srs/settings/reviewSettingsSchema"
 
 type ReviewBlockProps = {
   blockId?: DbId
@@ -246,15 +247,22 @@ export default function SrsCardDemo({
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state)
 
+  // 获取复习设置
+  const reviewSettings = useMemo(() => {
+    return getReviewSettings(pluginName)
+  }, [pluginName])
+
   // 使用 useMemo 缓存派生数据，明确依赖关系
-  const { questionBlock, answerBlockId, inferredCardType } = useMemo(() => {
+  const { questionBlock, answerBlockIds, totalChildCount, inferredCardType } = useMemo(() => {
     const blocks = snapshot?.blocks ?? {}
     const qBlock = blockId ? blocks[blockId] : null
-    const aBlockId = qBlock?.children?.[0] as DbId | undefined
+    const allChildIds = (qBlock?.children ?? []) as DbId[]
     const cardType = qBlock ? extractCardType(qBlock) : "basic"
+    
     return {
       questionBlock: qBlock,
-      answerBlockId: aBlockId,
+      answerBlockIds: allChildIds,  // 返回所有子块 ID
+      totalChildCount: allChildIds.length,
       inferredCardType: cardType
     }
   }, [snapshot?.blocks, blockId])
@@ -482,7 +490,40 @@ export default function SrsCardDemo({
               答案：
             </div>
 
-            {renderBlock(answerBlockId, back)}
+            {/* 根据设置显示子块 */}
+            {reviewSettings.showSiblingBlocks ? (
+              // 显示所有同级子块（限制最大数量）
+              <>
+                {answerBlockIds.slice(0, reviewSettings.maxSiblingBlocks).map((aBlockId: DbId, index: number) => (
+                  <div 
+                    key={aBlockId} 
+                    style={{ 
+                      marginBottom: index < Math.min(answerBlockIds.length, reviewSettings.maxSiblingBlocks) - 1 ? "12px" : 0 
+                    }}
+                  >
+                    {renderBlock(aBlockId, back)}
+                  </div>
+                ))}
+                {/* 如果子块数量超过限制，显示提示 */}
+                {totalChildCount > reviewSettings.maxSiblingBlocks && (
+                  <div style={{
+                    marginTop: "12px",
+                    fontSize: "13px",
+                    color: "var(--orca-color-text-3)",
+                    fontStyle: "italic",
+                    textAlign: "center",
+                    padding: "8px",
+                    backgroundColor: "var(--orca-color-bg-3)",
+                    borderRadius: "6px"
+                  }}>
+                    还有 {totalChildCount - reviewSettings.maxSiblingBlocks} 个子块未显示
+                  </div>
+                )}
+              </>
+            ) : (
+              // 默认：只显示第一个子块
+              renderBlock(answerBlockIds[0], back)
+            )}
           </div>
 
           <div className="srs-card-grade-buttons" style={{

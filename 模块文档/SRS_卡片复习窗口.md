@@ -115,6 +115,50 @@ stateDiagram-v2
 - 支持编辑卡片内容
 - **支持最大化显示**：点击工具栏最大化按钮，通过设置父级 `.orca-block-editor[maximize="1"]` 属性隐藏 query tabs 并铺满面板
 
+### 同级子块显示设置（2025-12-11 新增）
+
+默认情况下，Basic 卡片的答案区域只显示第一个子块。用户可以通过插件设置启用显示所有同级子块。
+
+#### 设置项
+
+| 设置项                     | 类型    | 默认值 | 说明                               |
+| -------------------------- | ------- | ------ | ---------------------------------- |
+| `review.showSiblingBlocks` | boolean | false  | 是否在答案区域显示所有同级子块     |
+| `review.maxSiblingBlocks`  | number  | 10     | 最多显示的子块数量（防止性能问题） |
+
+#### 行为说明
+
+**默认行为（`showSiblingBlocks = false`）**：
+
+```
+- 中国的首都是？ #card  【题目区域】
+  - 北京 【答案区域：显示】
+     - 北京是一个很大的城市 【显示，作为第一个子块的孙子块】
+  - 北京以前叫北平 【❌ 不显示，第二个同级子块】
+```
+
+**启用后（`showSiblingBlocks = true`）**：
+
+```
+- 中国的首都是？ #card  【题目区域】
+  - 北京 【答案区域：显示】
+     - 北京是一个很大的城市 【显示】
+  - 北京以前叫北平 【✅ 显示，第二个同级子块】
+  - 北京有很多名胜古迹 【✅ 显示，第三个同级子块】
+```
+
+**超过最大数量限制时**：
+
+- 只显示前 N 个子块（N = `maxSiblingBlocks`）
+- 在答案区域底部显示提示："还有 X 个子块未显示"
+
+#### 实现文件
+
+- [reviewSettingsSchema.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/settings/reviewSettingsSchema.ts) - 设置 Schema 定义
+- [SrsCardDemo.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsCardDemo.tsx) - Basic 卡片渲染逻辑
+
+> **注意**：此功能仅适用于 Basic 卡片。Cloze 填空卡和 Direction 方向卡不涉及子块结构，不受影响。
+
 ### UI 显示优化（2025-12-10 更新）
 
 #### 日期格式简化
