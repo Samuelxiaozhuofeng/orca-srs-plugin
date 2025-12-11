@@ -4,8 +4,11 @@ import type { DeckInfo, DeckStats, ReviewCard, TodayStats } from "../srs/types"
 import DeckCardCompact from "./DeckCardCompact"
 import { calculateDeckStats, collectReviewCards, startReviewSession, getPluginName } from "../main.ts"
 
-const { useState, useEffect, useMemo, useCallback } = window.React
+const { useState, useEffect, useMemo, useCallback, useRef } = window.React
 const { Button } = orca.components
+
+// 分页配置
+const PAGE_SIZE = 10
 
 type ViewMode = "deck-list" | "card-list"
 type FilterType = "all" | "overdue" | "today" | "future" | "new"
@@ -16,6 +19,7 @@ type SrsFlashcardHomeProps = {
 }
 
 export default function SrsFlashcardHome({ panelId, blockId }: SrsFlashcardHomeProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>("deck-list")
   const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
   const [cards, setCards] = useState<ReviewCard[]>([])
@@ -31,6 +35,67 @@ export default function SrsFlashcardHome({ panelId, blockId }: SrsFlashcardHomeP
       return "orca-srs"
     }
   })
+
+  // 隐藏编辑器 UI 元素（bullet point、query tabs 等）
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const blockEditor = container.closest('.orca-block-editor') as HTMLElement | null
+    if (!blockEditor) return
+
+    // 设置最大化属性
+    blockEditor.setAttribute('maximize', '1')
+
+    // 隐藏编辑器 UI 元素
+    const noneEditableEl = blockEditor.querySelector('.orca-block-editor-none-editable') as HTMLElement | null
+    const goBtns = blockEditor.querySelector('.orca-block-editor-go-btns') as HTMLElement | null
+    const sidetools = blockEditor.querySelector('.orca-block-editor-sidetools') as HTMLElement | null
+    const reprNoneEditable = blockEditor.querySelector('.orca-repr-main-none-editable') as HTMLElement | null
+    const breadcrumb = blockEditor.querySelector('.orca-breadcrumb') as HTMLElement | null
+
+    if (noneEditableEl) noneEditableEl.style.display = 'none'
+    if (goBtns) goBtns.style.display = 'none'
+    if (sidetools) sidetools.style.display = 'none'
+    if (reprNoneEditable) reprNoneEditable.style.display = 'none'
+    if (breadcrumb) breadcrumb.style.display = 'none'
+
+    // 注入全屏样式
+    const styleId = 'srs-flashcard-home-styles'
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style')
+      style.id = styleId
+      style.textContent = `
+        .orca-block-editor[maximize="1"] .orca-block-editor-main,
+        .orca-block-editor[maximize="1"] .orca-block-editor-blocks,
+        .orca-block-editor[maximize="1"] .orca-block[data-type="srs.flashcard-home"] {
+          height: 100% !important;
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 !important;
+        }
+        .orca-block-editor[maximize="1"] .srs-repr-flashcard-home,
+        .orca-block-editor[maximize="1"] .orca-repr-main,
+        .orca-block-editor[maximize="1"] .srs-flashcard-home-content {
+          height: 100% !important;
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 !important;
+        }
+      `
+      document.head.appendChild(style)
+    }
+
+    // 清理函数
+    return () => {
+      blockEditor.removeAttribute('maximize')
+      if (noneEditableEl) noneEditableEl.style.display = ''
+      if (goBtns) goBtns.style.display = ''
+      if (sidetools) sidetools.style.display = ''
+      if (reprNoneEditable) reprNoneEditable.style.display = ''
+      if (breadcrumb) breadcrumb.style.display = ''
+    }
+  }, [])
 
   const loadData = useCallback(async (showBlocking = false) => {
     if (showBlocking) {
@@ -96,6 +161,7 @@ export default function SrsFlashcardHome({ panelId, blockId }: SrsFlashcardHomeP
 
   return (
     <div
+      ref={containerRef}
       data-panel-id={panelId}
       data-block-id={String(blockId)}
       style={{
@@ -284,13 +350,28 @@ function CardListView({
   isRefreshing
 }: CardListViewProps) {
   const [currentFilter, setCurrentFilter] = useState<FilterType>("all")
+  const [currentPage, setCurrentPage] = useState(1)
 
   const filters: FilterType[] = ["all", "overdue", "today", "future", "new"]
+
+  // 筛选条件变化时重置页码
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [currentFilter])
 
   const filteredCards = useMemo<ReviewCard[]>(() => {
     if (currentFilter === "all") return cards
     return cards.filter((card: ReviewCard) => getCardFilterType(card) === currentFilter)
   }, [cards, currentFilter])
+
+  // 分页数据
+  const paginatedCards = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE
+    const endIndex = startIndex + PAGE_SIZE
+    return filteredCards.slice(startIndex, endIndex)
+  }, [filteredCards, currentPage])
+
+  const totalPages = Math.ceil(filteredCards.length / PAGE_SIZE)
 
   const filterCounts = useMemo(() => {
     const counts: Record<FilterType, number> = {
@@ -397,13 +478,69 @@ function CardListView({
         {filteredCards.length === 0 ? (
           <div style={emptyStateStyle}>没有符合条件的卡片</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {filteredCards.map((card: ReviewCard) => (
-              <CardRow key={`${card.id}-${card.clozeNumber ?? "basic"}`} card={card} />
-            ))}
-          </div>
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {paginatedCards.map((card: ReviewCard) => (
+                <CardRow key={`${card.id}-${card.clozeNumber ?? "basic"}`} card={card} />
+              ))}
+            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredCards.length}
+              onPageChange={setCurrentPage}
+            />
+          </>
         )}
       </div>
+    </div>
+  )
+}
+
+// 分页器组件
+type PaginationProps = {
+  currentPage: number
+  totalPages: number
+  totalItems: number
+  onPageChange: (page: number) => void
+}
+
+function Pagination({ currentPage, totalPages, totalItems, onPageChange }: PaginationProps) {
+  if (totalPages <= 1) return null
+
+  return (
+    <div style={{
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: "12px",
+      padding: "20px 0",
+      marginTop: "16px",
+      borderTop: "1px solid var(--orca-color-border-1)"
+    }}>
+      <Button
+        variant="plain"
+        onClick={() => onPageChange(currentPage - 1)}
+        style={{
+          opacity: currentPage === 1 ? 0.4 : 1,
+          pointerEvents: currentPage === 1 ? "none" : "auto"
+        }}
+      >
+        ← 上一页
+      </Button>
+      <span style={{ color: "var(--orca-color-text-2)", fontSize: "13px" }}>
+        第 {currentPage} / {totalPages} 页（共 {totalItems} 张）
+      </span>
+      <Button
+        variant="plain"
+        onClick={() => onPageChange(currentPage + 1)}
+        style={{
+          opacity: currentPage === totalPages ? 0.4 : 1,
+          pointerEvents: currentPage === totalPages ? "none" : "auto"
+        }}
+      >
+        下一页 →
+      </Button>
     </div>
   )
 }

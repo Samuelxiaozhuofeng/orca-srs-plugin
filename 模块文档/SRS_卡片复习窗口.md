@@ -167,6 +167,60 @@ stateDiagram-v2
 - 在输入框、文本区域中不会触发快捷键
 - 评分中（isGrading=true）快捷键被禁用，防止重复触发
 
+### 全屏沉浸式复习（2025-12-11 更新）
+
+#### 默认最大化
+
+- `isMaximized` 默认值改为 `true`，复习界面启动即为最大化状态
+- 最大化按钮已隐藏（用户无需手动切换）
+
+#### 全屏 CSS 注入
+
+通过动态注入 CSS 让复习界面撑满整个 `block-editor`：
+
+```css
+.orca-block-editor[maximize="1"] {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+/* 中间层级全部设置 flex: 1 和 height: 100% */
+.orca-block-editor[maximize="1"] .orca-block-editor-main,
+.orca-block-editor[maximize="1"] .orca-block-editor-blocks,
+.orca-block-editor[maximize="1"] .orca-block[data-type="srs.review-session"],
+.orca-block-editor[maximize="1"] .srs-repr-review-session,
+.orca-block-editor[maximize="1"] .orca-repr-main,
+.orca-block-editor[maximize="1"] .srs-repr-review-session-content,
+.orca-block-editor[maximize="1"] .srs-review-session-panel {
+  flex: 1 !important;
+  height: 100% !important;
+}
+```
+
+#### 隐藏的 UI 元素
+
+最大化模式下隐藏以下编辑器 UI：
+
+- `.orca-block-editor-none-editable`（query tabs）
+- `.orca-block-editor-go-btns`（上下导航按钮）
+- `.orca-block-editor-sidetools`（侧边工具栏）
+- `.orca-panel-drag-handle`（面板拖拽手柄）
+- `.orca-repr-main-none-editable`（块手柄、折叠按钮）
+- `.orca-breadcrumb`（面包屑导航）
+
+#### 面板宽度 50/50 分割
+
+`panelUtils.ts` 中调整面板默认宽度：
+
+```typescript
+const halfWidth = Math.floor(totalWidth * 0.5);
+const leftWidth = Math.max(600, Math.min(1200, halfWidth));
+const rightWidth = Math.max(600, totalWidth - leftWidth);
+```
+
+- 1920px 显示器：左右各约 960px
+- 左侧最小 600px，最大 1200px
+
 ## 扩展点
 
 1. **音效反馈**：可扩展评分音效
