@@ -90,42 +90,17 @@ export function registerCommands(
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
+      // 由于使用虎鲸笔记原生命令（deleteSelection + insertFragments），
+      // 撤销操作由框架自动处理，这里只记录日志
       if (!undoArgs || !undoArgs.blockId) return
-
-      const block = orca.state.blocks[undoArgs.blockId] as Block
-      if (!block) return
-
-      if (undoArgs.originalContent) {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.setBlocksContent",
-          null,
-          [
-            {
-              id: undoArgs.blockId,
-              content: undoArgs.originalContent
-            }
-          ],
-          false
-        )
-      } else if (undoArgs.originalText !== undefined) {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.setBlocksContent",
-          null,
-          [
-            {
-              id: undoArgs.blockId,
-              content: [{ t: "t", v: undoArgs.originalText }]
-            }
-          ],
-          false
-        )
-      }
+      console.log(`[${_pluginName}] Cloze 撤销：块 #${undoArgs.blockId}，编号 c${undoArgs.clozeNumber}`)
     },
     {
       label: "SRS: 创建 Cloze 填空",
       hasArgs: false
     }
   )
+
 
   // 方向卡命令：正向 (Ctrl+Alt+.)
   orca.commands.registerEditorCommand(

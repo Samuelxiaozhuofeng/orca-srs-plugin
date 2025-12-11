@@ -58,19 +58,15 @@
    - **Plain 转换器**: `orca.converters.registerInline()`
      - 将 cloze inline 转换回 `{cN:: 内容}` 格式
 
-3. **文本解析函数** (`src/srs/clozeUtils.ts`)
-
-   - `parseClozeText(text, pluginName)`: 将包含 `{cN:: 文本}` 的纯文本解析为 ContentFragment 数组
-   - 例如: `"首都是{c1:: 北京}"` → `[{t:"t", v:"首都是"}, {t:"pluginName.cloze", v:"北京", clozeNumber:1}]`
-
-4. **更新 createCloze 函数**
-   - 使用 `parseClozeText()` 生成 ContentFragment 数组
-   - 通过 `setBlocksContent` 设置富文本内容而非纯文本
+3. **createCloze 函数**（2025-12-11 重构）
+   - 直接操作 `block.content` 数组，根据 `cursor.anchor.index/offset` 定位
+   - 拆分 fragment 并在中间插入 cloze fragment
+   - 通过 `setBlocksContent` 更新块内容
    - Orca 自动调用 inline 渲染器显示填空
 
 #### 渲染效果
 
-- **`{cN::}` 符号不可见**：只显示填空内容
+- **填空内容**：只显示填空内容本身
 - **浅灰色文本**：`color: #999`
 - **蓝色下划线**：`border-bottom: 2px solid #4a90e2`
 - **鼠标悬停提示**：显示 `Cloze N`
@@ -91,21 +87,24 @@
 }
 ```
 
-2. **数据流程**
+2. **数据流程**（2025-12-11 重构）
    - 用户选中文本 → 点击 Cloze 按钮
-   - `createCloze()` 在文本中插入 `{cN:: 选中文本}`
-   - `parseClozeText()` 将纯文本解析为 ContentFragment 数组
+   - `createCloze()` 根据 `cursor.anchor.index/offset` 定位到 fragment
+   - 拆分该 fragment，在中间插入 cloze fragment
+   - 使用 `setBlocksContent` 更新 `block.content` 数组
    - Orca 识别到 `pluginName.cloze` 类型，调用 `ClozeInlineRenderer`
    - 渲染器只显示填空内容，应用自定义样式
 
 #### 使用效果
 
 **操作前**：
+
 ```
 中国的首都是北京
 ```
 
 **选中"北京"点击 Cloze 按钮后**：
+
 ```
 中国的首都是北京  （"北京"显示为浅灰色 + 蓝色下划线，{c1::} 符号不可见）
 ```
@@ -140,24 +139,46 @@ const newBlockText =
 
 #### 技术细节
 
-1. **文本选择处理**
+> [!IMPORTANT] > **2025-12-11 重构**：使用虎鲸笔记原生 ContentFragment 机制替代 Anki 风格的 `{c1::}` 文本标记方式，解决样式冲突问题。
 
-   - 通过 `CursorData` 获取选中范围
-   - 计算 `startOffset` 和 `endOffset`
-   - 提取 `blockText.substring(startOffset, endOffset)`
+1. **原生 Fragment 机制（2025-12-11 重构）**
+
+   **原有问题**：当文本有样式（加粗、斜体等）时，使用填空功能会导致挖空位置错位，因为 `block.text` 是纯文本，与 `cursor.offset` 不匹配。
+
+   **新方案**：使用 `deleteSelection` + `insertFragments` 原生命令：
+
+   ```typescript
+   // 步骤 1：删除选中内容
+   await orca.commands.invokeEditorCommand(
+     "core.editor.deleteSelection",
+     cursor
+   );
+
+   // 步骤 2：插入 cloze fragment
+   const clozeFragment = {
+     t: `${pluginName}.cloze`,
+     v: selectedText,
+     clozeNumber: nextClozeNumber,
+   };
+   await orca.commands.invokeEditorCommand(
+     "core.editor.insertFragments",
+     null,
+     [clozeFragment]
+   );
+   ```
+
+   **优势**：
+
+   - ✅ 完美兼容加粗、斜体、颜色等样式
+   - ✅ 撤销操作由框架自动处理
+   - ✅ 与虎鲸笔记原生机制完美融合
 
 2. **编号递增逻辑**
 
-   - 使用正则表达式 `/\{c(\d+)::/g` 匹配所有现有的 cloze 标记
-   - 找出最大编号，新标记使用 `maxNumber + 1`
+   - 从 `block.content` 中检测现有 cloze fragment 的最大编号
+   - 新标记使用 `maxNumber + 1`
 
-3. **块内容更新**
-
-   - 使用 `core.editor.setBlocksContent` 命令更新块内容
-   - 保存原始 `content` 数组用于撤销
-   - 支持完整的 undo/redo 功能
-
-4. **#card 标签自动添加与类型标记**
+3. **#card 标签自动添加与类型标记**
 
    - 创建 cloze 标记后，自动检查块是否有 `#card` 标签
    - 检查逻辑：`block.refs?.some(ref => ref.type === 2 && ref.alias === "card")`
@@ -166,7 +187,7 @@ const newBlockText =
    - 这样可以将填空卡标记为 "cloze" 类型，便于后续区分普通卡片和填空卡
    - 避免重复添加，确保每个块只有一个 `#card` 标签
 
-5. **持久化标记（2025-12-10 新增）**
+4. **持久化标记（2025-12-10 新增）**
 
    - 设置 `srs.isCard` 属性（持久化到数据库）：
      ```typescript
@@ -175,13 +196,13 @@ const newBlockText =
        null,
        [blockId],
        [{ name: "srs.isCard", value: true, type: 4 }]
-     )
+     );
      ```
    - **为什么需要**：`_repr` 属性不会持久化，重启 Orca 后会丢失
    - **解决方案**：使用块属性 `srs.isCard` 作为持久化标记
    - `collectReviewCards()` 通过 `block.properties` 检查此属性来识别填空卡
 
-6. **分天推送机制（2025-12-10 新增）**
+5. **分天推送机制（2025-12-10 新增）**
 
    - 多个填空自动设置不同的到期日期：
      - c1 → 今天到期（offset = 0 天）
@@ -190,14 +211,14 @@ const newBlockText =
    - 实现代码：
      ```typescript
      for (let i = 0; i < clozeNumbers.length; i++) {
-       const clozeNumber = clozeNumbers[i]
-       const daysOffset = clozeNumber - 1 // c1=0天, c2=1天, c3=2天...
-       await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
+       const clozeNumber = clozeNumbers[i];
+       const daysOffset = clozeNumber - 1; // c1=0天, c2=1天, c3=2天...
+       await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset);
      }
      ```
    - **效果**：避免同一块的多个填空在同一天全部出现，分散学习负担
 
-7. **错误处理**
+6. **错误处理**
    - 验证光标位置有效性
    - 检查是否有选中文本
    - 确保选中范围在同一块内
@@ -216,10 +237,12 @@ const newBlockText =
 **实现内容**：
 
 1. ✅ **编辑器内渲染** - 已完成（阶段 1.5）
+
    - 在编辑器中隐藏 `{cN::}` 符号
    - 显示浅灰色 + 蓝色下划线样式
 
 2. ✅ **复习界面渲染** - 已完成（阶段 2）
+
    - 创建了 `ClozeCardReviewRenderer` 组件 (`src/components/ClozeCardReviewRenderer.tsx`)
    - 题目状态：将填空部分替换为 `[...]`（灰色虚线边框）
    - 答案状态：显示完整内容，高亮填空部分（蓝色背景 + 深蓝色文字）
@@ -246,6 +269,7 @@ const newBlockText =
 **技术实现**：
 
 1. **`ClozeCardReviewRenderer` 组件**
+
    - 接收 `blockId` 和 `pluginName` 参数
    - 从 `block.content` 读取 ContentFragment 数组
    - 使用 `renderFragments()` 函数渲染内容：
@@ -255,6 +279,7 @@ const newBlockText =
        - 显示时：高亮显示（蓝色背景 + 下划线）
 
 2. **`SrsCardDemo` 组件改进**
+
    - 新增 `pluginName` 属性
    - 在渲染前检查 `block._repr.type`
    - 如果是 `srs.cloze-card`，直接返回 `<ClozeCardReviewRenderer>`
@@ -304,9 +329,9 @@ const newBlockText =
 ### 核心实现
 
 - `src/srs/clozeUtils.ts` - Cloze 工具函数
-  - `getMaxClozeNumber()` - 获取最大 cloze 编号
-  - `createCloze()` - 创建 cloze 标记
-  - `parseClozeText()` - 解析 cloze 文本为 ContentFragment 数组
+  - `getMaxClozeNumberFromContent()` - 从 ContentFragment 数组获取最大 cloze 编号
+  - `getAllClozeNumbers()` - 获取所有 cloze 编号
+  - `createCloze()` - 创建 cloze 填空（直接操作 ContentFragment 数组）
 - `src/components/ClozeInlineRenderer.tsx` - Cloze Inline 渲染器（编辑器内）
 - `src/components/ClozeCardReviewRenderer.tsx` - Cloze 卡片复习渲染器（复习界面）
 - `src/components/SrsCardDemo.tsx` - 卡片复习组件（集成卡片类型路由）
@@ -356,6 +381,7 @@ const newBlockText =
 ### 新增功能（2025-12-10）
 
 #### 阶段 1 & 1.5（已完成）
+
 - ✅ **类型识别与扫描**：扫描功能自动识别 `type=cloze` 的卡片，设置为 `srs.cloze-card` 类型
 - ✅ **独立卡片类型**：定义了 `srs.cloze-card` 类型，与普通卡片 `srs.card` 区分
 - ✅ **自动类型设置**：创建 cloze 时自动设置标签属性 `type=cloze`
@@ -363,6 +389,7 @@ const newBlockText =
 - ✅ **编辑器内渲染**：`ClozeInlineRenderer` 隐藏 `{cN::}` 符号，显示蓝色下划线样式
 
 #### 阶段 2（2025-12-10 新增）
+
 - ✅ **复习界面渲染**：创建 `ClozeCardReviewRenderer` 组件，实现填空卡专用复习界面
 - ✅ **填空隐藏/显示**：题目状态显示 `[...]`，答案状态高亮显示填空内容
 - ✅ **卡片类型路由**：`SrsCardDemo` 根据 `_repr.type` 自动选择渲染器
