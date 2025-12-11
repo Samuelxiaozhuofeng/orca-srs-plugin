@@ -14,6 +14,7 @@ const { Button, ModalOverlay } = orca.components
 import type { DbId, ContentFragment } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
+import { previewIntervals, formatInterval } from "../srs/algorithm"
 
 type ClozeCardReviewRendererProps = {
   blockId: DbId
@@ -145,6 +146,22 @@ export default function ClozeCardReviewRenderer({
     onGrade: handleGrade,
   })
 
+  // 预览各评分对应的间隔天数（用于按钮显示）
+  const intervals = useMemo(() => {
+    // 将 Partial<SrsState> 转换为完整的 SrsState 或 null
+    const fullState: SrsState | null = srsInfo ? {
+      stability: srsInfo.stability ?? 0,
+      difficulty: srsInfo.difficulty ?? 0,
+      interval: srsInfo.interval ?? 0,
+      due: srsInfo.due ?? new Date(),
+      lastReviewed: srsInfo.lastReviewed ?? null,
+      reps: srsInfo.reps ?? 0,
+      lapses: srsInfo.lapses ?? 0,
+      state: srsInfo.state
+    } : null
+    return previewIntervals(fullState)
+  }, [srsInfo])
+
   // 从 block.content 中提取内容片段
   const contentFragments = useMemo(() => {
     return block?.content ?? []
@@ -258,7 +275,7 @@ export default function ClozeCardReviewRenderer({
                 gap: "4px"
               }}
             >
-              <span style={{ fontWeight: 600 }}>Again</span>
+              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.again)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>忘记</span>
             </Button>
 
@@ -274,7 +291,7 @@ export default function ClozeCardReviewRenderer({
                 gap: "4px"
               }}
             >
-              <span style={{ fontWeight: 600 }}>Hard</span>
+              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.hard)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>困难</span>
             </Button>
 
@@ -290,7 +307,7 @@ export default function ClozeCardReviewRenderer({
                 gap: "4px"
               }}
             >
-              <span style={{ fontWeight: 600 }}>Good</span>
+              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.good)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>良好</span>
             </Button>
 
@@ -308,7 +325,7 @@ export default function ClozeCardReviewRenderer({
                 opacity: 0.9
               }}
             >
-              <span style={{ fontWeight: 600 }}>Easy</span>
+              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.easy)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>简单</span>
             </Button>
           </div>

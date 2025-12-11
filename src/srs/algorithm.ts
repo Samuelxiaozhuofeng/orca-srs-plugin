@@ -72,6 +72,59 @@ export const nextReviewState = (
   return { state: nextState, log: record.log }
 }
 
+/**
+ * 预览各评分对应的间隔时间（毫秒）
+ * 
+ * 用于在评分按钮上显示预览时间，帮助用户了解不同评分的后果
+ * 
+ * @param prevState - 当前 SRS 状态
+ * @param now - 当前时间（默认为现在）
+ * @returns 各评分对应的间隔毫秒数 { again: 60000, hard: 600000, good: 86400000, easy: 691200000 }
+ */
+export const previewIntervals = (
+  prevState: SrsState | null,
+  now: Date = DEFAULT_NOW()
+): Record<Grade, number> => {
+  const grades: Grade[] = ["again", "hard", "good", "easy"]
+  const result = {} as Record<Grade, number>
+
+  for (const grade of grades) {
+    const { state } = nextReviewState(prevState, grade, now)
+    // 计算 due 时间与当前时间的差值（毫秒）
+    const intervalMs = state.due.getTime() - now.getTime()
+    result[grade] = Math.max(0, intervalMs)
+  }
+
+  return result
+}
+
+/**
+ * 格式化间隔毫秒数为人类可读的字符串
+ * 
+ * 支持分钟、小时、天、月、年的显示（类似 Anki）
+ * 
+ * @param ms - 间隔毫秒数
+ * @returns 格式化后的字符串，如 "1m", "10m", "1h", "5d", "2mo", "1y"
+ */
+export const formatInterval = (ms: number): string => {
+  const minutes = ms / (1000 * 60)
+  const hours = ms / (1000 * 60 * 60)
+  const days = ms / (1000 * 60 * 60 * 24)
+
+  // 小于 1 分钟：显示 <1m
+  if (minutes < 1) return "<1m"
+  // 小于 1 小时：显示分钟
+  if (minutes < 60) return `${Math.round(minutes)}m`
+  // 小于 1 天：显示小时
+  if (hours < 24) return `${Math.round(hours)}h`
+  // 小于 30 天：显示天数
+  if (days < 30) return `${Math.round(days)}d`
+  // 小于 365 天：显示月数
+  if (days < 365) return `${Math.round(days / 30)}mo`
+  // 大于等于 365 天：显示年数
+  return `${(days / 365).toFixed(1)}y`
+}
+
 export const runExamples = () => {
   const fixedNow = new Date("2024-01-01T00:00:00Z")
 
