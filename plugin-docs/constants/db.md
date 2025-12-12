@@ -14,7 +14,7 @@
 
 Types used for properties.
 
-#### Type declaration
+#### Type Declaration
 
 ##### BlockRefs
 
@@ -52,7 +52,7 @@ Types used for properties.
 
 Types used for references.
 
-#### Type declaration
+#### Type Declaration
 
 ##### Inline
 

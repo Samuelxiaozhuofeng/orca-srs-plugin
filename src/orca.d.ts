@@ -179,6 +179,18 @@ export interface Orca {
     inlineRenderers: Record<string, any>
 
     /**
+     * Registry of panel renderer components used to render different panel types.
+     * Each key is a panel type (e.g., "journal", "block"), and the value is the React component used to render it.
+     *
+     * @example
+     * ```ts
+     * // Get the renderer for a specific panel type
+     * const journalPanelRenderer = orca.state.panelRenderers["journal"]
+     * ```
+     */
+    panelRenderers: Record<string, any>
+
+    /**
      * The current locale of the application (e.g., "en" for English, "zh-CN" for Chinese).
      * This determines the language used for the UI and can be used for localization.
      *
@@ -990,6 +1002,35 @@ export interface Orca {
     ): void
 
     /**
+     * Replace the view of a panel without recording history.
+     *
+     * This updates the specified panel's view and its view arguments in-place.
+     * If `panelId` is omitted, the currently active panel is used. This method
+     * does not push an entry into the panel back/forward history stacks (unlike
+     * `nav.goTo`).
+     *
+     * @param view - The view type to display in the panel (e.g. "journal" | "block").
+     * @param viewArgs - Optional arguments passed to the view. Usually an object
+     *   containing identifiers such as `{ blockId }` or `{ date }`.
+     * @param panelId - Optional panel id to target. Defaults to the active panel.
+     * @returns void
+     *
+     * @example
+     * ```ts
+     * // Replace the active panel with a block view
+     * orca.nav.replace("block", { blockId: 123 })
+     *
+     * // Replace a specific panel by id
+     * orca.nav.replace("journal", { date: new Date() }, panelId)
+     * ```
+     */
+    replace(
+      view: PanelView,
+      viewArgs?: Record<string, any>,
+      panelId?: string,
+    ): void
+
+    /**
      * Opens a view in the last used panel or creates a new one if needed.
      * Useful for opening content in a separate panel.
      *
@@ -1464,6 +1505,52 @@ export interface Orca {
   }
 
   /**
+   * Panel renderer API, used to register custom panel types.
+   * Panels are the main views in the application (e.g., journal panel, block panel).
+   *
+   * @example
+   * ```ts
+   * import CustomPanel from "./CustomPanel"
+   *
+   * orca.panels.registerPanel(
+   *   "myplugin.customPanel",
+   *   CustomPanel
+   * )
+   * ```
+   */
+  panels: {
+    /**
+     * Registers a custom panel renderer.
+     *
+     * @param type - The type identifier for the panel (e.g., "myplugin.customPanel")
+     * @param renderer - The React component that renders the panel
+     *
+     * @example
+     * ```ts
+     * import TimelinePanel from "./TimelinePanel"
+     *
+     * orca.panels.registerPanel(
+     *   "myplugin.timeline",
+     *   TimelinePanel
+     * )
+     * ```
+     */
+    registerPanel(type: string, renderer: any): void
+
+    /**
+     * Unregisters a previously registered panel renderer.
+     *
+     * @param type - The type identifier of the panel renderer to remove
+     *
+     * @example
+     * ```ts
+     * orca.panels.unregisterPanel("myplugin.timeline")
+     * ```
+     */
+    unregisterPanel(type: string): void
+  }
+
+  /**
    * Content converter API, used to register converters for transforming blocks and inline content
    * between different formats (e.g., HTML, plain text, Markdown).
    *
@@ -1493,7 +1580,7 @@ export interface Orca {
      * orca.converters.registerBlock(
      *   "html",
      *   "myplugin.countdown",
-     *   (blockContent, repr, block, forExport) => {
+     *   (blockContent, repr, block, forExport, context) => {
      *     const date = new Date(repr.date)
      *     return `<div class="countdown" data-date="${date.toISOString()}">
      *       <span class="label">${repr.label}</span>
@@ -1511,6 +1598,7 @@ export interface Orca {
         repr: Repr,
         block?: Block,
         forExport?: boolean,
+        context?: ConvertContext,
       ) => string | Promise<string>,
     ): void
 
@@ -1545,7 +1633,10 @@ export interface Orca {
     registerInline(
       format: string,
       type: string,
-      fn: (content: ContentFragment) => string | Promise<string>,
+      fn: (
+        content: ContentFragment,
+        forExport?: boolean,
+      ) => string | Promise<string>,
     ): void
 
     /**
@@ -1583,6 +1674,7 @@ export interface Orca {
      * @param repr - The block representation object
      * @param block - Optional full block data
      * @param forExport - Whether the conversion is for export purposes
+     * @param context - Optional conversion context with export scope information
      * @returns A Promise that resolves to the converted string
      *
      * @example
@@ -1590,7 +1682,10 @@ export interface Orca {
      * const htmlContent = await orca.converters.blockConvert(
      *   "html",
      *   blockContent,
-     *   { type: "myplugin.customBlock", data: { key: "value" } }
+     *   { type: "myplugin.customBlock", data: { key: "value" } },
+     *   block,
+     *   true,
+     *   { exportRootId: block.id }
      * )
      * ```
      */
@@ -1600,6 +1695,7 @@ export interface Orca {
       repr: Repr,
       block?: Block,
       forExport?: boolean,
+      context?: ConvertContext,
     ): Promise<string>
 
     /**
@@ -1624,6 +1720,7 @@ export interface Orca {
       format: string,
       type: string,
       content: ContentFragment,
+      forExport?: boolean,
     ): Promise<string>
   }
 
@@ -2860,7 +2957,17 @@ export interface Orca {
       } & React.HTMLAttributes<HTMLDivElement>,
     ) => JSX.Element | null
     /**
-     * Popup panel attached to an element
+     * Popup panel attached to an element.
+     *
+     * The popup is positioned automatically relative to a target `refElement` (or explicit
+     * `rect`) and can be constrained by an optional `boundary` element. You can also provide
+     * `relativePosition` to explicitly set `top/left/bottom/right` CSS strings. The popup
+     * supports vertical and horizontal placement, alignment, offsets, and boundary
+     * adjustments (via `boundary*Offset` props). When `replacement` is enabled (default),
+     * the popup observes size changes and updates placement automatically.
+     *
+     * Default values: `placement: "vertical"`, `defaultPlacement: "bottom"`,
+     * `alignment: "center"`, `offset: 4`, `crossOffset: 0`, `replacement: true`.
      *
      * @example
      * ```tsx
@@ -2905,23 +3012,104 @@ export interface Orca {
      */
     Popup: (
       props: {
+        /**
+         * Container element to render the popup into. If omitted, the popup will be
+         * appended to the `refElement`'s offsetParent.
+         */
         container?: React.RefObject<HTMLElement>
+        /**
+         * Optional boundary element used to constrain popup placement. Defaults to the container.
+         */
         boundary?: React.RefObject<HTMLElement>
+        /**
+         * Additional offsets to adjust the boundary used for placement.
+         * Useful when you need to keep the popup away from fixed elements (e.g. headers).
+         */
+        boundaryTopOffset?: number
+        boundaryBottomOffset?: number
+        boundaryLeftOffset?: number
+        boundaryRightOffset?: number
+        /**
+         * The target element to anchor the popup to.
+         */
         refElement?: React.RefObject<HTMLElement>
+        /**
+         * Alternative explicit rect to anchor to. If provided, `refElement` will be ignored.
+         */
         rect?: DOMRect
+        /**
+         * Directly set CSS properties for positioning using top/left/bottom/right strings
+         * (e.g. `"8px"`, `"1rem"`). When present, `relativePosition` takes precedence
+         * over automatic placement.
+         */
+        relativePosition?: {
+          top?: string
+          left?: string
+          bottom?: string
+          right?: string
+        }
+        /**
+         * Controls whether the popup is visible (must be controlled externally).
+         */
         visible: boolean
+        /**
+         * Called when the popup should request to close (e.g. clicking outside or pressing Escape).
+         * Return a Promise if asynchronous cleanup is required.
+         */
         onClose?: () => void | Promise<void>
+        /**
+         * Called after the popup finished its exit animation and has been removed.
+         */
         onClosed?: () => void
+        /**
+         * When true, the popup will not toggle container pointer logic. Use for specialized UIs.
+         * Default: false
+         */
         noPointerLogic?: boolean
+        /**
+         * Popup content. The child should be a single React element.
+         */
         children?: React.ReactElement
+        /**
+         * Whether the popup places vertically (top/bottom) or horizontally (left/right). Default: "vertical"
+         */
         placement?: "vertical" | "horizontal"
+        /**
+         * Preferred placement direction when there is space (top/bottom/left/right). Default: "bottom"
+         */
         defaultPlacement?: "top" | "bottom" | "left" | "right"
+        /**
+         * Alignment relative to the anchor when placed (e.g. center/left/right for vertical placement).
+         * Default: "center"
+         */
         alignment?: "left" | "top" | "center" | "bottom" | "right"
+        /**
+         * If true, the popup is allowed to extend beyond the container/boundary.
+         */
         allowBeyondContainer?: boolean
+        /**
+         * When true, the Escape key will close the popup (controlled via onClose).
+         * Also supports proper IME composition handling to avoid accidental closes.
+         */
         escapeToClose?: boolean
+        /**
+         * CSS class names to pass to the popup container.
+         */
         className?: string
+        style?: React.CSSProperties
+        /**
+         * Distance (in px) between anchor and the popup. Default: 4
+         */
         offset?: number
+        /**
+         * Cross-axis offset (in px) to shift popup relative to anchor. Default: 0
+         */
         crossOffset?: number
+        /**
+         * If set to true (default), the popup will observe content size changes and
+         * update its placement accordingly. Set to false for performance-sensitive use-cases.
+         */
+        replacement?: boolean
       } & React.HTMLAttributes<HTMLDivElement>,
     ) => JSX.Element | null
     /**
@@ -3926,7 +4114,7 @@ export type APIMsg =
  * Types of views that can be displayed in a panel.
  * Currently supports journal view (for displaying daily notes) and block view (for displaying block content).
  */
-export type PanelView = "journal" | "block"
+export type PanelView = string
 
 /**
  * Represents a panel container that arranges its children in a row.
@@ -4003,6 +4191,16 @@ export interface PanelLayouts {
   default: string
   /** Map of named layouts with their panel configurations */
   layouts: Record<string, { activePanel: string; panels: RowPanel }>
+}
+
+/**
+ * Properties for rendering a panel component.
+ */
+export type PanelProps = {
+  panelId: string
+  active: boolean
+  preview?: "content" | "backRef"
+  customQuery?: BlockCustomQuery
 }
 
 // Commands
@@ -4387,6 +4585,14 @@ export type BlockForConversion = {
   /** IDs of child blocks */
   children?: DbId[]
   sub?: [BlockForConversion, Repr, Block][]
+}
+
+/**
+ * Context for block conversion, used to track export scope.
+ */
+export type ConvertContext = {
+  /** The root block ID of the export scope */
+  exportRootId?: DbId
 }
 
 /** Block rendering modes */
@@ -4897,6 +5103,8 @@ export interface QueryTag2 {
   name: string
   /** Optional property conditions for the tag */
   properties?: QueryTagProperty[]
+  /** Only show direct tag references, not references to included tags */
+  selfOnly?: boolean
 }
 
 /**
@@ -4907,6 +5115,8 @@ export interface QueryRef2 {
   kind: QueryKindRef
   /** ID of the block that should be referenced */
   blockId?: DbId
+  /** Only show direct references, not references to included tags */
+  selfOnly?: boolean
 }
 
 /**
@@ -5005,3 +5215,13 @@ export interface IdContent {
  * Can be a string or an object with name and optional color.
  */
 export type Choice = { n: string; c?: string } | string
+
+/**
+ * Configuration for custom queries (used in block previews primarily).
+ */
+export interface BlockCustomQuery {
+  /** The query description */
+  q: QueryDescription2
+  /** Optional extra SQL to append to the query defined in `q` */
+  extraSql?: string
+}

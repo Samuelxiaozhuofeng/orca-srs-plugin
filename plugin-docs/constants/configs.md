@@ -14,7 +14,7 @@
 
 Settings keys for the app. `orca.state.settings` uses these keys.
 
-#### Type declaration
+#### Type Declaration
 
 ##### AIAPIKey
 
@@ -68,6 +68,10 @@ Settings keys for the app. `orca.state.settings` uses these keys.
 
 > `readonly` **ClassicStyle**: `40` = `40`
 
+##### CodeFont
+
+> `readonly` **CodeFont**: `56` = `56`
+
 ##### ColorPickerColors
 
 > `readonly` **ColorPickerColors**: `39` = `39`
@@ -88,9 +92,21 @@ Settings keys for the app. `orca.state.settings` uses these keys.
 
 > `readonly` **DefaultSortOrder**: `18` = `18`
 
+##### EditorFont
+
+> `readonly` **EditorFont**: `55` = `55`
+
 ##### EnableBlockRefPreview
 
 > `readonly` **EnableBlockRefPreview**: `51` = `51`
+
+##### EnablePastePrompt
+
+> `readonly` **EnablePastePrompt**: `53` = `53`
+
+##### EnableVibrant
+
+> `readonly` **EnableVibrant**: `52` = `52`
 
 ##### FirstDayOfWeek
 
@@ -216,6 +232,10 @@ Settings keys for the app. `orca.state.settings` uses these keys.
 
 > `readonly` **ToCWidth**: `38` = `38`
 
+##### UIFont
+
+> `readonly` **UIFont**: `54` = `54`
+
 ##### WhiteboardLibraryItems
 
 > `readonly` **WhiteboardLibraryItems**: `41` = `41`
@@ -229,7 +249,7 @@ Settings keys for the app. `orca.state.settings` uses these keys.
 Settings keys for the repo. `orca.state.repo` uses these keys.
 These keys are used to store settings that are specific to a single repo.
 
-#### Type declaration
+#### Type Declaration
 
 ##### AIAPIKey
 
@@ -283,6 +303,10 @@ These keys are used to store settings that are specific to a single repo.
 
 > `readonly` **ClassicStyle**: `40` = `40`
 
+##### CodeFont
+
+> `readonly` **CodeFont**: `56` = `56`
+
 ##### ColorPickerColors
 
 > `readonly` **ColorPickerColors**: `39` = `39`
@@ -303,9 +327,21 @@ These keys are used to store settings that are specific to a single repo.
 
 > `readonly` **DefaultSortOrder**: `18` = `18`
 
+##### EditorFont
+
+> `readonly` **EditorFont**: `55` = `55`
+
 ##### EnableBlockRefPreview
 
 > `readonly` **EnableBlockRefPreview**: `51` = `51`
+
+##### EnablePastePrompt
+
+> `readonly` **EnablePastePrompt**: `53` = `53`
+
+##### EnableVibrant
+
+> `readonly` **EnableVibrant**: `52` = `52`
 
 ##### Favorites
 
@@ -450,6 +486,10 @@ These keys are used to store settings that are specific to a single repo.
 ##### ToCWidth
 
 > `readonly` **ToCWidth**: `38` = `38`
+
+##### UIFont
+
+> `readonly` **UIFont**: `54` = `54`
 
 ##### WhiteboardLibraryItems
 

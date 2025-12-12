@@ -55,6 +55,8 @@ const newBlockId = await orca.commands.invokeEditorCommand(
 - `refBlock: Block`: The reference block. `DbId` is a number.
 - `position: "before" | "after" | "firstChild" | "lastChild"`: The position relative to `refBlock`.
 - `text: string`: A string containing lines of text to be inserted as separate blocks.
+- `skipMarkdown?: boolean`: Optional flag to skip Markdown parsing (defaults to `false`).
+- `skipTags?: boolean`: Optional flag to skip tag extraction (defaults to `false`).
 - **Usage**: Useful for pasting multi-line text.
 
 ```typescript
@@ -62,10 +64,12 @@ const someBlock = orca.state.blocks[123]
 const multiLineText = "First line\nSecond line\nThird line"
 await orca.commands.invokeEditorCommand(
   "core.editor.batchInsertText",
-  null,
+  cursor,
   someBlock,
   "lastChild",
   multiLineText,
+  false, // skipMarkdown
+  false, // skipTags
 )
 ```
 

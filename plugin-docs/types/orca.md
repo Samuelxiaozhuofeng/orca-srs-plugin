@@ -89,6 +89,26 @@ Optional plain text content, used along with the content array
 
 ***
 
+### BlockCustomQuery
+
+Configuration for custom queries (used in block previews primarily).
+
+#### Properties
+
+##### extraSql?
+
+> `optional` **extraSql**: `string`
+
+Optional extra SQL to append to the query defined in `q`
+
+##### q
+
+> **q**: [`QueryDescription2`](#querydescription2)
+
+The query description
+
+***
+
 ### BlockProperty
 
 Represents a named property attached to a block.
@@ -380,7 +400,7 @@ Used when only ID and content are needed without full block metadata.
 
 ##### content
 
-> **content**: `null` \| [`ContentFragment`](#contentfragment)[]
+> **content**: [`ContentFragment`](#contentfragment)[]
 
 The block's content fragments, or null if no content
 
@@ -768,9 +788,9 @@ The identifier of the editor command to invoke
 
 ###### cursor
 
-The cursor data context for the command, or null
+[`CursorData`](#cursordata)
 
-`null` | [`CursorData`](#cursordata)
+The cursor data context for the command, or null
 
 ###### args
 
@@ -797,7 +817,7 @@ await orca.commands.invokeEditorCommand(
 
 ###### invokeGroup()
 
-> **invokeGroup**(`callback`, `options`?): `Promise`\<`void`\>
+> **invokeGroup**(`callback`, `options?`): `Promise`\<`void`\>
 
 Executes a group of commands as a single undoable operation.
 This is useful when multiple commands should be treated as a single step in the undo/redo history.
@@ -883,9 +903,9 @@ The identifier of the editor command to invoke
 
 ###### cursor
 
-The cursor data context for the command, or null
+[`CursorData`](#cursordata)
 
-`null` | [`CursorData`](#cursordata)
+The cursor data context for the command, or null
 
 ###### args
 
@@ -1262,7 +1282,7 @@ These components follow Orca's design system and provide consistent UI patterns.
 
 ###### AliasEditor()
 
-> **AliasEditor**: (`props`) => `null` \| `Element`
+> **AliasEditor**: (`props`) => `Element`
 
 Provides an editor interface for managing aliases/tags, including adding/removing aliases,
 formatting options, template selection, and inclusion relationships.
@@ -1271,11 +1291,11 @@ formatting options, template selection, and inclusion relationships.
 
 ###### props
 
-`object` & `Partial`\<\{ `alignment`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className`: `string`; `container`: `any`; `crossOffset`: `number`; `defaultPlacement`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose`: `boolean`; `keyboardNav`: `boolean`; `menu`: (`close`, `state`?) => `ReactNode`; `menuAttr`: `Record`\<`string`, `any`\>; `navDirection`: `"vertical"` \| `"both"`; `noPointerLogic`: `boolean`; `offset`: `number`; `onClosed`: () => `void`; `onOpened`: () => `void`; `placement`: `"vertical"` \| `"horizontal"`; `style`: `any`; \}\>
+`object` & `Partial`\<\{ `alignment?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer?`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className?`: `string`; `container?`: `RefObject`\<`HTMLElement`\>; `crossOffset?`: `number`; `defaultPlacement?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose?`: `boolean`; `keyboardNav?`: `boolean`; `menu`: (`close`, `state?`) => `ReactNode`; `menuAttr?`: `Record`\<`string`, `any`\>; `navDirection?`: `"vertical"` \| `"both"`; `noPointerLogic?`: `boolean`; `offset?`: `number`; `onClosed?`: () => `void`; `onOpened?`: () => `void`; `placement?`: `"vertical"` \| `"horizontal"`; `style?`: `CSSProperties`; \}\>
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1304,7 +1324,7 @@ formatting options, template selection, and inclusion relationships.
 
 ###### Block()
 
-> **Block**: (`props`) => `null` \| `Element`
+> **Block**: (`props`) => `Element`
 
 Renders a block with all its content and children
 
@@ -1316,7 +1336,7 @@ Renders a block with all its content and children
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1332,7 +1352,7 @@ Renders a block with all its content and children
 
 ###### BlockBreadcrumb()
 
-> **BlockBreadcrumb**: (`props`) => `null` \| `Element`
+> **BlockBreadcrumb**: (`props`) => `Element`
 
 Renders a breadcrumb trail for a block's ancestors
 
@@ -1354,7 +1374,7 @@ Renders a breadcrumb trail for a block's ancestors
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1372,7 +1392,7 @@ Renders a breadcrumb trail for a block's ancestors
 
 ###### BlockChildren()
 
-> **BlockChildren**: (`props`) => `null` \| `Element`
+> **BlockChildren**: (`props`) => `Element`
 
 Renders a block's children
 
@@ -1402,7 +1422,7 @@ Renders a block's children
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1427,7 +1447,7 @@ Renders a block's children
 
 ###### BlockPreviewPopup()
 
-> **BlockPreviewPopup**: (`props`) => `null` \| `Element`
+> **BlockPreviewPopup**: (`props`) => `Element`
 
 Displays a block preview in a popup on hover
 
@@ -1443,7 +1463,7 @@ allowing users to edit the block content directly in the preview.
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1475,7 +1495,7 @@ allowing users to edit the block content directly in the preview.
 
 ###### BlockSelect()
 
-> **BlockSelect**: (`props`) => `null` \| `Element`
+> **BlockSelect**: (`props`) => `Element`
 
 Provides block selection functionality
 
@@ -1487,7 +1507,7 @@ Provides block selection functionality
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1512,7 +1532,7 @@ Provides block selection functionality
 
 ###### BlockShell()
 
-> **BlockShell**: (`props`) => `null` \| `Element`
+> **BlockShell**: (`props`) => `Element`
 
 Core component for block rendering with common UI elements
 
@@ -1590,7 +1610,7 @@ Core component for block rendering with common UI elements
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1624,7 +1644,7 @@ Core component for block rendering with common UI elements
 
 ###### Breadcrumb()
 
-> **Breadcrumb**: (`props`) => `null` \| `Element`
+> **Breadcrumb**: (`props`) => `Element`
 
 Renders a generic breadcrumb navigation
 
@@ -1646,7 +1666,7 @@ Renders a generic breadcrumb navigation
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1669,7 +1689,7 @@ Renders a generic breadcrumb navigation
 
 ###### Button()
 
-> **Button**: (`props`) => `null` \| `Element`
+> **Button**: (`props`) => `Element`
 
 Standard button component with multiple variants
 
@@ -1681,7 +1701,7 @@ Standard button component with multiple variants
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1709,7 +1729,7 @@ Standard button component with multiple variants
 
 ###### Checkbox()
 
-> **Checkbox**: (`props`) => `null` \| `Element`
+> **Checkbox**: (`props`) => `Element`
 
 Checkbox form element
 
@@ -1721,7 +1741,7 @@ Checkbox form element
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1744,7 +1764,7 @@ Checkbox form element
 
 ###### CompositionInput()
 
-> **CompositionInput**: (`props`) => `null` \| `Element`
+> **CompositionInput**: (`props`) => `Element`
 
 Input that handles IME composition events properly
 
@@ -1756,7 +1776,7 @@ Input that handles IME composition events properly
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1785,7 +1805,7 @@ Input that handles IME composition events properly
 
 ###### CompositionTextArea()
 
-> **CompositionTextArea**: (`props`) => `null` \| `Element`
+> **CompositionTextArea**: (`props`) => `Element`
 
 Textarea that handles IME composition events properly
 
@@ -1797,7 +1817,7 @@ Textarea that handles IME composition events properly
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1819,7 +1839,7 @@ Textarea that handles IME composition events properly
 
 ###### ConfirmBox()
 
-> **ConfirmBox**: (`props`) => `null` \| `Element`
+> **ConfirmBox**: (`props`) => `Element`
 
 Displays a confirmation dialog
 
@@ -1827,11 +1847,11 @@ Displays a confirmation dialog
 
 ###### props
 
-`object` & `Partial`\<\{ `alignment`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className`: `string`; `container`: `any`; `crossOffset`: `number`; `defaultPlacement`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose`: `boolean`; `keyboardNav`: `boolean`; `menu`: (`close`, `state`?) => `ReactNode`; `menuAttr`: `Record`\<`string`, `any`\>; `navDirection`: `"vertical"` \| `"both"`; `noPointerLogic`: `boolean`; `offset`: `number`; `onClosed`: () => `void`; `onOpened`: () => `void`; `placement`: `"vertical"` \| `"horizontal"`; `style`: `any`; \}\>
+`object` & `Partial`\<\{ `alignment?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer?`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className?`: `string`; `container?`: `RefObject`\<`HTMLElement`\>; `crossOffset?`: `number`; `defaultPlacement?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose?`: `boolean`; `keyboardNav?`: `boolean`; `menu`: (`close`, `state?`) => `ReactNode`; `menuAttr?`: `Record`\<`string`, `any`\>; `navDirection?`: `"vertical"` \| `"both"`; `noPointerLogic?`: `boolean`; `offset?`: `number`; `onClosed?`: () => `void`; `onOpened?`: () => `void`; `placement?`: `"vertical"` \| `"horizontal"`; `style?`: `CSSProperties`; \}\>
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -1872,7 +1892,7 @@ Displays a confirmation dialog
 
 ###### ContextMenu()
 
-> **ContextMenu**: (`props`) => `null` \| `Element`
+> **ContextMenu**: (`props`) => `Element`
 
 Creates a context menu attached to an element
 
@@ -1918,7 +1938,7 @@ Creates a context menu attached to an element
 
 ###### menu
 
-(`close`, `state`?) => `ReactNode`
+(`close`, `state?`) => `ReactNode`
 
 ###### menuAttr?
 
@@ -1954,7 +1974,7 @@ Creates a context menu attached to an element
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2002,7 +2022,7 @@ Creates a context menu attached to an element
 
 ###### DatePicker()
 
-> **DatePicker**: (`props`) => `null` \| `Element`
+> **DatePicker**: (`props`) => `Element`
 
 Calendar date picker
 
@@ -2064,7 +2084,7 @@ Calendar date picker
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2094,7 +2114,7 @@ const [dateRange, setDateRange] = useState([new Date(), new Date(Date.now() + 86
 
 ###### HoverContextMenu()
 
-> **HoverContextMenu**: (`props`) => `null` \| `Element`
+> **HoverContextMenu**: (`props`) => `Element`
 
 Context menu that appears on hover
 
@@ -2106,7 +2126,7 @@ Context menu that appears on hover
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2151,7 +2171,7 @@ Context menu that appears on hover
 
 ###### Image()
 
-> **Image**: (`props`) => `null` \| `Element`
+> **Image**: (`props`) => `Element`
 
 Image component with loading states
 
@@ -2163,7 +2183,7 @@ Image component with loading states
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2193,7 +2213,7 @@ Image component with loading states
 
 ###### Input()
 
-> **Input**: (`props`) => `null` \| `Element`
+> **Input**: (`props`) => `Element`
 
 Standard text input component
 
@@ -2205,7 +2225,7 @@ Standard text input component
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2234,7 +2254,7 @@ Standard text input component
 
 ###### InputBox()
 
-> **InputBox**: (`props`) => `null` \| `Element`
+> **InputBox**: (`props`) => `Element`
 
 Input dialog with label and actions
 
@@ -2242,11 +2262,11 @@ Input dialog with label and actions
 
 ###### props
 
-`object` & `Partial`\<\{ `alignment`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className`: `string`; `container`: `any`; `crossOffset`: `number`; `defaultPlacement`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose`: `boolean`; `keyboardNav`: `boolean`; `menu`: (`close`, `state`?) => `ReactNode`; `menuAttr`: `Record`\<`string`, `any`\>; `navDirection`: `"vertical"` \| `"both"`; `noPointerLogic`: `boolean`; `offset`: `number`; `onClosed`: () => `void`; `onOpened`: () => `void`; `placement`: `"vertical"` \| `"horizontal"`; `style`: `any`; \}\>
+`object` & `Partial`\<\{ `alignment?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer?`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className?`: `string`; `container?`: `RefObject`\<`HTMLElement`\>; `crossOffset?`: `number`; `defaultPlacement?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose?`: `boolean`; `keyboardNav?`: `boolean`; `menu`: (`close`, `state?`) => `ReactNode`; `menuAttr?`: `Record`\<`string`, `any`\>; `navDirection?`: `"vertical"` \| `"both"`; `noPointerLogic?`: `boolean`; `offset?`: `number`; `onClosed?`: () => `void`; `onOpened?`: () => `void`; `placement?`: `"vertical"` \| `"horizontal"`; `style?`: `CSSProperties`; \}\>
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2292,7 +2312,7 @@ Input dialog with label and actions
 
 ###### LoadMore()
 
-> **LoadMore**: (`props`) => `null` \| `Element`
+> **LoadMore**: (`props`) => `Element`
 
 Component for loading more items in paginated lists
 
@@ -2304,7 +2324,7 @@ Component for loading more items in paginated lists
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2327,7 +2347,7 @@ Component for loading more items in paginated lists
 
 ###### MemoizedViews()
 
-> **MemoizedViews**: (`props`) => `null` \| `Element`
+> **MemoizedViews**: (`props`) => `Element`
 
 Efficient view container for switching between components
 
@@ -2357,11 +2377,11 @@ Efficient view container for switching between components
 
 ###### views
 
-\{[`key`: `string`]: `null` \| `ReactElement`\<`any`, `string` \| `JSXElementConstructor`\<`any`\>\>; \}
+\{\[`key`: `string`\]: `ReactElement`\<`any`, `string` \| `JSXElementConstructor`\<`any`\>\>; \}
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2393,7 +2413,7 @@ Efficient view container for switching between components
 
 ###### Menu()
 
-> **Menu**: (`props`) => `null` \| `Element`
+> **Menu**: (`props`) => `Element`
 
 Standard menu container
 
@@ -2405,7 +2425,7 @@ Standard menu container
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2438,7 +2458,7 @@ Standard menu container
 
 ###### MenuItem()
 
-> **MenuItem**: (`props`) => `null` \| `Element`
+> **MenuItem**: (`props`) => `Element`
 
 Menu item component
 
@@ -2450,7 +2470,7 @@ Menu item component
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2483,7 +2503,7 @@ Menu item component
 
 ###### MenuSeparator()
 
-> **MenuSeparator**: (`props`) => `null` \| `Element`
+> **MenuSeparator**: (`props`) => `Element`
 
 Visual separator for menus
 
@@ -2493,7 +2513,7 @@ Visual separator for menus
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2513,7 +2533,7 @@ Visual separator for menus
 
 ###### MenuText()
 
-> **MenuText**: (`props`) => `null` \| `Element`
+> **MenuText**: (`props`) => `Element`
 
 Text-based menu item
 
@@ -2525,7 +2545,7 @@ Text-based menu item
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2576,7 +2596,7 @@ Text-based menu item
 
 ###### MenuTitle()
 
-> **MenuTitle**: (`props`) => `null` \| `Element`
+> **MenuTitle**: (`props`) => `Element`
 
 Menu section title
 
@@ -2602,7 +2622,7 @@ Menu section title
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2636,7 +2656,7 @@ Menu section title
 
 ###### ModalOverlay()
 
-> **ModalOverlay**: (`props`) => `null` \| `Element`
+> **ModalOverlay**: (`props`) => `Element`
 
 Full-screen modal overlay
 
@@ -2648,7 +2668,7 @@ Full-screen modal overlay
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2697,9 +2717,19 @@ const [isVisible, setIsVisible] = useState(false);
 
 ###### Popup()
 
-> **Popup**: (`props`) => `null` \| `Element`
+> **Popup**: (`props`) => `Element`
 
-Popup panel attached to an element
+Popup panel attached to an element.
+
+The popup is positioned automatically relative to a target `refElement` (or explicit
+`rect`) and can be constrained by an optional `boundary` element. You can also provide
+`relativePosition` to explicitly set `top/left/bottom/right` CSS strings. The popup
+supports vertical and horizontal placement, alignment, offsets, and boundary
+adjustments (via `boundary*Offset` props). When `replacement` is enabled (default),
+the popup observes size changes and updates placement automatically.
+
+Default values: `placement: "vertical"`, `defaultPlacement: "bottom"`,
+`alignment: "center"`, `offset: 4`, `crossOffset: 0`, `replacement: true`.
 
 ###### Parameters
 
@@ -2709,7 +2739,7 @@ Popup panel attached to an element
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2755,7 +2785,7 @@ const buttonRef = useRef(null);
 
 ###### Segmented()
 
-> **Segmented**: (`props`) => `null` \| `Element`
+> **Segmented**: (`props`) => `Element`
 
 Segmented control for selecting from options
 
@@ -2767,7 +2797,7 @@ Segmented control for selecting from options
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2799,7 +2829,7 @@ const [selected, setSelected] = useState("list");
 
 ###### Select()
 
-> **Select**: (`props`) => `null` \| `Element`
+> **Select**: (`props`) => `Element`
 
 Dropdown select component
 
@@ -2845,7 +2875,7 @@ Dropdown select component
 
 ###### onChange?
 
-(`selected`, `filterKeyword`?) => `void` \| `Promise`\<`void`\>
+(`selected`, `filterKeyword?`) => `void` \| `Promise`\<`void`\>
 
 ###### onMouseEnter?
 
@@ -2865,7 +2895,7 @@ Dropdown select component
 
 ###### pre?
 
-`ReactElement`\<`any`, `string` \| `JSXElementConstructor`\<`any`\>\>
+`ReactElement`
 
 ###### readOnly?
 
@@ -2885,7 +2915,7 @@ Dropdown select component
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2931,7 +2961,7 @@ const [selected, setSelected] = useState(["option1"]);
 
 ###### Skeleton()
 
-> **Skeleton**: (`props`) => `null` \| `Element`
+> **Skeleton**: (`props`) => `Element`
 
 Loading placeholder
 
@@ -2941,7 +2971,7 @@ Loading placeholder
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -2972,7 +3002,7 @@ Loading placeholder
 
 ###### Switch()
 
-> **Switch**: (`props`) => `null` \| `Element`
+> **Switch**: (`props`) => `Element`
 
 Toggle switch component
 
@@ -2984,7 +3014,7 @@ Toggle switch component
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -3020,7 +3050,7 @@ const [isOn, setIsOn] = useState(false);
 
 ###### Table()
 
-> **Table**: (`props`) => `null` \| `Element`
+> **Table**: (`props`) => `Element`
 
 Data table component
 
@@ -3032,7 +3062,7 @@ Data table component
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -3081,7 +3111,7 @@ Data table component
 
 ###### TagPopup()
 
-> **TagPopup**: (`props`) => `null` \| `Element`
+> **TagPopup**: (`props`) => `Element`
 
 Provides a popup menu for tag selection and creation.
 Allows users to search, select existing tags, or create new ones.
@@ -3090,11 +3120,11 @@ Allows users to search, select existing tags, or create new ones.
 
 ###### props
 
-`object` & `Partial`\<\{ `alignment`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className`: `string`; `container`: `any`; `crossOffset`: `number`; `defaultPlacement`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose`: `boolean`; `keyboardNav`: `boolean`; `menu`: (`close`, `state`?) => `ReactNode`; `menuAttr`: `Record`\<`string`, `any`\>; `navDirection`: `"vertical"` \| `"both"`; `noPointerLogic`: `boolean`; `offset`: `number`; `onClosed`: () => `void`; `onOpened`: () => `void`; `placement`: `"vertical"` \| `"horizontal"`; `style`: `any`; \}\>
+`object` & `Partial`\<\{ `alignment?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer?`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className?`: `string`; `container?`: `RefObject`\<`HTMLElement`\>; `crossOffset?`: `number`; `defaultPlacement?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose?`: `boolean`; `keyboardNav?`: `boolean`; `menu`: (`close`, `state?`) => `ReactNode`; `menuAttr?`: `Record`\<`string`, `any`\>; `navDirection?`: `"vertical"` \| `"both"`; `noPointerLogic?`: `boolean`; `offset?`: `number`; `onClosed?`: () => `void`; `onOpened?`: () => `void`; `placement?`: `"vertical"` \| `"horizontal"`; `style?`: `CSSProperties`; \}\>
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -3128,7 +3158,7 @@ Allows users to search, select existing tags, or create new ones.
 
 ###### TagPropsEditor()
 
-> **TagPropsEditor**: (`props`) => `null` \| `Element`
+> **TagPropsEditor**: (`props`) => `Element`
 
 Provides an editor interface for managing and configuring tag properties.
 Allows users to add, edit, and delete tag properties, set property types and values.
@@ -3137,11 +3167,11 @@ Allows users to add, edit, and delete tag properties, set property types and val
 
 ###### props
 
-`object` & `Partial`\<\{ `alignment`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className`: `string`; `container`: `any`; `crossOffset`: `number`; `defaultPlacement`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose`: `boolean`; `keyboardNav`: `boolean`; `menu`: (`close`, `state`?) => `ReactNode`; `menuAttr`: `Record`\<`string`, `any`\>; `navDirection`: `"vertical"` \| `"both"`; `noPointerLogic`: `boolean`; `offset`: `number`; `onClosed`: () => `void`; `onOpened`: () => `void`; `placement`: `"vertical"` \| `"horizontal"`; `style`: `any`; \}\>
+`object` & `Partial`\<\{ `alignment?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"` \| `"center"`; `allowBeyondContainer?`: `boolean`; `children`: (`openMenu`, `closeMenu`) => `ReactNode`; `className?`: `string`; `container?`: `RefObject`\<`HTMLElement`\>; `crossOffset?`: `number`; `defaultPlacement?`: `"top"` \| `"bottom"` \| `"left"` \| `"right"`; `escapeToClose?`: `boolean`; `keyboardNav?`: `boolean`; `menu`: (`close`, `state?`) => `ReactNode`; `menuAttr?`: `Record`\<`string`, `any`\>; `navDirection?`: `"vertical"` \| `"both"`; `noPointerLogic?`: `boolean`; `offset?`: `number`; `onClosed?`: () => `void`; `onOpened?`: () => `void`; `placement?`: `"vertical"` \| `"horizontal"`; `style?`: `CSSProperties`; \}\>
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -3185,7 +3215,7 @@ Allows users to add, edit, and delete tag properties, set property types and val
 
 ###### Tooltip()
 
-> **Tooltip**: (`props`) => `null` \| `Element`
+> **Tooltip**: (`props`) => `Element`
 
 Tooltip component
 
@@ -3235,7 +3265,7 @@ Tooltip component
 
 ###### Returns
 
-`null` \| `Element`
+`Element`
 
 ###### Example
 
@@ -3296,7 +3326,7 @@ between different formats (e.g., HTML, plain text, Markdown).
 
 ###### blockConvert()
 
-> **blockConvert**(`format`, `blockContent`, `repr`, `block`?, `forExport`?): `Promise`\<`string`\>
+> **blockConvert**(`format`, `blockContent`, `repr`, `block?`, `forExport?`, `context?`): `Promise`\<`string`\>
 
 Converts a block to a specific format.
 This is typically used internally by the system when exporting content.
@@ -3333,6 +3363,12 @@ Optional full block data
 
 Whether the conversion is for export purposes
 
+###### context?
+
+[`ConvertContext`](#convertcontext)
+
+Optional conversion context with export scope information
+
 ###### Returns
 
 `Promise`\<`string`\>
@@ -3345,13 +3381,16 @@ A Promise that resolves to the converted string
 const htmlContent = await orca.converters.blockConvert(
   "html",
   blockContent,
-  { type: "myplugin.customBlock", data: { key: "value" } }
+  { type: "myplugin.customBlock", data: { key: "value" } },
+  block,
+  true,
+  { exportRootId: block.id }
 )
 ```
 
 ###### inlineConvert()
 
-> **inlineConvert**(`format`, `type`, `content`): `Promise`\<`string`\>
+> **inlineConvert**(`format`, `type`, `content`, `forExport?`): `Promise`\<`string`\>
 
 Converts an inline content fragment to a specific format.
 This is typically used internally by the system when exporting content.
@@ -3375,6 +3414,10 @@ The type of the inline content
 [`ContentFragment`](#contentfragment)
 
 The inline content fragment to convert
+
+###### forExport?
+
+`boolean`
 
 ###### Returns
 
@@ -3414,7 +3457,7 @@ The block type to convert from
 
 ###### fn
 
-(`blockContent`, `repr`, `block`?, `forExport`?) => `string` \| `Promise`\<`string`\>
+(`blockContent`, `repr`, `block?`, `forExport?`, `context?`) => `string` \| `Promise`\<`string`\>
 
 Conversion function that transforms block content to the target format
 
@@ -3429,7 +3472,7 @@ Conversion function that transforms block content to the target format
 orca.converters.registerBlock(
   "html",
   "myplugin.countdown",
-  (blockContent, repr, block, forExport) => {
+  (blockContent, repr, block, forExport, context) => {
     const date = new Date(repr.date)
     return `<div class="countdown" data-date="${date.toISOString()}">
       <span class="label">${repr.label}</span>
@@ -3461,7 +3504,7 @@ The inline content type to convert from
 
 ###### fn
 
-(`content`) => `string` \| `Promise`\<`string`\>
+(`content`, `forExport?`) => `string` \| `Promise`\<`string`\>
 
 Conversion function that transforms inline content to the target format
 
@@ -3757,7 +3800,7 @@ Provides methods for managing panels, navigating between views, and handling nav
 
 ###### addTo()
 
-> **addTo**(`id`, `dir`, `src`?): `null` \| `string`
+> **addTo**(`id`, `dir`, `src?`): `string`
 
 Adds a new panel next to an existing panel in the specified direction.
 
@@ -3783,7 +3826,7 @@ Optional parameters for the new panel's view, view arguments, and state
 
 ###### Returns
 
-`null` \| `string`
+`string`
 
 The ID of the newly created panel, or null if the panel couldn't be created
 
@@ -3877,7 +3920,7 @@ orca.nav.closeAllBut(orca.state.activePanel)
 
 ###### findViewPanel()
 
-> **findViewPanel**(`id`, `panels`): `null` \| [`ViewPanel`](#viewpanel)
+> **findViewPanel**(`id`, `panels`): [`ViewPanel`](#viewpanel)
 
 Finds a view panel by its ID within the panel structure.
 
@@ -3897,7 +3940,7 @@ The root panel structure to search in
 
 ###### Returns
 
-`null` \| [`ViewPanel`](#viewpanel)
+[`ViewPanel`](#viewpanel)
 
 The found ViewPanel or null if not found
 
@@ -3944,7 +3987,7 @@ orca.nav.focusPrev()
 
 ###### goBack()
 
-> **goBack**(`withRedo`?): `void`
+> **goBack**(`withRedo?`): `void`
 
 Navigates back to the previous panel state in history.
 
@@ -3985,7 +4028,7 @@ orca.nav.goForward()
 
 ###### goTo()
 
-> **goTo**(`view`, `viewArgs`?, `panelId`?): `void`
+> **goTo**(`view`, `viewArgs?`, `panelId?`): `void`
 
 Navigates to a specific view in the specified panel or current active panel.
 
@@ -3993,7 +4036,7 @@ Navigates to a specific view in the specified panel or current active panel.
 
 ###### view
 
-[`PanelView`](#panelview)
+`string`
 
 The type of view to navigate to ("journal" or "block")
 
@@ -4082,7 +4125,7 @@ orca.nav.move("panel1", "panel2", "bottom")
 
 ###### openInLastPanel()
 
-> **openInLastPanel**(`view`, `viewArgs`?): `void`
+> **openInLastPanel**(`view`, `viewArgs?`): `void`
 
 Opens a view in the last used panel or creates a new one if needed.
 Useful for opening content in a separate panel.
@@ -4091,7 +4134,7 @@ Useful for opening content in a separate panel.
 
 ###### view
 
-[`PanelView`](#panelview)
+`string`
 
 The type of view to open ("journal" or "block")
 
@@ -4110,6 +4153,54 @@ Arguments for the view, such as blockId or date
 ```ts
 // Open a block in a new or last used panel
 orca.nav.openInLastPanel("block", { blockId: 123 })
+```
+
+###### replace()
+
+> **replace**(`view`, `viewArgs?`, `panelId?`): `void`
+
+Replace the view of a panel without recording history.
+
+This updates the specified panel's view and its view arguments in-place.
+If `panelId` is omitted, the currently active panel is used. This method
+does not push an entry into the panel back/forward history stacks (unlike
+`nav.goTo`).
+
+###### Parameters
+
+###### view
+
+`string`
+
+The view type to display in the panel (e.g. "journal" | "block").
+
+###### viewArgs?
+
+`Record`\<`string`, `any`\>
+
+Optional arguments passed to the view. Usually an object
+  containing identifiers such as `{ blockId }` or `{ date }`.
+
+###### panelId?
+
+`string`
+
+Optional panel id to target. Defaults to the active panel.
+
+###### Returns
+
+`void`
+
+void
+
+###### Example
+
+```ts
+// Replace the active panel with a block view
+orca.nav.replace("block", { blockId: 123 })
+
+// Replace a specific panel by id
+orca.nav.replace("journal", { date: new Date() }, panelId)
 ```
 
 ###### switchFocusTo()
@@ -4148,7 +4239,7 @@ orca.nav.openInLastPanel("block", { blockId: 123 })
 
 ##### notify()
 
-> **notify**: (`type`, `message`, `options`?) => `void`
+> **notify**: (`type`, `message`, `options?`) => `void`
 
 Display a notification to the user. Notifications appear in the bottom right corner of the application
 and can be used to inform users about events, actions, or state changes.
@@ -4201,6 +4292,83 @@ orca.notify("success", "File exported successfully", {
     orca.commands.invokeCommand("myplugin.openExportedFile")
   }
 })
+```
+
+##### panels
+
+> **panels**: `object`
+
+Panel renderer API, used to register custom panel types.
+Panels are the main views in the application (e.g., journal panel, block panel).
+
+###### registerPanel()
+
+> **registerPanel**(`type`, `renderer`): `void`
+
+Registers a custom panel renderer.
+
+###### Parameters
+
+###### type
+
+`string`
+
+The type identifier for the panel (e.g., "myplugin.customPanel")
+
+###### renderer
+
+`any`
+
+The React component that renders the panel
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+import TimelinePanel from "./TimelinePanel"
+
+orca.panels.registerPanel(
+  "myplugin.timeline",
+  TimelinePanel
+)
+```
+
+###### unregisterPanel()
+
+> **unregisterPanel**(`type`): `void`
+
+Unregisters a previously registered panel renderer.
+
+###### Parameters
+
+###### type
+
+`string`
+
+The type identifier of the panel renderer to remove
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+orca.panels.unregisterPanel("myplugin.timeline")
+```
+
+###### Example
+
+```ts
+import CustomPanel from "./CustomPanel"
+
+orca.panels.registerPanel(
+  "myplugin.customPanel",
+  CustomPanel
+)
 ```
 
 ##### plugins
@@ -4464,7 +4632,7 @@ The key to store the data under
 
 The data to store (string, number, ArrayBuffer, or null)
 
-`null` | `string` | `number` | `ArrayBuffer`
+`string` | `number` | `ArrayBuffer`
 
 ###### Returns
 
@@ -4646,7 +4814,7 @@ Renderer management API, used to register custom block and inline content render
 
 ###### registerBlock()
 
-> **registerBlock**(`type`, `isEditable`, `renderer`, `assetFields`?, `useChildren`?): `void`
+> **registerBlock**(`type`, `isEditable`, `renderer`, `assetFields?`, `useChildren?`): `void`
 
 Registers a custom block renderer.
 
@@ -5021,7 +5189,7 @@ orca.nav.goTo("block", { blockId: 123 }, activePanelId)
 
 ###### blockConverters
 
-> **blockConverters**: `Record`\<`string`, `undefined` \| `Record`\<`string`, `undefined` \| (`blockContent`, `repr`, `block`?, `forExport`?) => `string` \| `Promise`\<`string`\>\>\>
+> **blockConverters**: `Record`\<`string`, `Record`\<`string`, (`blockContent`, `repr`, `block?`, `forExport?`) => `string` \| `Promise`\<`string`\> \| `undefined`\> \| `undefined`\>
 
 Registry of block converters that transform block content to different formats.
 Organized as a nested record with format as the first key and block type as the second.
@@ -5035,7 +5203,7 @@ const hasConverter = !!orca.state.blockConverters?.["html"]?.["myplugin.customBl
 
 ###### blockMenuCommands
 
-> **blockMenuCommands**: `Record`\<`string`, `undefined` \| [`BlockMenuCommand`](#blockmenucommand)\>
+> **blockMenuCommands**: `Record`\<`string`, [`BlockMenuCommand`](#blockmenucommand) \| `undefined`\>
 
 Registry of block menu commands that appear in block context menus.
 These commands provide custom actions for blocks.
@@ -5063,7 +5231,7 @@ const codeBlockRenderer = orca.state.blockRenderers["code"]
 
 ###### blocks
 
-> **blocks**: `Record`\<`string` \| `number`, `undefined` \| [`Block`](#block)\>
+> **blocks**: `Record`\<`string` \| [`DbId`](#dbid), [`Block`](#block) \| `undefined`\>
 
 Map of all blocks currently loaded in memory, indexed by their database IDs.
 This provides quick access to block data without needing backend queries.
@@ -5095,7 +5263,7 @@ if (orca.state.commandPaletteOpened) {
 
 ###### commands
 
-> **commands**: `Record`\<`string`, `undefined` \| [`CommandWithPinyin`](#commandwithpinyin)\>
+> **commands**: `Record`\<`string`, [`CommandWithPinyin`](#commandwithpinyin) \| `undefined`\>
 
 Registry of all registered commands in the application, indexed by their IDs.
 Each command includes pinyin data for search functionality.
@@ -5124,7 +5292,7 @@ console.log(`Application data directory: ${orca.state.dataDir}`)
 
 ###### editorSidetools
 
-> **editorSidetools**: `Record`\<`string`, `undefined` \| [`EditorSidetool`](#editorsidetool)\>
+> **editorSidetools**: `Record`\<`string`, [`EditorSidetool`](#editorsidetool) \| `undefined`\>
 
 Registry of editor sidetools that appear in the block editor's sidebar.
 These tools provide additional functionality in the editor sidebar.
@@ -5168,7 +5336,7 @@ if (orca.state.globalSearchOpened) {
 
 ###### headbarButtons
 
-> **headbarButtons**: `Record`\<`string`, `undefined` \| () => `ReactElement`\>
+> **headbarButtons**: `Record`\<`string`, () => `React.ReactElement` \| `undefined`\>
 
 Registry of custom buttons registered for the header bar.
 Each entry contains a render function that returns a React element.
@@ -5182,7 +5350,7 @@ const hasMyButton = !!orca.state.headbarButtons["myplugin.syncButton"]
 
 ###### inlineConverters
 
-> **inlineConverters**: `Record`\<`string`, `undefined` \| `Record`\<`string`, (`content`) => `string` \| `Promise`\<`string`\>\>\>
+> **inlineConverters**: `Record`\<`string`, `Record`\<`string`, (`content`) => `string` \| `Promise`\<`string`\>\> \| `undefined`\>
 
 Registry of inline content converters that transform inline content to different formats.
 Organized as a nested record with format as the first key and content type as the second.
@@ -5265,6 +5433,20 @@ This is used to implement the forward button functionality in the UI.
 const canGoForward = orca.state.panelForwardHistory.length > 0
 ```
 
+###### panelRenderers
+
+> **panelRenderers**: `Record`\<`string`, `any`\>
+
+Registry of panel renderer components used to render different panel types.
+Each key is a panel type (e.g., "journal", "block"), and the value is the React component used to render it.
+
+###### Example
+
+```ts
+// Get the renderer for a specific panel type
+const journalPanelRenderer = orca.state.panelRenderers["journal"]
+```
+
 ###### panels
 
 > **panels**: [`RowPanel`](#rowpanel)
@@ -5283,7 +5465,7 @@ console.log(`Number of child panels: ${rootPanel.children.length}`)
 
 ###### plugins
 
-> **plugins**: `Record`\<`string`, `undefined` \| [`Plugin`](#plugin)\>
+> **plugins**: `Record`\<`string`, [`Plugin`](#plugin) \| `undefined`\>
 
 Registry of all installed plugins, indexed by their names.
 Each entry contains the plugin metadata and its loaded module if active.
@@ -5357,7 +5539,7 @@ if (orca.state.settingsOpened) {
 
 ###### shortcuts
 
-> **shortcuts**: `Record`\<`string`, `undefined` \| `string`\>
+> **shortcuts**: `Record`\<`string`, `string` \| `undefined`\>
 
 Registry of keyboard shortcuts, mapping shortcut strings to command IDs.
 This defines the current keyboard bindings in the application.
@@ -5389,7 +5571,7 @@ if (orca.state.sidebarTab === "tags") {
 
 ###### slashCommands
 
-> **slashCommands**: `Record`\<`string`, `undefined` \| [`SlashCommandWithPinyin`](#slashcommandwithpinyin)\>
+> **slashCommands**: `Record`\<`string`, [`SlashCommandWithPinyin`](#slashcommandwithpinyin) \| `undefined`\>
 
 Registry of slash commands available in the editor, indexed by their IDs.
 Each command includes pinyin data for search functionality.
@@ -5403,7 +5585,7 @@ const hasInsertChartCommand = !!orca.state.slashCommands["myplugin.insertChart"]
 
 ###### tagMenuCommands
 
-> **tagMenuCommands**: `Record`\<`string`, `undefined` \| [`TagMenuCommand`](#tagmenucommand)\>
+> **tagMenuCommands**: `Record`\<`string`, [`TagMenuCommand`](#tagmenucommand) \| `undefined`\>
 
 Registry of tag menu commands that appear in tag context menus.
 These commands provide custom actions for tags.
@@ -5432,7 +5614,7 @@ if (orca.state.themeMode === "dark") {
 
 ###### themes
 
-> **themes**: `Record`\<`string`, `undefined` \| `string`\>
+> **themes**: `Record`\<`string`, `string` \| `undefined`\>
 
 Registry of installed themes, mapping theme names to CSS file paths.
 This defines all available themes that can be selected.
@@ -5446,7 +5628,7 @@ const oceanThemePath = orca.state.themes["Ocean Blue"]
 
 ###### toolbarButtons
 
-> **toolbarButtons**: `Record`\<`string`, `undefined` \| [`ToolbarButton`](#toolbarbutton) \| [`ToolbarButton`](#toolbarbutton)[]\>
+> **toolbarButtons**: `Record`\<`string`, [`ToolbarButton`](#toolbarbutton) \| [`ToolbarButton`](#toolbarbutton)[] \| `undefined`\>
 
 Registry of toolbar buttons or button groups registered for the editor toolbar.
 Each entry can be a single button configuration or an array of related buttons.
@@ -5836,7 +6018,7 @@ const iconUrl = orca.utils.getAssetPath(iconSrc)
 
 ###### getCursorDataFromRange()
 
-> **getCursorDataFromRange**: (`range`) => `null` \| [`CursorData`](#cursordata)
+> **getCursorDataFromRange**: (`range`) => [`CursorData`](#cursordata)
 
 Converts a DOM Range object into Orca's internal CursorData format.
 
@@ -5844,13 +6026,13 @@ Converts a DOM Range object into Orca's internal CursorData format.
 
 ###### range
 
-The DOM Range object (e.g., from selection.getRangeAt(0))
+`Range`
 
-`undefined` | `Range`
+The DOM Range object (e.g., from selection.getRangeAt(0))
 
 ###### Returns
 
-`null` \| [`CursorData`](#cursordata)
+[`CursorData`](#cursordata)
 
 The corresponding CursorData object, or null if the range is invalid or outside the editor.
 
@@ -5866,7 +6048,7 @@ if (selection && selection.rangeCount > 0) {
 
 ###### getCursorDataFromSelection()
 
-> **getCursorDataFromSelection**: (`selection`) => `null` \| [`CursorData`](#cursordata)
+> **getCursorDataFromSelection**: (`selection`) => [`CursorData`](#cursordata)
 
 Converts a DOM Selection object into Orca's internal CursorData format.
 
@@ -5874,13 +6056,13 @@ Converts a DOM Selection object into Orca's internal CursorData format.
 
 ###### selection
 
-The DOM Selection object (e.g., from window.getSelection())
+`Selection`
 
-`null` | `Selection`
+The DOM Selection object (e.g., from window.getSelection())
 
 ###### Returns
 
-`null` \| [`CursorData`](#cursordata)
+[`CursorData`](#cursordata)
 
 The corresponding CursorData object, or null if the selection is invalid or outside the editor.
 
@@ -5982,7 +6164,7 @@ ID of the panel that was active at this history point
 
 ##### view
 
-> **view**: [`PanelView`](#panelview)
+> **view**: `string`
 
 The view type that was displayed
 
@@ -6075,7 +6257,7 @@ Whether to match blocks with a specific creation date
 
 ###### op?
 
-> `optional` **op**: `2` \| `1` \| `7` \| `8` \| `10` \| `9`
+> `optional` **op**: `1` \| `2` \| `7` \| `8` \| `9` \| `10`
 
 ###### value?
 
@@ -6131,7 +6313,7 @@ Whether to match blocks with a specific modification date
 
 ###### op?
 
-> `optional` **op**: `2` \| `1` \| `7` \| `8` \| `10` \| `9`
+> `optional` **op**: `1` \| `2` \| `7` \| `8` \| `9` \| `10`
 
 ###### value?
 
@@ -6167,7 +6349,7 @@ Whether to match blocks with a specific number of back references
 
 ###### op?
 
-> `optional` **op**: `2` \| `1` \| `7` \| `8` \| `10` \| `9`
+> `optional` **op**: `1` \| `2` \| `7` \| `8` \| `9` \| `10`
 
 ###### value?
 
@@ -6181,7 +6363,7 @@ Whether to match blocks with a specific creation date
 
 ###### op?
 
-> `optional` **op**: `2` \| `1` \| `7` \| `8` \| `10` \| `9`
+> `optional` **op**: `1` \| `2` \| `7` \| `8` \| `9` \| `10`
 
 ###### value?
 
@@ -6225,7 +6407,7 @@ Whether to match blocks with a specific modification date
 
 ###### op?
 
-> `optional` **op**: `2` \| `1` \| `7` \| `8` \| `10` \| `9`
+> `optional` **op**: `1` \| `2` \| `7` \| `8` \| `9` \| `10`
 
 ###### value?
 
@@ -6288,7 +6470,7 @@ End date for the calendar range
 
 ###### field
 
-> **field**: `"journal"` \| `"created"` \| `"modified"`
+> **field**: `"created"` \| `"modified"` \| `"journal"`
 
 Field to use for calendar date (created/modified/journal date)
 
@@ -6381,7 +6563,7 @@ End date for the calendar range
 
 ###### field
 
-> **field**: `"journal"` \| `"created"` \| `"modified"`
+> **field**: `"created"` \| `"modified"` \| `"journal"`
 
 Field to use for calendar date (created/modified/journal date)
 
@@ -6682,6 +6864,12 @@ ID of the block that should be referenced
 
 Kind identifier for reference queries (6)
 
+##### selfOnly?
+
+> `optional` **selfOnly**: `boolean`
+
+Only show direct references, not references to included tags
+
 ***
 
 ### QueryTag
@@ -6742,6 +6930,12 @@ The tag name to match
 
 Optional property conditions for the tag
 
+##### selfOnly?
+
+> `optional` **selfOnly**: `boolean`
+
+Only show direct tag references, not references to included tags
+
 ***
 
 ### QueryTagProperty
@@ -6758,7 +6952,7 @@ Name of the tag property
 
 ##### op?
 
-> `optional` **op**: `2` \| `4` \| `3` \| `1` \| `5` \| `6` \| `7` \| `8` \| `10` \| `9` \| `11` \| `12`
+> `optional` **op**: `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12`
 
 Operation to perform (equals, not equals, etc.)
 
@@ -7021,7 +7215,7 @@ Icon identifier (usually a Tabler Icons class)
 
 ##### menu()?
 
-> `optional` **menu**: (`close`, `state`?) => `ReactNode`
+> `optional` **menu**: (`close`, `state?`) => `ReactNode`
 
 Optional function to render a dropdown menu when clicked
 
@@ -7074,7 +7268,7 @@ Whether the panel is locked and cannot be closed or resized
 
 ##### view
 
-> **view**: [`PanelView`](#panelview)
+> **view**: `string`
 
 Type of view displayed in this panel (journal or block)
 
@@ -7189,7 +7383,7 @@ Content fragments in the block
 Command configuration for the block context menu.
 Can be configured to work with single blocks or multiple selected blocks.
 
-#### Type declaration
+#### Type Declaration
 
 \{ `render`: (`blockId`, `rootBlockId`, `close`) => `React.ReactNode`; `worksOnMultipleBlocks`: `false`; \}
 
@@ -7275,7 +7469,7 @@ Block rendering modes
 
 ### Choice
 
-> **Choice** = \{ `c`: `string`; `n`: `string`; \} \| `string`
+> **Choice** = \{ `c?`: `string`; `n`: `string`; \} \| `string`
 
 Type representing a choice with an optional color.
 Can be a string or an object with name and optional color.
@@ -7342,6 +7536,22 @@ The value of the content fragment
 
 ***
 
+### ConvertContext
+
+> **ConvertContext** = `object`
+
+Context for block conversion, used to track export scope.
+
+#### Properties
+
+##### exportRootId?
+
+> `optional` **exportRootId**: [`DbId`](#dbid)
+
+The root block ID of the export scope
+
+***
+
 ### DbId
 
 > **DbId** = `number`
@@ -7360,7 +7570,7 @@ Arguments passed to editor commands.
 
 ### EditorCommandFn()
 
-> **EditorCommandFn** = (`editor`, ...`args`) => \{ `ret`: `any`; `undoArgs`: `any`; \} \| `null` \| `Promise`\<\{ `ret`: `any`; `undoArgs`: `any`; \} \| `null`\>
+> **EditorCommandFn** = (`editor`, ...`args`) => \{ `ret?`: `any`; `undoArgs`: `any`; \} \| `null` \| `Promise`\<\{ `ret?`: `any`; `undoArgs?`: `any`; \} \| `null`\>
 
 Editor command function type that defines functions that can be executed in the editor context.
 These commands support undo/redo functionality by returning undo arguments.
@@ -7377,7 +7587,7 @@ These commands support undo/redo functionality by returning undo arguments.
 
 #### Returns
 
-\{ `ret`: `any`; `undoArgs`: `any`; \} \| `null` \| `Promise`\<\{ `ret`: `any`; `undoArgs`: `any`; \} \| `null`\>
+\{ `ret?`: `any`; `undoArgs`: `any`; \} \| `null` \| `Promise`\<\{ `ret?`: `any`; `undoArgs?`: `any`; \} \| `null`\>
 
 ***
 
@@ -7412,9 +7622,17 @@ Function to render the sidetool, receiving the root block ID and panel ID.
 
 ***
 
+### PanelProps
+
+> **PanelProps** = `object`
+
+Properties for rendering a panel component.
+
+***
+
 ### PanelView
 
-> **PanelView** = `"journal"` \| `"block"`
+> **PanelView** = `string`
 
 Types of views that can be displayed in a panel.
 Currently supports journal view (for displaying daily notes) and block view (for displaying block content).
@@ -7780,7 +7998,7 @@ Adds custom actions to tag right-click menus.
 
 ##### render()
 
-> **render**: (`tagBlock`, `close`, `tagRef`?) => `React.ReactElement`
+> **render**: (`tagBlock`, `close`, `tagRef?`) => `React.ReactElement`
 
 Function to render the menu item, receiving the tag block, the close function
 and the tag reference if called on a tag instance.
