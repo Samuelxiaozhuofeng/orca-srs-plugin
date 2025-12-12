@@ -10,6 +10,7 @@
 import type { CursorData, Block, ContentFragment } from "../orca.d.ts"
 import { BlockWithRepr } from "./blockUtils"
 import { writeInitialClozeSrsState } from "./storage"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 从 ContentFragment 数组中提取当前最大的 cloze 编号
@@ -226,7 +227,7 @@ export async function createCloze(
 
   // 【关键】先检查是否有 #card 标签
   const hasCardTagBefore = !!block.refs?.some(
-    ref => ref.type === 2 && ref.alias === "card"
+    ref => ref.type === 2 && isCardTag(ref.alias)
   )
 
   try {
@@ -255,7 +256,7 @@ export async function createCloze(
     // 处理 #card 标签
     const currentBlock = orca.state.blocks[blockId] as Block
     const hasCardTagAfter = currentBlock.refs?.some(
-      ref => ref.type === 2 && ref.alias === "card"
+      ref => ref.type === 2 && isCardTag(ref.alias)
     )
 
     if (!hasCardTagAfter) {
@@ -274,7 +275,7 @@ export async function createCloze(
     } else if (!hasCardTagBefore) {
       try {
         const cardRef = currentBlock.refs?.find(
-          ref => ref.type === 2 && ref.alias === "card"
+          ref => ref.type === 2 && isCardTag(ref.alias)
         )
         if (cardRef) {
           await orca.commands.invokeEditorCommand(

@@ -10,6 +10,7 @@
 import type { CursorData, Block, ContentFragment, DbId } from "../orca.d.ts"
 import type { BlockWithRepr } from "./blockUtils"
 import { writeInitialDirectionSrsState } from "./storage"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 方向类型
@@ -116,7 +117,7 @@ export async function insertDirection(
 
     // 添加 #card 标签，type=direction
     const hasCardTag = block.refs?.some(
-      (ref) => ref.type === 2 && ref.alias === "card"
+      (ref) => ref.type === 2 && isCardTag(ref.alias)
     )
 
     if (!hasCardTag) {
@@ -130,7 +131,7 @@ export async function insertDirection(
     } else {
       // 更新已有标签的 type 属性
       const cardRef = block.refs?.find(
-        (ref) => ref.type === 2 && ref.alias === "card"
+        (ref) => ref.type === 2 && isCardTag(ref.alias)
       )
       if (cardRef) {
         await orca.commands.invokeEditorCommand(

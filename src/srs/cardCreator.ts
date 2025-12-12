@@ -8,6 +8,7 @@ import type { Block, CursorData } from "../orca.d.ts"
 import { BlockWithRepr, resolveFrontBack } from "./blockUtils"
 import { extractDeckName, extractCardType } from "./deckUtils"
 import { writeInitialSrsState } from "./storage"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 扫描所有带 #card 标签的块，并将它们转换为 SRS 卡片
@@ -68,7 +69,7 @@ export async function scanCardsFromTags(pluginName: string) {
                 return false
               }
               const tagAlias = ref.alias || ""
-              return tagAlias === "card"
+              return isCardTag(tagAlias)
             })
             
             return hasCardTag
@@ -194,7 +195,7 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
   // 检查块是否已经有 #card 标签
   const hasCardTag = block.refs?.some(ref => 
     ref.type === 2 &&      // RefType.Property（标签引用）
-    ref.alias === "card"   // 标签名称为 "card"
+    isCardTag(ref.alias)   // 标签名称为 "card"（大小写不敏感）
   )
   
   console.log(`[${pluginName}] 是否已有 #card 标签: ${hasCardTag}`)

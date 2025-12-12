@@ -6,6 +6,7 @@
 
 import type { Block } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats } from "./types"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 卡片类型
@@ -41,7 +42,7 @@ export function extractCardType(block: Block): CardType {
   // 1. 找到 #card 标签引用
   const cardRef = block.refs.find(ref =>
     ref.type === 2 &&      // RefType.Property（标签引用）
-    ref.alias === "card"   // 标签名称为 "card"
+    isCardTag(ref.alias)   // 标签名称为 "card"（大小写不敏感）
   )
 
   // 边界情况：没有找到 #card 标签引用
@@ -112,7 +113,7 @@ export function extractDeckName(block: Block): string {
   // 1. 找到 #card 标签引用
   const cardRef = block.refs.find(ref =>
     ref.type === 2 &&      // RefType.Property（标签引用）
-    ref.alias === "card"   // 标签名称为 "card"
+    isCardTag(ref.alias)   // 标签名称为 "card"（大小写不敏感）
   )
 
   // 边界情况：没有找到 #card 标签引用

@@ -19,6 +19,7 @@ import {
 } from "./storage"
 import { getAllClozeNumbers } from "./clozeUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 收集所有 SRS 块（带 #card 标签或 _repr.type="srs.card" 的块）
@@ -26,53 +27,53 @@ import { extractDirectionInfo, getDirectionList } from "./directionUtils"
  * @returns SRS 块数组
  */
 export async function collectSrsBlocks(pluginName: string = "srs-plugin"): Promise<BlockWithRepr[]> {
-  // 尝试直接查询 #card 标签
-  let tagged = (await orca.invokeBackend("get-blocks-with-tags", ["card"])) as BlockWithRepr[] | undefined
+  // 尝试直接查询 #card 标签（同时查询多种大小写变体）
+  const possibleTags = ["card", "Card"] // 支持 #card 和 #Card
+  let tagged: BlockWithRepr[] = []
+  
+  for (const tag of possibleTags) {
+    try {
+      const result = await orca.invokeBackend("get-blocks-with-tags", [tag]) as BlockWithRepr[] | undefined
+      if (result && result.length > 0) {
+        tagged = [...tagged, ...result]
+      }
+    } catch (e) {
+      console.log(`[${pluginName}] collectSrsBlocks: 查询标签 "${tag}" 失败:`, e)
+    }
+  }
+  
+  // 去重（同一个块可能被多次查询到）
+  const uniqueTagged = new Map<number, BlockWithRepr>()
+  for (const block of tagged) {
+    uniqueTagged.set(block.id, block)
+  }
+  tagged = Array.from(uniqueTagged.values())
   
   // 如果直接查询无结果，使用备用方案获取所有块并过滤
-  if (!tagged || tagged.length === 0) {
+  if (tagged.length === 0) {
     console.log(`[${pluginName}] collectSrsBlocks: 直接查询无结果，使用备用方案`)
     try {
-      // 备用方案1：尝试获取所有块
+      // 备用方案：尝试获取所有块并手动过滤
       const allBlocks = await orca.invokeBackend("get-all-blocks") as Block[] || []
       console.log(`[${pluginName}] collectSrsBlocks: get-all-blocks 返回了 ${allBlocks.length} 个块`)
       
-      // 备用方案2：查询 #card 标签
-      const possibleTags = ["card"]  // 移除所有 card/ 格式，只支持 #card
-      let foundBlocks: Block[] = []
-
-      for (const tag of possibleTags) {
-        try {
-          const taggedWithSpecific = await orca.invokeBackend("get-blocks-with-tags", [tag]) as Block[] || []
-          console.log(`[${pluginName}] collectSrsBlocks: 标签 "${tag}" 找到 ${taggedWithSpecific.length} 个块`)
-          foundBlocks = [...foundBlocks, ...taggedWithSpecific]
-        } catch (e) {
-          console.log(`[${pluginName}] collectSrsBlocks: 查询标签 "${tag}" 失败:`, e)
+      // 手动过滤所有块，使用大小写不敏感的 isCardTag 函数
+      tagged = allBlocks.filter(block => {
+        if (!block.refs || block.refs.length === 0) {
+          return false
         }
-      }
-      
-      if (foundBlocks.length > 0) {
-        tagged = foundBlocks as BlockWithRepr[]
-        console.log(`[${pluginName}] collectSrsBlocks: 多标签查询找到 ${tagged.length} 个带 #card 标签的块`)
-      } else {
-        // 最后备用方案：手动过滤所有块
-        tagged = allBlocks.filter(block => {
-          if (!block.refs || block.refs.length === 0) {
+        
+        const hasCardTag = block.refs.some(ref => {
+          if (ref.type !== 2) {
             return false
           }
-          
-          const hasCardTag = block.refs.some(ref => {
-            if (ref.type !== 2) {
-              return false
-            }
-            const tagAlias = ref.alias || ""
-            return tagAlias === "card"  // 只匹配 #card，不支持 #card/xxx
-          })
-          
-          return hasCardTag
-        }) as BlockWithRepr[]
-        console.log(`[${pluginName}] collectSrsBlocks: 手动过滤找到 ${tagged.length} 个带 #card 标签的块`)
-      }
+          return isCardTag(ref.alias) // 大小写不敏感匹配
+        })
+        
+        return hasCardTag
+      }) as BlockWithRepr[]
+      console.log(`[${pluginName}] collectSrsBlocks: 手动过滤找到 ${tagged.length} 个带 #card 标签的块`)
+      
     } catch (error) {
       console.error(`[${pluginName}] collectSrsBlocks 备用方案失败:`, error)
       tagged = []

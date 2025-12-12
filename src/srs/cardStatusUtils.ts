@@ -7,6 +7,7 @@
  */
 
 import type { DbId, Block } from "../orca.d.ts"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 卡片状态类型
@@ -35,7 +36,7 @@ export function extractCardStatus(block: Block): CardStatus {
   // 1. 找到 #card 标签引用
   const cardRef = block.refs.find(ref =>
     ref.type === 2 &&      // RefType.Property（标签引用）
-    ref.alias === "card"   // 标签名称为 "card"
+    isCardTag(ref.alias)   // 标签名称为 "card"（大小写不敏感）
   )
 
   // 边界情况：没有找到 #card 标签引用
@@ -95,7 +96,7 @@ export async function suspendCard(blockId: DbId): Promise<void> {
 
     // 找到 #card 标签引用
     const cardRef = block.refs?.find(
-      ref => ref.type === 2 && ref.alias === "card"
+      ref => ref.type === 2 && isCardTag(ref.alias)
     )
 
     if (!cardRef) {
@@ -136,7 +137,7 @@ export async function unsuspendCard(blockId: DbId): Promise<void> {
 
     // 找到 #card 标签引用
     const cardRef = block.refs?.find(
-      ref => ref.type === 2 && ref.alias === "card"
+      ref => ref.type === 2 && isCardTag(ref.alias)
     )
 
     if (!cardRef) {
