@@ -47,6 +47,7 @@ export default function DirectionCardRenderer({
   onJumpToCard
 }: DirectionCardRendererProps) {
   const React = window.React
+  const [isHovered, setIsHovered] = React.useState(false)
 
   // 从 orca.state 获取 block 内容
   const block = orca.state.blocks[card.id]
@@ -121,196 +122,148 @@ export default function DirectionCardRenderer({
         display: "flex",
         justifyContent: "center",
         alignItems: "flex-start",
-        paddingTop: "24px"
+        paddingTop: "32px"
       }}>
-        <div style={{
-          backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "16px",
-          padding: "28px",
-          width: "100%",
-          maxWidth: "720px",
-          boxShadow: "0 6px 32px rgba(0,0,0,0.12)"
-        }}>
+        {/* 极简卡片容器 */}
+        <div 
+          style={{
+            backgroundColor: "var(--orca-color-bg-1)",
+            borderRadius: "12px",
+            padding: "32px",
+            width: "100%",
+            maxWidth: "640px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+            position: "relative"
+          }}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
           {/* 块数据缺失警告 */}
           {renderBlockMissingWarning()}
           
-          {/* 顶部工具栏 */}
+          {/* 悬浮工具栏 */}
           <div style={{
+            position: "absolute",
+            top: "12px",
+            right: "12px",
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px"
+            gap: "4px",
+            opacity: isHovered ? 1 : 0,
+            transition: "opacity 0.2s ease",
+            pointerEvents: isHovered ? "auto" : "none"
           }}>
-            {/* 方向标签 */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 14px",
-              backgroundColor: `${directionColor}15`,
-              borderRadius: "8px",
-              fontSize: "13px",
-              color: directionColor,
-              fontWeight: 600
-            }}>
-              <i className={card.directionType === "forward" ? "ti ti-arrow-right" : "ti ti-arrow-left"} style={{ fontSize: "16px" }} />
-              <span>{directionLabel}</span>
-            </div>
-
-            {/* 操作按钮 */}
-            <div style={{
-              display: "flex",
-              gap: "8px"
-            }}>
-              {onBury && (
-                <Button
-                  variant="soft"
-                  onClick={onBury}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: "13px",
-                    transition: "transform 0.1s ease"
-                  }}
-                  title="埋藏到明天 (B)"
-                >
-                  <i className="ti ti-clock-pause" style={{ marginRight: "4px" }} />
-                  埋藏
-                </Button>
-              )}
-              {onSuspend && (
-                <Button
-                  variant="soft"
-                  onClick={onSuspend}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: "13px",
-                    transition: "transform 0.1s ease"
-                  }}
-                  title="暂停卡片 (S)"
-                >
-                  <i className="ti ti-player-pause" style={{ marginRight: "4px" }} />
-                  暂停
-                </Button>
-              )}
-              {onJumpToCard && (
-                <Button
-                  variant="soft"
-                  onClick={onJumpToCard}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: "13px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    transition: "transform 0.1s ease"
-                  }}
-                >
-                  <i className="ti ti-external-link" />
-                  跳转
-                </Button>
-              )}
-            </div>
+            {onBury && (
+              <Button
+                variant="soft"
+                onClick={onBury}
+                style={{
+                  padding: "6px",
+                  fontSize: "14px",
+                  minWidth: "32px",
+                  borderRadius: "8px"
+                }}
+                title="埋藏 (B)"
+              >
+                <i className="ti ti-clock-pause" />
+              </Button>
+            )}
+            {onSuspend && (
+              <Button
+                variant="soft"
+                onClick={onSuspend}
+                style={{
+                  padding: "6px",
+                  fontSize: "14px",
+                  minWidth: "32px",
+                  borderRadius: "8px"
+                }}
+                title="暂停 (S)"
+              >
+                <i className="ti ti-player-pause" />
+              </Button>
+            )}
+            {onJumpToCard && (
+              <Button
+                variant="soft"
+                onClick={onJumpToCard}
+                style={{
+                  padding: "6px",
+                  fontSize: "14px",
+                  minWidth: "32px",
+                  borderRadius: "8px"
+                }}
+                title="跳转"
+              >
+                <i className="ti ti-external-link" />
+              </Button>
+            )}
           </div>
 
-          {/* 方向卡内容区域 - 水平一行显示 */}
+          {/* 方向卡内容 - 极简水平布局 */}
           <div 
             className={showAnswer ? "srs-answer-reveal" : ""}
             style={{
-              marginBottom: "24px",
-              padding: "36px 28px",
-              backgroundColor: "var(--orca-color-bg-2)",
-              borderRadius: "12px",
-              animation: showAnswer ? "srsAnswerFadeIn 0.3s ease-out" : "none"
-            }}
-          >
-            <div style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: "20px",
-              flexWrap: "wrap"
+              minHeight: "100px",
+              animation: showAnswer ? "srsAnswerFadeIn 0.3s ease-out" : "none"
+            }}
+          >
+            {/* 左边内容 */}
+            <div style={{
+              flex: "1 1 auto",
+              maxWidth: "260px",
+              fontSize: leftContent === "❓" ? "32px" : "20px",
+              lineHeight: 1.8,
+              color: leftContent === "❓" 
+                ? "var(--orca-color-text-3)" 
+                : "var(--orca-color-text-1)",
+              textAlign: "center",
+              fontWeight: 400
             }}>
-              {/* 左边内容 */}
-              <div style={{
-                flex: "1 1 auto",
-                minWidth: "120px",
-                maxWidth: "300px",
-                padding: "20px 24px",
-                backgroundColor: leftContent === "❓" 
-                  ? "var(--orca-color-warning-1)" 
-                  : "var(--orca-color-bg-0)",
-                borderRadius: "12px",
-                border: leftContent === "❓"
-                  ? "2px dashed var(--orca-color-warning-5)"
-                  : "1px solid var(--orca-color-border-2)",
-                textAlign: "center",
-                transition: "all 0.2s ease"
-              }}>
-                <div style={{
-                  fontSize: leftContent === "❓" ? "36px" : "22px",
-                  lineHeight: 1.8,
-                  color: leftContent === "❓" 
-                    ? "var(--orca-color-warning-6)" 
-                    : "var(--orca-color-text-1)",
-                  wordBreak: "break-word",
-                  fontWeight: leftContent === "❓" ? 400 : 500
-                }}>
-                  {leftContent}
-                </div>
-              </div>
+              {leftContent}
+            </div>
 
-              {/* 箭头 */}
-              <div style={{
-                fontSize: "32px",
-                color: directionColor,
-                fontWeight: 600,
-                flexShrink: 0
-              }}>
-                {arrowSymbol}
-              </div>
+            {/* 箭头 - 轻量化 */}
+            <div style={{
+              fontSize: "24px",
+              color: "var(--orca-color-text-3)",
+              fontWeight: 300,
+              flexShrink: 0,
+              opacity: 0.6
+            }}>
+              {arrowSymbol}
+            </div>
 
-              {/* 右边内容 */}
-              <div style={{
-                flex: "1 1 auto",
-                minWidth: "120px",
-                maxWidth: "300px",
-                padding: "20px 24px",
-                backgroundColor: rightContent === "❓" 
-                  ? "var(--orca-color-warning-1)" 
-                  : (showAnswer ? "var(--orca-color-primary-1)" : "var(--orca-color-bg-0)"),
-                borderRadius: "12px",
-                border: rightContent === "❓"
-                  ? "2px dashed var(--orca-color-warning-5)"
-                  : showAnswer 
-                    ? "2px solid var(--orca-color-primary-4)"
-                    : "1px solid var(--orca-color-border-2)",
-                textAlign: "center",
-                transition: "all 0.2s ease"
-              }}>
-                <div style={{
-                  fontSize: rightContent === "❓" ? "36px" : "22px",
-                  lineHeight: 1.8,
-                  color: rightContent === "❓" 
-                    ? "var(--orca-color-warning-6)" 
-                    : "var(--orca-color-text-1)",
-                  wordBreak: "break-word",
-                  fontWeight: rightContent === "❓" ? 400 : 500
-                }}>
-                  {rightContent}
-                </div>
-              </div>
+            {/* 右边内容 */}
+            <div style={{
+              flex: "1 1 auto",
+              maxWidth: "260px",
+              fontSize: rightContent === "❓" ? "32px" : "20px",
+              lineHeight: 1.8,
+              color: rightContent === "❓" 
+                ? "var(--orca-color-text-3)" 
+                : "var(--orca-color-text-1)",
+              textAlign: "center",
+              fontWeight: 400
+            }}>
+              {rightContent}
             </div>
           </div>
 
           {/* 底部按钮区域 */}
           {!showAnswer ? (
-            <div style={{ textAlign: "center" }}>
+            <div style={{ textAlign: "center", marginTop: "32px" }}>
               <Button
                 variant="solid"
                 onClick={onShowAnswer}
                 style={{
-                  padding: "12px 32px",
-                  fontSize: "15px"
+                  padding: "14px 48px",
+                  fontSize: "16px",
+                  borderRadius: "24px",
+                  fontWeight: 500
                 }}
               >
                 显示答案
@@ -318,91 +271,73 @@ export default function DirectionCardRenderer({
             </div>
           ) : (
             <>
-              {/* 评分按钮组 */}
+              {/* 评分按钮 - 仅时间 */}
               <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
-                gap: "8px"
+                display: "flex",
+                justifyContent: "center",
+                gap: "8px",
+                marginTop: "32px"
               }}>
                 <Button
                   variant="soft"
                   onClick={() => handleGrade("again")}
                   style={{
-                    padding: "12px 8px",
+                    padding: "10px 16px",
                     fontSize: "14px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px"
+                    fontWeight: 500,
+                    borderRadius: "20px",
+                    color: "var(--orca-color-danger-6)",
+                    backgroundColor: "var(--orca-color-danger-1)"
                   }}
                 >
-                  <span style={{ fontWeight: 600 }}>{formatInterval(intervals.again)}</span>
-                  <span style={{ fontSize: "12px", opacity: 0.8 }}>重来</span>
+                  {formatInterval(intervals.again)}
                 </Button>
 
                 <Button
                   variant="soft"
                   onClick={() => handleGrade("hard")}
                   style={{
-                    padding: "12px 8px",
+                    padding: "10px 16px",
                     fontSize: "14px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px"
+                    fontWeight: 500,
+                    borderRadius: "20px",
+                    color: "var(--orca-color-warning-6)",
+                    backgroundColor: "var(--orca-color-warning-1)"
                   }}
                 >
-                  <span style={{ fontWeight: 600 }}>{formatInterval(intervals.hard)}</span>
-                  <span style={{ fontSize: "12px", opacity: 0.8 }}>困难</span>
+                  {formatInterval(intervals.hard)}
                 </Button>
 
                 <Button
                   variant="solid"
                   onClick={() => handleGrade("good")}
                   style={{
-                    padding: "12px 8px",
-                    fontSize: "14px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px",
-                    opacity: 0.9
+                    padding: "10px 20px",
+                    fontSize: "15px",
+                    fontWeight: 600,
+                    borderRadius: "20px"
                   }}
                 >
-                  <span style={{ fontWeight: 600 }}>{formatInterval(intervals.good)}</span>
-                  <span style={{ fontSize: "12px", opacity: 0.8 }}>良好</span>
+                  {formatInterval(intervals.good)}
                 </Button>
 
                 <Button
-                  variant="solid"
+                  variant="soft"
                   onClick={() => handleGrade("easy")}
                   style={{
-                    padding: "12px 8px",
+                    padding: "10px 16px",
                     fontSize: "14px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px",
-                    opacity: 0.9
+                    fontWeight: 500,
+                    borderRadius: "20px",
+                    color: "var(--orca-color-primary-6)",
+                    backgroundColor: "var(--orca-color-primary-1)"
                   }}
                 >
-                  <span style={{ fontWeight: 600 }}>{formatInterval(intervals.easy)}</span>
-                  <span style={{ fontSize: "12px", opacity: 0.8 }}>简单</span>
+                  {formatInterval(intervals.easy)}
                 </Button>
               </div>
             </>
           )}
-
-          {/* 提示文字 */}
-          <div style={{
-            marginTop: "16px",
-            textAlign: "center",
-            fontSize: "12px",
-            color: "var(--orca-color-text-2)",
-            opacity: 0.7
-          }}>
-            {!showAnswer ? "点击\"显示答案\"查看隐藏内容" : "根据记忆程度选择评分"}
-          </div>
         </div>
       </div>
     </div>
