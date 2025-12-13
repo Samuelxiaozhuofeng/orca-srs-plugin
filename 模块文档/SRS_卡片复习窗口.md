@@ -159,6 +159,93 @@ stateDiagram-v2
 
 > **注意**：此功能仅适用于 Basic 卡片。Cloze 填空卡和 Direction 方向卡不涉及子块结构，不受影响。
 
+### 视觉层次与交互反馈优化（2025-12-13 更新）
+
+#### 视觉层次增强
+
+**卡片容器优化**：
+
+| 属性     | 旧值                         | 新值                          |
+| -------- | ---------------------------- | ----------------------------- |
+| 圆角     | `12px`                       | `16px`                        |
+| 内边距   | `24px`                       | `28px`                        |
+| 最大宽度 | `700px`                      | `720px`                       |
+| 阴影     | `0 4px 20px rgba(0,0,0,0.1)` | `0 6px 32px rgba(0,0,0,0.12)` |
+
+**内容区域优化**：
+
+| 属性          | 旧值   | 新值        |
+| ------------- | ------ | ----------- |
+| 题目/答案字号 | `18px` | `22px`      |
+| 行高          | `1.6`  | `1.8`       |
+| 内边距        | `16px` | `20px 24px` |
+| 圆角          | `8px`  | `10px`      |
+
+**工具栏按钮增强**：
+
+- 添加图标：埋藏（ti-clock-pause）、暂停（ti-player-pause）、跳转（ti-external-link）
+- 添加过渡动画：`transition: transform 0.1s ease`
+
+#### 交互反馈增强
+
+**CSS 动画注入**：
+
+```css
+/* 答案渐显动画 */
+@keyframes srsAnswerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 卡片滑出动画 */
+@keyframes srsCardSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-60px) scale(0.95);
+  }
+}
+
+/* 卡片滑入动画 */
+@keyframes srsCardSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+```
+
+**卡片过渡动画**：
+
+- 评分后卡片向左滑出（250ms）
+- 新卡片从右侧滑入（300ms）
+- 状态管理：`isCardExiting` 控制动画类名
+
+**按钮点击反馈**：
+
+- 点击时缩放：`transform: scale(0.95)`
+- 悬浮时阴影：`box-shadow: 0 2px 8px rgba(0,0,0,0.1)`
+
+**影响的组件**：
+
+- `SrsNewWindowPanel.tsx` - CSS 动画注入和状态管理
+- `BasicCardRenderer.tsx` - 视觉样式优化
+- `ClozeCardRenderer.tsx` - 视觉样式优化
+- `DirectionCardRenderer.tsx` - 视觉样式优化
+
 ### UI 显示优化（2025-12-10 更新）
 
 #### 日期格式简化

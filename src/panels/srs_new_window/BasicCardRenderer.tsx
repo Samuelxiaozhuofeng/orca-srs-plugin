@@ -61,28 +61,30 @@ export default function BasicCardRenderer({
       }}>
         <div style={{
           backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "12px",
-          padding: "24px",
+          borderRadius: "16px",
+          padding: "28px",
           width: "100%",
-          maxWidth: "700px",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.1)"
+          maxWidth: "720px",
+          boxShadow: "0 6px 32px rgba(0,0,0,0.12)"
         }}>
           {/* 顶部工具栏 */}
           <div style={{
             display: "flex",
             justifyContent: "flex-end",
             gap: "8px",
-            marginBottom: "16px"
+            marginBottom: "20px"
           }}>
             <Button
               variant="soft"
               onClick={onBury}
               style={{
                 padding: "6px 12px",
-                fontSize: "13px"
+                fontSize: "13px",
+                transition: "transform 0.1s ease"
               }}
               title="埋藏到明天 (B)"
             >
+              <i className="ti ti-clock-pause" style={{ marginRight: "4px" }} />
               埋藏
             </Button>
             <Button
@@ -90,10 +92,12 @@ export default function BasicCardRenderer({
               onClick={onSuspend}
               style={{
                 padding: "6px 12px",
-                fontSize: "13px"
+                fontSize: "13px",
+                transition: "transform 0.1s ease"
               }}
               title="暂停卡片 (S)"
             >
+              <i className="ti ti-player-pause" style={{ marginRight: "4px" }} />
               暂停
             </Button>
             <Button
@@ -104,33 +108,38 @@ export default function BasicCardRenderer({
                 fontSize: "13px",
                 display: "flex",
                 alignItems: "center",
-                gap: "4px"
+                gap: "4px",
+                transition: "transform 0.1s ease"
               }}
             >
-              跳转到卡片
+              <i className="ti ti-external-link" />
+              跳转
             </Button>
           </div>
 
           {/* 题目区域（使用纯文本） */}
           <div style={{
-            marginBottom: "16px",
-            padding: "16px",
+            marginBottom: "20px",
+            padding: "20px 24px",
             backgroundColor: "var(--orca-color-bg-2)",
-            borderRadius: "8px"
+            borderRadius: "10px"
           }}>
             <div style={{
-              fontSize: "14px",
+              fontSize: "13px",
               fontWeight: "500",
-              color: "var(--orca-color-text-2)",
-              marginBottom: "12px"
+              color: "var(--orca-color-text-3)",
+              marginBottom: "10px",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px"
             }}>
               题目
             </div>
             <div style={{
-              fontSize: "18px",
+              fontSize: "22px",
               color: "var(--orca-color-text-1)",
-              lineHeight: 1.6,
-              whiteSpace: "pre-wrap"
+              lineHeight: 1.8,
+              whiteSpace: "pre-wrap",
+              fontWeight: 500
             }}>
               {card.front || "(无题目内容)"}
             </div>
@@ -153,26 +162,33 @@ export default function BasicCardRenderer({
           ) : (
             <>
               {/* 答案区域（使用纯文本） */}
-              <div style={{
-                marginBottom: "16px",
-                padding: "16px",
-                backgroundColor: "var(--orca-color-bg-2)",
-                borderRadius: "8px",
-                borderLeft: "4px solid var(--orca-color-primary-5)"
-              }}>
+              <div 
+                className="srs-answer-reveal"
+                style={{
+                  marginBottom: "20px",
+                  padding: "20px 24px",
+                  backgroundColor: "var(--orca-color-bg-2)",
+                  borderRadius: "10px",
+                  borderLeft: "4px solid var(--orca-color-primary-5)",
+                  animation: "srsAnswerFadeIn 0.3s ease-out"
+                }}
+              >
                 <div style={{
-                  fontSize: "14px",
+                  fontSize: "13px",
                   fontWeight: "500",
-                  color: "var(--orca-color-text-2)",
-                  marginBottom: "12px"
+                  color: "var(--orca-color-text-3)",
+                  marginBottom: "10px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px"
                 }}>
                   答案
                 </div>
                 <div style={{
-                  fontSize: "18px",
+                  fontSize: "22px",
                   color: "var(--orca-color-text-1)",
-                  lineHeight: 1.6,
-                  whiteSpace: "pre-wrap"
+                  lineHeight: 1.8,
+                  whiteSpace: "pre-wrap",
+                  fontWeight: 500
                 }}>
                   {card.back || "(无答案内容)"}
                 </div>

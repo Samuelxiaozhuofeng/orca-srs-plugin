@@ -125,11 +125,11 @@ export default function DirectionCardRenderer({
       }}>
         <div style={{
           backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "12px",
-          padding: "24px",
+          borderRadius: "16px",
+          padding: "28px",
           width: "100%",
-          maxWidth: "700px",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.1)"
+          maxWidth: "720px",
+          boxShadow: "0 6px 32px rgba(0,0,0,0.12)"
         }}>
           {/* 块数据缺失警告 */}
           {renderBlockMissingWarning()}
@@ -139,21 +139,21 @@ export default function DirectionCardRenderer({
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: "16px"
+            marginBottom: "20px"
           }}>
             {/* 方向标签 */}
             <div style={{
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              padding: "4px 12px",
+              padding: "6px 14px",
               backgroundColor: `${directionColor}15`,
-              borderRadius: "6px",
+              borderRadius: "8px",
               fontSize: "13px",
               color: directionColor,
-              fontWeight: 500
+              fontWeight: 600
             }}>
-              <span>{arrowSymbol}</span>
+              <i className={card.directionType === "forward" ? "ti ti-arrow-right" : "ti ti-arrow-left"} style={{ fontSize: "16px" }} />
               <span>{directionLabel}</span>
             </div>
 
@@ -168,10 +168,12 @@ export default function DirectionCardRenderer({
                   onClick={onBury}
                   style={{
                     padding: "6px 12px",
-                    fontSize: "13px"
+                    fontSize: "13px",
+                    transition: "transform 0.1s ease"
                   }}
                   title="埋藏到明天 (B)"
                 >
+                  <i className="ti ti-clock-pause" style={{ marginRight: "4px" }} />
                   埋藏
                 </Button>
               )}
@@ -181,10 +183,12 @@ export default function DirectionCardRenderer({
                   onClick={onSuspend}
                   style={{
                     padding: "6px 12px",
-                    fontSize: "13px"
+                    fontSize: "13px",
+                    transition: "transform 0.1s ease"
                   }}
                   title="暂停卡片 (S)"
                 >
+                  <i className="ti ti-player-pause" style={{ marginRight: "4px" }} />
                   暂停
                 </Button>
               )}
@@ -197,39 +201,45 @@ export default function DirectionCardRenderer({
                     fontSize: "13px",
                     display: "flex",
                     alignItems: "center",
-                    gap: "4px"
+                    gap: "4px",
+                    transition: "transform 0.1s ease"
                   }}
                 >
-                  跳转到卡片
+                  <i className="ti ti-external-link" />
+                  跳转
                 </Button>
               )}
             </div>
           </div>
 
           {/* 方向卡内容区域 - 水平一行显示 */}
-          <div style={{
-            marginBottom: "24px",
-            padding: "32px 24px",
-            backgroundColor: "var(--orca-color-bg-2)",
-            borderRadius: "8px"
-          }}>
+          <div 
+            className={showAnswer ? "srs-answer-reveal" : ""}
+            style={{
+              marginBottom: "24px",
+              padding: "36px 28px",
+              backgroundColor: "var(--orca-color-bg-2)",
+              borderRadius: "12px",
+              animation: showAnswer ? "srsAnswerFadeIn 0.3s ease-out" : "none"
+            }}
+          >
             <div style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: "16px",
+              gap: "20px",
               flexWrap: "wrap"
             }}>
               {/* 左边内容 */}
               <div style={{
                 flex: "1 1 auto",
-                minWidth: "100px",
-                maxWidth: "280px",
-                padding: "16px 20px",
+                minWidth: "120px",
+                maxWidth: "300px",
+                padding: "20px 24px",
                 backgroundColor: leftContent === "❓" 
                   ? "var(--orca-color-warning-1)" 
                   : "var(--orca-color-bg-0)",
-                borderRadius: "8px",
+                borderRadius: "12px",
                 border: leftContent === "❓"
                   ? "2px dashed var(--orca-color-warning-5)"
                   : "1px solid var(--orca-color-border-2)",
@@ -237,8 +247,8 @@ export default function DirectionCardRenderer({
                 transition: "all 0.2s ease"
               }}>
                 <div style={{
-                  fontSize: leftContent === "❓" ? "32px" : "18px",
-                  lineHeight: 1.6,
+                  fontSize: leftContent === "❓" ? "36px" : "22px",
+                  lineHeight: 1.8,
                   color: leftContent === "❓" 
                     ? "var(--orca-color-warning-6)" 
                     : "var(--orca-color-text-1)",
@@ -251,7 +261,7 @@ export default function DirectionCardRenderer({
 
               {/* 箭头 */}
               <div style={{
-                fontSize: "28px",
+                fontSize: "32px",
                 color: directionColor,
                 fontWeight: 600,
                 flexShrink: 0
@@ -262,24 +272,24 @@ export default function DirectionCardRenderer({
               {/* 右边内容 */}
               <div style={{
                 flex: "1 1 auto",
-                minWidth: "100px",
-                maxWidth: "280px",
-                padding: "16px 20px",
+                minWidth: "120px",
+                maxWidth: "300px",
+                padding: "20px 24px",
                 backgroundColor: rightContent === "❓" 
                   ? "var(--orca-color-warning-1)" 
                   : (showAnswer ? "var(--orca-color-primary-1)" : "var(--orca-color-bg-0)"),
-                borderRadius: "8px",
+                borderRadius: "12px",
                 border: rightContent === "❓"
                   ? "2px dashed var(--orca-color-warning-5)"
                   : showAnswer 
-                    ? "1px solid var(--orca-color-primary-3)"
+                    ? "2px solid var(--orca-color-primary-4)"
                     : "1px solid var(--orca-color-border-2)",
                 textAlign: "center",
                 transition: "all 0.2s ease"
               }}>
                 <div style={{
-                  fontSize: rightContent === "❓" ? "32px" : "18px",
-                  lineHeight: 1.6,
+                  fontSize: rightContent === "❓" ? "36px" : "22px",
+                  lineHeight: 1.8,
                   color: rightContent === "❓" 
                     ? "var(--orca-color-warning-6)" 
                     : "var(--orca-color-text-1)",

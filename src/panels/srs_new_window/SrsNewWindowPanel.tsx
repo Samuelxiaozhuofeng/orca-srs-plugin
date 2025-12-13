@@ -58,6 +58,8 @@ export default function SrsNewWindowPanel(props: PanelProps) {
   const [lastLog, setLastLog] = useState<string | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
   const [pluginName, setPluginName] = useState("orca-srs")
+  // 卡片过渡动画状态
+  const [isCardExiting, setIsCardExiting] = useState(false)
 
   // 从 viewArgs 获取的参数（一次性加载）
   const [deckFilter, setDeckFilter] = useState<string | null>(null)
@@ -151,6 +153,82 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       setPluginName(name)
     } catch (error) {
       console.error("[SrsNewWindowPanel] 获取插件名失败:", error)
+    }
+  }, [])
+
+  /**
+   * 注入 CSS 动画样式
+   */
+  useEffect(() => {
+    const styleId = "srs-review-animations"
+    if (document.getElementById(styleId)) return
+
+    const style = document.createElement("style")
+    style.id = styleId
+    style.textContent = `
+      /* 答案渐显动画 */
+      @keyframes srsAnswerFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      /* 卡片滑出动画 */
+      @keyframes srsCardSlideOut {
+        from {
+          opacity: 1;
+          transform: translateX(0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translateX(-60px) scale(0.95);
+        }
+      }
+      
+      /* 卡片滑入动画 */
+      @keyframes srsCardSlideIn {
+        from {
+          opacity: 0;
+          transform: translateX(40px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0) scale(1);
+        }
+      }
+      
+      .srs-card-exiting {
+        animation: srsCardSlideOut 0.25s ease-out forwards;
+      }
+      
+      .srs-card-entering {
+        animation: srsCardSlideIn 0.3s ease-out forwards;
+      }
+      
+      /* 评分按钮点击反馈 */
+      .srs-new-window-panel button:active {
+        transform: scale(0.95) !important;
+      }
+      
+      /* 评分按钮悬浮效果 */
+      .srs-new-window-panel button {
+        transition: transform 0.1s ease, box-shadow 0.2s ease !important;
+      }
+      
+      .srs-new-window-panel button:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      }
+    `
+    document.head.appendChild(style)
+
+    return () => {
+      const el = document.getElementById(styleId)
+      if (el) el.remove()
     }
   }, [])
 
@@ -260,9 +338,11 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       setReviewedCount((prev: number) => prev + 1)
       setShowAnswer(false)
       
-      // 延迟切换到下一张
+      // 触发卡片滑出动画，然后切换到下一张
+      setIsCardExiting(true)
       setTimeout(() => {
         setCurrentIndex((prev: number) => prev + 1)
+        setIsCardExiting(false)
       }, 250)
 
     } catch (error) {
@@ -627,40 +707,61 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       onJumpToCard: () => handleJumpToCard(currentCard.id)
     }
 
-    // 根据卡片类型选择渲染器组件
-    if (currentCard.clozeNumber !== undefined) {
+    // 动画类名
+    const animationClass = isCardExiting ? "srs-card-exiting" : "srs-card-entering"
+
+    // 根据卡片类型选择渲染器组件，并包裹动画容器
+    const renderCard = () => {
+      if (currentCard.clozeNumber !== undefined) {
+        return (
+          <ClozeCardRenderer
+            card={currentCard}
+            pluginName={pluginName}
+            {...commonProps}
+          />
+        )
+      }
+      
+      // Direction 卡片：使用独立的渲染组件
+      if (currentCard.directionType) {
+        return (
+          <DirectionCardRenderer
+            card={currentCard}
+            pluginName={pluginName}
+            showAnswer={showAnswer}
+            isGrading={isGrading}
+            onShowAnswer={() => setShowAnswer(true)}
+            onGrade={handleGrade}
+            onBury={handleBury}
+            onSuspend={handleSuspend}
+            onJumpToCard={() => handleJumpToCard(currentCard.id)}
+          />
+        )
+      }
+      
+      // Basic 卡片
       return (
-        <ClozeCardRenderer
+        <BasicCardRenderer
           card={currentCard}
-          pluginName={pluginName}
           {...commonProps}
         />
       )
     }
-    
-    // Direction 卡片：使用独立的渲染组件
-    if (currentCard.directionType) {
-      return (
-        <DirectionCardRenderer
-          card={currentCard}
-          pluginName={pluginName}
-          showAnswer={showAnswer}
-          isGrading={isGrading}
-          onShowAnswer={() => setShowAnswer(true)}
-          onGrade={handleGrade}
-          onBury={handleBury}
-          onSuspend={handleSuspend}
-          onJumpToCard={() => handleJumpToCard(currentCard.id)}
-        />
-      )
-    }
-    
-    // Basic 卡片
+
+    // 包裹动画容器
     return (
-      <BasicCardRenderer
-        card={currentCard}
-        {...commonProps}
-      />
+      <div 
+        key={`card-${currentIndex}`}
+        className={animationClass}
+        style={{ 
+          flex: 1, 
+          display: "flex", 
+          flexDirection: "column",
+          overflow: "hidden"
+        }}
+      >
+        {renderCard()}
+      </div>
     )
   }
 

@@ -170,31 +170,32 @@ export default function ClozeCardRenderer({
       }}>
         <div style={{
           backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "12px",
-          padding: "24px",
+          borderRadius: "16px",
+          padding: "28px",
           width: "100%",
-          maxWidth: "700px",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.1)"
+          maxWidth: "720px",
+          boxShadow: "0 6px 32px rgba(0,0,0,0.12)"
         }}>
           {/* 顶部工具栏 */}
           <div style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: "16px"
+            marginBottom: "20px"
           }}>
             {/* 卡片类型标识 */}
             <div style={{
               fontSize: "12px",
-              fontWeight: "500",
+              fontWeight: "600",
               color: "var(--orca-color-primary-5)",
               backgroundColor: "var(--orca-color-primary-1)",
-              padding: "4px 10px",
-              borderRadius: "6px",
+              padding: "6px 12px",
+              borderRadius: "8px",
               display: "inline-flex",
               alignItems: "center",
-              gap: "4px"
+              gap: "6px"
             }}>
+              <i className="ti ti-brackets" style={{ fontSize: "14px" }} />
               填空卡 c{card.clozeNumber}
             </div>
             
@@ -205,10 +206,12 @@ export default function ClozeCardRenderer({
                 onClick={onBury}
                 style={{
                   padding: "6px 12px",
-                  fontSize: "13px"
+                  fontSize: "13px",
+                  transition: "transform 0.1s ease"
                 }}
                 title="埋藏到明天 (B)"
               >
+                <i className="ti ti-clock-pause" style={{ marginRight: "4px" }} />
                 埋藏
               </Button>
               <Button
@@ -216,10 +219,12 @@ export default function ClozeCardRenderer({
                 onClick={onSuspend}
                 style={{
                   padding: "6px 12px",
-                  fontSize: "13px"
+                  fontSize: "13px",
+                  transition: "transform 0.1s ease"
                 }}
                 title="暂停卡片 (S)"
               >
+                <i className="ti ti-player-pause" style={{ marginRight: "4px" }} />
                 暂停
               </Button>
               <Button
@@ -230,25 +235,32 @@ export default function ClozeCardRenderer({
                   fontSize: "13px",
                   display: "flex",
                   alignItems: "center",
-                  gap: "4px"
+                  gap: "4px",
+                  transition: "transform 0.1s ease"
                 }}
               >
-                跳转到卡片
+                <i className="ti ti-external-link" />
+                跳转
               </Button>
             </div>
           </div>
 
           {/* 填空内容区域 */}
-          <div style={{
-            marginBottom: "16px",
-            padding: "16px",
-            backgroundColor: "var(--orca-color-bg-2)",
-            borderRadius: "8px",
-            minHeight: "100px",
-            fontSize: "18px",
-            lineHeight: "1.8",
-            color: "var(--orca-color-text-1)"
-          }}>
+          <div 
+            className={showAnswer ? "srs-answer-reveal" : ""}
+            style={{
+              marginBottom: "20px",
+              padding: "24px 28px",
+              backgroundColor: "var(--orca-color-bg-2)",
+              borderRadius: "10px",
+              minHeight: "120px",
+              fontSize: "22px",
+              lineHeight: "1.9",
+              color: "var(--orca-color-text-1)",
+              fontWeight: 500,
+              animation: showAnswer ? "srsAnswerFadeIn 0.3s ease-out" : "none"
+            }}
+          >
             {showAnswer ? answerContent : questionContent}
           </div>
 
