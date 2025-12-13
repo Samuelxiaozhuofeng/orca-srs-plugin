@@ -342,15 +342,25 @@ export default function SrsNewWindowPanel(props: PanelProps) {
 
   /**
    * 埋藏卡片：将 due 时间设置为明天，不改变 SRS 状态
+   * 对于 Cloze 卡片，只埋藏当前 clozeNumber 的变种
+   * 对于 Direction 卡片，只埋藏当前 directionType 的变种
    */
   const handleBury = useCallback(async () => {
     if (!currentCard || isGrading) return
     setIsGrading(true)
 
     try {
-      await buryCard(currentCard.id)
-      setLastLog("已埋藏，明天再复习")
-      orca.notify("info", "卡片已埋藏，明天再复习", { title: "SRS 复习" })
+      // 传递 clozeNumber 和 directionType 以正确埋藏特定卡片变种
+      await buryCard(currentCard.id, currentCard.clozeNumber, currentCard.directionType)
+      
+      // 根据卡片类型显示不同的日志
+      const cardTypeLabel = currentCard.clozeNumber !== undefined 
+        ? `填空 c${currentCard.clozeNumber}` 
+        : currentCard.directionType 
+          ? `${currentCard.directionType === "forward" ? "正向" : "反向"}卡`
+          : "卡片"
+      setLastLog(`${cardTypeLabel}已埋藏，明天再复习`)
+      orca.notify("info", `${cardTypeLabel}已埋藏，明天再复习`, { title: "SRS 复习" })
     } catch (error) {
       console.error("[SrsNewWindowPanel] 埋藏卡片失败:", error)
       orca.notify("error", `埋藏失败: ${error}`, { title: "SRS 复习" })
@@ -363,15 +373,25 @@ export default function SrsNewWindowPanel(props: PanelProps) {
 
   /**
    * 暂停卡片：标记为 suspend 状态，不再出现在复习队列
+   * 注意：Suspend 操作会暂停整个块的所有卡片变种（设计意图）
+   * 如果只想暂停特定变种，请使用 Bury 功能
    */
   const handleSuspend = useCallback(async () => {
     if (!currentCard || isGrading) return
     setIsGrading(true)
 
     try {
+      // Suspend 操作会暂停整个块（#card 标签 status=suspend）
+      // 这是设计意图：暂停一个变种意味着暂停整个卡片
       await suspendCard(currentCard.id)
+      
+      // 根据卡片类型显示不同的提示
+      const hasMultipleVariants = currentCard.clozeNumber !== undefined || currentCard.directionType !== undefined
+      const message = hasMultipleVariants 
+        ? "卡片已暂停（所有变种都会暂停），可在卡片浏览器中取消暂停"
+        : "卡片已暂停，可在卡片浏览器中取消暂停"
       setLastLog("已暂停")
-      orca.notify("info", "卡片已暂停，可在卡片浏览器中取消暂停", { title: "SRS 复习" })
+      orca.notify("info", message, { title: "SRS 复习" })
     } catch (error) {
       console.error("[SrsNewWindowPanel] 暂停卡片失败:", error)
       orca.notify("error", `暂停失败: ${error}`, { title: "SRS 复习" })
