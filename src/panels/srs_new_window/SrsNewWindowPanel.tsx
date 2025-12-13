@@ -1,21 +1,23 @@
 /**
  * SRS 复习会话面板（Custom Panel 架构）
  *
- * 阶段 4：支持 Basic Card 和 Cloze Card
+ * 阶段 5：支持 Basic Card、Cloze Card 和 Direction Card
  * - 从 viewArgs 获取参数（deckFilter, hostPanelId）
- * - 加载队列支持 basic 和 cloze 卡片（过滤 direction）
+ * - 加载队列支持 basic、cloze 和 direction 卡片
  * - Basic 卡片使用纯文本渲染（front/back）
  * - Cloze 卡片使用 renderFragments 渲染填空内容
- * - 实现评分逻辑（调用 updateSrsState/updateClozeSrsState）
+ * - Direction 卡片使用 DirectionCardRenderer 渲染方向问答
+ * - 实现评分逻辑（调用 updateSrsState/updateClozeSrsState/updateDirectionSrsState）
  */
 
 import type { PanelProps, DbId, ContentFragment } from "../../orca.d.ts"
 import type { ReviewCard, Grade, SrsState } from "../../srs/types"
 import SrsErrorBoundary from "../../components/SrsErrorBoundary"
-import { updateSrsState, updateClozeSrsState } from "../../srs/storage"
+import { updateSrsState, updateClozeSrsState, updateDirectionSrsState } from "../../srs/storage"
 import { previewIntervals, formatInterval } from "../../srs/algorithm"
 import { buryCard, suspendCard } from "../../srs/cardStatusUtils"
 import { useReviewShortcuts } from "../../hooks/useReviewShortcuts"
+import DirectionCardRenderer from "./DirectionCardRenderer"
 
 const { useEffect, useState, useRef, useMemo, useCallback } = window.React
 const { Button } = orca.components
@@ -264,18 +266,15 @@ export default function SrsNewWindowPanel(props: PanelProps) {
         ? allCards.filter((card: ReviewCard) => card.deck === deckFilter)
         : allCards
       
-      // 阶段 4：支持 basic 和 cloze 卡片（过滤掉 direction）
-      filteredCards = filteredCards.filter((card: ReviewCard) => 
-        !card.directionType
-      )
-      
+      // 阶段 5：支持 basic、cloze 和 direction 卡片（不再过滤）
       const reviewQueue = buildReviewQueue(filteredCards)
       setQueue(reviewQueue)
 
       // 统计卡片类型
-      const basicCount = reviewQueue.filter((c: ReviewCard) => !c.clozeNumber).length
+      const basicCount = reviewQueue.filter((c: ReviewCard) => !c.clozeNumber && !c.directionType).length
       const clozeCount = reviewQueue.filter((c: ReviewCard) => c.clozeNumber !== undefined).length
-      console.log(`[SrsNewWindowPanel] 加载队列完成: ${reviewQueue.length} 张卡片 (Basic: ${basicCount}, Cloze: ${clozeCount})` +
+      const directionCount = reviewQueue.filter((c: ReviewCard) => c.directionType !== undefined).length
+      console.log(`[SrsNewWindowPanel] 加载队列完成: ${reviewQueue.length} 张卡片 (Basic: ${basicCount}, Cloze: ${clozeCount}, Direction: ${directionCount})` +
         (deckFilter ? ` (Deck: ${deckFilter})` : ""))
 
     } catch (error) {
@@ -301,6 +300,9 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       if (currentCard.clozeNumber !== undefined) {
         // Cloze 卡片评分
         result = await updateClozeSrsState(currentCard.id, currentCard.clozeNumber, grade)
+      } else if (currentCard.directionType) {
+        // Direction 卡片评分
+        result = await updateDirectionSrsState(currentCard.id, currentCard.directionType, grade)
       } else {
         // Basic 卡片评分
         result = await updateSrsState(currentCard.id, grade)
@@ -315,7 +317,9 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       // 设置日志（显示卡片类型）
       const cardTypeLabel = currentCard.clozeNumber !== undefined 
         ? `填空c${currentCard.clozeNumber}` 
-        : "Basic"
+        : currentCard.directionType 
+          ? `方向${currentCard.directionType === "forward" ? "正向" : "反向"}`
+          : "Basic"
       setLastLog(
         `[${cardTypeLabel}] 评分 ${grade.toUpperCase()} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
       )
@@ -1119,6 +1123,23 @@ export default function SrsNewWindowPanel(props: PanelProps) {
     // 根据卡片类型选择渲染器
     if (currentCard?.clozeNumber !== undefined) {
       return renderClozeCard()
+    }
+    
+    // Direction 卡片：使用独立的渲染组件
+    if (currentCard?.directionType) {
+      return (
+        <DirectionCardRenderer
+          card={currentCard}
+          pluginName={pluginName}
+          showAnswer={showAnswer}
+          isGrading={isGrading}
+          onShowAnswer={() => setShowAnswer(true)}
+          onGrade={handleGrade}
+          onBury={handleBury}
+          onSuspend={handleSuspend}
+          onJumpToCard={() => handleJumpToCard(currentCard.id)}
+        />
+      )
     }
     
     return renderBasicCard()
