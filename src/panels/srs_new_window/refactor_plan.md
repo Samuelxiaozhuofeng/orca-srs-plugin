@@ -306,21 +306,30 @@ useEffect(() => {
 
 ---
 
-### 阶段 4：迁移 Cloze Card
+### 阶段 4：迁移 Cloze Card ✅
 
 **目标**：支持填空卡片复习
 
 **任务**：
 
-- [ ] 确保 `ClozeCardReviewRenderer` 正确渲染
-- [ ] 验证填空遮挡和揭示逻辑
-- [ ] 验证多填空卡片（c1, c2, c3...）独立调度
+- [x] 在 `ReviewCard` 类型中添加 `content` 字段用于存储块内容
+- [x] 在 `cardCollector.ts` 中收集 cloze 卡片时保存 `content`
+- [x] 在 `SrsNewWindowPanel` 中实现 `renderFragments` 函数（纯函数，不依赖 useSnapshot）
+- [x] 在 `SrsNewWindowPanel` 中实现 `renderClozeCard` 函数
+- [x] 修改 `handleGrade` 支持 cloze 卡片评分（使用 `updateClozeSrsState`）
+- [x] 修改 `renderMainContent` 根据卡片类型路由到对应渲染器
+
+**实现细节**：
+
+- **不复用旧的 `ClozeCardReviewRenderer`**：该组件依赖 `useSnapshot(orca.state)`，与 Custom Panel 不兼容
+- **直接在面板中实现 `renderFragments`**：从 `ClozeCardReviewRenderer` 移植并简化，移除对 Valtio 的依赖
+- **通过 `ReviewCard.content` 获取块内容**：在 `collectReviewCards` 时预加载，避免运行时查询
 
 **验证**：
 
-- [ ] 填空位置正确显示 `[...]`
-- [ ] 答案揭示后高亮填空内容
-- [ ] 评分后正确更新对应的 cloze SRS 状态
+- [x] 填空位置正确显示 `[...]`
+- [x] 答案揭示后高亮填空内容
+- [x] 评分后正确更新对应的 cloze SRS 状态（srs.cN.xxx）
 
 ---
 

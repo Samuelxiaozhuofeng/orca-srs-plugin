@@ -1,5 +1,5 @@
 import type { State } from "ts-fsrs"
-import type { DbId } from "../orca.d.ts"
+import type { DbId, ContentFragment } from "../orca.d.ts"
 
 export type Grade = "again" | "hard" | "good" | "easy"
 
@@ -23,6 +23,7 @@ export type ReviewCard = {
   deck: string  // 修改：从 deck?: string 改为必填
   clozeNumber?: number  // 填空编号（仅 cloze 卡片使用）
   directionType?: "forward" | "backward"  // 方向类型（仅 direction 卡片使用）
+  content?: ContentFragment[]  // 块内容（仅 cloze 卡片使用，用于渲染填空）
 }
 
 // Deck 统计信息

@@ -1,17 +1,18 @@
 /**
  * SRS 复习会话面板（Custom Panel 架构）
  *
- * 阶段 3：仅支持 Basic Card（简化版）
+ * 阶段 4：支持 Basic Card 和 Cloze Card
  * - 从 viewArgs 获取参数（deckFilter, hostPanelId）
- * - 加载队列并过滤仅保留 basic card
- * - 使用纯文本渲染卡片内容（避免 Block 组件的兼容性问题）
- * - 实现评分逻辑（调用 updateSrsState）
+ * - 加载队列支持 basic 和 cloze 卡片（过滤 direction）
+ * - Basic 卡片使用纯文本渲染（front/back）
+ * - Cloze 卡片使用 renderFragments 渲染填空内容
+ * - 实现评分逻辑（调用 updateSrsState/updateClozeSrsState）
  */
 
-import type { PanelProps, DbId } from "../../orca.d.ts"
+import type { PanelProps, DbId, ContentFragment } from "../../orca.d.ts"
 import type { ReviewCard, Grade, SrsState } from "../../srs/types"
 import SrsErrorBoundary from "../../components/SrsErrorBoundary"
-import { updateSrsState } from "../../srs/storage"
+import { updateSrsState, updateClozeSrsState } from "../../srs/storage"
 import { previewIntervals, formatInterval } from "../../srs/algorithm"
 import { buryCard, suspendCard } from "../../srs/cardStatusUtils"
 import { useReviewShortcuts } from "../../hooks/useReviewShortcuts"
@@ -26,6 +27,97 @@ function formatSimpleDate(date: Date): string {
   const month = date.getMonth() + 1
   const day = date.getDate()
   return `${month}-${day}`
+}
+
+/**
+ * 渲染 ContentFragment 数组为可视化内容（用于 Cloze 卡片）
+ *
+ * @param fragments - 内容片段数组
+ * @param showAnswers - 是否显示答案（true = 显示答案，false = 显示 [...]）
+ * @param pluginName - 插件名称（用于识别 cloze fragment）
+ * @param currentClozeNumber - 当前复习的填空编号（仅隐藏该编号的填空，其他填空显示答案）
+ */
+function renderFragments(
+  fragments: ContentFragment[] | undefined,
+  showAnswers: boolean,
+  pluginName: string,
+  currentClozeNumber?: number
+): React.ReactNode[] {
+  const React = window.React
+  
+  if (!fragments || fragments.length === 0) {
+    return [<span key="empty">（空白内容）</span>]
+  }
+
+  return fragments.map((fragment, index) => {
+    // 普通文本片段
+    if (fragment.t === "t") {
+      return <span key={index}>{fragment.v}</span>
+    }
+
+    // Cloze 片段（支持任何 xxx.cloze 格式）
+    const isClozeFragment = 
+      fragment.t === `${pluginName}.cloze` ||
+      (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+    
+    if (isClozeFragment) {
+      const fragmentClozeNumber = (fragment as any).clozeNumber
+
+      // 判断是否应该隐藏此填空
+      // 如果 currentClozeNumber 存在，只隐藏该编号的填空；否则隐藏所有填空
+      const shouldHide = currentClozeNumber
+        ? fragmentClozeNumber === currentClozeNumber
+        : true
+
+      if (showAnswers || !shouldHide) {
+        // 显示答案：高亮显示填空内容
+        return (
+          <span
+            key={index}
+            style={{
+              backgroundColor: "var(--orca-color-primary-1)",
+              color: "var(--orca-color-primary-5)",
+              fontWeight: "600",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              borderBottom: "2px solid var(--orca-color-primary-5)"
+            }}
+          >
+            {fragment.v}
+          </span>
+        )
+      } else {
+        // 隐藏答案：显示 [...]
+        return (
+          <span
+            key={index}
+            style={{
+              color: "var(--orca-color-text-2)",
+              fontWeight: "500",
+              padding: "2px 6px",
+              backgroundColor: "var(--orca-color-bg-3)",
+              borderRadius: "4px",
+              border: "1px dashed var(--orca-color-border-1)"
+            }}
+          >
+            [...]
+          </span>
+        )
+      }
+    }
+
+    // 其他简单片段类型：代码、链接引用等，显示其文本内容
+    if (fragment.v) {
+      return <span key={index}>{fragment.v}</span>
+    }
+
+    // 未知类型的 fragment，显示占位符
+    return (
+      <span key={index} style={{ color: "var(--orca-color-text-3)" }}>
+        [...]
+      </span>
+    )
+  })
 }
 
 /**
@@ -172,15 +264,18 @@ export default function SrsNewWindowPanel(props: PanelProps) {
         ? allCards.filter((card: ReviewCard) => card.deck === deckFilter)
         : allCards
       
-      // 阶段 3：仅保留 basic card（过滤掉 cloze 和 direction）
+      // 阶段 4：支持 basic 和 cloze 卡片（过滤掉 direction）
       filteredCards = filteredCards.filter((card: ReviewCard) => 
-        !card.clozeNumber && !card.directionType
+        !card.directionType
       )
       
       const reviewQueue = buildReviewQueue(filteredCards)
       setQueue(reviewQueue)
 
-      console.log(`[SrsNewWindowPanel] 加载队列完成: ${reviewQueue.length} 张 basic 卡片` +
+      // 统计卡片类型
+      const basicCount = reviewQueue.filter((c: ReviewCard) => !c.clozeNumber).length
+      const clozeCount = reviewQueue.filter((c: ReviewCard) => c.clozeNumber !== undefined).length
+      console.log(`[SrsNewWindowPanel] 加载队列完成: ${reviewQueue.length} 张卡片 (Basic: ${basicCount}, Cloze: ${clozeCount})` +
         (deckFilter ? ` (Deck: ${deckFilter})` : ""))
 
     } catch (error) {
@@ -193,15 +288,23 @@ export default function SrsNewWindowPanel(props: PanelProps) {
   }
 
   /**
-   * 处理评分
+   * 处理评分（支持 Basic 和 Cloze 卡片）
    */
   const handleGrade = useCallback(async (grade: Grade) => {
     if (!currentCard || isGrading) return
     setIsGrading(true)
 
     try {
-      // 调用 updateSrsState 更新状态
-      const result = await updateSrsState(currentCard.id, grade)
+      let result
+      
+      // 根据卡片类型调用对应的评分函数
+      if (currentCard.clozeNumber !== undefined) {
+        // Cloze 卡片评分
+        result = await updateClozeSrsState(currentCard.id, currentCard.clozeNumber, grade)
+      } else {
+        // Basic 卡片评分
+        result = await updateSrsState(currentCard.id, grade)
+      }
 
       // 更新队列中的卡片状态
       const updatedCard: ReviewCard = { ...currentCard, srs: result.state, isNew: false }
@@ -209,9 +312,12 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       nextQueue[currentIndex] = updatedCard
       setQueue(nextQueue)
 
-      // 设置日志
+      // 设置日志（显示卡片类型）
+      const cardTypeLabel = currentCard.clozeNumber !== undefined 
+        ? `填空c${currentCard.clozeNumber}` 
+        : "Basic"
       setLastLog(
-        `评分 ${grade.toUpperCase()} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
+        `[${cardTypeLabel}] 评分 ${grade.toUpperCase()} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
       )
 
       setReviewedCount((prev: number) => prev + 1)
@@ -771,7 +877,235 @@ export default function SrsNewWindowPanel(props: PanelProps) {
   }
 
   /**
-   * 渲染主内容区域
+   * 渲染 Cloze（填空）卡片
+   * 使用 renderFragments 将 ContentFragment 数组渲染为填空显示
+   */
+  const renderClozeCard = () => {
+    if (!currentCard) return null
+
+    // 渲染题目（隐藏当前填空编号的答案）
+    const questionContent = renderFragments(
+      currentCard.content,
+      false,
+      pluginName,
+      currentCard.clozeNumber
+    )
+
+    // 渲染答案（显示所有填空并高亮当前填空）
+    const answerContent = renderFragments(
+      currentCard.content,
+      true,
+      pluginName,
+      currentCard.clozeNumber
+    )
+
+    return (
+      <div style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        padding: "24px",
+        overflow: "auto"
+      }}>
+        <div style={{
+          flex: 1,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          paddingTop: "24px"
+        }}>
+          <div style={{
+            backgroundColor: "var(--orca-color-bg-1)",
+            borderRadius: "12px",
+            padding: "24px",
+            width: "100%",
+            maxWidth: "700px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.1)"
+          }}>
+            {/* 顶部工具栏（与 Basic 卡片相同） */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "16px"
+            }}>
+              {/* 卡片类型标识 */}
+              <div style={{
+                fontSize: "12px",
+                fontWeight: "500",
+                color: "var(--orca-color-primary-5)",
+                backgroundColor: "var(--orca-color-primary-1)",
+                padding: "4px 10px",
+                borderRadius: "6px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px"
+              }}>
+                填空卡 c{currentCard.clozeNumber}
+              </div>
+              
+              {/* 操作按钮 */}
+              <div style={{ display: "flex", gap: "8px" }}>
+                <Button
+                  variant="soft"
+                  onClick={handleBury}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: "13px"
+                  }}
+                  title="埋藏到明天 (B)"
+                >
+                  埋藏
+                </Button>
+                <Button
+                  variant="soft"
+                  onClick={handleSuspend}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: "13px"
+                  }}
+                  title="暂停卡片 (S)"
+                >
+                  暂停
+                </Button>
+                <Button
+                  variant="soft"
+                  onClick={() => handleJumpToCard(currentCard.id)}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: "13px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px"
+                  }}
+                >
+                  跳转到卡片
+                </Button>
+              </div>
+            </div>
+
+            {/* 填空内容区域 */}
+            <div style={{
+              marginBottom: "16px",
+              padding: "16px",
+              backgroundColor: "var(--orca-color-bg-2)",
+              borderRadius: "8px",
+              minHeight: "100px",
+              fontSize: "18px",
+              lineHeight: "1.8",
+              color: "var(--orca-color-text-1)"
+            }}>
+              {showAnswer ? answerContent : questionContent}
+            </div>
+
+            {/* 显示答案按钮 / 评分按钮 */}
+            {!showAnswer ? (
+              <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                <Button
+                  variant="solid"
+                  onClick={() => setShowAnswer(true)}
+                  style={{
+                    padding: "12px 32px",
+                    fontSize: "16px"
+                  }}
+                >
+                  显示答案
+                </Button>
+              </div>
+            ) : (
+              <>
+                {/* 评分按钮（与 Basic 卡片相同） */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gap: "8px"
+                }}>
+                  <Button
+                    variant="dangerous"
+                    onClick={() => handleGrade("again")}
+                    style={{
+                      padding: "12px 8px",
+                      fontSize: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "4px"
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{formatInterval(intervals.again)}</span>
+                    <span style={{ fontSize: "12px", opacity: 0.8 }}>忘记</span>
+                  </Button>
+
+                  <Button
+                    variant="soft"
+                    onClick={() => handleGrade("hard")}
+                    style={{
+                      padding: "12px 8px",
+                      fontSize: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "4px"
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{formatInterval(intervals.hard)}</span>
+                    <span style={{ fontSize: "12px", opacity: 0.8 }}>困难</span>
+                  </Button>
+
+                  <Button
+                    variant="solid"
+                    onClick={() => handleGrade("good")}
+                    style={{
+                      padding: "12px 8px",
+                      fontSize: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "4px"
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{formatInterval(intervals.good)}</span>
+                    <span style={{ fontSize: "12px", opacity: 0.8 }}>良好</span>
+                  </Button>
+
+                  <Button
+                    variant="solid"
+                    onClick={() => handleGrade("easy")}
+                    style={{
+                      padding: "12px 8px",
+                      fontSize: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "4px",
+                      opacity: 0.9
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{formatInterval(intervals.easy)}</span>
+                    <span style={{ fontSize: "12px", opacity: 0.8 }}>简单</span>
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* 提示文字 */}
+            <div style={{
+              marginTop: "16px",
+              textAlign: "center",
+              fontSize: "12px",
+              color: "var(--orca-color-text-2)",
+              opacity: 0.7
+            }}>
+              {!showAnswer ? "点击\"显示答案\"查看填空内容" : "根据记忆程度选择评分"}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /**
+   * 渲染主内容区域（根据卡片类型路由到对应渲染器）
    */
   const renderMainContent = () => {
     if (totalCards === 0) {
@@ -782,6 +1116,11 @@ export default function SrsNewWindowPanel(props: PanelProps) {
       return renderSessionComplete()
     }
 
+    // 根据卡片类型选择渲染器
+    if (currentCard?.clozeNumber !== undefined) {
+      return renderClozeCard()
+    }
+    
     return renderBasicCard()
   }
 

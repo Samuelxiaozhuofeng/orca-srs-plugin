@@ -106,22 +106,22 @@ flowchart TD
 
 ### 支持的卡片类型
 
-| 卡片类型       | 状态      | 说明                          |
-| -------------- | --------- | ----------------------------- |
-| Basic Card     | ✅ 已完成 | 使用纯文本渲染 `front`/`back` |
-| Cloze Card     | 🚧 待迁移 | 阶段 4                        |
-| Direction Card | 🚧 待迁移 | 阶段 5                        |
+| 卡片类型       | 状态      | 说明                                |
+| -------------- | --------- | ----------------------------------- |
+| Basic Card     | ✅ 已完成 | 使用纯文本渲染 `front`/`back`       |
+| Cloze Card     | ✅ 已完成 | 使用 `renderFragments` 渲染填空内容 |
+| Direction Card | 🚧 待迁移 | 阶段 5                              |
 
 ### 复习功能
 
-| 功能                         | 状态 | 实现方式                      |
-| ---------------------------- | ---- | ----------------------------- |
-| 评分（again/hard/good/easy） | ✅   | `updateSrsState()`            |
-| 评分预览间隔                 | ✅   | `previewIntervals()`          |
-| 埋藏（Bury）                 | ✅   | `buryCard()`                  |
-| 暂停（Suspend）              | ✅   | `suspendCard()`               |
-| 跳转到卡片                   | ✅   | `orca.nav.goTo("block", ...)` |
-| 刷新队列                     | ✅   | `loadReviewQueue()`           |
+| 功能                         | 状态 | 实现方式                                     |
+| ---------------------------- | ---- | -------------------------------------------- |
+| 评分（again/hard/good/easy） | ✅   | `updateSrsState()` / `updateClozeSrsState()` |
+| 评分预览间隔                 | ✅   | `previewIntervals()`                         |
+| 埋藏（Bury）                 | ✅   | `buryCard()`                                 |
+| 暂停（Suspend）              | ✅   | `suspendCard()`                              |
+| 跳转到卡片                   | ✅   | `orca.nav.goTo("block", ...)`                |
+| 刷新队列                     | ✅   | `loadReviewQueue()`                          |
 
 ### 键盘快捷键
 
@@ -196,6 +196,33 @@ useEffect(() => {
 }, [panelId, viewArgsLoaded]);
 ```
 
+### Cloze 卡片渲染方案
+
+不复用旧的 `ClozeCardReviewRenderer` 组件（依赖 `useSnapshot`），而是直接在面板中实现渲染：
+
+```typescript
+// ❌ 错误做法：复用旧组件（内部使用 useSnapshot）
+<ClozeCardReviewRenderer blockId={id} pluginName={pluginName} />;
+
+// ✅ 正确做法：使用纯函数 renderFragments
+function renderFragments(
+  fragments: ContentFragment[] | undefined,
+  showAnswers: boolean,
+  pluginName: string,
+  currentClozeNumber?: number
+): React.ReactNode[] {
+  // 遍历 fragments，判断 cloze 类型并渲染
+  // 当前 clozeNumber 的填空显示 [...]，其他显示内容
+}
+```
+
+**关键点**：
+
+- 在 `ReviewCard` 类型中添加 `content?: ContentFragment[]` 字段
+- 在 `cardCollector.ts` 收集 cloze 卡时保存 `block.content`
+- 使用 `fragment.t.endsWith(".cloze")` 匹配任何插件名的 cloze fragment
+- 评分时调用 `updateClozeSrsState(blockId, clozeNumber, grade)`
+
 ## UI 布局
 
 ### 整体结构
@@ -236,11 +263,11 @@ useEffect(() => {
 - [x] 阶段 1：创建空白面板骨架
 - [x] 阶段 2：迁移界面框架
 - [x] 阶段 3：迁移 Basic Card
+- [x] 阶段 4：迁移 Cloze Card
 - [x] 高级功能：Bury、Suspend、快捷键
 
 ### 待完成
 
-- [ ] 阶段 4：迁移 Cloze Card
 - [ ] 阶段 5：迁移 Direction Card
 - [ ] 阶段 7：清理旧代码、更新文档
 

@@ -128,7 +128,18 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
       // Cloze 卡片：为每个填空编号生成独立的 ReviewCard
       const clozeNumbers = getAllClozeNumbers(block.content, pluginName)
 
+      // 调试日志
+      console.log(`[${pluginName}] collectReviewCards: 发现 cloze 卡片 #${block.id}`)
+      console.log(`  - block.content 长度: ${block.content?.length || 0}`)
+      console.log(`  - 找到 cloze 编号: ${JSON.stringify(clozeNumbers)}`)
+      if (block.content && block.content.length > 0) {
+        // 输出所有 fragment 的类型以便调试
+        const fragmentTypes = block.content.map((f: any) => f.t)
+        console.log(`  - fragment 类型: ${JSON.stringify(fragmentTypes)}`)
+      }
+
       if (clozeNumbers.length === 0) {
+        console.log(`  - 跳过：没有找到 cloze 编号`)
         continue
       }
 
@@ -152,7 +163,8 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
           srs: srsState,
           isNew: !srsState.lastReviewed || srsState.reps === 0,
           deck: deckName,
-          clozeNumber // 关键：标记当前复习的填空编号
+          clozeNumber, // 关键：标记当前复习的填空编号
+          content: block.content  // 保存块内容用于渲染填空
         })
       }
     } else if (cardType === "direction") {

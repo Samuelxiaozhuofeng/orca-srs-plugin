@@ -42,7 +42,7 @@ export function getMaxClozeNumberFromContent(
  * 从 ContentFragment 数组中提取所有 cloze 编号
  *
  * @param content - ContentFragment 数组
- * @param pluginName - 插件名称
+ * @param pluginName - 插件名称（用于首选匹配，但也会匹配任何 xxx.cloze 格式）
  * @returns cloze 编号数组（去重并排序）
  */
 export function getAllClozeNumbers(content: ContentFragment[] | undefined, pluginName: string): number[] {
@@ -53,8 +53,14 @@ export function getAllClozeNumbers(content: ContentFragment[] | undefined, plugi
   const clozeNumbers = new Set<number>()
 
   for (const fragment of content) {
-    if (fragment.t === `${pluginName}.cloze` && typeof fragment.clozeNumber === "number") {
-      clozeNumbers.add(fragment.clozeNumber)
+    // 首先尝试精确匹配 pluginName.cloze
+    // 如果不匹配，则尝试匹配任何 xxx.cloze 格式
+    const isClozeFragment = 
+      fragment.t === `${pluginName}.cloze` ||
+      (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+    
+    if (isClozeFragment && typeof (fragment as any).clozeNumber === "number") {
+      clozeNumbers.add((fragment as any).clozeNumber)
     }
   }
 
