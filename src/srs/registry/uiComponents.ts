@@ -13,7 +13,9 @@ export function registerUIComponents(pluginName: string): void {
   orca.toolbar.registerToolbarButton(`${pluginName}.reviewButton`, {
     icon: "ti ti-cards",
     tooltip: "开始 SRS 复习",
-    command: `${pluginName}.startReviewSession`
+    menu: close => {
+      return window.React.createElement(AutoStartReviewMenu, { close })
+    }
   })
 
   orca.toolbar.registerToolbarButton(`${pluginName}.browserButton`, {
@@ -79,6 +81,67 @@ export function registerUIComponents(pluginName: string): void {
     title: "AI 生成记忆卡片",
     command: `${pluginName}.makeAICard`
   })
+}
+
+function AutoStartReviewMenu({ close }: { close: () => void }) {
+  window.React.useEffect(() => {
+    void (async () => {
+      try {
+        const activePanelId = orca.state.activePanel
+        if (!activePanelId) {
+          orca.notify("warn", "当前没有可用的面板", { title: "SRS 复习" })
+          return
+        }
+
+        const viewArgs = {
+          deckFilter: null,
+          hostPanelId: activePanelId
+        }
+
+        // 默认行为：在右侧面板打开（与 main.ts/startReviewSession 保持一致）
+        const panels = orca.state.panels
+        let rightPanelId: string | null = null
+
+        for (const [panelId, panel] of Object.entries(panels)) {
+          if (
+            panel.parentId === activePanelId &&
+            panel.position === "right" &&
+            panel.view === "srs.new-window"
+          ) {
+            rightPanelId = panelId
+            break
+          }
+        }
+
+        if (!rightPanelId) {
+          rightPanelId = orca.nav.addTo(activePanelId, "right", {
+            view: "srs.new-window",
+            viewArgs,
+            viewState: {}
+          })
+
+          if (!rightPanelId) {
+            orca.notify("error", "无法创建侧边面板", { title: "SRS 复习" })
+            return
+          }
+        } else {
+          orca.nav.goTo("srs.new-window", viewArgs, rightPanelId)
+        }
+
+        setTimeout(() => {
+          if (rightPanelId) {
+            orca.nav.switchFocusTo(rightPanelId)
+          }
+        }, 100)
+
+        orca.notify("success", "复习会话已在右侧面板打开", { title: "SRS 复习" })
+      } finally {
+        close()
+      }
+    })()
+  }, [close])
+
+  return null
 }
 
 export function unregisterUIComponents(pluginName: string): void {

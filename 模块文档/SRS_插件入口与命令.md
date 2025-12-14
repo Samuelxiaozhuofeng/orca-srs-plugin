@@ -25,7 +25,7 @@
 
 | 模块        | 文件                                                                                        | 职责                               | 行数 |
 | ----------- | ------------------------------------------------------------------------------------------- | ---------------------------------- | ---- |
-| 命令注册    | [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)         | 注册/注销 5 个命令（含 undo 逻辑） | 134  |
+| 命令注册    | [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)         | 注册/注销命令（含 undo 逻辑） | 134  |
 | UI 组件注册 | [uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts) | 注册/注销工具栏按钮和斜杠命令      | 40   |
 | 渲染器注册  | [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)       | 注册/注销块和 inline 渲染器        | 49   |
 | 转换器注册  | [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts)     | 注册/注销 plain 格式转换器         | 57   |
@@ -80,9 +80,8 @@ flowchart TD
 
 | 命令 ID                            | 类型       | 说明            | 注册位置    |
 | ---------------------------------- | ---------- | --------------- | ----------- |
-| `${pluginName}.startReviewSession` | 普通命令   | 开始复习会话    | commands.ts |
 | `${pluginName}.scanCardsFromTags`  | 普通命令   | 扫描带标签的块  | commands.ts |
-| `${pluginName}.openCardBrowser`    | 普通命令   | 打开卡片浏览器  | commands.ts |
+| `${pluginName}.openFlashcardHome`  | 普通命令   | 打开 Flashcard Home  | commands.ts |
 | `${pluginName}.makeCardFromBlock`  | 编辑器命令 | 将块转为卡片    | commands.ts |
 | `${pluginName}.createCloze`        | 编辑器命令 | 创建 Cloze 填空 | commands.ts |
 
@@ -90,7 +89,7 @@ flowchart TD
 
 | 按钮 ID                       | 图标           | 说明            | 注册位置        |
 | ----------------------------- | -------------- | --------------- | --------------- |
-| `${pluginName}.reviewButton`  | `ti ti-cards`  | 开始 SRS 复习   | uiComponents.ts |
+| `${pluginName}.reviewButton`  | `ti ti-cards`  | 开始 SRS 复习（直接打开 `srs.new-window`）   | uiComponents.ts |
 | `${pluginName}.browserButton` | `ti ti-list`   | 打开卡片浏览器  | uiComponents.ts |
 | `${pluginName}.clozeButton`   | `ti ti-braces` | 创建 Cloze 填空 | uiComponents.ts |
 
@@ -219,45 +218,69 @@ async function startReviewSession(
   openInCurrentPanel: boolean = false
 ) {
   try {
-    const reviewSessionBlockId = await getOrCreateReviewSessionBlock(
-      pluginName
-    );
-    const activePanelId = orca.state.activePanel;
+    const activePanelId = orca.state.activePanel
 
     if (!activePanelId) {
-      orca.notify("warn", "当前没有可用的面板", { title: "SRS 复习" });
-      return;
+      orca.notify("warn", "当前没有可用的面板", { title: "SRS 复习" })
+      return
     }
 
-    // 如果要求在当前面板打开（例如从 FlashcardHome 调用）
+    // 统一复习面板：srs.new-window（SrsNewWindowPanel）
+    const viewArgs = {
+      deckFilter: deckName ?? null,
+      hostPanelId: activePanelId
+    }
+
+    // 如果要求在当前面板打开（例如从 FlashcardHome 调用）：替换当前视图
     if (openInCurrentPanel) {
-      orca.nav.goTo("block", { blockId: reviewSessionBlockId }, activePanelId);
-      orca.notify("success", "复习会话已打开", { title: "SRS 复习" });
-      return;
+      orca.nav.goTo("srs.new-window", viewArgs, activePanelId)
+      const message = deckName ? `已打开 ${deckName} 复习会话` : "复习会话已打开"
+      orca.notify("success", message, { title: "SRS 复习" })
+      return
     }
 
-    // 默认行为：查找或创建右侧面板
-    let rightPanelId = findRightPanel(orca.state.panels, activePanelId);
+    // 默认行为：在右侧面板打开（新建或复用）
+    const panels = orca.state.panels
+    let rightPanelId: string | null = null
+
+    for (const [panelId, panel] of Object.entries(panels)) {
+      if (
+        panel.parentId === activePanelId &&
+        panel.position === "right" &&
+        panel.view === "srs.new-window"
+      ) {
+        rightPanelId = panelId
+        break
+      }
+    }
+
     if (!rightPanelId) {
       rightPanelId = orca.nav.addTo(activePanelId, "right", {
-        view: "block",
-        viewArgs: { blockId: reviewSessionBlockId },
-        viewState: {},
-      });
-      schedulePanelResize(activePanelId, pluginName);
+        view: "srs.new-window",
+        viewArgs,
+        viewState: {}
+      })
+
+      if (!rightPanelId) {
+        orca.notify("error", "无法创建侧边面板", { title: "SRS 复习" })
+        return
+      }
     } else {
-      orca.nav.goTo("block", { blockId: reviewSessionBlockId }, rightPanelId);
+      orca.nav.goTo("srs.new-window", viewArgs, rightPanelId)
     }
 
     // 切换焦点到复习面板
     setTimeout(() => {
-      orca.nav.switchFocusTo(rightPanelId);
-    }, 100);
+      if (rightPanelId) {
+        orca.nav.switchFocusTo(rightPanelId)
+      }
+    }, 100)
 
-    orca.notify("success", "复习会话已在右侧面板打开", { title: "SRS 复习" });
+    const message = deckName ? `已打开 ${deckName} 复习会话` : "复习会话已在右侧面板打开"
+    orca.notify("success", message, { title: "SRS 复习" })
   } catch (error) {
-    console.error(`[${pluginName}] 启动复习失败:`, error);
-    orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" });
+    console.error(`[${pluginName}] 启动复习失败:`, error)
+    orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" })
   }
 }
 ```

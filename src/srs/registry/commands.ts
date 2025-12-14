@@ -14,20 +14,10 @@ import { testAIConnection } from "../ai/aiService"
 
 export function registerCommands(
   pluginName: string,
-  startReviewSession: (deckName?: string, openInCurrentPanel?: boolean) => Promise<void>,
   openFlashcardHome: () => Promise<void>
 ): void {
   // 在闭包中捕获 pluginName，供 undo 函数使用
   const _pluginName = pluginName
-
-  orca.commands.registerCommand(
-    `${pluginName}.startReviewSession`,
-    async () => {
-      console.log(`[${_pluginName}] 开始 SRS 复习会话`)
-      await startReviewSession()
-    },
-    "SRS: 开始复习"
-  )
 
   orca.commands.registerCommand(
     `${pluginName}.scanCardsFromTags`,
@@ -257,7 +247,6 @@ export function registerCommands(
 }
 
 export function unregisterCommands(pluginName: string): void {
-  orca.commands.unregisterCommand(`${pluginName}.startReviewSession`)
   orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
   orca.commands.unregisterCommand(`${pluginName}.openFlashcardHome`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)

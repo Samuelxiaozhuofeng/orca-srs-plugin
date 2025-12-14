@@ -44,7 +44,7 @@ export async function load(_name: string) {
   }
 
   console.log(`[${pluginName}] 插件已加载`)
-  registerCommands(pluginName, startReviewSession, openFlashcardHome)
+  registerCommands(pluginName, openFlashcardHome)
   registerUIComponents(pluginName)
   registerRenderers(pluginName)
   registerConverters(pluginName)

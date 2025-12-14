@@ -68,7 +68,6 @@ flowchart TD
 ```typescript
 export function registerCommands(
   pluginName: string,
-  startReviewSession: (deckName?: string) => Promise<void>,
   openFlashcardHome: () => Promise<void>
 ): void
 
@@ -79,11 +78,12 @@ export function unregisterCommands(pluginName: string): void
 
 | 命令 ID | 类型 | 说明 | 关联函数 |
 |---------|------|------|----------|
-| `${pluginName}.startReviewSession` | 普通命令 | 开始复习会话 | `startReviewSession` (从 main.ts 传入) |
 | `${pluginName}.scanCardsFromTags` | 普通命令 | 扫描带标签的块 | `scanCardsFromTags` (从 cardCreator 导入) |
 | `${pluginName}.openFlashcardHome` | 普通命令 | 打开 Flashcard Home 面板 | `openFlashcardHome`（从 main.ts 传入） |
 | `${pluginName}.makeCardFromBlock` | 编辑器命令 | 将块转为卡片 | `makeCardFromBlock` (从 cardCreator 导入) |
 | `${pluginName}.createCloze` | 编辑器命令 | 创建 Cloze 填空 | `createCloze` (从 clozeUtils 导入) |
+
+> 说明：复习入口不再注册为命令（不提供 `SRS: 开始复习` 命令面板项），工具栏按钮改为直接打开 `srs.new-window`（对应 `SrsNewWindowPanel`）。
 
 ### 依赖关系
 
@@ -103,7 +103,7 @@ import { createCloze } from "../clozeUtils"
 ```typescript
 export function registerCommands(
   pluginName: string,
-  startReviewSession: () => Promise<void>
+  openFlashcardHome: () => Promise<void>
 ): void {
   // 在闭包中捕获 pluginName，供 undo 函数使用
   const _pluginName = pluginName
@@ -187,7 +187,7 @@ export function unregisterUIComponents(pluginName: string): void
 
 | 按钮 ID | 图标 | 提示文本 | 关联命令 |
 |---------|------|----------|----------|
-| `${pluginName}.reviewButton` | `ti ti-cards` | 开始 SRS 复习 | `${pluginName}.startReviewSession` |
+| `${pluginName}.reviewButton` | `ti ti-cards` | 开始 SRS 复习 | 无（直接打开 `srs.new-window`） |
 | `${pluginName}.browserButton` | `ti ti-list` | 打开 Flashcard Home | `${pluginName}.openFlashcardHome` |
 | `${pluginName}.clozeButton` | `ti ti-braces` | 创建 Cloze 填空 | `${pluginName}.createCloze` |
 
