@@ -28,7 +28,7 @@
 1. 块必须带有 `#card` 标签
 2. 父块文本作为题目（front）
 3. 第一个子块文本作为答案（back）
-4. 从 `#card` 标签的属性中读取 Deck 名称
+4. 从 `#card` 标签的属性中读取牌组名称（通过块引用）
 5. **【新增】从 `#card` 标签的 `type` 属性识别卡片类型（basic 或 cloze）**
 
 ### 核心函数
@@ -110,14 +110,15 @@ block.refs[].data[].value // "basic" 或 "cloze"
 - 在复习界面使用不同的渲染方式
 - 使用 cloze 按钮创建填空时自动设置为 `"cloze"`
 
-#### `extractDeckName(block): string`
+#### `extractDeckName(block): Promise<string>`
 
-从块的标签属性中提取 Deck 名称：
+从块的标签属性中提取牌组名称（无迁移，直接替换旧的 `deck` 多选方案）：
 
 ```typescript
 // 标签属性结构
-block.refs[].data[].name === "deck"
-block.refs[].data[].value // Deck 名称
+block.refs[].data[].name === "牌组"
+block.refs[].data[].type === 2  // PropType.BlockRefs
+block.refs[].data[].value // 引用 ID 数组（ref.id），通常只取第一个
 ```
 
 ### 卡片类型管理
@@ -164,14 +165,15 @@ block._repr = {
 
 #### 用户操作流程
 
-1. 在 Orca 标签页面为 `#card` 标签定义 `deck` 属性
-2. 添加可选值（如 "English"、"物理"、"数学"）
-3. 给块打 `#card` 标签后，从下拉菜单选择 Deck
+1. 创建一个普通块，块文本为牌组名称（如“测试牌组”）
+2. 在 Orca 标签页面为 `#card` 标签定义 `牌组` 属性（类型：块引用）
+3. 给块打 `#card` 标签后，在 `牌组` 属性里引用该牌组块
 
 #### 默认行为
 
-- 未设置 Deck 属性时，归入 "Default" 分组
-- 支持多选类型（取第一个值）和单选类型
+- 未设置 `牌组` 属性时，归入 "Default" 分组
+- 暂不支持多牌组：若配置了多个引用，仅取第一个引用对应的牌组块
+- 不再识别旧的 `deck` 属性（无迁移，直接替换）
 
 ### 块渲染表示（\_repr）
 

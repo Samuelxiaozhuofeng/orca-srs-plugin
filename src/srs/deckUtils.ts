@@ -4,9 +4,15 @@
  * 提供从块中提取 deck 名称和计算 deck 统计信息的功能
  */
 
-import type { Block } from "../orca.d.ts"
+import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats } from "./types"
 import { isCardTag } from "./tagUtils"
+
+const DEFAULT_DECK_NAME = "Default"
+const DECK_PROPERTY_NAME = "牌组"
+
+// 简单缓存：同一轮运行中重复解析同一个牌组块时避免多次请求后端
+const deckNameCache = new Map<DbId, string>()
 
 /**
  * 卡片类型
@@ -89,25 +95,27 @@ export function extractCardType(block: Block): CardType {
 }
 
 /**
- * 从块的标签属性系统中提取 deck 名称
+ * 从块的标签属性系统中提取牌组名称（无迁移，直接替换旧的 deck 方案）
  *
  * 工作原理：
  * 1. 找到 type=2 (RefType.Property) 且 alias="card" 的引用
- * 2. 从引用的 data 数组中找到 name="deck" 的属性
- * 3. 返回该属性的 value，如果不存在返回 "Default"
+ * 2. 从引用的 data 数组中找到 name="牌组" 且 type=2 (PropType.BlockRefs) 的属性
+ * 3. 读取 value 中的引用 ID（数组，通常只取第一个）
+ * 4. 在 block.refs 中根据引用 ID 找到对应的 BlockRef，取其 to 指向的块
+ * 5. 读取目标块 text 作为牌组名称；任何一步失败都返回 "Default"
  *
  * 用户操作流程：
- * 1. 在 Orca 标签页面为 #card 标签定义属性 "deck"（类型：多选文本）
- * 2. 添加可选值（如 "English", "物理", "数学"）
- * 3. 给块打 #card 标签后，从下拉菜单选择 deck 值
+ * 1. 创建一个普通块，块文本为牌组名称（如“测试牌组”）
+ * 2. 在 Orca 标签页面为 #card 标签定义属性 "牌组"（类型：块引用）
+ * 3. 给块打 #card 标签后，在“牌组”属性里引用该牌组块
  *
  * @param block - 块对象
- * @returns deck 名称，默认为 "Default"
+ * @returns 牌组名称，默认为 "Default"
  */
-export function extractDeckName(block: Block): string {
+export async function extractDeckName(block: Block): Promise<string> {
   // 边界情况：块没有引用
   if (!block.refs || block.refs.length === 0) {
-    return "Default"
+    return DEFAULT_DECK_NAME
   }
 
   // 1. 找到 #card 标签引用
@@ -118,42 +126,73 @@ export function extractDeckName(block: Block): string {
 
   // 边界情况：没有找到 #card 标签引用
   if (!cardRef) {
-    return "Default"
+    return DEFAULT_DECK_NAME
   }
 
   // 边界情况：标签引用没有关联数据
   if (!cardRef.data || cardRef.data.length === 0) {
-    return "Default"
+    return DEFAULT_DECK_NAME
   }
 
-  // 2. 从标签关联数据中读取 deck 属性
-  const deckProperty = cardRef.data.find(d => d.name === "deck")
+  // 2. 从标签关联数据中读取“牌组”属性（块引用）
+  const deckProperty = cardRef.data.find(d => d.name === DECK_PROPERTY_NAME)
 
-  // 边界情况：没有设置 deck 属性
+  // 边界情况：没有设置“牌组”属性
   if (!deckProperty) {
-    return "Default"
+    return DEFAULT_DECK_NAME
   }
 
-  // 3. 返回 deck 值
-  const deckValue = deckProperty.value
-
-  // 处理多选类型（数组）和单选类型（字符串）
-  if (Array.isArray(deckValue)) {
-    // 多选类型：取数组的第一个值
-    if (deckValue.length === 0 || !deckValue[0] || typeof deckValue[0] !== "string") {
-      return "Default"
-    }
-    return deckValue[0].trim()
-  } else if (typeof deckValue === "string") {
-    // 单选类型：直接使用字符串
-    if (deckValue.trim() === "") {
-      return "Default"
-    }
-    return deckValue.trim()
+  // 3. 获取引用 ID（标签属性的 value 保存的是“引用ID数组”，不是块ID）
+  const refIds = deckProperty.value
+  if (!Array.isArray(refIds) || refIds.length === 0) {
+    return DEFAULT_DECK_NAME
   }
 
-  // 其他类型：无效
-  return "Default"
+  const firstRefId = normalizeDbId(refIds[0])
+  if (!firstRefId) {
+    return DEFAULT_DECK_NAME
+  }
+
+  // 4. 通过引用 ID 找到实际的块引用
+  const deckRef = block.refs.find(r => r.id === firstRefId)
+  if (!deckRef) {
+    return DEFAULT_DECK_NAME
+  }
+
+  // 5. 读取目标块文本作为牌组名称
+  const deckName = await resolveBlockText(deckRef.to)
+  if (!deckName) {
+    return DEFAULT_DECK_NAME
+  }
+  return deckName
+}
+
+function normalizeDbId(value: unknown): DbId | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value as DbId
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed as DbId
+  }
+  return null
+}
+
+async function resolveBlockText(blockId: DbId): Promise<string | null> {
+  const cached = deckNameCache.get(blockId)
+  if (cached !== undefined) return cached
+
+  const blockFromState = (orca.state.blocks as Record<number, Block | undefined> | undefined)?.[blockId as unknown as number]
+  const stateText = blockFromState?.text?.trim()
+  if (stateText) {
+    deckNameCache.set(blockId, stateText)
+    return stateText
+  }
+
+  const blockFromBackend = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  const backendText = blockFromBackend?.text?.trim()
+  if (!backendText) return null
+
+  deckNameCache.set(blockId, backendText)
+  return backendText
 }
 
 /**

@@ -13,6 +13,25 @@ import { createInitialSrsState, nextReviewState } from "./algorithm"
 import type { Grade, SrsState } from "./types"
 
 // ============================================================================
+// 块读取缓存（避免同一轮收集/复习中重复 get-block 导致的性能浪费）
+// ============================================================================
+
+const blockCache = new Map<DbId, Block | null>()
+
+const getBlockCached = async (blockId: DbId): Promise<Block | undefined> => {
+  if (blockCache.has(blockId)) {
+    return blockCache.get(blockId) ?? undefined
+  }
+
+  const block = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  blockCache.set(blockId, block ?? null)
+  return block
+}
+
+const hasPropertyWithPrefix = (block: Block | undefined, prefix: string): boolean =>
+  !!block?.properties?.some(prop => prop.name.startsWith(prefix))
+
+// ============================================================================
 // 工具函数
 // ============================================================================
 
@@ -81,7 +100,7 @@ const loadSrsStateInternal = async (
 ): Promise<SrsState> => {
   const now = new Date()
   const initial = createInitialSrsState(now)
-  const block = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  const block = await getBlockCached(blockId)
 
   if (!block) {
     return initial
@@ -138,6 +157,9 @@ const saveSrsStateInternal = async (
     [blockId],
     properties
   )
+
+  // 写入后使缓存失效，避免后续读取仍拿到旧 properties 导致状态不刷新
+  blockCache.delete(blockId)
 }
 
 // ============================================================================
@@ -269,7 +291,7 @@ export const loadDirectionSrsState = async (
 ): Promise<SrsState> => {
   const now = new Date()
   const initial = createInitialSrsState(now)
-  const block = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  const block = await getBlockCached(blockId)
 
   if (!block) {
     return initial
@@ -318,6 +340,9 @@ export const saveDirectionSrsState = async (
     [blockId],
     properties
   )
+
+  // 写入后使缓存失效，避免后续读取仍拿到旧 properties 导致状态不刷新
+  blockCache.delete(blockId)
 }
 
 /**
@@ -360,4 +385,58 @@ export const updateDirectionSrsState = async (
   const result = nextReviewState(prev, grade)
   await saveDirectionSrsState(blockId, directionType, result.state)
   return result
+}
+
+// ============================================================================
+// 初始化保障（避免因部分 block 缺少 properties 而反复重置进度）
+// ============================================================================
+
+/**
+ * 确保普通卡片存在 SRS 属性：若块上没有任何 `srs.` 前缀属性，则写入初始状态。
+ *
+ * 注意：这里用后端 get-block 的结果判断是否已初始化，避免使用 `block.properties` 的“半数据”误判，
+ * 否则会出现每次收集时都把卡片重置为 reps=0 的问题。
+ */
+export const ensureCardSrsState = async (
+  blockId: DbId,
+  now: Date = new Date()
+): Promise<SrsState> => {
+  const block = await getBlockCached(blockId)
+  const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
+  if (!hasAnySrsProps) {
+    return await writeInitialSrsState(blockId, now)
+  }
+  return await loadCardSrsState(blockId)
+}
+
+/**
+ * 确保 Cloze 某个填空编号存在 SRS 属性：若没有 `srs.cN.` 前缀属性，则写入初始状态（含分天偏移）。
+ */
+export const ensureClozeSrsState = async (
+  blockId: DbId,
+  clozeNumber: number,
+  daysOffset: number = 0
+): Promise<SrsState> => {
+  const block = await getBlockCached(blockId)
+  const prefix = `srs.c${clozeNumber}.`
+  if (!hasPropertyWithPrefix(block, prefix)) {
+    return await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
+  }
+  return await loadClozeSrsState(blockId, clozeNumber)
+}
+
+/**
+ * 确保 Direction 某个方向存在 SRS 属性：若没有 `srs.forward.` / `srs.backward.` 前缀属性，则写入初始状态（含分天偏移）。
+ */
+export const ensureDirectionSrsState = async (
+  blockId: DbId,
+  directionType: "forward" | "backward",
+  daysOffset: number = 0
+): Promise<SrsState> => {
+  const block = await getBlockCached(blockId)
+  const prefix = `srs.${directionType}.`
+  if (!hasPropertyWithPrefix(block, prefix)) {
+    return await writeInitialDirectionSrsState(blockId, directionType, daysOffset)
+  }
+  return await loadDirectionSrsState(blockId, directionType)
 }

@@ -7,7 +7,7 @@
 import type { Block, CursorData } from "../orca.d.ts"
 import { BlockWithRepr, resolveFrontBack } from "./blockUtils"
 import { extractDeckName, extractCardType } from "./deckUtils"
-import { writeInitialSrsState } from "./storage"
+import { ensureCardSrsState } from "./storage"
 import { isCardTag } from "./tagUtils"
 
 /**
@@ -117,8 +117,8 @@ export async function scanCardsFromTags(pluginName: string) {
 
       const { front, back } = resolveFrontBack(blockWithRepr)
 
-      // 从标签属性系统中读取 deck 名称
-      const deckName = extractDeckName(block)
+      // 从标签属性系统中读取牌组名称
+      const deckName = await extractDeckName(block)
 
       // 设置 _repr（直接修改，Valtio 会触发响应式更新）
       blockWithRepr._repr = {
@@ -129,14 +129,8 @@ export async function scanCardsFromTags(pluginName: string) {
         cardType: cardType  // 添加 cardType 字段，方便后续使用
       }
 
-      // 设置初始 SRS 属性（如果块还没有这些属性）
-      const hasSrsProperties = block.properties?.some(
-        prop => prop.name.startsWith("srs.")
-      )
-
-      if (!hasSrsProperties) {
-        await writeInitialSrsState(block.id)
-      }
+      // 确保存在初始 SRS 属性（仅在真正未初始化时写入，避免误判导致重置进度）
+      await ensureCardSrsState(block.id)
 
       console.log(`[${pluginName}] 已转换：块 #${block.id}`)
       console.log(`  卡片类型: ${cardType}`)
@@ -254,7 +248,8 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
     cardType: cardType
   }
 
-  await writeInitialSrsState(blockId)
+  // 确保存在初始 SRS 属性（避免重复执行转换时重置进度）
+  await ensureCardSrsState(blockId)
 
   console.log(`[${pluginName}] ✓ 块 #${blockId} 已转换为 ${cardType} SRS 卡片`)
   console.log(`[${pluginName}] 最终 block._repr:`, block._repr)

@@ -10,12 +10,9 @@ import { BlockWithRepr, isSrsCardBlock, resolveFrontBack } from "./blockUtils"
 import { extractDeckName, extractCardType } from "./deckUtils"
 import { extractCardStatus } from "./cardStatusUtils"
 import { 
-  loadCardSrsState, 
-  writeInitialSrsState, 
-  loadClozeSrsState, 
-  writeInitialClozeSrsState,
-  loadDirectionSrsState,
-  writeInitialDirectionSrsState
+  ensureCardSrsState,
+  ensureClozeSrsState,
+  ensureDirectionSrsState
 } from "./storage"
 import { getAllClozeNumbers } from "./clozeUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
@@ -122,7 +119,7 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
 
     // 识别卡片类型
     const cardType = extractCardType(block)
-    const deckName = extractDeckName(block)
+    const deckName = await extractDeckName(block)
 
     if (cardType === "cloze") {
       // Cloze 卡片：为每个填空编号生成独立的 ReviewCard
@@ -144,14 +141,7 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
       }
 
       for (const clozeNumber of clozeNumbers) {
-        // 检查是否已有该填空的 SRS 属性
-        const hasClozeSrsProps = block.properties?.some(
-          prop => prop.name.startsWith(`srs.c${clozeNumber}.`)
-        )
-
-        const srsState = hasClozeSrsProps
-          ? await loadClozeSrsState(block.id, clozeNumber)
-          : await writeInitialClozeSrsState(block.id, clozeNumber, clozeNumber - 1)
+        const srsState = await ensureClozeSrsState(block.id, clozeNumber, clozeNumber - 1)
 
         // front 使用块文本（将在渲染时隐藏对应填空）
         const front = block.text || ""
@@ -190,14 +180,7 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
       for (let i = 0; i < directions.length; i++) {
         const dir = directions[i]
 
-        // 检查是否已有该方向的 SRS 属性
-        const hasDirectionSrsProps = block.properties?.some(prop =>
-          prop.name.startsWith(`srs.${dir}.`)
-        )
-
-        const srsState = hasDirectionSrsProps
-          ? await loadDirectionSrsState(block.id, dir)
-          : await writeInitialDirectionSrsState(block.id, dir, i) // 分天推送
+        const srsState = await ensureDirectionSrsState(block.id, dir, i) // 分天推送
 
         // 根据方向决定问题和答案
         const front = dir === "forward" ? dirInfo.leftText : dirInfo.rightText
@@ -216,10 +199,7 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
     } else {
       // Basic 卡片：传统的正面/反面模式
       const { front, back } = resolveFrontBack(block)
-      const hasSrsProps = block.properties?.some(prop => prop.name.startsWith("srs."))
-      const srsState = hasSrsProps
-        ? await loadCardSrsState(block.id)
-        : await writeInitialSrsState(block.id, now)
+      const srsState = await ensureCardSrsState(block.id, now)
 
       cards.push({
         id: block.id,

@@ -84,7 +84,7 @@ flowchart TD
 - `collectReviewCards()` 必须接收正确的 `pluginName` 参数
 - 用于识别 Cloze inline fragment 类型（`${pluginName}.cloze`）
 - 如果不传或传错，Cloze 卡片会被跳过（找不到填空）
-- 通过 `block.properties` 检查 `srs.isCard` 属性来识别持久化的卡片
+- SRS 状态读写统一走 `storage.ts`，读取时通过后端 `get-block` 获取完整 properties，避免使用“半数据块”误判
 
 **Cloze 卡片处理**：
 
@@ -103,14 +103,16 @@ flowchart TD
 
 | 函数                        | 说明                     |
 | --------------------------- | ------------------------ |
-| `extractDeckName(block)`    | 从标签属性提取 deck 名称 |
+| `extractDeckName(block)`    | 从标签属性提取牌组名称（异步） |
 | `calculateDeckStats(cards)` | 计算各 deck 统计信息     |
 
 ### extractDeckName 逻辑
 
 1. 查找 `block.refs` 中 `type=2, alias="card"` 的引用
-2. 从 `ref.data` 找 `name="deck"` 的属性
-3. 返回 `value`（支持数组或字符串），默认 `"Default"`
+2. 从 `ref.data` 找 `name="牌组"` 且 `type=2 (PropType.BlockRefs)` 的属性
+3. 读取 `value`（引用 ID 数组，通常只取第一个）
+4. 在 `block.refs` 中用引用 ID 匹配 `BlockRef.id`，获取其 `to`（目标块 ID）
+5. 读取目标块 `text` 作为牌组名称；任何一步失败默认 `"Default"`
 
 ### extractCardType 逻辑（2025-12-10 新增）
 

@@ -6,7 +6,7 @@
 
 import type { CursorData, Block } from "../../orca.d.ts"
 import { generateCardFromAI } from "./aiService"
-import { writeInitialSrsState } from "../storage"
+import { ensureCardSrsState } from "../storage"
 import { BlockWithRepr } from "../blockUtils"
 
 /**
@@ -155,9 +155,9 @@ export async function makeAICardFromBlock(
       console.log(`[${pluginName}] 子块 _repr 已设置为 srs.card`)
     }
     
-    // 5. 初始化 SRS 状态
+    // 5. 初始化 SRS 状态（仅在未初始化时写入）
     console.log(`[${pluginName}] 初始化 SRS 状态...`)
-    await writeInitialSrsState(childBlockId)
+    await ensureCardSrsState(childBlockId)
     
     console.log(`[${pluginName}] ========== AI 卡片创建完成 ==========`)
     console.log(`[${pluginName}] 结构：`)
