@@ -28,3 +28,8 @@ dist-ssr
 .gitignore
 .gitignore
 .serena/cache/typescript/document_symbols_cache_v23-06-25.pkl
+.serena/memories/suggested_commands.md
+.serena/memories/style_conventions.md
+.serena/memories/task_completion_checklist.md
+.serena/memories/project_overview.md
+.serena/cache/typescript/document_symbols_cache_v23-06-25.pkl

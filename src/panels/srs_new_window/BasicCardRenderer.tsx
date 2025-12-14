@@ -64,6 +64,45 @@ export default function BasicCardRenderer({
     // 启用同级块显示，获取所有子块文本
     return getSiblingBlockTexts(card.id as number, reviewSettings.maxSiblingBlocks)
   }, [card.id, card.back, reviewSettings.showSiblingBlocks, reviewSettings.maxSiblingBlocks])
+
+  // 排版策略：当答案块较多或内容较长/多行时，使用左对齐+分块承载，避免大段内容全部居中导致难以阅读
+  const answerLayout = useMemo(() => {
+    const normalizedTextsRaw = answerTexts.map((t: string) => (t ?? "").trim()).filter(Boolean)
+    const normalizedTexts = normalizedTextsRaw.length > 0 ? normalizedTextsRaw : ["（无内容）"]
+    const blockCount = normalizedTexts.length
+    const hasMultiLine = normalizedTexts.some((t: string) => t.includes("\n"))
+    const hasLongText = normalizedTexts.some((t: string) => t.length >= 80)
+    const shouldLeftAlign = blockCount > 1 || hasMultiLine || hasLongText
+
+    return {
+      normalizedTexts,
+      shouldLeftAlign,
+      containerStyle: {
+        fontSize: "22px",
+        color: "var(--orca-color-text-1)",
+        lineHeight: 2,
+        whiteSpace: "pre-wrap",
+        fontWeight: 400,
+        textAlign: shouldLeftAlign ? "left" : "center",
+        animation: "srsAnswerFadeIn 0.3s ease-out",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: shouldLeftAlign ? "stretch" : "center",
+        gap: shouldLeftAlign ? "12px" : "16px",
+        overflowWrap: "anywhere",
+      } as const,
+      itemStyle: shouldLeftAlign
+        ? ({
+            width: "100%",
+            padding: "10px 12px",
+            backgroundColor: "var(--orca-color-bg-2)",
+            borderRadius: "10px",
+            borderLeft: "3px solid var(--orca-color-primary-4)",
+            boxSizing: "border-box",
+          } as const)
+        : ({ maxWidth: "100%" } as const),
+    }
+  }, [answerTexts])
   
   const handleGrade = (grade: Grade) => {
     if (isGrading) return
@@ -220,18 +259,10 @@ export default function BasicCardRenderer({
               {/* 答案内容 - 支持显示多个同级块 */}
               <div 
                 className="srs-answer-reveal"
-                style={{
-                  fontSize: "22px",
-                  color: "var(--orca-color-text-1)",
-                  lineHeight: 2,
-                  whiteSpace: "pre-wrap",
-                  fontWeight: 400,
-                  textAlign: "center",
-                  animation: "srsAnswerFadeIn 0.3s ease-out"
-                }}
+                style={answerLayout.containerStyle}
               >
-                {answerTexts.map((text: string, index: number) => (
-                  <div key={index} style={{ marginBottom: index < answerTexts.length - 1 ? "16px" : 0 }}>
+                {answerLayout.normalizedTexts.map((text: string, index: number) => (
+                  <div key={index} style={answerLayout.itemStyle}>
                     {text}
                   </div>
                 ))}
