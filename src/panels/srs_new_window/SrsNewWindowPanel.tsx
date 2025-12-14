@@ -27,6 +27,16 @@ import ClozeCardRenderer from "./ClozeCardRenderer"
 const { useEffect, useState, useRef, useMemo, useCallback } = window.React
 const { Button } = orca.components
 
+function inferUniqueDeckName(cards: ReviewCard[]): string | null {
+  if (cards.length === 0) return null
+  const first = cards[0]?.deck
+  if (!first) return null
+  for (let i = 1; i < cards.length; i++) {
+    if (cards[i]?.deck !== first) return null
+  }
+  return first
+}
+
 /**
  * 格式化日期为简单的"月-日"格式
  */
@@ -80,6 +90,12 @@ export default function SrsNewWindowPanel(props: PanelProps) {
   const totalCards = queue.length
   const currentCard = queue[currentIndex]
   const isSessionComplete = currentIndex >= totalCards
+
+  const deckLabel = useMemo(() => {
+    if (deckFilter) return deckFilter
+    const inferred = inferUniqueDeckName(queue)
+    return inferred || "全部"
+  }, [deckFilter, queue])
 
   // 计算到期和新卡数量
   const counters = useMemo(() => {
@@ -555,7 +571,7 @@ export default function SrsNewWindowPanel(props: PanelProps) {
           fontSize: "12px",
           fontWeight: 500
         }}>
-          Deck: {deckFilter || "全部"}
+          Deck: {deckLabel}
         </div>
         
         {/* 刷新按钮 */}

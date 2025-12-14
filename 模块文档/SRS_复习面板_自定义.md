@@ -372,4 +372,5 @@ function renderFragments(
 | [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)                                    | 面板注册          |
 > 说明：复习面板右上角会显示当前 Deck 状态。  
 > - 若从 FlashcardHome 的某个牌组进入，则显示 `Deck: <牌组名>`（表示已按牌组筛选）。  
-> - 若复习全部卡片，则显示 `Deck: 全部`（表示未筛选）。
+> - 若未按牌组筛选但队列中只有一个牌组，则显示该唯一牌组（便于确认当前复习范围）。  
+> - 若队列包含多个牌组且未筛选，则显示 `Deck: 全部`。  
