@@ -78,57 +78,73 @@ flowchart TD
 
 ### 注册的命令
 
-| 命令 ID                            | 类型       | 说明            | 注册位置    |
-| ---------------------------------- | ---------- | --------------- | ----------- |
-| `${pluginName}.scanCardsFromTags`  | 普通命令   | 扫描带标签的块  | commands.ts |
-| `${pluginName}.openFlashcardHome`  | 普通命令   | 打开 Flashcard Home  | commands.ts |
-| `${pluginName}.makeCardFromBlock`  | 编辑器命令 | 将块转为卡片    | commands.ts |
-| `${pluginName}.createCloze`        | 编辑器命令 | 创建 Cloze 填空 | commands.ts |
+| 命令 ID | 类型 | 说明 | 注册位置 |
+| ---------------------------------- | ---------- | ---------------------------- | ----------- |
+| `${pluginName}.scanCardsFromTags` | 普通命令 | 扫描带标签的块 | commands.ts |
+| `${pluginName}.openFlashcardHome` | 普通命令 | 打开 Flashcard Home | commands.ts |
+| `${pluginName}.openOldReviewPanel` | 普通命令 | 打开旧复习面板（块渲染器模式） | commands.ts |
+| `${pluginName}.makeCardFromBlock` | 编辑器命令 | 将块转为卡片 | commands.ts |
+| `${pluginName}.createCloze` | 编辑器命令 | 创建 Cloze 填空 | commands.ts |
+| `${pluginName}.createDirectionForward` | 编辑器命令 | 创建正向方向卡 → | commands.ts |
+| `${pluginName}.createDirectionBackward` | 编辑器命令 | 创建反向方向卡 ← | commands.ts |
+| `${pluginName}.makeAICard` | 编辑器命令 | AI 生成记忆卡片 | commands.ts |
+| `${pluginName}.testAIConnection` | 普通命令 | 测试 AI 连接 | commands.ts |
 
 ### 工具栏按钮
 
-| 按钮 ID                       | 图标           | 说明            | 注册位置        |
-| ----------------------------- | -------------- | --------------- | --------------- |
-| `${pluginName}.reviewButton`  | `ti ti-cards`  | 开始 SRS 复习（直接打开 `srs.new-window`）   | uiComponents.ts |
-| `${pluginName}.browserButton` | `ti ti-list`   | 打开卡片浏览器  | uiComponents.ts |
-| `${pluginName}.clozeButton`   | `ti ti-braces` | 创建 Cloze 填空 | uiComponents.ts |
+| 按钮 ID | 图标 | 说明 | 注册位置 |
+| --------------------------- | -------------- | ------------ | --------------- |
+| `${pluginName}.clozeButton` | `ti ti-braces` | 创建 Cloze 填空 | uiComponents.ts |
 
 ### 斜杠命令
 
-| 命令 ID                  | 标题           | 关联命令          | 说明                                 | 注册位置        |
-| ------------------------ | -------------- | ----------------- | ------------------------------------ | --------------- |
+| 命令 ID | 标题 | 关联命令 | 说明 | 注册位置 |
+| ------------------------------- | ------------------------------ | ----------------------------- | ------------------------------------ | --------------- |
 | `${pluginName}.makeCard` | 转换为记忆卡片 | makeCardFromBlock | 自动添加 #card 标签并转换为 SRS 卡片 | uiComponents.ts |
-
-**已移除的斜杠命令**：
-
-- ~~开始 SRS 复习~~ → 使用工具栏按钮或命令面板
-- ~~扫描带标签的卡片~~ → 使用命令面板
-- ~~打开卡片浏览器~~ → 使用工具栏按钮或命令面板
+| `${pluginName}.directionForward` | 创建正向方向卡 → (光标位置分隔问答) | createDirectionForward | 方向卡创建入口 | uiComponents.ts |
+| `${pluginName}.directionBackward` | 创建反向方向卡 ← (光标位置分隔问答) | createDirectionBackward | 方向卡创建入口 | uiComponents.ts |
+| `${pluginName}.aiCard` | AI 生成记忆卡片 | makeAICard | AI 卡片创建入口 | uiComponents.ts |
 
 ### 块渲染器
 
-| 类型                 | 组件                     | 说明           | 注册位置     |
-| -------------------- | ------------------------ | -------------- | ------------ |
-| `srs.card`           | SrsCardBlockRenderer     | 卡片块渲染     | renderers.ts |
-| `srs.cloze-card`     | SrsCardBlockRenderer     | Cloze 卡片渲染 | renderers.ts |
-| `srs.review-session` | SrsReviewSessionRenderer | 复习会话渲染   | renderers.ts |
+| 类型 | 组件 | 说明 | 注册位置 |
+| -------------------- | ------------------------ | ------------------ | ------------ |
+| `srs.card` | SrsCardBlockRenderer | Basic 卡片块渲染 | renderers.ts |
+| `srs.cloze-card` | SrsCardBlockRenderer | Cloze 卡片块渲染 | renderers.ts |
+| `srs.direction-card` | SrsCardBlockRenderer | Direction 卡片块渲染 | renderers.ts |
+| `srs.review-session` | SrsReviewSessionRenderer | 复习会话块渲染 | renderers.ts |
+
+### 面板（Custom Panel）
+
+| 类型 | 组件 | 说明 | 注册位置 |
+| ------------------- | -------------------- | ---------------- | ------------ |
+| `srs.flashcard-home` | SrsFlashcardHomePanel | Flashcard Home 面板 | renderers.ts |
 
 ### Inline 渲染器
 
-| 类型                  | 组件                | 说明           | 注册位置     |
-| --------------------- | ------------------- | -------------- | ------------ |
+| 类型 | 组件 | 说明 | 注册位置 |
+| ------------------------- | ---------------------- | ------------------ | ------------ |
 | `${pluginName}.cloze` | ClozeInlineRenderer | Cloze 填空渲染 | renderers.ts |
+| `${pluginName}.direction` | DirectionInlineRenderer | Direction 分隔符渲染 | renderers.ts |
 
 ### 转换器
 
-用于将 SRS 块导出为纯文本：
+用于将 SRS 块/inline 导出为纯文本：
 
-| 源类型                | 目标格式 | 输出格式                                        | 注册位置      |
+| 源类型 | 目标格式 | 输出格式 | 注册位置 |
 | --------------------- | -------- | ----------------------------------------------- | ------------- |
-| `srs.card`            | `plain`  | `[SRS 卡片]\n题目: ${front}\n答案: ${back}`     | converters.ts |
-| `srs.cloze-card`      | `plain`  | `[SRS 填空卡片]\n题目: ${front}\n答案: ${back}` | converters.ts |
-| `srs.review-session`  | `plain`  | `[SRS 复习会话面板块]`                          | converters.ts |
-| `${pluginName}.cloze` | `plain`  | `{c${clozeNumber}:: ${content}}`                | converters.ts |
+| `srs.card` | `plain` | `[SRS 卡片]
+题目: ${front}
+答案: ${back}` | converters.ts |
+| `srs.cloze-card` | `plain` | `[SRS 填空卡片]
+题目: ${front}
+答案: ${back}` | converters.ts |
+| `srs.direction-card` | `plain` | `[SRS 方向卡片]
+${front} -> ${back}`（或 `<-`） | converters.ts |
+| `srs.review-session` | `plain` | `[SRS 复习会话面板块]` | converters.ts |
+| `srs.flashcard-home` | `plain` | `[SRS Flashcard Home 面板块]` | converters.ts |
+| `${pluginName}.cloze` | `plain` | `fragment.v`（仅导出填空内容） | converters.ts |
+| `${pluginName}.direction` | `plain` | ` -> `（或 `<-`） | converters.ts |
 
 ## load 函数
 
@@ -136,27 +152,33 @@ flowchart TD
 
 ```typescript
 export async function load(_name: string) {
-  pluginName = _name;
+  pluginName = _name
 
-  // 1. 设置国际化
-  setupL10N(orca.state.locale, { "zh-CN": zhCN });
+  // 设置国际化
+  setupL10N(orca.state.locale, { "zh-CN": zhCN })
 
-  console.log(`[${pluginName}] 插件已加载`);
+  // 注册插件设置（合并 AI 设置与复习设置）
+  try {
+    await orca.plugins.setSettingsSchema(pluginName, {
+      ...aiSettingsSchema,
+      ...reviewSettingsSchema
+    })
+    console.log(`[${pluginName}] 插件设置已注册（AI + 复习）`)
+  } catch (error) {
+    console.warn(`[${pluginName}] 注册插件设置失败:`, error)
+  }
 
-  // 2. 委托给注册模块（并行执行）
-  registerCommands(pluginName, startReviewSession);
-  registerUIComponents(pluginName);
-  registerRenderers(pluginName);
-  registerConverters(pluginName);
-
-  console.log(`[${pluginName}] 命令、UI 组件和渲染器已注册`);
+  registerCommands(pluginName, openFlashcardHome)
+  registerUIComponents(pluginName)
+  registerRenderers(pluginName)
+  registerConverters(pluginName)
 }
 ```
 
 **关键点**：
 
 - ✅ 设置国际化在所有注册之前
-- ✅ 将 `startReviewSession` 函数传递给 `registerCommands`
+- ✅ 将 `openFlashcardHome` 函数传递给 `registerCommands`
 - ✅ 注册顺序无强制要求（Orca API 无依赖）
 
 ## unload 函数
@@ -165,27 +187,17 @@ export async function load(_name: string) {
 
 ```typescript
 export async function unload() {
-  console.log(`[${pluginName}] 开始卸载插件`);
-
-  // 1. 清理浏览器组件
-  closeCardBrowser(pluginName);
-
-  // 2. 清理复习会话块
-  await cleanupReviewSessionBlock(pluginName);
-
-  // 3. 倒序注销（高层依赖先清理）
-  unregisterConverters(pluginName);
-  unregisterRenderers(pluginName);
-  unregisterUIComponents(pluginName);
-  unregisterCommands(pluginName);
-
-  console.log(`[${pluginName}] 插件已卸载`);
+  unregisterCommands(pluginName)
+  unregisterUIComponents(pluginName)
+  unregisterRenderers(pluginName)
+  unregisterConverters(pluginName)
+  console.log(`[${pluginName}] 插件已卸载`)
 }
 ```
 
 **关键点**：
 
-- ✅ 先清理 DOM 组件（浏览器、会话块）
+- ✅ 当前仅负责注销注册项（未做额外 UI/会话清理）
 - ✅ 倒序注销（converters → renderers → ui → commands）
 - ✅ 确保所有资源正确释放
 
@@ -206,7 +218,7 @@ async function startReviewSession(
 
 - `deckName`：可选的 Deck 名称过滤，仅复习指定 Deck 的卡片
 - `openInCurrentPanel`：是否在当前面板打开复习界面
-  - `false`（默认）：在右侧新建或复用面板打开，适用于工具栏按钮调用
+  - `false`（默认）：在右侧新建或复用面板打开，适用于命令启动
   - `true`：在当前激活面板打开，适用于从 FlashcardHome 调用
 
 > [!TIP]
@@ -218,6 +230,7 @@ async function startReviewSession(
   openInCurrentPanel: boolean = false
 ) {
   try {
+    reviewDeckFilter = deckName ?? null
     const activePanelId = orca.state.activePanel
 
     if (!activePanelId) {
@@ -225,15 +238,15 @@ async function startReviewSession(
       return
     }
 
-    // 统一复习面板：srs.new-window（SrsNewWindowPanel）
-    const viewArgs = {
-      deckFilter: deckName ?? null,
-      hostPanelId: activePanelId
-    }
+    // 记录主面板 ID（用于跳转到卡片）
+    reviewHostPanelId = activePanelId
 
-    // 如果要求在当前面板打开（例如从 FlashcardHome 调用）：替换当前视图
+    // 获取或创建复习会话块（块渲染器模式）
+    const blockId = await getOrCreateReviewSessionBlock(pluginName)
+
+    // 从 FlashcardHome 调用：在当前面板打开
     if (openInCurrentPanel) {
-      orca.nav.goTo("srs.new-window", viewArgs, activePanelId)
+      orca.nav.goTo("block", { blockId }, activePanelId)
       const message = deckName ? `已打开 ${deckName} 复习会话` : "复习会话已打开"
       orca.notify("success", message, { title: "SRS 复习" })
       return
@@ -244,11 +257,7 @@ async function startReviewSession(
     let rightPanelId: string | null = null
 
     for (const [panelId, panel] of Object.entries(panels)) {
-      if (
-        panel.parentId === activePanelId &&
-        panel.position === "right" &&
-        panel.view === "srs.new-window"
-      ) {
+      if (panel.parentId === activePanelId && panel.position === "right") {
         rightPanelId = panelId
         break
       }
@@ -256,8 +265,8 @@ async function startReviewSession(
 
     if (!rightPanelId) {
       rightPanelId = orca.nav.addTo(activePanelId, "right", {
-        view: "srs.new-window",
-        viewArgs,
+        view: "block",
+        viewArgs: { blockId },
         viewState: {}
       })
 
@@ -266,15 +275,14 @@ async function startReviewSession(
         return
       }
     } else {
-      orca.nav.goTo("srs.new-window", viewArgs, rightPanelId)
+      orca.nav.goTo("block", { blockId }, rightPanelId)
     }
 
-    // 切换焦点到复习面板
-    setTimeout(() => {
-      if (rightPanelId) {
-        orca.nav.switchFocusTo(rightPanelId)
-      }
-    }, 100)
+    if (rightPanelId) {
+      setTimeout(() => {
+        orca.nav.switchFocusTo(rightPanelId!)
+      }, 100)
+    }
 
     const message = deckName ? `已打开 ${deckName} 复习会话` : "复习会话已在右侧面板打开"
     orca.notify("success", message, { title: "SRS 复习" })
@@ -301,8 +309,8 @@ async function startReviewSession(
 
 ### 工具栏
 
-1. 点击顶部工具栏的卡片图标开始复习
-2. 点击列表图标打开浏览器
+1. 点击顶部工具栏的括号图标创建 Cloze 填空
+2. 复习入口通过命令面板 `SRS: 打开旧复习面板` 或 Flashcard Home 中的入口
 
 ## 扩展点
 

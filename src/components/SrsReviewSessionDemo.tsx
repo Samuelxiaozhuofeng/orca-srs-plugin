@@ -5,6 +5,7 @@ import type { DbId } from "../orca.d.ts"
 import type { Grade, ReviewCard } from "../srs/types"
 import { updateSrsState, updateClozeSrsState, updateDirectionSrsState } from "../srs/storage"
 import { buryCard, suspendCard } from "../srs/cardStatusUtils"
+import { emitCardBuried, emitCardGraded, emitCardSuspended } from "../srs/srsEvents"
 import SrsCardDemo from "./SrsCardDemo"
 
 // 从全局 window 对象获取 React（Orca 插件约定）
@@ -232,6 +233,9 @@ export default function SrsReviewSession({
       `评分 ${grade.toUpperCase()}${cardLabel} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
     )
 
+    // 通知 FlashcardHome 静默刷新（避免返回后仍显示旧统计/旧队列）
+    emitCardGraded(currentCard.id, grade)
+
     setReviewedCount((prev: number) => prev + 1)
     setIsGrading(false)
     setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
@@ -261,6 +265,9 @@ export default function SrsReviewSession({
 
       setLastLog(`已埋藏${cardLabel}，明天再复习`)
       orca.notify("info", "卡片已埋藏，明天再复习", { title: "SRS 复习" })
+
+      // 通知 FlashcardHome 静默刷新
+      emitCardBuried(currentCard.id)
     } catch (error) {
       console.error("[SRS Review Session] 埋藏卡片失败:", error)
       orca.notify("error", `埋藏失败: ${error}`, { title: "SRS 复习" })
@@ -290,6 +297,9 @@ export default function SrsReviewSession({
 
       setLastLog(`已暂停${cardLabel}`)
       orca.notify("info", "卡片已暂停，可在卡片浏览器中取消暂停", { title: "SRS 复习" })
+
+      // 通知 FlashcardHome 静默刷新
+      emitCardSuspended(currentCard.id)
     } catch (error) {
       console.error("[SRS Review Session] 暂停卡片失败:", error)
       orca.notify("error", `暂停失败: ${error}`, { title: "SRS 复习" })

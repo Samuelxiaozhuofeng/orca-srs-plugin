@@ -300,7 +300,7 @@ const newBlockText =
 
 ---
 
-### ✅ 阶段 3：多填空独立复习（已完成 - Custom Panel）
+### ✅ 阶段 3：多填空独立复习（已完成）
 
 **目标**：支持同一卡片的多个填空分别复习
 
@@ -308,11 +308,8 @@ const newBlockText =
 
 - 在 `cardCollector.ts` 中为每个 cloze 编号生成独立的 `ReviewCard`
 - 复习时只显示当前 `clozeNumber` 对应的 `[...]`，其他填空显示答案
-- 在 `SrsNewWindowPanel.tsx` 中通过 `renderFragments()` 实现条件渲染
+- 在 `ClozeCardReviewRenderer.tsx` 中通过 `renderFragments()` 实现条件渲染
 - 使用 `updateClozeSrsState()` 独立更新每个填空的 SRS 状态
-
-> **注意**：阶段 3 的实现是在 Custom Panel 架构（`SrsNewWindowPanel.tsx`）中完成的，
-> 而非旧的 `ClozeCardReviewRenderer.tsx`。详见 `SRS_复习面板_自定义.md`。
 
 ---
 

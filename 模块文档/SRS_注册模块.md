@@ -86,9 +86,9 @@ export function unregisterCommands(pluginName: string): void
 | `${pluginName}.createDirectionBackward` | 编辑器命令 | 创建反向方向卡 ← | `insertDirection` (从 directionUtils 导入) |
 | `${pluginName}.makeAICard` | 编辑器命令 | AI 生成记忆卡片 | `makeAICardFromBlock` (从 ai/aiCardCreator 导入) |
 | `${pluginName}.testAIConnection` | 普通命令 | 测试 AI 连接 | `testAIConnection` (从 ai/aiService 导入) |
-| `${pluginName}.openNewReviewPanel` | 普通命令 | 打开新复习面板（测试/开发） | `orca.nav.goTo("srs.new-window")` |
+| `${pluginName}.openOldReviewPanel` | 普通命令 | 打开旧复习面板（块渲染器模式） | `startReviewSession()`（从 main.ts 动态导入） |
 
-> 说明：复习入口不注册为命令面板项；当前编辑器工具栏也不提供复习按钮，复习需从 Flashcard Home 或相关面板入口进入。
+> 说明：复习入口提供为命令面板项（`SRS: 打开旧复习面板`），也可从 Flashcard Home 进入；当前编辑器工具栏不提供复习按钮。
 
 ### 依赖关系
 

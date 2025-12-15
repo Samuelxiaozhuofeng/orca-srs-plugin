@@ -241,10 +241,10 @@ stateDiagram-v2
 
 **影响的组件**：
 
-- `SrsNewWindowPanel.tsx` - CSS 动画注入和状态管理
-- `BasicCardRenderer.tsx` - 视觉样式优化
-- `ClozeCardRenderer.tsx` - 视觉样式优化
-- `DirectionCardRenderer.tsx` - 视觉样式优化
+- `SrsReviewSessionDemo.tsx` - CSS 动画注入和状态管理
+- `SrsCardDemo.tsx` - Basic 卡片复习界面
+- `ClozeCardReviewRenderer.tsx` - Cloze 卡片复习界面
+- `DirectionCardReviewRenderer.tsx` - Direction 卡片复习界面
 
 ### UI 显示优化（2025-12-10 更新）
 

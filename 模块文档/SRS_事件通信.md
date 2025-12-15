@@ -20,9 +20,9 @@
 
 | 事件 | 说明 | 触发方 | 订阅方 |
 | --- | --- | --- | --- |
-| `srs.cardGraded` | 卡片被评分 | `SrsNewWindowPanel` | `SrsFlashcardHome` |
-| `srs.cardBuried` | 卡片被埋藏 | `SrsNewWindowPanel` | `SrsFlashcardHome` |
-| `srs.cardSuspended` | 卡片被暂停 | `SrsNewWindowPanel` | `SrsFlashcardHome` |
+| `srs.cardGraded` | 卡片被评分 | `SrsReviewSessionDemo` | `SrsFlashcardHome` |
+| `srs.cardBuried` | 卡片被埋藏 | `SrsReviewSessionDemo` | `SrsFlashcardHome` |
+| `srs.cardSuspended` | 卡片被暂停 | `SrsReviewSessionDemo` | `SrsFlashcardHome` |
 
 ### 事件 payload
 
@@ -36,7 +36,7 @@
 
 ## 数据流
 
-1. 用户在 `SrsNewWindowPanel` 执行评分/埋藏/暂停。
+1. 用户在旧复习会话（`SrsReviewSessionDemo`）执行评分/埋藏/暂停。
 2. 状态更新成功后调用 `emit*` 广播事件。
 3. `SrsFlashcardHome` 通过 `registerHandler` 监听事件，收到后调用 `loadData(false)`。
 4. 用户返回 FlashcardHome 时，统计与“开始复习”按钮状态已是最新。
@@ -44,6 +44,5 @@
 ## 相关文件
 
 - `src/srs/srsEvents.ts`
-- `src/panels/srs_new_window/SrsNewWindowPanel.tsx`
+- `src/components/SrsReviewSessionDemo.tsx`
 - `src/components/SrsFlashcardHome.tsx`
-
