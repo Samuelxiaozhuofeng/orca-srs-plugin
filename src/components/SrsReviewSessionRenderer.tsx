@@ -196,7 +196,6 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
       renderingMode={renderingMode}
       reprClassName="srs-repr-review-session"
       contentClassName="srs-repr-review-session-content"
-      contentAttrs={{ contentEditable: false }}
       contentJsx={renderContent()}
       childrenJsx={null}
     />

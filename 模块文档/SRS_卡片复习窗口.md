@@ -74,11 +74,15 @@ stateDiagram-v2
 - 四个评分按钮
 - ~~SRS 状态信息显示~~（已隐藏，2025-12-10）
 
-#### 题目区域
+#### 题目与答案区域
 
-- 使用 `renderingMode="simple"` 渲染
+- 使用 `renderingMode="simple"` 渲染（题目区域）
 - MutationObserver 隐藏子块（防止答案泄露）
-- 支持在复习中直接编辑
+- **支持在复习中直接编辑**（2025-12-15 更新）
+  - 移除了 `SrsReviewSessionRenderer` 中的 `contentEditable: false` 配置
+  - 题目和答案区域现在都可以直接编辑
+  - 编辑内容会立即保存到 Orca 数据库
+  - 用户可以在复习过程中修正或补充卡片内容
 - ~~动态注入 CSS 隐藏块手柄和 bullet~~（已删除，2025-12-15）
   - 之前通过 `useEffect` 动态注入全局 CSS 样式来隐藏 `.srs-block-container` 内的编辑器 UI 元素
   - 现在仅依赖 `MutationObserver` 的 JavaScript 逻辑来隐藏这些元素
