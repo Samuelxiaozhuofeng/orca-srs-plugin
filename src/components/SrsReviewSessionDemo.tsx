@@ -61,7 +61,7 @@ export default function SrsReviewSession({
     const noneEditableEl = blockEditor.querySelector('.orca-block-editor-none-editable') as HTMLElement | null
     const goBtns = blockEditor.querySelector('.orca-block-editor-go-btns') as HTMLElement | null
     const sidetools = blockEditor.querySelector('.orca-block-editor-sidetools') as HTMLElement | null
-    const panelDragHandle = blockEditor.parentElement?.querySelector('.orca-panel-drag-handle') as HTMLElement | null
+    // 注意：不隐藏 .orca-panel-drag-handle，保持面板拖拽手柄可见
 
     // 查找 repr 级别需要隐藏的元素（块手柄、折叠按钮等）
     const reprNoneEditable = blockEditor.querySelector('.orca-repr-main-none-editable') as HTMLElement | null
@@ -73,7 +73,6 @@ export default function SrsReviewSession({
       if (noneEditableEl) noneEditableEl.style.display = 'none'
       if (goBtns) goBtns.style.display = 'none'
       if (sidetools) sidetools.style.display = 'none'
-      if (panelDragHandle) panelDragHandle.style.display = 'none'
       // 隐藏块手柄和折叠按钮（在 repr 层级）
       if (reprNoneEditable) reprNoneEditable.style.display = 'none'
       if (breadcrumb) breadcrumb.style.display = 'none'
@@ -104,7 +103,6 @@ export default function SrsReviewSession({
       if (noneEditableEl) noneEditableEl.style.display = ''
       if (goBtns) goBtns.style.display = ''
       if (sidetools) sidetools.style.display = ''
-      if (panelDragHandle) panelDragHandle.style.display = ''
       if (reprNoneEditable) reprNoneEditable.style.display = ''
       if (breadcrumb) breadcrumb.style.display = ''
     }
@@ -115,7 +113,6 @@ export default function SrsReviewSession({
       if (noneEditableEl) noneEditableEl.style.display = ''
       if (goBtns) goBtns.style.display = ''
       if (sidetools) sidetools.style.display = ''
-      if (panelDragHandle) panelDragHandle.style.display = ''
       if (reprNoneEditable) reprNoneEditable.style.display = ''
       if (breadcrumb) breadcrumb.style.display = ''
     }

@@ -354,20 +354,23 @@ stateDiagram-v2
    - `.orca-block-editor-none-editable`（query tabs）
    - `.orca-block-editor-go-btns`（上下导航按钮）
    - `.orca-block-editor-sidetools`（侧边工具栏）
-   - `.orca-panel-drag-handle`（面板拖拽手柄）
    - `.orca-repr-main-none-editable`（块手柄、折叠按钮）
    - `.orca-breadcrumb`（面包屑导航）
+   - **注意**：不再隐藏 `.orca-panel-drag-handle`（面板拖拽手柄），保持其可见方便用户调整面板布局
 3. **批量隐藏块手柄和 bullet**（通过 `querySelectorAll` 遍历设置）：
+   - `.orca-block-children`、`.orca-repr-children`
    - `.orca-block-handle`、`.orca-repr-handle`
    - `.orca-block-bullet`、`[data-role="bullet"]`
    - `.orca-block-drag-handle`
-   - `.orca-repr-collapse`、`[class*="collapse"]`
+   - `.orca-repr-collapse`、`.orca-block-collapse-btn`
+   - **注意**：不使用 `[class*="collapse"]` 等模糊选择器，避免错误隐藏 `orca-repr-main-collapsed` 等原生内容区域
 
 **优势**：
 
 - 更简洁，无需维护复杂的 CSS 字符串
 - 避免全局 CSS 污染
 - 更容易调试和维护
+- 精确匹配避免错误隐藏内容
 
 #### 面板宽度 50/50 分割
 

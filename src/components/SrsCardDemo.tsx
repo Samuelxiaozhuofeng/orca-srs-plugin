@@ -46,24 +46,27 @@ function ReviewBlock({ blockId, panelId, fallback, hideChildren = false, readonl
 
     /**
      * 隐藏子块元素和编辑器 UI 元素
-     * 扩展选择器范围，隐藏 handle、bullet、collapse 等元素
+     * 使用精确选择器，避免错误隐藏 orca-repr-main-collapsed 等原生类
+     * 
+     * 【重要】不使用 [class*='collapse'] 等模糊选择器，因为会错误匹配：
+     * - orca-repr-main-collapsed（包含主要内容）
+     * - orca-repr-main 等（包含文本的主区域）
      */
     const hideDescendants = () => {
-      // 扩展选择器：包含 children、handle、bullet、collapse 等
+      // 精确选择器：只匹配需要隐藏的 UI 控件，不隐藏内容区域
       const selector = `
-        [class*='children'],
-        [data-role*='children'],
-        [data-testid*='children'],
-        [class*='handle'],
-        [class*='bullet'],
-        [class*='collapse'],
-        [data-role='handle'],
-        [data-role='bullet'],
+        .orca-block-children,
+        .orca-repr-children,
+        [data-role='children'],
+        [data-testid='children'],
         .orca-block-handle,
         .orca-block-bullet,
         .orca-repr-handle,
         .orca-block-drag-handle,
-        .orca-repr-collapse
+        .orca-repr-collapse,
+        .orca-block-collapse-btn,
+        [data-role='handle'],
+        [data-role='bullet']
       `
       const childNodes = container.querySelectorAll<HTMLElement>(selector)
       childNodes.forEach((node: HTMLElement) => {
@@ -452,7 +455,7 @@ export default function SrsCardDemo({
                   <div 
                     key={aBlockId} 
                     style={{ 
-                      marginBottom: index < Math.min(answerBlockIds.length, reviewSettings.maxSiblingBlocks) - 1 ? "12px" : 0 
+                      marginBottom: index < Math.min(answerBlockIds.length, reviewSettings.maxSiblingBlocks) - 1 ? "-10px" : 0 
                     }}
                   >
                     {renderBlock(aBlockId, back)}
