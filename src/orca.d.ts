@@ -4596,7 +4596,7 @@ export type ConvertContext = {
 }
 
 /** Block rendering modes */
-export type BlockRenderingMode = "normal" | "simple" | "simple-children"
+export type BlockRenderingMode = "normal" | "simple" | "simple-children" | "readonly"
 
 // Query
 /**

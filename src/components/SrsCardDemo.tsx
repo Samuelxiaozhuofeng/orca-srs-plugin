@@ -30,9 +30,10 @@ type ReviewBlockProps = {
   panelId?: string
   fallback: string
   hideChildren?: boolean
+  readonly?: boolean  // 控制是否只读（题目区域只读，答案区域可编辑）
 }
 
-function ReviewBlock({ blockId, panelId, fallback, hideChildren = false }: ReviewBlockProps) {
+function ReviewBlock({ blockId, panelId, fallback, hideChildren = false, readonly = false }: ReviewBlockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   // 使用 ref 存储防抖定时器 ID，避免闭包问题
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -128,11 +129,13 @@ function ReviewBlock({ blockId, panelId, fallback, hideChildren = false }: Revie
     <div
       ref={containerRef}
       className={containerClassName}
+      contentEditable={readonly ? false : undefined}
       style={{
         padding: "8px",
         backgroundColor: "var(--orca-color-bg-0)",
         borderRadius: "6px",
-        border: "1px solid var(--orca-color-border-1)"
+        border: "1px solid var(--orca-color-border-1)",
+        ...(readonly ? { pointerEvents: 'none' as const, userSelect: 'none' as const, cursor: 'default' } : {})
       }}
     >
       {blockId && panelId ? (
@@ -141,7 +144,7 @@ function ReviewBlock({ blockId, panelId, fallback, hideChildren = false }: Revie
           blockId={blockId}
           blockLevel={0}
           indentLevel={0}
-          renderingMode={hideChildren ? "simple" : undefined}
+          renderingMode={readonly ? "readonly" : (hideChildren ? "simple" : undefined)}
         />
       ) : (
         <div style={{
@@ -309,12 +312,13 @@ export default function SrsCardDemo({
     )
   }
 
-  const renderBlock = (renderBlockId: DbId | undefined, fallback: string, options?: { hideChildren?: boolean }) => (
+  const renderBlock = (renderBlockId: DbId | undefined, fallback: string, options?: { hideChildren?: boolean; readonly?: boolean }) => (
     <ReviewBlock
       blockId={renderBlockId}
       panelId={panelId}
       fallback={fallback}
       hideChildren={options?.hideChildren}
+      readonly={options?.readonly}
     />
   )
 
@@ -330,7 +334,7 @@ export default function SrsCardDemo({
 
       {/* 顶部工具栏：埋藏、暂停、跳转按钮 */}
       {blockId && (
-        <div style={{
+        <div contentEditable={false} style={{
           display: "flex",
           justifyContent: "flex-end",
           gap: "8px",
@@ -396,7 +400,7 @@ export default function SrsCardDemo({
         borderRadius: "8px",
         minHeight: "80px"
       }}>
-        <div style={{
+        <div contentEditable={false} style={{
           fontSize: "14px",
           fontWeight: "500",
           color: "var(--orca-color-text-2)",
@@ -405,11 +409,11 @@ export default function SrsCardDemo({
           题目
         </div>
 
-        {renderBlock(blockId, front, { hideChildren: true })}
+        {renderBlock(blockId, front, { hideChildren: true, readonly: true })}
       </div>
 
       {!showAnswer ? (
-        <div style={{ textAlign: "center", marginBottom: "12px" }}>
+        <div contentEditable={false} style={{ textAlign: "center", marginBottom: "12px" }}>
           <Button
             variant="solid"
             onClick={() => setShowAnswer(true)}
@@ -431,7 +435,7 @@ export default function SrsCardDemo({
             minHeight: "80px",
             borderLeft: "4px solid var(--orca-color-primary-5)"
           }}>
-            <div style={{
+            <div contentEditable={false} style={{
               fontSize: "14px",
               color: "var(--orca-color-text-2)",
               fontWeight: "500",
@@ -476,7 +480,7 @@ export default function SrsCardDemo({
             )}
           </div>
 
-          <div className="srs-card-grade-buttons" style={{
+          <div contentEditable={false} className="srs-card-grade-buttons" style={{
             display: "grid",
             gridTemplateColumns: "repeat(4, 1fr)",
             gap: "8px"
@@ -550,7 +554,7 @@ export default function SrsCardDemo({
         </>
       )}
 
-      <div style={{
+      <div contentEditable={false} style={{
         marginTop: "16px",
         textAlign: "center",
         fontSize: "12px",

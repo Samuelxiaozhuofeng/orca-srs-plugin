@@ -433,11 +433,13 @@ export default function SrsReviewSession({
           alignItems: "center",
           justifyContent: "space-between"
         }}>
-          <div>
+          <div contentEditable={false} style={{ userSelect: 'none' }}>
             <div style={{
               fontSize: "14px",
               color: "var(--orca-color-text-2)",
-              fontWeight: 500
+              fontWeight: 500,
+              userSelect: 'none',
+              pointerEvents: 'none'
             }}>
               卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
             </div>
@@ -492,7 +494,7 @@ export default function SrsReviewSession({
   return (
     <div className="srs-review-session">
       {/* 复习进度条 */}
-      <div style={{
+      <div contentEditable={false} style={{
         position: 'fixed',
         top: 0,
         left: 0,
@@ -510,7 +512,7 @@ export default function SrsReviewSession({
       </div>
 
       {/* 进度文字提示 */}
-      <div style={{
+      <div contentEditable={false} style={{
         position: 'fixed',
         top: '12px',
         left: '50%',
@@ -528,7 +530,7 @@ export default function SrsReviewSession({
 
       {/* 最近一次评分日志 */}
       {lastLog && (
-        <div style={{
+        <div contentEditable={false} style={{
           position: 'fixed',
           top: '48px',
           left: '50%',
