@@ -209,7 +209,7 @@ type AIGenerateResult =
 | [aiService.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/ai/aiService.ts)               | AI API 调用服务  |
 | [aiCardCreator.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/ai/aiCardCreator.ts)       | AI 卡片创建逻辑  |
 | [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)           | 命令注册         |
-| [uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts)   | UI 组件注册      |
+| [uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx)   | UI 组件注册      |
 
 ## 更新历史
 

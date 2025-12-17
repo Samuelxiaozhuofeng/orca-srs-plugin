@@ -26,7 +26,7 @@ Flashcard Home 是新版卡片浏览器，嵌入在 Orca 面板系统中，以�
 | `src/components/SrsFlashcardHomeRenderer.tsx` | Block 渲染器包装，供 Orca 渲染块 |
 | `src/srs/flashcardHomeManager.ts` | 特殊块创建、复用、清理 |
 | `src/srs/registry/renderers.ts` | 注册 `srs.flashcard-home` 渲染器 |
-| `src/srs/registry/uiComponents.ts` | 工具栏“Flashcard Home”按钮 |
+| `src/srs/registry/uiComponents.tsx` | 工具栏“Flashcard Home”按钮 |
 | `src/srs/registry/commands.ts` | `openFlashcardHome` 命令 |
 | `src/main.ts` | 面板打开逻辑、Block 管理、复习过滤 |
 
@@ -158,6 +158,6 @@ CardListView 在选择 Deck 后显示，沿用了旧浏览器的列表体验。
 | `src/srs/flashcardHomeManager.ts` | 特殊块管理 |
 | `src/main.ts` | openFlashcardHome、reviewDeckFilter、复习入口 |
 | `src/srs/registry/commands.ts` | `openFlashcardHome` 命令注册 |
-| `src/srs/registry/uiComponents.ts` | 工具栏按钮 |
+| `src/srs/registry/uiComponents.tsx` | 工具栏按钮 |
 | `src/srs/registry/renderers.ts` | `srs.flashcard-home` 注册 |
 | `src/srs/registry/converters.ts` | plain 转换器 |

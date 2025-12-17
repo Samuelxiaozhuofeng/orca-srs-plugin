@@ -21,7 +21,7 @@
 ```
 src/srs/registry/
 ├── commands.ts        (134 行) - 命令注册
-├── uiComponents.ts    (40 行)  - UI 组件注册
+├── uiComponents.tsx    (40 行)  - UI 组件注册
 ├── renderers.ts       (49 行)  - 渲染器注册
 └── converters.ts      (57 行)  - 转换器注册
 ```
@@ -169,7 +169,7 @@ export async function unload() {
 
 ---
 
-## 模块 2：uiComponents.ts
+## 模块 2：uiComponents.tsx
 
 ### 职责
 
@@ -177,7 +177,7 @@ export async function unload() {
 
 ### 文件路径
 
-- [src/srs/registry/uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts)
+- [src/srs/registry/uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx)
 
 ### 导出接口
 
@@ -449,7 +449,7 @@ export async function unload() {
 
 每个模块只负责一类注册：
 - ✅ `commands.ts` 只管命令
-- ✅ `uiComponents.ts` 只管 UI
+- ✅ `uiComponents.tsx` 只管 UI
 - ✅ `renderers.ts` 只管渲染器
 - ✅ `converters.ts` 只管转换器
 
@@ -506,7 +506,7 @@ export function unregisterCommands(pluginName: string) {
 
 ### 2. 添加新工具栏按钮
 
-在 `uiComponents.ts` 中添加：
+在 `uiComponents.tsx` 中添加：
 
 ```typescript
 export function registerUIComponents(pluginName: string) {
@@ -581,7 +581,7 @@ export function registerRenderers(pluginName: string) {
 
 每个注册模块的内存占用：
 - `commands.ts`: ~10KB（包含 undo 函数）
-- `uiComponents.ts`: ~2KB
+- `uiComponents.tsx`: ~2KB
 - `renderers.ts`: ~3KB（组件引用）
 - `converters.ts`: ~2KB
 - **总计**: ~17KB
@@ -594,7 +594,7 @@ export function registerRenderers(pluginName: string) {
 |------|------|
 | [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts) | 插件入口（调用注册模块） |
 | [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts) | 命令注册模块 |
-| [uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts) | UI 组件注册模块 |
+| [uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx) | UI 组件注册模块 |
 | [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts) | 渲染器注册模块 |
 | [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts) | 转换器注册模块 |
 

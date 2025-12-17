@@ -23,12 +23,12 @@
 > [!IMPORTANT]
 > 注册逻辑已从 `main.ts` 拆分到以下 4 个独立模块，详见 [SRS\_注册模块.md](file:///d:/orca插件/虎鲸标记%20内置闪卡/模块文档/SRS_注册模块.md)
 
-| 模块        | 文件                                                                                        | 职责                               | 行数 |
-| ----------- | ------------------------------------------------------------------------------------------- | ---------------------------------- | ---- |
-| 命令注册    | [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)         | 注册/注销命令（含 undo 逻辑） | 134  |
-| UI 组件注册 | [uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts) | 注册/注销工具栏按钮和斜杠命令      | 40   |
-| 渲染器注册  | [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)       | 注册/注销块和 inline 渲染器        | 49   |
-| 转换器注册  | [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts)     | 注册/注销 plain 格式转换器         | 57   |
+| 模块        | 文件                                                                                          | 职责                          | 行数 |
+| ----------- | --------------------------------------------------------------------------------------------- | ----------------------------- | ---- |
+| 命令注册    | [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)           | 注册/注销命令（含 undo 逻辑） | 134  |
+| UI 组件注册 | [uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx) | 注册/注销工具栏按钮和斜杠命令 | 40   |
+| 渲染器注册  | [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)         | 注册/注销块和 inline 渲染器   | 49   |
+| 转换器注册  | [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts)       | 注册/注销 plain 格式转换器    | 57   |
 
 ### 业务逻辑模块（srs/）
 
@@ -78,62 +78,70 @@ flowchart TD
 
 ### 注册的命令
 
-| 命令 ID | 类型 | 说明 | 注册位置 |
-| ---------------------------------- | ---------- | ---------------------------- | ----------- |
-| `${pluginName}.scanCardsFromTags` | 普通命令 | 扫描带标签的块 | commands.ts |
-| `${pluginName}.openFlashcardHome` | 普通命令 | 打开 Flashcard Home | commands.ts |
-| `${pluginName}.openOldReviewPanel` | 普通命令 | 打开旧复习面板（块渲染器模式） | commands.ts |
-| `${pluginName}.makeCardFromBlock` | 编辑器命令 | 将块转为卡片 | commands.ts |
-| `${pluginName}.createCloze` | 编辑器命令 | 创建 Cloze 填空 | commands.ts |
-| `${pluginName}.createDirectionForward` | 编辑器命令 | 创建正向方向卡 → | commands.ts |
-| `${pluginName}.createDirectionBackward` | 编辑器命令 | 创建反向方向卡 ← | commands.ts |
-| `${pluginName}.makeAICard` | 编辑器命令 | AI 生成记忆卡片 | commands.ts |
-| `${pluginName}.testAIConnection` | 普通命令 | 测试 AI 连接 | commands.ts |
+| 命令 ID                                 | 类型       | 说明                           | 注册位置    |
+| --------------------------------------- | ---------- | ------------------------------ | ----------- |
+| `${pluginName}.scanCardsFromTags`       | 普通命令   | 扫描带标签的块                 | commands.ts |
+| `${pluginName}.openFlashcardHome`       | 普通命令   | 打开 Flashcard Home            | commands.ts |
+| `${pluginName}.openOldReviewPanel`      | 普通命令   | 打开旧复习面板（块渲染器模式） | commands.ts |
+| `${pluginName}.makeCardFromBlock`       | 编辑器命令 | 将块转为卡片                   | commands.ts |
+| `${pluginName}.createCloze`             | 编辑器命令 | 创建 Cloze 填空                | commands.ts |
+| `${pluginName}.createDirectionForward`  | 编辑器命令 | 创建正向方向卡 →               | commands.ts |
+| `${pluginName}.createDirectionBackward` | 编辑器命令 | 创建反向方向卡 ←               | commands.ts |
+| `${pluginName}.makeAICard`              | 编辑器命令 | AI 生成记忆卡片                | commands.ts |
+| `${pluginName}.testAIConnection`        | 普通命令   | 测试 AI 连接                   | commands.ts |
+
+### 顶部栏按钮（Headbar）
+
+| 按钮 ID                             | 图标          | 说明                | 注册位置          |
+| ----------------------------------- | ------------- | ------------------- | ----------------- |
+| `${pluginName}.flashcardHomeButton` | `ti ti-cards` | 打开 Flashcard Home | uiComponents.tsxx |
+| `${pluginName}.reviewButton`        | `ti ti-brain` | 开始闪卡复习        | uiComponents.tsxx |
 
 ### 工具栏按钮
 
-| 按钮 ID | 图标 | 说明 | 注册位置 |
-| --------------------------- | -------------- | ------------ | --------------- |
-| `${pluginName}.clozeButton` | `ti ti-braces` | 创建 Cloze 填空 | uiComponents.ts |
+| 按钮 ID                     | 图标           | 说明            | 注册位置          |
+| --------------------------- | -------------- | --------------- | ----------------- |
+| `${pluginName}.clozeButton` | `ti ti-braces` | 创建 Cloze 填空 | uiComponents.tsxx |
 
 ### 斜杠命令
 
-| 命令 ID | 标题 | 关联命令 | 说明 | 注册位置 |
-| ------------------------------- | ------------------------------ | ----------------------------- | ------------------------------------ | --------------- |
-| `${pluginName}.makeCard` | 转换为记忆卡片 | makeCardFromBlock | 自动添加 #card 标签并转换为 SRS 卡片 | uiComponents.ts |
-| `${pluginName}.directionForward` | 创建正向方向卡 → (光标位置分隔问答) | createDirectionForward | 方向卡创建入口 | uiComponents.ts |
-| `${pluginName}.directionBackward` | 创建反向方向卡 ← (光标位置分隔问答) | createDirectionBackward | 方向卡创建入口 | uiComponents.ts |
-| `${pluginName}.aiCard` | AI 生成记忆卡片 | makeAICard | AI 卡片创建入口 | uiComponents.ts |
+| 命令 ID                           | 标题                                | 关联命令                | 说明                                 | 注册位置         |
+| --------------------------------- | ----------------------------------- | ----------------------- | ------------------------------------ | ---------------- |
+| `${pluginName}.makeCard`          | 转换为记忆卡片                      | makeCardFromBlock       | 自动添加 #card 标签并转换为 SRS 卡片 | uiComponents.tsx |
+| `${pluginName}.directionForward`  | 创建正向方向卡 → (光标位置分隔问答) | createDirectionForward  | 方向卡创建入口                       | uiComponents.tsx |
+| `${pluginName}.directionBackward` | 创建反向方向卡 ← (光标位置分隔问答) | createDirectionBackward | 方向卡创建入口                       | uiComponents.tsx |
+| `${pluginName}.aiCard`            | AI 生成记忆卡片                     | makeAICard              | AI 卡片创建入口                      | uiComponents.tsx |
 
 ### 块渲染器
 
-| 类型 | 组件 | 说明 | 注册位置 |
-| -------------------- | ------------------------ | ------------------ | ------------ |
-| `srs.card` | SrsCardBlockRenderer | Basic 卡片块渲染 | renderers.ts |
-| `srs.cloze-card` | SrsCardBlockRenderer | Cloze 卡片块渲染 | renderers.ts |
-| `srs.direction-card` | SrsCardBlockRenderer | Direction 卡片块渲染 | renderers.ts |
-| `srs.review-session` | SrsReviewSessionRenderer | 复习会话块渲染 | renderers.ts |
+| 类型                 | 组件                     | 说明                 | 注册位置     |
+| -------------------- | ------------------------ | -------------------- | ------------ |
+| `srs.card`           | SrsCardBlockRenderer     | Basic 卡片块渲染     | renderers.ts |
+| `srs.cloze-card`     | SrsCardBlockRenderer     | Cloze 卡片块渲染     | renderers.ts |
+| `srs.direction-card` | SrsCardBlockRenderer     | Direction 卡片块渲染 | renderers.ts |
+| `srs.review-session` | SrsReviewSessionRenderer | 复习会话块渲染       | renderers.ts |
 
 ### 面板（Custom Panel）
 
-| 类型 | 组件 | 说明 | 注册位置 |
-| ------------------- | -------------------- | ---------------- | ------------ |
+| 类型                 | 组件                  | 说明                | 注册位置     |
+| -------------------- | --------------------- | ------------------- | ------------ |
 | `srs.flashcard-home` | SrsFlashcardHomePanel | Flashcard Home 面板 | renderers.ts |
 
 ### Inline 渲染器
 
-| 类型 | 组件 | 说明 | 注册位置 |
-| ------------------------- | ---------------------- | ------------------ | ------------ |
-| `${pluginName}.cloze` | ClozeInlineRenderer | Cloze 填空渲染 | renderers.ts |
+| 类型                      | 组件                    | 说明                 | 注册位置     |
+| ------------------------- | ----------------------- | -------------------- | ------------ |
+| `${pluginName}.cloze`     | ClozeInlineRenderer     | Cloze 填空渲染       | renderers.ts |
 | `${pluginName}.direction` | DirectionInlineRenderer | Direction 分隔符渲染 | renderers.ts |
 
 ### 转换器
 
 用于将 SRS 块/inline 导出为纯文本：
 
-| 源类型 | 目标格式 | 输出格式 | 注册位置 |
-| --------------------- | -------- | ----------------------------------------------- | ------------- |
-| `srs.card` | `plain` | `[SRS 卡片]
+| 源类型     | 目标格式 | 输出格式    | 注册位置 |
+| ---------- | -------- | ----------- | -------- |
+| `srs.card` | `plain`  | `[SRS 卡片] |
+
 题目: ${front}
 答案: ${back}` | converters.ts |
 | `srs.cloze-card` | `plain` | `[SRS 填空卡片]
@@ -143,8 +151,8 @@ flowchart TD
 ${front} -> ${back}`（或 `<-`） | converters.ts |
 | `srs.review-session` | `plain` | `[SRS 复习会话面板块]` | converters.ts |
 | `srs.flashcard-home` | `plain` | `[SRS Flashcard Home 面板块]` | converters.ts |
-| `${pluginName}.cloze` | `plain` | `fragment.v`（仅导出填空内容） | converters.ts |
-| `${pluginName}.direction` | `plain` | ` -> `（或 `<-`） | converters.ts |
+| `${pluginName}.cloze`|`plain`|`fragment.v`（仅导出填空内容） | converters.ts |
+| `${pluginName}.direction`|`plain`|` -> `（或 `<-`） | converters.ts |
 
 ## load 函数
 
@@ -152,26 +160,26 @@ ${front} -> ${back}`（或 `<-`） | converters.ts |
 
 ```typescript
 export async function load(_name: string) {
-  pluginName = _name
+  pluginName = _name;
 
   // 设置国际化
-  setupL10N(orca.state.locale, { "zh-CN": zhCN })
+  setupL10N(orca.state.locale, { "zh-CN": zhCN });
 
   // 注册插件设置（合并 AI 设置与复习设置）
   try {
     await orca.plugins.setSettingsSchema(pluginName, {
       ...aiSettingsSchema,
-      ...reviewSettingsSchema
-    })
-    console.log(`[${pluginName}] 插件设置已注册（AI + 复习）`)
+      ...reviewSettingsSchema,
+    });
+    console.log(`[${pluginName}] 插件设置已注册（AI + 复习）`);
   } catch (error) {
-    console.warn(`[${pluginName}] 注册插件设置失败:`, error)
+    console.warn(`[${pluginName}] 注册插件设置失败:`, error);
   }
 
-  registerCommands(pluginName, openFlashcardHome)
-  registerUIComponents(pluginName)
-  registerRenderers(pluginName)
-  registerConverters(pluginName)
+  registerCommands(pluginName, openFlashcardHome);
+  registerUIComponents(pluginName);
+  registerRenderers(pluginName);
+  registerConverters(pluginName);
 }
 ```
 
@@ -187,11 +195,11 @@ export async function load(_name: string) {
 
 ```typescript
 export async function unload() {
-  unregisterCommands(pluginName)
-  unregisterUIComponents(pluginName)
-  unregisterRenderers(pluginName)
-  unregisterConverters(pluginName)
-  console.log(`[${pluginName}] 插件已卸载`)
+  unregisterCommands(pluginName);
+  unregisterUIComponents(pluginName);
+  unregisterRenderers(pluginName);
+  unregisterConverters(pluginName);
+  console.log(`[${pluginName}] 插件已卸载`);
 }
 ```
 
@@ -230,36 +238,38 @@ async function startReviewSession(
   openInCurrentPanel: boolean = false
 ) {
   try {
-    reviewDeckFilter = deckName ?? null
-    const activePanelId = orca.state.activePanel
+    reviewDeckFilter = deckName ?? null;
+    const activePanelId = orca.state.activePanel;
 
     if (!activePanelId) {
-      orca.notify("warn", "当前没有可用的面板", { title: "SRS 复习" })
-      return
+      orca.notify("warn", "当前没有可用的面板", { title: "SRS 复习" });
+      return;
     }
 
     // 记录主面板 ID（用于跳转到卡片）
-    reviewHostPanelId = activePanelId
+    reviewHostPanelId = activePanelId;
 
     // 获取或创建复习会话块（块渲染器模式）
-    const blockId = await getOrCreateReviewSessionBlock(pluginName)
+    const blockId = await getOrCreateReviewSessionBlock(pluginName);
 
     // 从 FlashcardHome 调用：在当前面板打开
     if (openInCurrentPanel) {
-      orca.nav.goTo("block", { blockId }, activePanelId)
-      const message = deckName ? `已打开 ${deckName} 复习会话` : "复习会话已打开"
-      orca.notify("success", message, { title: "SRS 复习" })
-      return
+      orca.nav.goTo("block", { blockId }, activePanelId);
+      const message = deckName
+        ? `已打开 ${deckName} 复习会话`
+        : "复习会话已打开";
+      orca.notify("success", message, { title: "SRS 复习" });
+      return;
     }
 
     // 默认行为：在右侧面板打开（新建或复用）
-    const panels = orca.state.panels
-    let rightPanelId: string | null = null
+    const panels = orca.state.panels;
+    let rightPanelId: string | null = null;
 
     for (const [panelId, panel] of Object.entries(panels)) {
       if (panel.parentId === activePanelId && panel.position === "right") {
-        rightPanelId = panelId
-        break
+        rightPanelId = panelId;
+        break;
       }
     }
 
@@ -267,28 +277,30 @@ async function startReviewSession(
       rightPanelId = orca.nav.addTo(activePanelId, "right", {
         view: "block",
         viewArgs: { blockId },
-        viewState: {}
-      })
+        viewState: {},
+      });
 
       if (!rightPanelId) {
-        orca.notify("error", "无法创建侧边面板", { title: "SRS 复习" })
-        return
+        orca.notify("error", "无法创建侧边面板", { title: "SRS 复习" });
+        return;
       }
     } else {
-      orca.nav.goTo("block", { blockId }, rightPanelId)
+      orca.nav.goTo("block", { blockId }, rightPanelId);
     }
 
     if (rightPanelId) {
       setTimeout(() => {
-        orca.nav.switchFocusTo(rightPanelId!)
-      }, 100)
+        orca.nav.switchFocusTo(rightPanelId!);
+      }, 100);
     }
 
-    const message = deckName ? `已打开 ${deckName} 复习会话` : "复习会话已在右侧面板打开"
-    orca.notify("success", message, { title: "SRS 复习" })
+    const message = deckName
+      ? `已打开 ${deckName} 复习会话`
+      : "复习会话已在右侧面板打开";
+    orca.notify("success", message, { title: "SRS 复习" });
   } catch (error) {
-    console.error(`[${pluginName}] 启动复习失败:`, error)
-    orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" })
+    console.error(`[${pluginName}] 启动复习失败:`, error);
+    orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" });
   }
 }
 ```
@@ -320,7 +332,7 @@ async function startReviewSession(
 
 ### 2. 添加新工具栏按钮
 
-在 [uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts) 中添加按钮注册。
+在 [uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx) 中添加按钮注册。
 
 ### 3. 添加新渲染器
 
@@ -332,22 +344,23 @@ async function startReviewSession(
 
 ## 相关文件
 
-| 文件                                                                                        | 说明                 |
-| ------------------------------------------------------------------------------------------- | -------------------- |
-| [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)                              | 插件入口（145 行）   |
-| **注册模块**                                                                                |                      |
-| [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)         | 命令注册（134 行）   |
-| [uiComponents.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.ts) | UI 组件注册（40 行） |
-| [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)       | 渲染器注册（49 行）  |
-| [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts)     | 转换器注册（57 行）  |
-| **工具模块**                                                                                |                      |
-| [libs/l10n.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/libs/l10n.ts)                    | 国际化工具           |
-| [translations/zhCN.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/translations/zhCN.ts)    | 中文翻译             |
+| 文件                                                                                          | 说明                 |
+| --------------------------------------------------------------------------------------------- | -------------------- |
+| [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)                                | 插件入口（145 行）   |
+| **注册模块**                                                                                  |                      |
+| [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)           | 命令注册（134 行）   |
+| [uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx) | UI 组件注册（40 行） |
+| [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)         | 渲染器注册（49 行）  |
+| [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts)       | 转换器注册（57 行）  |
+| **工具模块**                                                                                  |                      |
+| [libs/l10n.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/libs/l10n.ts)                      | 国际化工具           |
+| [translations/zhCN.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/translations/zhCN.ts)      | 中文翻译             |
 
 ## 更新历史
 
 | 日期       | 版本  | 说明                                                                                           |
 | ---------- | ----- | ---------------------------------------------------------------------------------------------- |
+| 2025-12-17 | 2.2.0 | 新增：顶部栏按钮（Headbar）- FlashcardHome 和复习按钮；uiComponents 重命名为 .tsx              |
 | 2025-12-11 | 2.1.0 | 新增：`startReviewSession` 支持 `openInCurrentPanel` 参数，修复 FlashcardHome 复习面板打开问题 |
 | 2025-12-10 | 2.0.0 | 重构：拆分注册逻辑到 4 个独立模块                                                              |
 | 2025-12-09 | 1.0.0 | 初始版本                                                                                       |
