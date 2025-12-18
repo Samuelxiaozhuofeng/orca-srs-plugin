@@ -25,34 +25,39 @@
    - 2025-12-09 重构后的 6 个工具模块文档
    - 关键文件：`src/srs/panelUtils.ts`、`blockUtils.ts`、`cardCollector.ts`、`deckUtils.ts`、`cardCreator.ts`、`cardBrowser.ts`
 
+5. **[SRS\_渐进阅读.md](SRS_渐进阅读.md)** ⭐ 新增
+   - SuperMemo 18 渐进阅读 MVP 实现
+   - Topic 识别、Extract 自动标记、复习集成
+   - 关键文件：`src/srs/incrementalReadingUtils.ts`、`incrementalReadingAutoMark.ts`
+
 ### 用户界面模块
 
-5. **[SRS\_卡片复习窗口.md](SRS_卡片复习窗口.md)**
+6. **[SRS\_卡片复习窗口.md](SRS_卡片复习窗口.md)**
 
    - 复习会话界面和交互
    - 关键文件：`src/components/SrsReviewSession*.tsx`、`SrsCardDemo.tsx`
 
-6. **[SRS\_卡片浏览器.md](SRS_卡片浏览器.md)**
+7. **[SRS\_卡片浏览器.md](SRS_卡片浏览器.md)**
 
    - 卡片浏览和管理界面
    - 关键文件：`src/components/SrsCardBrowser.tsx`
 
-7. **[SRS\_块渲染器.md](SRS_块渲染器.md)**
+8. **[SRS\_块渲染器.md](SRS_块渲染器.md)**
    - 编辑器内卡片的显示和交互
    - 关键文件：`src/components/SrsCardBlockRenderer.tsx`
 
 ### 基础设施模块
 
-8. **[SRS\_插件入口与命令.md](SRS_插件入口与命令.md)**
+9. **[SRS\_插件入口与命令.md](SRS_插件入口与命令.md)**
 
    - 插件初始化和命令注册
    - 关键文件：`src/main.ts`（2025-12-09 已精简，核心逻辑拆分到子模块）
 
-9. **[SRS\_复习队列管理.md](SRS_复习队列管理.md)**
+10. **[SRS\_复习队列管理.md](SRS_复习队列管理.md)**
    - 复习队列的构建和管理
    - 关键文件：`src/srs/cardCollector.ts`、`src/srs/reviewSessionManager.ts`
 
-10. **[SRS\_事件通信.md](SRS_事件通信.md)** ⭐ 新增
+11. **[SRS\_事件通信.md](SRS_事件通信.md)** ⭐ 新增
    - 基于 Orca broadcasts 的跨组件事件通知
    - 关键文件：`src/srs/srsEvents.ts`
 
@@ -77,4 +82,5 @@
 
 ## 更新记录
 
+- 2025-12-18：新增渐进阅读模块文档
 - 2025-12-08：创建模块文档结构

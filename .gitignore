@@ -36,3 +36,6 @@ dist-ssr
 CLAUDE.md
 .claude/settings.local.json
 dist.zip
+.claude-session
+.codex-session
+.mcp.json
