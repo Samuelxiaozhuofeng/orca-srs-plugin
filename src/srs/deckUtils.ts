@@ -19,8 +19,10 @@ const deckNameCache = new Map<DbId, string>()
  * - basic: 基本卡（正面/反面）
  * - cloze: 填空卡
  * - direction: 方向卡
+ * - 渐进阅读: 渐进阅读 Topic（包含电子书/文章的页面）
+ * - extracts: 渐进阅读 Extract（从 Topic 中摘录的笔记块）
  */
-export type CardType = "basic" | "cloze" | "direction"
+export type CardType = "basic" | "cloze" | "direction" | "渐进阅读" | "extracts"
 
 /**
  * 从块的标签属性系统中提取卡片类型
@@ -81,12 +83,16 @@ export function extractCardType(block: Block): CardType {
     const firstValue = typeValue[0].trim().toLowerCase()
     if (firstValue === "cloze") return "cloze"
     if (firstValue === "direction") return "direction"
+    if (firstValue === "渐进阅读") return "渐进阅读"
+    if (firstValue === "extracts") return "extracts"
     return "basic"
   } else if (typeof typeValue === "string") {
     // 单选类型：直接使用字符串
     const trimmedValue = typeValue.trim().toLowerCase()
     if (trimmedValue === "cloze") return "cloze"
     if (trimmedValue === "direction") return "direction"
+    if (trimmedValue === "渐进阅读") return "渐进阅读"
+    if (trimmedValue === "extracts") return "extracts"
     return "basic"
   }
 

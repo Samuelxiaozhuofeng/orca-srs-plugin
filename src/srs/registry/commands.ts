@@ -231,6 +231,38 @@ export function registerCommands(
     },
     "SRS: 打开旧复习面板"
   )
+
+  // ============ 渐进阅读命令 ============
+
+  // 扫描渐进阅读 Topic 命令
+  orca.commands.registerCommand(
+    `${pluginName}.scanIncrementalReadingTopics`,
+    async () => {
+      console.log(`[${_pluginName}] 执行渐进阅读扫描`)
+      const { scanIncrementalReadingTopics } = await import("../incrementalReadingUtils")
+      const result = await scanIncrementalReadingTopics(_pluginName)
+
+      if (result.topics.length === 0) {
+        orca.notify("info", "未找到渐进阅读 Topic", {
+          title: "渐进阅读扫描"
+        })
+        return
+      }
+
+      // 显示详细信息
+      const details = result.topicDetails
+        .map(t => `- ${t.topicText}: ${t.childCount} 个子块`)
+        .join("\n")
+
+      orca.notify("success",
+        `找到 ${result.topics.length} 个 Topic，共 ${result.extractCandidates} 个潜在 Extract\n\n${details}`,
+        { title: "渐进阅读扫描" }
+      )
+
+      console.log(`[${_pluginName}] 扫描结果:`, result)
+    },
+    "SRS: 扫描渐进阅读 Topic"
+  )
 }
 
 export function unregisterCommands(pluginName: string): void {
@@ -240,9 +272,12 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
-  
+
   // AI 命令注销
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
+
+  // 渐进阅读命令注销
+  orca.commands.unregisterCommand(`${pluginName}.scanIncrementalReadingTopics`)
 }

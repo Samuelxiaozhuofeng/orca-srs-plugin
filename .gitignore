@@ -33,3 +33,6 @@ dist-ssr
 .serena/memories/task_completion_checklist.md
 .serena/memories/project_overview.md
 .serena/cache/typescript/document_symbols_cache_v23-06-25.pkl
+CLAUDE.md
+.claude/settings.local.json
+dist.zip
