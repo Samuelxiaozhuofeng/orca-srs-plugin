@@ -263,6 +263,35 @@ export function registerCommands(
     },
     "SRS: 扫描渐进阅读 Topic"
   )
+
+  // 标记渐进阅读 Extract 命令
+  orca.commands.registerCommand(
+    `${pluginName}.markExtractsAutomatically`,
+    async () => {
+      console.log(`[${_pluginName}] 执行渐进阅读 Extract 标记`)
+      const { markAllExtractCandidates } = await import("../incrementalReadingUtils")
+
+      orca.notify("info", "正在扫描并标记 Extract...", {
+        title: "渐进阅读"
+      })
+
+      const result = await markAllExtractCandidates(_pluginName)
+
+      if (result.extractsMarked === 0) {
+        orca.notify("info", "未找到需要标记的 Extract", {
+          title: "渐进阅读"
+        })
+        return
+      }
+
+      const message = result.extractsFailed > 0
+        ? `已标记 ${result.extractsMarked} 个 Extract\n处理了 ${result.topicsProcessed} 个 Topic\n失败: ${result.extractsFailed}`
+        : `已标记 ${result.extractsMarked} 个 Extract\n处理了 ${result.topicsProcessed} 个 Topic`
+
+      orca.notify("success", message, { title: "渐进阅读" })
+    },
+    "SRS: 标记渐进阅读 Extract"
+  )
 }
 
 export function unregisterCommands(pluginName: string): void {
@@ -280,4 +309,5 @@ export function unregisterCommands(pluginName: string): void {
 
   // 渐进阅读命令注销
   orca.commands.unregisterCommand(`${pluginName}.scanIncrementalReadingTopics`)
+  orca.commands.unregisterCommand(`${pluginName}.markExtractsAutomatically`)
 }

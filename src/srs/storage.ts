@@ -405,7 +405,7 @@ export const updateDirectionSrsState = async (
 /**
  * 确保普通卡片存在 SRS 属性：若块上没有任何 `srs.` 前缀属性，则写入初始状态。
  *
- * 注意：这里用后端 get-block 的结果判断是否已初始化，避免使用 `block.properties` 的“半数据”误判，
+ * 注意：这里用后端 get-block 的结果判断是否已初始化，避免使用 `block.properties` 的"半数据"误判，
  * 否则会出现每次收集时都把卡片重置为 reps=0 的问题。
  */
 export const ensureCardSrsState = async (
@@ -415,6 +415,29 @@ export const ensureCardSrsState = async (
   const block = await getBlockCached(blockId)
   const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
   if (!hasAnySrsProps) {
+    return await writeInitialSrsState(blockId, now)
+  }
+  return await loadCardSrsState(blockId)
+}
+
+/**
+ * 为 Extract 卡片初始化 SRS 状态（立即可复习，不延迟）
+ *
+ * Extract 卡片使用普通卡片的存储格式（srs.* 属性），
+ * 但初始状态 due 设置为当前时间，表示立即可以复习。
+ *
+ * @param blockId - 块 ID
+ * @param now - 当前时间（可选，默认为 new Date()）
+ * @returns SRS 状态
+ */
+export const ensureExtractSrsState = async (
+  blockId: DbId,
+  now: Date = new Date()
+): Promise<SrsState> => {
+  const block = await getBlockCached(blockId)
+  const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
+  if (!hasAnySrsProps) {
+    // Extract 默认立即可复习（daysOffset = 0）
     return await writeInitialSrsState(blockId, now)
   }
   return await loadCardSrsState(blockId)

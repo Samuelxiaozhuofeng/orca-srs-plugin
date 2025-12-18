@@ -233,6 +233,20 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
           directionType: dir // 关键：标记当前复习的方向类型
         })
       }
+    } else if (cardType === "extracts") {
+      // Extract 卡片：渐进阅读摘录
+      const { ensureExtractSrsState } = await import("./storage")
+      const srsState = await ensureExtractSrsState(block.id, now)
+
+      cards.push({
+        id: block.id,
+        front: block.text || "(无内容)",
+        back: "(回忆/理解这段内容)",
+        srs: srsState,
+        isNew: !srsState.lastReviewed || srsState.reps === 0,
+        deck: deckName,
+        tags: extractNonCardTags(block)
+      })
     } else {
       // Basic 卡片：传统的正面/反面模式
       const { front, back } = resolveFrontBack(block)
