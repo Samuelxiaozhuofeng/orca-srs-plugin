@@ -18,6 +18,7 @@ import { registerConverters, unregisterConverters } from "./srs/registry/convert
 import { aiSettingsSchema } from "./srs/ai/aiSettingsSchema"
 import { reviewSettingsSchema } from "./srs/settings/reviewSettingsSchema"
 import { getOrCreateReviewSessionBlock, cleanupReviewSessionBlock } from "./srs/reviewSessionManager"
+import { startAutoMarkExtract, stopAutoMarkExtract } from "./srs/incrementalReadingAutoMark"
 
 // 插件全局状态
 let pluginName: string
@@ -51,6 +52,9 @@ export async function load(_name: string) {
   registerRenderers(pluginName)
   registerConverters(pluginName)
 
+  // 启动渐进阅读自动标记
+  startAutoMarkExtract(pluginName)
+
   console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器已注册`)
 }
 
@@ -59,6 +63,9 @@ export async function load(_name: string) {
  * 在插件禁用或 Orca 关闭时被调用
  */
 export async function unload() {
+  // 停止渐进阅读自动标记
+  stopAutoMarkExtract(pluginName)
+
   unregisterCommands(pluginName)
   unregisterUIComponents(pluginName)
   unregisterRenderers(pluginName)
