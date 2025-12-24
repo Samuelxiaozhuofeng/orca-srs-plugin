@@ -10,9 +10,20 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import { isIncrementalReadingTopic } from "./incrementalReadingUtils"
 import { extractCardType } from "./deckUtils"
 import { isCardTag } from "./tagUtils"
+
+/**
+ * 判断块是否为渐进阅读 Topic
+ *
+ * 判断条件：
+ * - 必须有 #card 标签
+ * - type 属性必须为 "渐进阅读"
+ */
+function isIncrementalReadingTopic(block: Block): boolean {
+  const cardType = extractCardType(block)
+  return cardType === "渐进阅读"
+}
 
 // 记录已处理的块，避免重复标记
 const processedBlocks = new Set<DbId>()

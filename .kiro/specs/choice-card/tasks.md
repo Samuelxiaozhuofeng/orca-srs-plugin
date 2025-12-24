@@ -61,7 +61,12 @@
   - [ ]* 2.4 Write property test for shuffle algorithm
     - **Property 4: Shuffle Algorithm Correctness**
     - **Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5**
-  - [ ] 2.5 Implement auto-grading logic
+  - [x] 2.5 Implement auto-grading logic
+
+
+
+
+
     - Implement `calculateAutoGrade()` with Good/Hard/Again logic
     - Handle undefined mode (no correct answers)
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
@@ -97,7 +102,12 @@
 
 
 
-  - [ ] 4.1 Create choiceStatisticsStorage.ts
+
+  - [x] 4.1 Create choiceStatisticsStorage.ts
+
+
+
+
     - Implement `serializeStatistics()` and `deserializeStatistics()` for JSON round-trip
     - Implement `saveChoiceStatistics()` to persist to block properties
 
@@ -107,22 +117,32 @@
 
 
 
-  - [ ]* 4.2 Write property test for statistics round-trip
+  - [ ] 4.2 Write property test for statistics round-trip
+
     - **Property 6: Statistics Round-Trip**
     - **Validates: Requirements 7.5, 7.6**
-  - [ ]* 4.3 Write property test for statistics persistence
+  - [ ] 4.3 Write property test for statistics persistence
+
     - **Property 7: Statistics Persistence with Block ID**
     - **Validates: Requirements 7.1, 7.2, 7.7, 7.8**
   - [ ] 4.4 Implement option frequency calculation
     - Implement `calculateOptionFrequency()` for distractor analysis
     - _Requirements: 8.2, 8.3_
 
-- [ ] 5. Integrate choice card into card collector
 
-  - [ ] 5.1 Update deckUtils.ts to recognize choice type
+- [x] 5. Integrate choice card into card collector
+
+
+
+
+
+  - [x] 5.1 Update deckUtils.ts to recognize choice type
+
+
     - Add "choice" case to `extractCardType()` function
     - _Requirements: 1.1_
-  - [ ] 5.2 Update cardCollector.ts for choice cards
+  - [x] 5.2 Update cardCollector.ts for choice cards
+
     - Add choice card handling in `collectReviewCards()`
     - Apply same deck assignment and suspend logic
     - _Requirements: 9.1, 9.3, 9.4_
@@ -130,25 +150,41 @@
     - **Property 8: SRS Integration**
     - **Validates: Requirements 9.1, 9.2, 9.3, 9.4**
 
-- [ ] 6. Checkpoint - Ensure all tests pass
+- [x] 6. Checkpoint - Ensure all tests pass
+
+
+
+
+
 
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Implement choice card review renderer
 
-  - [ ] 7.1 Create ChoiceOptionRenderer.tsx component
+- [x] 7. Implement choice card review renderer
+
+
+
+
+
+  - [x] 7.1 Create ChoiceOptionRenderer.tsx component
+
+
     - Render option with block content
     - Handle selection state and styling
     - Support radio (single) and checkbox (multiple) modes
     - Hide correct markers before reveal
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 3.6_
-  - [ ] 7.2 Create ChoiceCardReviewRenderer.tsx component
+  - [x] 7.2 Create ChoiceCardReviewRenderer.tsx component
+
+
     - Display question and shuffled options
     - Handle single-choice click-to-confirm interaction
     - Handle multiple-choice toggle and submit interaction
     - Show answer reveal with correct/incorrect styling
     - _Requirements: 3.1, 3.7, 3.8, 3.9, 3.10_
-  - [ ] 7.3 Add CSS styles for choice card
+  - [x] 7.3 Add CSS styles for choice card
+
+
     - Option container styles with hover/selected states
     - Correct (green) and incorrect (red) reveal styles
     - Handle complex content overflow
