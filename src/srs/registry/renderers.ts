@@ -6,9 +6,9 @@
 
 import SrsCardBlockRenderer from "../../components/SrsCardBlockRenderer"
 import SrsReviewSessionRenderer from "../../components/SrsReviewSessionRenderer"
+import SrsFlashcardHomeRenderer from "../../components/SrsFlashcardHomeRenderer"
 import ClozeInlineRenderer from "../../components/ClozeInlineRenderer"
 import DirectionInlineRenderer from "../../components/DirectionInlineRenderer"
-import SrsFlashcardHomePanel from "../../panels/SrsFlashcardHomePanel"
 
 export function registerRenderers(pluginName: string): void {
   // 基本卡块渲染器
@@ -38,14 +38,21 @@ export function registerRenderers(pluginName: string): void {
     false
   )
 
-  // Flashcard Home 面板
-  orca.panels.registerPanel("srs.flashcard-home", SrsFlashcardHomePanel)
-
   // 复习会话块渲染器（块渲染器模式）
   orca.renderers.registerBlock(
     "srs.review-session",
     false,
     SrsReviewSessionRenderer,
+    [],
+    false
+  )
+
+  // Flash Home 块渲染器（卡片浏览器和仪表板）
+  // 需求: 3.1, 4.1
+  orca.renderers.registerBlock(
+    "srs.flashcard-home",
+    false,
+    SrsFlashcardHomeRenderer,
     [],
     false
   )
@@ -69,8 +76,8 @@ export function unregisterRenderers(pluginName: string): void {
   orca.renderers.unregisterBlock("srs.card")
   orca.renderers.unregisterBlock("srs.cloze-card")
   orca.renderers.unregisterBlock("srs.direction-card")
-  orca.panels.unregisterPanel("srs.flashcard-home")
   orca.renderers.unregisterBlock("srs.review-session")
+  orca.renderers.unregisterBlock("srs.flashcard-home")
   orca.renderers.unregisterInline(`${pluginName}.cloze`)
   orca.renderers.unregisterInline(`${pluginName}.direction`)
 }

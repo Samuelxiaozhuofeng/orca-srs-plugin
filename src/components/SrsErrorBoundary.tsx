@@ -37,6 +37,8 @@ interface ErrorBoundaryProps {
  * ```
  */
 class SrsErrorBoundary extends (Component as React.ComponentClass<ErrorBoundaryProps, ErrorBoundaryState>) {
+  private _isMounted = false
+
   constructor(props: ErrorBoundaryProps) {
     super(props)
     this.state = {
@@ -44,6 +46,14 @@ class SrsErrorBoundary extends (Component as React.ComponentClass<ErrorBoundaryP
       error: null,
       errorInfo: null
     }
+  }
+
+  componentDidMount(): void {
+    this._isMounted = true
+  }
+
+  componentWillUnmount(): void {
+    this._isMounted = false
   }
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
@@ -61,8 +71,10 @@ class SrsErrorBoundary extends (Component as React.ComponentClass<ErrorBoundaryP
     console.error(prefix, "错误堆栈:", error.stack)
     console.error(prefix, "组件堆栈:", errorInfo.componentStack)
 
-    // 更新状态，保存错误信息
-    this.setState({ errorInfo })
+    // 只在组件仍然挂载时更新状态
+    if (this._isMounted) {
+      this.setState({ errorInfo })
+    }
 
     // 调用可选的错误回调
     if (onError) {
@@ -88,11 +100,13 @@ class SrsErrorBoundary extends (Component as React.ComponentClass<ErrorBoundaryP
    * 重置错误状态，尝试重新渲染子组件
    */
   handleRetry = (): void => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null
-    })
+    if (this._isMounted) {
+      this.setState({
+        hasError: false,
+        error: null,
+        errorInfo: null
+      })
+    }
   }
 
   /**

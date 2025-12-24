@@ -12,18 +12,6 @@ import React from "react"
 export function registerUIComponents(pluginName: string): void {
   // ============ 顶部栏按钮 (Headbar) ============
   
-  // FlashcardHome 按钮 - 打开卡片管理主页
-  orca.headbar.registerHeadbarButton(`${pluginName}.flashcardHomeButton`, () => (
-    <orca.components.Button
-      variant="plain"
-      tabIndex={-1}
-      onClick={() => orca.commands.invokeCommand(`${pluginName}.openFlashcardHome`)}
-      title="Flashcard Home - 卡片管理主页"
-    >
-      <i className="ti ti-cards orca-headbar-icon" />
-    </orca.components.Button>
-  ))
-
   // 复习按钮 - 开始复习会话
   orca.headbar.registerHeadbarButton(`${pluginName}.reviewButton`, () => (
     <orca.components.Button
@@ -33,6 +21,18 @@ export function registerUIComponents(pluginName: string): void {
       title="开始闪卡复习"
     >
       <i className="ti ti-brain orca-headbar-icon" />
+    </orca.components.Button>
+  ))
+
+  // Flash Home 按钮 - 打开闪卡主页
+  orca.headbar.registerHeadbarButton(`${pluginName}.flashHomeButton`, () => (
+    <orca.components.Button
+      variant="plain"
+      tabIndex={-1}
+      onClick={() => orca.commands.invokeCommand(`${pluginName}.openFlashcardHome`)}
+      title="打开 Flash Home"
+    >
+      <i className="ti ti-home orca-headbar-icon" />
     </orca.components.Button>
   ))
 
@@ -79,8 +79,8 @@ export function registerUIComponents(pluginName: string): void {
 
 export function unregisterUIComponents(pluginName: string): void {
   // 顶部栏按钮
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.flashcardHomeButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
   
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)

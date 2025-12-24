@@ -13,15 +13,16 @@
  * - _repr.back: 答案文本
  */
 
-import type { Block, BlockProperty, DbId } from "../orca.d.ts"
+import type { Block, DbId } from "../orca.d.ts"
 import type { Grade } from "../srs/types"
 import { updateSrsState } from "../srs/storage"
 import SrsErrorBoundary from "./SrsErrorBoundary"
+import { showNotification } from "../srs/settings/reviewSettingsSchema"
 
 // 从全局 window 对象获取 React
-const { useState, useMemo, useEffect } = window.React
+const { useState, useMemo, useEffect, useCallback } = window.React
 const { useSnapshot } = window.Valtio
-const { BlockShell, BlockChildren, Button } = orca.components
+const { BlockShell, BlockChildren, Button, BlockBreadcrumb } = orca.components
 
 // 组件 Props 类型定义
 type SrsCardBlockRendererProps = {
@@ -58,22 +59,7 @@ export default function SrsCardBlockRenderer({
     return snapshot?.blocks?.[targetBlockId]
   }, [snapshot?.blocks, targetBlockId])
 
-  const readProp = (name: string) =>
-    block?.properties?.find((prop: BlockProperty) => prop.name === name)?.value
-
-  const srsInfo = useMemo(() => {
-    const dueRaw = readProp("srs.due")
-    const lastReviewed = readProp("srs.lastReviewed")
-    return {
-      stability: readProp("srs.stability"),
-      difficulty: readProp("srs.difficulty"),
-      interval: readProp("srs.interval"),
-      due: dueRaw ? new Date(dueRaw) : null,
-      lastReviewed: lastReviewed ? new Date(lastReviewed) : null,
-      reps: readProp("srs.reps"),
-      lapses: readProp("srs.lapses")
-    }
-  }, [block?.properties])
+  // 移除未使用的 srsInfo 计算以提升性能
 
   // 状态：是否显示答案
   const [showAnswer, setShowAnswer] = useState(false)
@@ -87,6 +73,17 @@ export default function SrsCardBlockRenderer({
   const [isSavingBack, setIsSavingBack] = useState(false)
 
   const toFragments = (textValue: string) => [{ t: "t", v: textValue ?? "" }]
+
+  // 当 blockId 变化时重置所有状态（处理删除标签后重新添加的情况）
+  useEffect(() => {
+    setShowAnswer(false)
+    setIsEditingFront(false)
+    setIsEditingBack(false)
+    setFrontDisplay(front)
+    setBackDisplay(back)
+    setEditedFront(front)
+    setEditedBack(back)
+  }, [blockId, front, back])
 
   useEffect(() => {
     setFrontDisplay(front)
@@ -104,10 +101,10 @@ export default function SrsCardBlockRenderer({
    * 处理评分按钮点击
    * @param grade 评分等级
    */
-  const handleGrade = async (grade: Grade) => {
+  const handleGrade = useCallback(async (grade: Grade) => {
     console.log(`[SRS Card Block Renderer] 卡片 #${blockId} 评分: ${grade}`)
 
-    const result = await updateSrsState(blockId, grade)
+    const result = await updateSrsState(blockId, grade, "orca-srs")
 
     // 评分后隐藏答案
     setShowAnswer(false)
@@ -118,14 +115,15 @@ export default function SrsCardBlockRenderer({
       const day = date.getDate()
       return `${month}-${day}`
     }
-    orca.notify(
+    showNotification(
+      "orca-srs",
       "success",
       `评分已记录：${grade}，下次 ${formatSimpleDate(result.state.due)}（间隔 ${result.state.interval} 天）`,
       { title: "SRS 复习" }
     )
-  }
+  }, [blockId])
 
-  const handleSaveFront = async () => {
+  const handleSaveFront = useCallback(async () => {
     if (isSavingFront) return
     setIsSavingFront(true)
     try {
@@ -146,16 +144,16 @@ export default function SrsCardBlockRenderer({
 
       setFrontDisplay(editedFront)
       setIsEditingFront(false)
-      orca.notify("success", "题目已保存", { title: "SRS 卡片" })
+      showNotification("orca-srs", "success", "题目已保存", { title: "SRS 卡片" })
     } catch (error) {
       console.error("保存题目失败:", error)
       orca.notify("error", `保存失败: ${error}`)
     } finally {
       setIsSavingFront(false)
     }
-  }
+  }, [targetBlockId, editedFront, isSavingFront])
 
-  const handleSaveBack = async () => {
+  const handleSaveBack = useCallback(async () => {
     if (isSavingBack) return
     const answerId = block?.children?.[0]
     if (answerId === undefined) {
@@ -184,16 +182,16 @@ export default function SrsCardBlockRenderer({
 
       setBackDisplay(editedBack)
       setIsEditingBack(false)
-      orca.notify("success", "答案已保存", { title: "SRS 卡片" })
+      showNotification("orca-srs", "success", "答案已保存", { title: "SRS 卡片" })
     } catch (error) {
       console.error("保存答案失败:", error)
       orca.notify("error", `保存失败: ${error}`)
     } finally {
       setIsSavingBack(false)
     }
-  }
+  }, [block?.children, targetBlockId, editedBack, isSavingBack])
 
-  const handleCancelEdit = (field: "front" | "back") => {
+  const handleCancelEdit = useCallback((field: "front" | "back") => {
     if (field === "front") {
       setEditedFront(front)
       setIsEditingFront(false)
@@ -201,9 +199,37 @@ export default function SrsCardBlockRenderer({
       setEditedBack(back)
       setIsEditingBack(false)
     }
-  }
+  }, [front, back])
 
-  // 渲染子块（如果有的话）
+  const handleFrontChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditedFront(e.target.value)
+  }, [])
+
+  const handleBackChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditedBack(e.target.value)
+  }, [])
+
+  // 阻止特定事件冒泡，但允许复制粘贴等操作
+  const handleTextareaMouseDown = useCallback((e: React.MouseEvent) => {
+    // 只阻止冒泡，不阻止默认行为
+    e.stopPropagation()
+  }, [])
+
+  const handleTextareaClick = useCallback((e: React.MouseEvent) => {
+    // 只阻止冒泡，不阻止默认行为
+    e.stopPropagation()
+  }, [])
+
+  const handleTextareaKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // 允许复制粘贴等快捷键，只阻止可能干扰编辑器的按键
+    // Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 等不阻止
+    const isCopyPaste = e.ctrlKey || e.metaKey
+    if (!isCopyPaste) {
+      e.stopPropagation()
+    }
+  }, [])
+
+  // 渲染子块（如果有的话）- 优化依赖项以避免不必要的重渲染
   const childrenJsx = useMemo(
     () => (
       <BlockChildren
@@ -214,11 +240,16 @@ export default function SrsCardBlockRenderer({
         renderingMode={renderingMode}
       />
     ),
-    [block?.children]
+    [block, panelId, blockLevel, indentLevel, renderingMode]
   )
 
-  // 卡片内容 JSX
-  const contentJsx = (
+  // 判断是否有子块（答案块）
+  const hasChildren = useMemo(() => {
+    return block?.children && block.children.length > 0
+  }, [block?.children])
+
+  // 卡片内容 JSX - 使用 useMemo 避免在隐藏时重新渲染
+  const contentJsx = useMemo(() => (
     <div
       className="srs-card-block-content"
       style={{
@@ -228,8 +259,26 @@ export default function SrsCardBlockRenderer({
         padding: "16px",
         marginTop: "4px",
         marginBottom: "4px",
+        userSelect: "text",
+        WebkitUserSelect: "text",
       }}
     >
+      {/* 折叠按钮和句柄仅在直接悬浮到对应块时显示 */}
+      <style>{`
+        .srs-card-block-content .orca-block-folding-handle,
+        .srs-card-block-content .orca-block-handle {
+          opacity: 0 !important;
+          transition: opacity 0.15s ease;
+        }
+        .srs-card-block-content .orca-block.orca-container:hover > .orca-repr > .orca-repr-main > .orca-repr-main-none-editable > .orca-block-handle,
+        .srs-card-block-content .orca-block.orca-container:hover > .orca-block-folding-handle {
+          opacity: 1 !important;
+        }
+        .srs-card-front .orca-repr-main {
+          display: block !important;
+        }
+      `}</style>
+      
       {/* 卡片图标 + 标题 */}
       <div
         style={{
@@ -254,14 +303,15 @@ export default function SrsCardBlockRenderer({
           padding: "12px",
           backgroundColor: "var(--orca-color-bg-2)",
           borderRadius: "6px",
-          fontSize: "14px",
-          fontWeight: "500",
           color: "var(--orca-color-text-1)",
           display: "flex",
           flexDirection: "column",
           gap: "8px",
         }}
       >
+        {/* 面包屑导航 - 使用原生组件 */}
+        <BlockBreadcrumb blockId={targetBlockId} />
+        
         <div
           style={{
             display: "flex",
@@ -286,7 +336,14 @@ export default function SrsCardBlockRenderer({
           <>
             <textarea
               value={editedFront}
-              onChange={(e) => setEditedFront(e.target.value)}
+              onChange={handleFrontChange}
+              onInput={handleFrontChange}
+              onMouseDown={handleTextareaMouseDown}
+              onClick={handleTextareaClick}
+              onKeyDown={handleTextareaKeyDown}
+              autoFocus
+              readOnly={false}
+              disabled={false}
               style={{
                 width: "100%",
                 minHeight: "80px",
@@ -295,6 +352,9 @@ export default function SrsCardBlockRenderer({
                 borderRadius: "4px",
                 border: "1px solid var(--orca-color-border-1)",
                 resize: "vertical",
+                pointerEvents: "auto",
+                userSelect: "text",
+                WebkitUserSelect: "text",
               }}
             />
             <div
@@ -313,184 +373,325 @@ export default function SrsCardBlockRenderer({
             </div>
           </>
         ) : (
-          <div style={{ whiteSpace: "pre-wrap" }}>{frontDisplay || "（无题目）"}</div>
+          <div 
+            style={{ 
+              whiteSpace: "pre-wrap",
+              userSelect: "text",
+              WebkitUserSelect: "text",
+              cursor: "text",
+              fontSize: "20px",
+              fontWeight: "600",
+            }}
+          >
+            {frontDisplay || "（无题目）"}
+          </div>
         )}
       </div>
 
-      {/* 显示答案按钮 或 答案区域 */}
-      {!showAnswer ? (
-        // 未显示答案：显示按钮
-        <div style={{ textAlign: "center" }}>
-          <Button
-            variant="soft"
-            onClick={() => setShowAnswer(true)}
-            style={{
-              padding: "6px 16px",
-              fontSize: "13px",
-            }}
-          >
-            显示答案
-          </Button>
-        </div>
-      ) : (
-        // 已显示答案：显示答案和评分按钮
-        <>
-          {/* 答案区域 */}
-          <div
-            className="srs-card-back"
-            style={{
-              marginBottom: "12px",
-              padding: "12px",
-              backgroundColor: "var(--orca-color-bg-2)",
-              borderRadius: "6px",
-              borderLeft: "3px solid var(--orca-color-primary-5)",
-              fontSize: "14px",
-              color: "var(--orca-color-text-1)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                fontSize: "11px",
-                color: "var(--orca-color-text-2)",
-              }}
-            >
-              <span>答案：</span>
-              {!isEditingBack && (
-                <Button
-                  variant="soft"
-                  onClick={() => setIsEditingBack(true)}
-                  style={{ padding: "2px 8px", fontSize: "11px" }}
-                >
-                  <i className="ti ti-edit"></i> 编辑
-                </Button>
-              )}
-            </div>
-            {isEditingBack ? (
-              <>
-                <textarea
-                  value={editedBack}
-                  onChange={(e) => setEditedBack(e.target.value)}
-                  style={{
-                    width: "100%",
-                    minHeight: "80px",
-                    padding: "8px",
-                    fontSize: "14px",
-                    borderRadius: "4px",
-                    border: "1px solid var(--orca-color-border-1)",
-                    resize: "vertical",
-                  }}
-                />
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "8px",
-                    justifyContent: "flex-end",
-                  }}
-                >
-                  <Button variant="soft" onClick={() => handleCancelEdit("back")}>
-                    取消
-                  </Button>
-                  <Button variant="solid" onClick={handleSaveBack}>
-                    保存
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <div style={{ whiteSpace: "pre-wrap" }}>{backDisplay || "（无答案）"}</div>
-            )}
-          </div>
-
-          {/* 评分按钮组 */}
-          <div
-            className="srs-card-grade-buttons"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: "8px",
-            }}
-          >
-            {/* Again 按钮 */}
-            <Button
-              variant="dangerous"
-              onClick={() => handleGrade("again")}
-              style={{
-                padding: "8px 4px",
-                fontSize: "12px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "2px",
-              }}
-            >
-              <span style={{ fontWeight: "600" }}>Again</span>
-              <span style={{ fontSize: "10px", opacity: 0.8 }}>忘记</span>
-            </Button>
-
-            {/* Hard 按钮 */}
+      {/* 显示答案按钮 或 答案区域 或 直接显示评分按钮（摘录卡） */}
+      {hasChildren ? (
+        // 有子块：显示答案逻辑
+        !showAnswer ? (
+          // 未显示答案：显示按钮
+          <div style={{ textAlign: "center" }}>
             <Button
               variant="soft"
-              onClick={() => handleGrade("hard")}
+              onClick={() => setShowAnswer(true)}
               style={{
-                padding: "8px 4px",
-                fontSize: "12px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "2px",
+                padding: "6px 16px",
+                fontSize: "13px",
               }}
             >
-              <span style={{ fontWeight: "600" }}>Hard</span>
-              <span style={{ fontSize: "10px", opacity: 0.8 }}>困难</span>
-            </Button>
-
-            {/* Good 按钮 */}
-            <Button
-              variant="solid"
-              onClick={() => handleGrade("good")}
-              style={{
-                padding: "8px 4px",
-                fontSize: "12px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "2px",
-              }}
-            >
-              <span style={{ fontWeight: "600" }}>Good</span>
-              <span style={{ fontSize: "10px", opacity: 0.8 }}>良好</span>
-            </Button>
-
-            {/* Easy 按钮 */}
-            <Button
-              variant="solid"
-              onClick={() => handleGrade("easy")}
-              style={{
-                padding: "8px 4px",
-                fontSize: "12px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "2px",
-                backgroundColor: "var(--orca-color-primary-5)",
-                opacity: 0.9,
-              }}
-            >
-              <span style={{ fontWeight: "600" }}>Easy</span>
-              <span style={{ fontSize: "10px", opacity: 0.8 }}>简单</span>
+              显示答案
             </Button>
           </div>
-        </>
+        ) : (
+          // 已显示答案：显示答案和评分按钮
+          <>
+            {/* 答案区域 */}
+            <div
+              className="srs-card-back"
+              style={{
+                marginBottom: "12px",
+                padding: "12px",
+                backgroundColor: "var(--orca-color-bg-2)",
+                borderRadius: "6px",
+                color: "var(--orca-color-text-1)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: "11px",
+                  color: "var(--orca-color-text-2)",
+                }}
+              >
+                <span>答案：</span>
+                {!isEditingBack && (
+                  <Button
+                    variant="soft"
+                    onClick={() => setIsEditingBack(true)}
+                    style={{ padding: "2px 8px", fontSize: "11px" }}
+                  >
+                    <i className="ti ti-edit"></i> 编辑
+                  </Button>
+                )}
+              </div>
+              {isEditingBack ? (
+                <>
+                  <textarea
+                    value={editedBack}
+                    onChange={handleBackChange}
+                    onInput={handleBackChange}
+                    onMouseDown={handleTextareaMouseDown}
+                    onClick={handleTextareaClick}
+                    onKeyDown={handleTextareaKeyDown}
+                    autoFocus
+                    readOnly={false}
+                    disabled={false}
+                    style={{
+                      width: "100%",
+                      minHeight: "80px",
+                      padding: "8px",
+                      fontSize: "14px",
+                      borderRadius: "4px",
+                      border: "1px solid var(--orca-color-border-1)",
+                      resize: "vertical",
+                      pointerEvents: "auto",
+                      userSelect: "text",
+                      WebkitUserSelect: "text",
+                    }}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <Button variant="soft" onClick={() => handleCancelEdit("back")}>
+                      取消
+                    </Button>
+                    <Button variant="solid" onClick={handleSaveBack}>
+                      保存
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div 
+                  style={{ 
+                    whiteSpace: "pre-wrap",
+                    userSelect: "text",
+                    WebkitUserSelect: "text",
+                    cursor: "text",
+                    fontSize: "20px",
+                    fontWeight: "600",
+                  }}
+                >
+                  {backDisplay || "（无答案）"}
+                </div>
+              )}
+            </div>
+
+            {/* 评分按钮组 */}
+            <div
+              className="srs-card-grade-buttons"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: "8px",
+              }}
+            >
+              {/* Again 按钮 */}
+              <Button
+                variant="dangerous"
+                onClick={() => handleGrade("again")}
+                style={{
+                  padding: "12px 4px",
+                  fontSize: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{ fontSize: "11px", fontWeight: "500" }}>1m</span>
+                <span style={{ fontSize: "32px" }}>😞</span>
+                <span style={{ fontSize: "11px", opacity: 0.9 }}>忘记</span>
+              </Button>
+
+              {/* Hard 按钮 */}
+              <Button
+                variant="soft"
+                onClick={() => handleGrade("hard")}
+                style={{
+                  padding: "12px 4px",
+                  fontSize: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{ fontSize: "11px", fontWeight: "500" }}>6m</span>
+                <span style={{ fontSize: "32px" }}>😐</span>
+                <span style={{ fontSize: "11px", opacity: 0.9 }}>困难</span>
+              </Button>
+
+              {/* Good 按钮 */}
+              <Button
+                variant="solid"
+                onClick={() => handleGrade("good")}
+                style={{
+                  padding: "12px 4px",
+                  fontSize: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{ fontSize: "11px", fontWeight: "500" }}>10m</span>
+                <span style={{ fontSize: "32px" }}>😊</span>
+                <span style={{ fontSize: "11px", opacity: 0.9 }}>良好</span>
+              </Button>
+
+              {/* Easy 按钮 */}
+              <Button
+                variant="solid"
+                onClick={() => handleGrade("easy")}
+                style={{
+                  padding: "12px 4px",
+                  fontSize: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                  backgroundColor: "var(--orca-color-primary-5)",
+                  opacity: 0.9,
+                }}
+              >
+                <span style={{ fontSize: "11px", fontWeight: "500" }}>8d</span>
+                <span style={{ fontSize: "32px" }}>😄</span>
+                <span style={{ fontSize: "11px", opacity: 0.9 }}>简单</span>
+              </Button>
+            </div>
+          </>
+        )
+      ) : (
+        // 无子块（摘录卡）：直接显示评分按钮
+        <div
+          className="srs-card-grade-buttons"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: "8px",
+          }}
+        >
+          {/* Again 按钮 */}
+          <Button
+            variant="dangerous"
+            onClick={() => handleGrade("again")}
+            style={{
+              padding: "12px 4px",
+              fontSize: "12px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span style={{ fontSize: "11px", fontWeight: "500" }}>1m</span>
+            <span style={{ fontSize: "32px" }}>😞</span>
+            <span style={{ fontSize: "11px", opacity: 0.9 }}>忘记</span>
+          </Button>
+
+          {/* Hard 按钮 */}
+          <Button
+            variant="soft"
+            onClick={() => handleGrade("hard")}
+            style={{
+              padding: "12px 4px",
+              fontSize: "12px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span style={{ fontSize: "11px", fontWeight: "500" }}>6m</span>
+            <span style={{ fontSize: "32px" }}>😐</span>
+            <span style={{ fontSize: "11px", opacity: 0.9 }}>困难</span>
+          </Button>
+
+          {/* Good 按钮 */}
+          <Button
+            variant="solid"
+            onClick={() => handleGrade("good")}
+            style={{
+              padding: "12px 4px",
+              fontSize: "12px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span style={{ fontSize: "11px", fontWeight: "500" }}>10m</span>
+            <span style={{ fontSize: "32px" }}>😊</span>
+            <span style={{ fontSize: "11px", opacity: 0.9 }}>良好</span>
+          </Button>
+
+          {/* Easy 按钮 */}
+          <Button
+            variant="solid"
+            onClick={() => handleGrade("easy")}
+            style={{
+              padding: "12px 4px",
+              fontSize: "12px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "4px",
+              backgroundColor: "var(--orca-color-primary-5)",
+              opacity: 0.9,
+            }}
+          >
+            <span style={{ fontSize: "11px", fontWeight: "500" }}>8d</span>
+            <span style={{ fontSize: "32px" }}>😄</span>
+            <span style={{ fontSize: "11px", opacity: 0.9 }}>简单</span>
+          </Button>
+        </div>
       )}
 
       {/* SRS 详细信息已隐藏 */}
     </div>
-  )
+  ), [
+    hasChildren,
+    showAnswer,
+    isEditingFront,
+    isEditingBack,
+    editedFront,
+    editedBack,
+    frontDisplay,
+    backDisplay,
+    isSavingFront,
+    isSavingBack,
+    handleGrade,
+    handleSaveFront,
+    handleSaveBack,
+    handleCancelEdit,
+    handleFrontChange,
+    handleBackChange,
+    handleTextareaMouseDown,
+    handleTextareaClick,
+    handleTextareaKeyDown,
+  ])
 
   return (
     <BlockShell

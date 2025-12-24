@@ -129,7 +129,9 @@ const loadSrsStateInternal = async (
     lastReviewed: parseDate(getPropValue("lastReviewed"), initial.lastReviewed),
     reps: parseNumber(getPropValue("reps"), initial.reps),
     lapses: parseNumber(getPropValue("lapses"), initial.lapses),
-    state: initial.state // 状态由算法决定，读取不到时回退为初始
+    // 读取保存的 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）
+    state: parseNumber(getPropValue("state"), initial.state ?? 0),
+    resets: parseNumber(getPropValue("resets"), 0)
   }
 }
 
@@ -154,7 +156,10 @@ const saveSrsStateInternal = async (
     { name: buildPropertyName("interval", clozeNumber), value: newState.interval, type: 3 },
     { name: buildPropertyName("due", clozeNumber), value: newState.due, type: 5 },
     { name: buildPropertyName("reps", clozeNumber), value: newState.reps, type: 3 },
-    { name: buildPropertyName("lapses", clozeNumber), value: newState.lapses, type: 3 }
+    { name: buildPropertyName("lapses", clozeNumber), value: newState.lapses, type: 3 },
+    { name: buildPropertyName("resets", clozeNumber), value: newState.resets ?? 0, type: 3 },
+    // 保存 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）
+    { name: buildPropertyName("state", clozeNumber), value: newState.state ?? 0, type: 3 }
   ]
 
   // 普通卡片需要额外添加 isCard 标记
@@ -204,9 +209,9 @@ export const writeInitialSrsState = async (
 /**
  * 更新普通卡片的 SRS 状态（评分后）
  */
-export const updateSrsState = async (blockId: DbId, grade: Grade) => {
+export const updateSrsState = async (blockId: DbId, grade: Grade, pluginName?: string) => {
   const prev = await loadCardSrsState(blockId)
-  const result = nextReviewState(prev, grade)
+  const result = nextReviewState(prev, grade, new Date(), pluginName)
   await saveCardSrsState(blockId, result.state)
   return result
 }
@@ -271,14 +276,16 @@ export const writeInitialClozeSrsState = async (
  * @param blockId - 块 ID
  * @param clozeNumber - 填空编号
  * @param grade - 评分
+ * @param pluginName - 插件名称（用于读取 FSRS 权重设置）
  */
 export const updateClozeSrsState = async (
   blockId: DbId,
   clozeNumber: number,
-  grade: Grade
+  grade: Grade,
+  pluginName?: string
 ) => {
   const prev = await loadClozeSrsState(blockId, clozeNumber)
-  const result = nextReviewState(prev, grade)
+  const result = nextReviewState(prev, grade, new Date(), pluginName)
   await saveClozeSrsState(blockId, clozeNumber, result.state)
   return result
 }
@@ -319,7 +326,9 @@ export const loadDirectionSrsState = async (
     lastReviewed: parseDate(getPropValue("lastReviewed"), initial.lastReviewed),
     reps: parseNumber(getPropValue("reps"), initial.reps),
     lapses: parseNumber(getPropValue("lapses"), initial.lapses),
-    state: initial.state
+    // 读取保存的 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）
+    state: parseNumber(getPropValue("state"), initial.state ?? 0),
+    resets: parseNumber(getPropValue("resets"), 0)
   }
 }
 
@@ -342,7 +351,10 @@ export const saveDirectionSrsState = async (
     { name: buildDirectionPropertyName("due", directionType), value: newState.due, type: 5 },
     { name: buildDirectionPropertyName("lastReviewed", directionType), value: newState.lastReviewed ?? null, type: 5 },
     { name: buildDirectionPropertyName("reps", directionType), value: newState.reps, type: 3 },
-    { name: buildDirectionPropertyName("lapses", directionType), value: newState.lapses, type: 3 }
+    { name: buildDirectionPropertyName("lapses", directionType), value: newState.lapses, type: 3 },
+    { name: buildDirectionPropertyName("resets", directionType), value: newState.resets ?? 0, type: 3 },
+    // 保存 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）
+    { name: buildDirectionPropertyName("state", directionType), value: newState.state ?? 0, type: 3 }
   ]
 
   await orca.commands.invokeEditorCommand(
@@ -385,15 +397,17 @@ export const writeInitialDirectionSrsState = async (
  * @param blockId - 块 ID
  * @param directionType - 方向类型
  * @param grade - 评分
+ * @param pluginName - 插件名称（用于读取 FSRS 权重设置）
  * @returns { state, log }
  */
 export const updateDirectionSrsState = async (
   blockId: DbId,
   directionType: "forward" | "backward",
-  grade: Grade
+  grade: Grade,
+  pluginName?: string
 ) => {
   const prev = await loadDirectionSrsState(blockId, directionType)
-  const result = nextReviewState(prev, grade)
+  const result = nextReviewState(prev, grade, new Date(), pluginName)
   await saveDirectionSrsState(blockId, directionType, result.state)
   return result
 }
@@ -405,7 +419,7 @@ export const updateDirectionSrsState = async (
 /**
  * 确保普通卡片存在 SRS 属性：若块上没有任何 `srs.` 前缀属性，则写入初始状态。
  *
- * 注意：这里用后端 get-block 的结果判断是否已初始化，避免使用 `block.properties` 的"半数据"误判，
+ * 注意：这里用后端 get-block 的结果判断是否已初始化，避免使用 `block.properties` 的“半数据”误判，
  * 否则会出现每次收集时都把卡片重置为 reps=0 的问题。
  */
 export const ensureCardSrsState = async (
@@ -415,29 +429,6 @@ export const ensureCardSrsState = async (
   const block = await getBlockCached(blockId)
   const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
   if (!hasAnySrsProps) {
-    return await writeInitialSrsState(blockId, now)
-  }
-  return await loadCardSrsState(blockId)
-}
-
-/**
- * 为 Extract 卡片初始化 SRS 状态（立即可复习，不延迟）
- *
- * Extract 卡片使用普通卡片的存储格式（srs.* 属性），
- * 但初始状态 due 设置为当前时间，表示立即可以复习。
- *
- * @param blockId - 块 ID
- * @param now - 当前时间（可选，默认为 new Date()）
- * @returns SRS 状态
- */
-export const ensureExtractSrsState = async (
-  blockId: DbId,
-  now: Date = new Date()
-): Promise<SrsState> => {
-  const block = await getBlockCached(blockId)
-  const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
-  if (!hasAnySrsProps) {
-    // Extract 默认立即可复习（daysOffset = 0）
     return await writeInitialSrsState(blockId, now)
   }
   return await loadCardSrsState(blockId)
@@ -473,4 +464,166 @@ export const ensureDirectionSrsState = async (
     return await writeInitialDirectionSrsState(blockId, directionType, daysOffset)
   }
   return await loadDirectionSrsState(blockId, directionType)
+}
+
+// ============================================================================
+// 重置卡片 API
+// ============================================================================
+
+/**
+ * 重置普通卡片为新卡状态
+ * 保留重置次数计数，其他状态重置为初始值
+ *
+ * @param blockId - 块 ID
+ * @returns 重置后的 SRS 状态
+ */
+export const resetCardSrsState = async (blockId: DbId): Promise<SrsState> => {
+  const prev = await loadCardSrsState(blockId)
+  const now = new Date()
+  const initial = createInitialSrsState(now)
+  const newState: SrsState = {
+    ...initial,
+    resets: (prev.resets ?? 0) + 1
+  }
+  await saveCardSrsState(blockId, newState)
+  return newState
+}
+
+/**
+ * 重置 Cloze 卡片某个填空为新卡状态
+ *
+ * @param blockId - 块 ID
+ * @param clozeNumber - 填空编号
+ * @returns 重置后的 SRS 状态
+ */
+export const resetClozeSrsState = async (
+  blockId: DbId,
+  clozeNumber: number
+): Promise<SrsState> => {
+  const prev = await loadClozeSrsState(blockId, clozeNumber)
+  const now = new Date()
+  const initial = createInitialSrsState(now)
+  const newState: SrsState = {
+    ...initial,
+    resets: (prev.resets ?? 0) + 1
+  }
+  await saveClozeSrsState(blockId, clozeNumber, newState)
+  return newState
+}
+
+/**
+ * 重置方向卡某个方向为新卡状态
+ *
+ * @param blockId - 块 ID
+ * @param directionType - 方向类型
+ * @returns 重置后的 SRS 状态
+ */
+export const resetDirectionSrsState = async (
+  blockId: DbId,
+  directionType: "forward" | "backward"
+): Promise<SrsState> => {
+  const prev = await loadDirectionSrsState(blockId, directionType)
+  const now = new Date()
+  const initial = createInitialSrsState(now)
+  const newState: SrsState = {
+    ...initial,
+    resets: (prev.resets ?? 0) + 1
+  }
+  await saveDirectionSrsState(blockId, directionType, newState)
+  return newState
+}
+
+// ============================================================================
+// 删除卡片 API
+// ============================================================================
+
+/**
+ * 获取块上所有 SRS 属性名称
+ */
+const getSrsPropertyNames = async (blockId: DbId, prefix: string = "srs."): Promise<string[]> => {
+  const block = await getBlockCached(blockId)
+  if (!block?.properties) return []
+  
+  return block.properties
+    .filter(prop => prop.name.startsWith(prefix))
+    .map(prop => prop.name)
+}
+
+/**
+ * 删除普通卡片的 Card 标记和所有 SRS 属性
+ *
+ * @param blockId - 块 ID
+ */
+export const deleteCardSrsData = async (blockId: DbId): Promise<void> => {
+  const propertyNames = await getSrsPropertyNames(blockId, "srs.")
+  
+  if (propertyNames.length === 0) {
+    return
+  }
+  
+  await orca.commands.invokeEditorCommand(
+    "core.editor.deleteProperties",
+    null,
+    [blockId],
+    propertyNames
+  )
+  
+  // 清除缓存
+  blockCache.delete(blockId)
+}
+
+/**
+ * 删除 Cloze 卡片某个填空的 SRS 属性
+ *
+ * @param blockId - 块 ID
+ * @param clozeNumber - 填空编号
+ */
+export const deleteClozeCardSrsData = async (
+  blockId: DbId,
+  clozeNumber: number
+): Promise<void> => {
+  const prefix = `srs.c${clozeNumber}.`
+  const propertyNames = await getSrsPropertyNames(blockId, prefix)
+  
+  if (propertyNames.length === 0) {
+    return
+  }
+  
+  await orca.commands.invokeEditorCommand(
+    "core.editor.deleteProperties",
+    null,
+    [blockId],
+    propertyNames
+  )
+  
+  // 清除缓存
+  blockCache.delete(blockId)
+}
+
+/**
+ * 删除方向卡某个方向的 SRS 属性
+ *
+ * @param blockId - 块 ID
+ * @param directionType - 方向类型
+ */
+export const deleteDirectionCardSrsData = async (
+  blockId: DbId,
+  directionType: "forward" | "backward"
+): Promise<void> => {
+  const prefix = `srs.${directionType}.`
+  const propertyNames = await getSrsPropertyNames(blockId, prefix)
+  
+  if (propertyNames.length === 0) {
+    return
+  }
+  
+  await orca.commands.invokeEditorCommand(
+    "core.editor.deleteProperties",
+    null,
+    [blockId],
+    propertyNames
+  )
+  
+  // 清除缓存
+  blockCache.delete(blockId)
 }

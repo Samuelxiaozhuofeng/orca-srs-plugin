@@ -2,12 +2,12 @@
  * 复习快捷键 Hook
  *
  * 为 SRS 复习界面提供键盘快捷键支持（与 Anki 一致）：
- * - 空格：显示答案
+ * - 空格：显示答案（答案未显示时）/ 评分为良好（答案已显示时）
  * - 1：again（忘记）
  * - 2：hard（困难）
  * - 3：good（良好）
  * - 4：easy（简单）
- * - b：bury（埋藏到明天）
+ * - b：postpone（推迟到明天）
  * - s：suspend（暂停卡片）
  */
 
@@ -24,7 +24,7 @@ const SHORTCUTS: Record<string, Grade | "showAnswer" | "bury" | "suspend"> = {
   "2": "hard",        // 困难
   "3": "good",        // 良好
   "4": "easy",        // 简单
-  "b": "bury",        // 埋藏到明天
+  "b": "bury",        // 推迟到明天（内部仍使用bury以保持兼容）
   "s": "suspend",     // 暂停卡片
 }
 
@@ -37,7 +37,7 @@ type UseReviewShortcutsOptions = {
   onShowAnswer: () => void
   /** 评分回调 */
   onGrade: (grade: Grade) => void
-  /** 埋藏卡片回调 */
+  /** 推迟卡片回调 */
   onBury?: () => void
   /** 暂停卡片回调 */
   onSuspend?: () => void
@@ -94,12 +94,14 @@ export function useReviewShortcuts({
       event.stopPropagation()
 
       if (action === "showAnswer") {
-        // 空格键：显示答案（仅在答案未显示时有效）
+        // 空格键：显示答案（答案未显示时）或评分为良好（答案已显示时）
         if (!showAnswer && !isGrading) {
           onShowAnswer()
+        } else if (showAnswer && !isGrading) {
+          onGrade("good")
         }
       } else if (action === "bury") {
-        // b 键：埋藏卡片（任何时候都可以）
+        // b 键：推迟卡片（任何时候都可以）
         if (!isGrading && onBury) {
           onBury()
         }

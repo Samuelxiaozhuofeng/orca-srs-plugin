@@ -18,8 +18,12 @@ export default defineConfig(({ command }) => {
         fileName: "index",
         formats: ["es"],
       },
+      cssCodeSplit: false,
       rollupOptions: {
         external: ["react", "valtio"],
+        output: {
+          inlineDynamicImports: true,
+        },
       },
     },
     plugins: [react(), externalGlobals({ react: "React", valtio: "Valtio" })],

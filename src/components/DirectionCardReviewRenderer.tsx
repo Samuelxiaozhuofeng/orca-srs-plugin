@@ -15,17 +15,49 @@ import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { extractDirectionInfo } from "../srs/directionUtils"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
-import { previewIntervals, formatInterval } from "../srs/algorithm"
+import { previewIntervals, formatInterval, previewDueDates, formatDueDate } from "../srs/algorithm"
+import { State } from "ts-fsrs"
+
+/**
+ * 格式化卡片状态为中文
+ */
+function formatCardState(state?: State): string {
+  if (state === undefined || state === null) return "新卡"
+  switch (state) {
+    case State.New: return "新卡"
+    case State.Learning: return "学习中"
+    case State.Review: return "复习中"
+    case State.Relearning: return "重学中"
+    default: return "未知"
+  }
+}
+
+/**
+ * 格式化日期时间
+ */
+function formatDateTime(date: Date | null | undefined): string {
+  if (!date) return "从未"
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hour = String(d.getHours()).padStart(2, '0')
+  const minute = String(d.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
 
 interface DirectionCardReviewRendererProps {
   blockId: DbId
   onGrade: (grade: Grade) => Promise<void> | void
-  onBury?: () => void
+  onPostpone?: () => void
   onSuspend?: () => void
   onClose?: () => void
+  onSkip?: () => void  // 跳过当前卡片
+  onPrevious?: () => void  // 回到上一张
+  canGoPrevious?: boolean  // 是否可以回到上一张
   srsInfo?: Partial<SrsState>
   isGrading?: boolean
-  onJumpToCard?: (blockId: DbId) => void
+  onJumpToCard?: (blockId: DbId, shiftKey?: boolean) => void
   inSidePanel?: boolean
   panelId?: string
   pluginName: string
@@ -35,9 +67,12 @@ interface DirectionCardReviewRendererProps {
 export default function DirectionCardReviewRenderer({
   blockId,
   onGrade,
-  onBury,
+  onPostpone,
   onSuspend,
   onClose,
+  onSkip,
+  onPrevious,
+  canGoPrevious = false,
   srsInfo,
   isGrading = false,
   onJumpToCard,
@@ -47,6 +82,7 @@ export default function DirectionCardReviewRenderer({
   reviewDirection,
 }: DirectionCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(false)
+  const [showCardInfo, setShowCardInfo] = useState(false)
 
   const snapshot = useSnapshot(orca.state)
   const block = useMemo(() => {
@@ -65,13 +101,13 @@ export default function DirectionCardReviewRenderer({
     setShowAnswer(false)
   }
 
-  // 快捷键支持（空格显示答案，1-4 评分，b 埋藏，s 暂停）
+  // 快捷键支持（空格显示答案，1-4 评分，b 推迟，s 暂停）
   useReviewShortcuts({
     showAnswer,
     isGrading,
     onShowAnswer: () => setShowAnswer(true),
     onGrade: handleGrade,
-    onBury,
+    onBury: onPostpone,
     onSuspend,
   })
 
@@ -90,6 +126,23 @@ export default function DirectionCardReviewRenderer({
         }
       : null
     return previewIntervals(fullState)
+  }, [srsInfo])
+
+  // 预览到期日期
+  const dueDates = useMemo(() => {
+    const fullState: SrsState | null = srsInfo
+      ? {
+          stability: srsInfo.stability ?? 0,
+          difficulty: srsInfo.difficulty ?? 0,
+          interval: srsInfo.interval ?? 0,
+          due: srsInfo.due ?? new Date(),
+          lastReviewed: srsInfo.lastReviewed ?? null,
+          reps: srsInfo.reps ?? 0,
+          lapses: srsInfo.lapses ?? 0,
+          state: srsInfo.state,
+        }
+      : null
+    return previewDueDates(fullState)
   }, [srsInfo])
 
   if (!dirInfo) {
@@ -134,79 +187,151 @@ export default function DirectionCardReviewRenderer({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: "12px",
+          marginBottom: "8px",
+          opacity: 0.6,
+          transition: "opacity 0.2s"
         }}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = "0.6"}
       >
-        <div
-          style={{
-            fontSize: "12px",
-            fontWeight: "500",
-            color: dirColor,
-            backgroundColor: dirBgColor,
-            padding: "4px 10px",
-            borderRadius: "6px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          <i className={`ti ${arrowIcon}`} />
-          方向卡 ({dirLabel})
-        </div>
-
-        <div style={{ display: "flex", gap: "8px" }}>
-          {onBury && (
+        {/* 左侧：回到上一张按钮 + 卡片类型标识 */}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          {onPrevious && (
             <Button
-              variant="soft"
-              onClick={onBury}
-              title="埋藏到明天 (B)"
+              variant="plain"
+              onClick={canGoPrevious ? onPrevious : undefined}
+              title="回到上一张"
               style={{
-                padding: "6px 12px",
-                fontSize: "13px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
+                padding: "4px 6px",
+                fontSize: "14px",
+                opacity: canGoPrevious ? 1 : 0.3,
+                cursor: canGoPrevious ? "pointer" : "not-allowed"
               }}
             >
+              <i className="ti ti-arrow-left" />
+            </Button>
+          )}
+          <div
+            style={{
+              fontSize: "12px",
+              fontWeight: "500",
+              color: dirColor,
+              backgroundColor: dirBgColor,
+              padding: "2px 8px",
+              borderRadius: "4px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <i className={`ti ${arrowIcon}`} style={{ fontSize: "11px" }} />
+            {dirLabel}
+          </div>
+        </div>
+
+        {/* 右侧：操作按钮（仅图标） */}
+        <div style={{ display: "flex", gap: "2px" }}>
+          {onPostpone && (
+            <Button
+              variant="plain"
+              onClick={onPostpone}
+              title="推迟到明天 (B)"
+              style={{ padding: "4px 6px", fontSize: "14px" }}
+            >
               <i className="ti ti-calendar-pause" />
-              埋藏
             </Button>
           )}
           {onSuspend && (
             <Button
-              variant="soft"
+              variant="plain"
               onClick={onSuspend}
               title="暂停卡片 (S)"
-              style={{
-                padding: "6px 12px",
-                fontSize: "13px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
+              style={{ padding: "4px 6px", fontSize: "14px" }}
             >
               <i className="ti ti-player-pause" />
-              暂停
             </Button>
           )}
           {blockId && onJumpToCard && (
             <Button
-              variant="soft"
-              onClick={() => onJumpToCard(blockId)}
-              style={{
-                padding: "6px 12px",
-                fontSize: "13px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
+              variant="plain"
+              onClick={(e: React.MouseEvent) => onJumpToCard(blockId, e.shiftKey)}
+              title="跳转到卡片 (Shift+点击在侧面板打开)"
+              style={{ padding: "4px 6px", fontSize: "14px" }}
             >
-              <i className="ti ti-arrow-right" />
-              跳转到卡片
+              <i className="ti ti-external-link" />
             </Button>
           )}
+          {/* 卡片信息按钮 */}
+          <Button
+            variant="plain"
+            onClick={() => setShowCardInfo(!showCardInfo)}
+            title="卡片信息"
+            style={{
+              padding: "4px 6px",
+              fontSize: "14px",
+              color: showCardInfo ? "var(--orca-color-primary-5)" : undefined
+            }}
+          >
+            <i className="ti ti-info-circle" />
+          </Button>
         </div>
       </div>
+
+      {/* 可折叠的卡片信息面板 */}
+      {showCardInfo && (
+        <div 
+          contentEditable={false}
+          style={{
+            marginBottom: "12px",
+            padding: "12px 16px",
+            backgroundColor: "var(--orca-color-bg-2)",
+            borderRadius: "8px",
+            fontSize: "13px",
+            color: "var(--orca-color-text-2)"
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>遗忘次数</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.lapses ?? 0}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>复习次数</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.reps ?? 0}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>卡片状态</span>
+              <span style={{ 
+                color: srsInfo?.state === State.Review ? "var(--orca-color-success)" : 
+                       srsInfo?.state === State.Learning || srsInfo?.state === State.Relearning ? "var(--orca-color-warning)" :
+                       "var(--orca-color-primary)"
+              }}>
+                {formatCardState(srsInfo?.state)}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>最后复习</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{formatDateTime(srsInfo?.lastReviewed)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>下次到期</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{formatDateTime(srsInfo?.due)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>间隔天数</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.interval ?? 0} 天</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>稳定性</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{(srsInfo?.stability ?? 0).toFixed(2)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>难度</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{(srsInfo?.difficulty ?? 0).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 题目区域 */}
       <div
@@ -319,99 +444,160 @@ export default function DirectionCardReviewRenderer({
           className="srs-card-grade-buttons"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: onSkip ? "repeat(5, 1fr)" : "repeat(4, 1fr)",
             gap: "8px",
             marginTop: "16px",
           }}
         >
-          <Button
-            variant="dangerous"
+          {/* 跳过按钮 */}
+          {onSkip && (
+            <button
+              onClick={onSkip}
+              style={{
+                padding: "16px 8px",
+                fontSize: "14px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "6px",
+                backgroundColor: "rgba(156, 163, 175, 0.12)",
+                border: "1px solid rgba(156, 163, 175, 0.2)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.18)"
+                e.currentTarget.style.transform = "translateY(-2px)"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.12)"
+                e.currentTarget.style.transform = "translateY(0)"
+              }}
+            >
+              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>不评分</div>
+              <span style={{ fontSize: "32px", lineHeight: "1" }}>⏭️</span>
+              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>跳过</span>
+            </button>
+          )}
+
+          <button
             onClick={() => handleGrade("again")}
             style={{
-              padding: "12px 8px",
+              padding: "16px 8px",
               fontSize: "14px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: "4px",
+              gap: "6px",
+              backgroundColor: "rgba(239, 68, 68, 0.12)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              borderRadius: "8px",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.18)"
+              e.currentTarget.style.transform = "translateY(-2px)"
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)"
+              e.currentTarget.style.transform = "translateY(0)"
             }}
           >
-            <span style={{ fontWeight: 600 }}>
-              {formatInterval(intervals.again)}
-            </span>
-            <span style={{ fontSize: "12px", opacity: 0.8 }}>忘记</span>
-          </Button>
+            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.again)}</div>
+            <span style={{ fontSize: "32px", lineHeight: "1" }}>😞</span>
+            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>忘记</span>
+          </button>
 
-          <Button
-            variant="soft"
+          <button
             onClick={() => handleGrade("hard")}
             style={{
-              padding: "12px 8px",
+              padding: "16px 8px",
               fontSize: "14px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: "4px",
+              gap: "6px",
+              backgroundColor: "rgba(251, 191, 36, 0.12)",
+              border: "1px solid rgba(251, 191, 36, 0.2)",
+              borderRadius: "8px",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.18)"
+              e.currentTarget.style.transform = "translateY(-2px)"
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.12)"
+              e.currentTarget.style.transform = "translateY(0)"
             }}
           >
-            <span style={{ fontWeight: 600 }}>
-              {formatInterval(intervals.hard)}
-            </span>
-            <span style={{ fontSize: "12px", opacity: 0.8 }}>困难</span>
-          </Button>
+            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.hard)}</div>
+            <span style={{ fontSize: "32px", lineHeight: "1" }}>😐</span>
+            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>困难</span>
+          </button>
 
-          <Button
-            variant="solid"
+          <button
             onClick={() => handleGrade("good")}
             style={{
-              padding: "12px 8px",
+              padding: "16px 8px",
               fontSize: "14px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: "4px",
+              gap: "6px",
+              backgroundColor: "rgba(34, 197, 94, 0.12)",
+              border: "1px solid rgba(34, 197, 94, 0.2)",
+              borderRadius: "8px",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.18)"
+              e.currentTarget.style.transform = "translateY(-2px)"
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.12)"
+              e.currentTarget.style.transform = "translateY(0)"
             }}
           >
-            <span style={{ fontWeight: 600 }}>
-              {formatInterval(intervals.good)}
-            </span>
-            <span style={{ fontSize: "12px", opacity: 0.8 }}>良好</span>
-          </Button>
+            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.good)}</div>
+            <span style={{ fontSize: "32px", lineHeight: "1" }}>😊</span>
+            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>良好</span>
+          </button>
 
-          <Button
-            variant="solid"
+          <button
             onClick={() => handleGrade("easy")}
             style={{
-              padding: "12px 8px",
+              padding: "16px 8px",
               fontSize: "14px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: "4px",
-              backgroundColor: "var(--orca-color-primary-5)",
-              opacity: 0.9,
+              gap: "6px",
+              backgroundColor: "rgba(59, 130, 246, 0.12)",
+              border: "1px solid rgba(59, 130, 246, 0.2)",
+              borderRadius: "8px",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.18)"
+              e.currentTarget.style.transform = "translateY(-2px)"
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.12)"
+              e.currentTarget.style.transform = "translateY(0)"
             }}
           >
-            <span style={{ fontWeight: 600 }}>
-              {formatInterval(intervals.easy)}
-            </span>
-            <span style={{ fontSize: "12px", opacity: 0.8 }}>简单</span>
-          </Button>
+            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.easy)}</div>
+            <span style={{ fontSize: "32px", lineHeight: "1" }}>😄</span>
+            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>简单</span>
+          </button>
         </div>
       )}
-
-      {/* 提示文本 */}
-      <div
-        style={{
-          marginTop: "16px",
-          textAlign: "center",
-          fontSize: "12px",
-          color: "var(--orca-color-text-2)",
-          opacity: 0.7,
-        }}
-      >
-        {!showAnswer ? '点击"显示答案"查看内容' : "根据记忆程度选择评分"}
-      </div>
     </div>
   )
 }

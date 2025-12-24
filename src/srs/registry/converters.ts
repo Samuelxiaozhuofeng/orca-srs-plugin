@@ -62,7 +62,6 @@ export function registerConverters(pluginName: string): void {
 
   // Cloze inline 转换器
   // 将 cloze fragment 转换为纯文本时，只返回填空内容本身
-  // 这样在 FlashcardHome 等地方显示的是正常文本，而不是 {c1::} 标记
   orca.converters.registerInline(
     "plain",
     `${pluginName}.cloze`,

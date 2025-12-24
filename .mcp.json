@@ -1,10 +1,8 @@
 {
   "mcpServers": {
     "mcp-router": {
-      "command": "cmd",
+      "command": "npx",
       "args": [
-        "/c",
-        "npx",
         "-y",
         "@mcp_router/cli@latest",
         "connect"

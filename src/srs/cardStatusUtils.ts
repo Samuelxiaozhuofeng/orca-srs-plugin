@@ -193,7 +193,7 @@ function buildDuePropertyName(
 }
 
 /**
- * 埋藏卡片
+ * 推迟卡片
  * 
  * 将卡片的 due 时间设置为明天零点，不改变其他 SRS 参数（interval、stability 等）。
  * 卡片今天不会再出现在复习队列中，明天会重新进入正常调度。
@@ -202,7 +202,7 @@ function buildDuePropertyName(
  * @param clozeNumber - 填空编号（仅 Cloze 卡片需要）
  * @param directionType - 方向类型（仅 Direction 卡片需要）
  */
-export async function buryCard(
+export async function postponeCard(
   blockId: DbId,
   clozeNumber?: number,
   directionType?: "forward" | "backward"
@@ -213,7 +213,7 @@ export async function buryCard(
     ? `Direction ${directionType}` 
     : "Basic"
   
-  console.log(`[SRS] 埋藏 ${cardTypeLabel} 卡片 #${blockId}`)
+  console.log(`[SRS] 推迟 ${cardTypeLabel} 卡片 #${blockId}`)
   
   try {
     const tomorrow = getTomorrowMidnight()
@@ -229,11 +229,14 @@ export async function buryCard(
     // 清除缓存，确保下次 collectReviewCards 读取最新数据
     invalidateBlockCache(blockId)
     
-    console.log(`[SRS] 卡片 #${blockId} 已埋藏，明天 ${tomorrow.toLocaleDateString()} 再复习`)
+    console.log(`[SRS] 卡片 #${blockId} 已推迟，明天 ${tomorrow.toLocaleDateString()} 再复习`)
   } catch (error) {
-    console.error(`[SRS] 埋藏卡片失败:`, error)
+    console.error(`[SRS] 推迟卡片失败:`, error)
     throw error
   }
 }
+
+// 保持向后兼容性的别名
+export const buryCard = postponeCard
 
 

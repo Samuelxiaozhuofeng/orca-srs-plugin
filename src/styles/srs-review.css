@@ -1,0 +1,796 @@
+/**
+ * SRS 复习卡片样式
+ * 确保题目和答案区域的文本可以被选中和复制
+ */
+
+/* 题目块样式 */
+.srs-question-block {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+/* 答案块样式 - 确保不干扰 Orca 的块选择 */
+.srs-answer-block {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+/* 确保容器不阻止 Orca 的块选择事件 */
+.srs-question-block[data-orca-block-root],
+.srs-answer-block[data-orca-block-root] {
+  /* 允许事件穿透到子元素 */
+  pointer-events: auto;
+}
+
+/* 允许 Orca 块内的文本选择 */
+.srs-question-block .orca-block,
+.srs-question-block .orca-repr,
+.srs-question-block .orca-repr-main,
+.srs-question-block .orca-repr-main-content,
+.srs-question-block .orca-inline {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+/* 确保标签等元素也可以被选中 */
+.srs-question-block .orca-tags,
+.srs-question-block .orca-tag {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+/* 显示文本光标 */
+.srs-question-block .orca-repr-main-content {
+  cursor: text !important;
+}
+
+/* 题目块特殊样式 - 更清晰的视觉呈现 */
+.srs-question-block .orca-block {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* 复习会话样式 */
+.srs-review-session {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 旗标相关样式 */
+.card-flag-indicator {
+  transition: all 0.2s ease;
+  z-index: 1000 !important;
+  position: relative !important;
+}
+
+.card-flag-indicator:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* Anki风格旗标指示器 */
+.anki-flag-indicator {
+  z-index: 1000 !important;
+  position: relative !important;
+  pointer-events: auto !important;
+}
+
+/* 确保旗标容器有足够的z-index */
+.srs-card-front,
+.srs-card-back {
+  position: relative;
+}
+
+.srs-card-front > div:last-child,
+.srs-card-back > div:last-child {
+  z-index: 1000 !important;
+}
+
+/* 确保卡片容器不会遮挡旗标 */
+.srs-card-container {
+  position: relative;
+}
+
+.srs-card-container .srs-card-front,
+.srs-card-container .srs-card-back {
+  position: relative;
+  overflow: visible !important;
+}
+
+/* 旗标容器样式 */
+.flag-container {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  z-index: 1000 !important;
+  pointer-events: auto !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-radius: 4px !important;
+  padding: 2px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+
+/* 确保旗标容器内的所有元素都可以点击 */
+.flag-container * {
+  pointer-events: auto !important;
+}
+
+/* 防止其他元素阻止旗标点击 */
+.srs-card-front,
+.srs-card-back,
+.srs-cloze-question,
+.srs-direction-question {
+  pointer-events: auto;
+}
+
+.srs-card-front .flag-container,
+.srs-card-back .flag-container,
+.srs-cloze-question .flag-container,
+.srs-direction-question .flag-container {
+  pointer-events: auto !important;
+  z-index: 1001 !important;
+}
+
+.card-flag-display {
+  transition: all 0.2s ease;
+}
+
+.card-flag-display:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.card-flag-editor-modal {
+  backdrop-filter: blur(4px);
+}
+
+.card-flag-rating-button {
+  transition: all 0.15s ease;
+}
+
+.card-flag-rating-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.card-flag-color-button {
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.card-flag-color-button:hover {
+  transform: scale(1.1);
+}
+
+.card-flag-color-button:hover::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(45deg, transparent, rgba(255,255,255,0.3), transparent);
+  z-index: -1;
+}
+
+
+/* ========================================
+ * Flash Home 视图切换动画
+ * Requirements: 12.2, 12.3, 12.4
+ * ======================================== */
+
+/* 视图容器基础样式 */
+.srs-flash-home-view {
+  animation: fadeSlideIn 0.25s ease-out;
+}
+
+/* 淡入滑动动画 */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 统计视图进入动画 */
+.srs-statistics-view {
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 返回牌组列表动画 */
+.srs-deck-list-view {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 统计按钮悬停效果 */
+.srs-statistics-button {
+  transition: all 0.2s ease;
+}
+
+.srs-statistics-button:hover {
+  background-color: var(--orca-color-bg-3);
+  transform: translateY(-1px);
+}
+
+.srs-statistics-button:active {
+  transform: translateY(0);
+}
+
+/* ========================================
+ * 统计视图样式
+ * Requirements: 12.1, 12.2, 12.3
+ * ======================================== */
+
+/* 统计视图容器 */
+.srs-statistics-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  overflow: auto;
+}
+
+/* 统计卡片基础样式 */
+.srs-statistics-card {
+  padding: 16px;
+  background-color: var(--orca-color-bg-2);
+  border-radius: 8px;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.srs-statistics-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* 统计卡片标题 */
+.srs-statistics-card-title {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+}
+
+/* 统计数值网格 */
+.srs-statistics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+/* 统计数值项 */
+.srs-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  background-color: var(--orca-color-bg-1);
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.srs-stat-item:hover {
+  background-color: var(--orca-color-bg-3);
+}
+
+.srs-stat-item-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+}
+
+.srs-stat-item-label {
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+  margin-top: 4px;
+}
+
+/* 评分分布项 */
+.srs-grade-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.srs-grade-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* 时间范围选择器 */
+.srs-time-range-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.srs-time-range-button {
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--orca-color-border-1);
+  background-color: transparent;
+  color: var(--orca-color-text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.srs-time-range-button:hover {
+  border-color: var(--orca-color-primary-4);
+  color: var(--orca-color-primary-5);
+}
+
+.srs-time-range-button.active {
+  border-color: var(--orca-color-primary-5);
+  background-color: var(--orca-color-primary-1);
+  color: var(--orca-color-primary-6);
+}
+
+/* 牌组筛选器 */
+.srs-deck-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.srs-deck-filter-label {
+  font-size: 13px;
+  color: var(--orca-color-text-2);
+}
+
+.srs-deck-filter-select {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--orca-color-border-1);
+  background-color: var(--orca-color-bg-1);
+  color: var(--orca-color-text-1);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 120px;
+  transition: border-color 0.2s ease;
+}
+
+.srs-deck-filter-select:hover {
+  border-color: var(--orca-color-primary-4);
+}
+
+.srs-deck-filter-select:focus {
+  outline: none;
+  border-color: var(--orca-color-primary-5);
+}
+
+/* 筛选器容器 */
+.srs-statistics-filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background-color: var(--orca-color-bg-2);
+  border-radius: 8px;
+}
+
+.srs-statistics-filters-divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--orca-color-border-1);
+}
+
+/* 图表容器 */
+.srs-chart-container {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 图表加载状态 */
+.srs-chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--orca-color-text-3);
+  font-size: 14px;
+}
+
+/* 图表空状态 */
+.srs-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--orca-color-text-3);
+  font-size: 14px;
+}
+
+/* 图表提示框 */
+.srs-chart-tooltip {
+  position: absolute;
+  background-color: var(--orca-color-bg-4);
+  color: var(--orca-color-text-1);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 100;
+  transform: translate(-50%, -100%);
+}
+
+.srs-chart-tooltip-title {
+  font-weight: 500;
+}
+
+.srs-chart-tooltip-value {
+  color: var(--orca-color-text-2);
+  margin-top: 2px;
+}
+
+/* 图表图例 */
+.srs-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+  padding: 0 8px;
+}
+
+.srs-chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--orca-color-text-2);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.srs-chart-legend-item:hover {
+  color: var(--orca-color-text-1);
+}
+
+.srs-chart-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* 两列布局 */
+.srs-statistics-two-column {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 16px;
+}
+
+/* 统计头部 */
+.srs-statistics-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.srs-statistics-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+  flex: 1;
+}
+
+/* 刷新按钮 */
+.srs-statistics-refresh-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.srs-statistics-refresh-button:hover {
+  background-color: var(--orca-color-bg-3);
+}
+
+/* 统计摘要信息 */
+.srs-statistics-summary {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--orca-color-text-2);
+}
+
+/* 分隔线 */
+.srs-statistics-divider {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--orca-color-border-1);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .srs-statistics-two-column {
+    grid-template-columns: 1fr;
+  }
+  
+  .srs-statistics-filters {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .srs-statistics-filters-divider {
+    width: 100%;
+    height: 1px;
+  }
+}
+
+/* ========================================
+ * 图表动画效果
+ * Requirements: 10.2
+ * ======================================== */
+
+/* 柱状图柱子加载动画 */
+.srs-chart-bar {
+  animation: barGrow 0.5s ease-out forwards;
+  transform-origin: bottom;
+}
+
+@keyframes barGrow {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* 柱状图柱子交错动画 */
+.srs-chart-bar-animated {
+  animation: barGrow 0.5s ease-out forwards;
+  transform-origin: bottom;
+}
+
+/* 饼图扇形加载动画 */
+.srs-chart-pie-slice {
+  animation: pieSliceGrow 0.6s ease-out forwards;
+  transform-origin: center;
+}
+
+@keyframes pieSliceGrow {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 折线图路径绘制动画 */
+.srs-chart-line-path {
+  stroke-dasharray: 2000;
+  stroke-dashoffset: 2000;
+  animation: linePathDraw 1s ease-out forwards;
+}
+
+@keyframes linePathDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 折线图区域填充动画 */
+.srs-chart-line-area {
+  animation: areaFadeIn 0.8s ease-out forwards;
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+@keyframes areaFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.3;
+  }
+}
+
+/* 折线图数据点动画 */
+.srs-chart-line-dot {
+  animation: dotPop 0.3s ease-out forwards;
+  transform-origin: center;
+  opacity: 0;
+}
+
+@keyframes dotPop {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 图表淡入动画 */
+.srs-chart-fade-in {
+  animation: chartFadeIn 0.4s ease-out forwards;
+}
+
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 数据更新过渡效果 */
+.srs-chart-updating {
+  transition: opacity 0.3s ease;
+  opacity: 0.6;
+}
+
+/* 图表悬停效果增强 */
+.srs-chart-bar-hover {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.srs-chart-bar-hover:hover {
+  opacity: 1 !important;
+  transform: scaleY(1.02);
+  transform-origin: bottom;
+}
+
+.srs-chart-pie-hover {
+  transition: transform 0.2s ease, opacity 0.15s ease;
+}
+
+.srs-chart-pie-hover:hover {
+  transform: scale(1.05);
+  opacity: 1 !important;
+}
+
+/* 加载骨架屏动画 */
+.srs-chart-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--orca-color-bg-2) 25%,
+    var(--orca-color-bg-3) 50%,
+    var(--orca-color-bg-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 统计数值变化动画 */
+.srs-stat-value-animated {
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.srs-stat-value-increase {
+  animation: valueIncrease 0.5s ease-out;
+}
+
+@keyframes valueIncrease {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+    color: var(--orca-color-success-5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.srs-stat-value-decrease {
+  animation: valueDecrease 0.5s ease-out;
+}
+
+@keyframes valueDecrease {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.95);
+    color: var(--orca-color-danger-5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 刷新按钮旋转动画 */
+.srs-refresh-spinning {
+  animation: refreshSpin 1s linear infinite;
+}
+
+@keyframes refreshSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 图表提示框动画 */
+.srs-chart-tooltip-animated {
+  animation: tooltipFadeIn 0.15s ease-out forwards;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+/* 图例项悬停动画 */
+.srs-chart-legend-item-animated {
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.srs-chart-legend-item-animated:hover {
+  transform: translateX(2px);
+}

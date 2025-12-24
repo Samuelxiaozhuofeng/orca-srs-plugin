@@ -13,8 +13,7 @@ import { makeAICardFromBlock } from "../ai/aiCardCreator"
 import { testAIConnection } from "../ai/aiService"
 
 export function registerCommands(
-  pluginName: string,
-  openFlashcardHome: () => Promise<void>
+  pluginName: string
 ): void {
   // 在闭包中捕获 pluginName，供 undo 函数使用
   const _pluginName = pluginName
@@ -26,15 +25,6 @@ export function registerCommands(
       scanCardsFromTags(_pluginName)
     },
     "SRS: 扫描带标签的卡片"
-  )
-
-  orca.commands.registerCommand(
-    `${pluginName}.openFlashcardHome`,
-    async () => {
-      console.log(`[${_pluginName}] 打开 Flashcard Home`)
-      await openFlashcardHome()
-    },
-    "SRS: 打开 Flashcard Home"
   )
 
   orca.commands.registerEditorCommand(
@@ -232,82 +222,30 @@ export function registerCommands(
     "SRS: 打开旧复习面板"
   )
 
-  // ============ 渐进阅读命令 ============
-
-  // 扫描渐进阅读 Topic 命令
+  // 打开 Flash Home 命令
   orca.commands.registerCommand(
-    `${pluginName}.scanIncrementalReadingTopics`,
+    `${pluginName}.openFlashcardHome`,
     async () => {
-      console.log(`[${_pluginName}] 执行渐进阅读扫描`)
-      const { scanIncrementalReadingTopics } = await import("../incrementalReadingUtils")
-      const result = await scanIncrementalReadingTopics(_pluginName)
-
-      if (result.topics.length === 0) {
-        orca.notify("info", "未找到渐进阅读 Topic", {
-          title: "渐进阅读扫描"
-        })
-        return
-      }
-
-      // 显示详细信息
-      const details = result.topicDetails
-        .map(t => `- ${t.topicText}: ${t.childCount} 个子块`)
-        .join("\n")
-
-      orca.notify("success",
-        `找到 ${result.topics.length} 个 Topic，共 ${result.extractCandidates} 个潜在 Extract\n\n${details}`,
-        { title: "渐进阅读扫描" }
-      )
-
-      console.log(`[${_pluginName}] 扫描结果:`, result)
+      console.log(`[${_pluginName}] 打开 Flash Home`)
+      const { openFlashcardHome } = await import("../../main")
+      await openFlashcardHome()
     },
-    "SRS: 扫描渐进阅读 Topic"
-  )
-
-  // 标记渐进阅读 Extract 命令
-  orca.commands.registerCommand(
-    `${pluginName}.markExtractsAutomatically`,
-    async () => {
-      console.log(`[${_pluginName}] 执行渐进阅读 Extract 标记`)
-      const { markAllExtractCandidates } = await import("../incrementalReadingUtils")
-
-      orca.notify("info", "正在扫描并标记 Extract...", {
-        title: "渐进阅读"
-      })
-
-      const result = await markAllExtractCandidates(_pluginName)
-
-      if (result.extractsMarked === 0) {
-        orca.notify("info", "未找到需要标记的 Extract", {
-          title: "渐进阅读"
-        })
-        return
-      }
-
-      const message = result.extractsFailed > 0
-        ? `已标记 ${result.extractsMarked} 个 Extract\n处理了 ${result.topicsProcessed} 个 Topic\n失败: ${result.extractsFailed}`
-        : `已标记 ${result.extractsMarked} 个 Extract\n处理了 ${result.topicsProcessed} 个 Topic`
-
-      orca.notify("success", message, { title: "渐进阅读" })
-    },
-    "SRS: 标记渐进阅读 Extract"
+    "SRS: 打开 Flash Home"
   )
 }
 
 export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
-  orca.commands.unregisterCommand(`${pluginName}.openFlashcardHome`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
-
+  
   // AI 命令注销
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
-
-  // 渐进阅读命令注销
-  orca.commands.unregisterCommand(`${pluginName}.scanIncrementalReadingTopics`)
-  orca.commands.unregisterCommand(`${pluginName}.markExtractsAutomatically`)
+  
+  // Flash Home 命令注销
+  orca.commands.unregisterCommand(`${pluginName}.openFlashcardHome`)
 }

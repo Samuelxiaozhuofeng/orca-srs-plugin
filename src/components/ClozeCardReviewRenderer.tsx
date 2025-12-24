@@ -14,17 +14,49 @@ const { Button, ModalOverlay } = orca.components
 import type { DbId, ContentFragment } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
-import { previewIntervals, formatInterval } from "../srs/algorithm"
+import { previewIntervals, formatInterval, previewDueDates, formatDueDate } from "../srs/algorithm"
+import { State } from "ts-fsrs"
+
+/**
+ * 格式化卡片状态为中文
+ */
+function formatCardState(state?: State): string {
+  if (state === undefined || state === null) return "新卡"
+  switch (state) {
+    case State.New: return "新卡"
+    case State.Learning: return "学习中"
+    case State.Review: return "复习中"
+    case State.Relearning: return "重学中"
+    default: return "未知"
+  }
+}
+
+/**
+ * 格式化日期时间
+ */
+function formatDateTime(date: Date | null | undefined): string {
+  if (!date) return "从未"
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hour = String(d.getHours()).padStart(2, '0')
+  const minute = String(d.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
 
 type ClozeCardReviewRendererProps = {
   blockId: DbId
   onGrade: (grade: Grade) => Promise<void> | void
-  onBury?: () => void
+  onPostpone?: () => void
   onSuspend?: () => void
   onClose?: () => void
+  onSkip?: () => void  // 跳过当前卡片
+  onPrevious?: () => void  // 回到上一张
+  canGoPrevious?: boolean  // 是否可以回到上一张
   srsInfo?: Partial<SrsState>
   isGrading?: boolean
-  onJumpToCard?: (blockId: DbId) => void
+  onJumpToCard?: (blockId: DbId, shiftKey?: boolean) => void
   inSidePanel?: boolean
   panelId?: string
   pluginName: string
@@ -114,9 +146,12 @@ function renderFragments(
 export default function ClozeCardReviewRenderer({
   blockId,
   onGrade,
-  onBury,
+  onPostpone,
   onSuspend,
   onClose,
+  onSkip,
+  onPrevious,
+  canGoPrevious = false,
   srsInfo,
   isGrading = false,
   onJumpToCard,
@@ -126,6 +161,7 @@ export default function ClozeCardReviewRenderer({
   clozeNumber
 }: ClozeCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(false)
+  const [showCardInfo, setShowCardInfo] = useState(false)
 
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state)
@@ -142,13 +178,13 @@ export default function ClozeCardReviewRenderer({
     setShowAnswer(false)
   }
 
-  // 启用复习快捷键（空格显示答案，1-4 评分，b 埋藏，s 暂停）
+  // 启用复习快捷键（空格显示答案，1-4 评分，b 推迟，s 暂停）
   useReviewShortcuts({
     showAnswer,
     isGrading,
     onShowAnswer: () => setShowAnswer(true),
     onGrade: handleGrade,
-    onBury,
+    onBury: onPostpone,
     onSuspend,
   })
 
@@ -166,6 +202,21 @@ export default function ClozeCardReviewRenderer({
       state: srsInfo.state
     } : null
     return previewIntervals(fullState)
+  }, [srsInfo])
+
+  // 预览各评分对应的到期日期
+  const dueDates = useMemo(() => {
+    const fullState: SrsState | null = srsInfo ? {
+      stability: srsInfo.stability ?? 0,
+      difficulty: srsInfo.difficulty ?? 0,
+      interval: srsInfo.interval ?? 0,
+      due: srsInfo.due ?? new Date(),
+      lastReviewed: srsInfo.lastReviewed ?? null,
+      reps: srsInfo.reps ?? 0,
+      lapses: srsInfo.lapses ?? 0,
+      state: srsInfo.state
+    } : null
+    return previewDueDates(fullState)
   }, [srsInfo])
 
   // 从 block.content 中提取内容片段
@@ -198,76 +249,146 @@ export default function ClozeCardReviewRenderer({
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: "12px"
-      }}>
-        <div style={{
-          fontSize: "12px",
-          fontWeight: "500",
-          color: "var(--orca-color-primary-5)",
-          backgroundColor: "var(--orca-color-primary-1)",
-          padding: "4px 10px",
-          borderRadius: "6px",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "4px"
-        }}>
-          <i className="ti ti-braces" />
-          填空卡 {clozeNumber ? `c${clozeNumber}` : ""}
-        </div>
-
-        <div style={{ display: "flex", gap: "8px" }}>
-          {onBury && (
+        marginBottom: "8px",
+        opacity: 0.6,
+        transition: "opacity 0.2s"
+      }} onMouseEnter={(e) => e.currentTarget.style.opacity = "1"} onMouseLeave={(e) => e.currentTarget.style.opacity = "0.6"}>
+        {/* 左侧：回到上一张按钮 + 卡片类型标识 */}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          {onPrevious && (
             <Button
-              variant="soft"
-              onClick={onBury}
-              title="埋藏到明天 (B)"
+              variant="plain"
+              onClick={canGoPrevious ? onPrevious : undefined}
+              title="回到上一张"
               style={{
-                padding: "6px 12px",
-                fontSize: "13px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
+                padding: "4px 6px",
+                fontSize: "14px",
+                opacity: canGoPrevious ? 1 : 0.3,
+                cursor: canGoPrevious ? "pointer" : "not-allowed"
               }}
             >
+              <i className="ti ti-arrow-left" />
+            </Button>
+          )}
+          <div style={{
+            fontSize: "12px",
+            fontWeight: "500",
+            color: "var(--orca-color-primary-5)",
+            backgroundColor: "var(--orca-color-primary-1)",
+            padding: "2px 8px",
+            borderRadius: "4px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px"
+          }}>
+            <i className="ti ti-braces" style={{ fontSize: "11px" }} />
+            c{clozeNumber || "?"}
+          </div>
+        </div>
+
+        {/* 右侧：操作按钮（仅图标） */}
+        <div style={{ display: "flex", gap: "2px" }}>
+          {onPostpone && (
+            <Button
+              variant="plain"
+              onClick={onPostpone}
+              title="推迟到明天 (B)"
+              style={{ padding: "4px 6px", fontSize: "14px" }}
+            >
               <i className="ti ti-calendar-pause" />
-              埋藏
             </Button>
           )}
           {onSuspend && (
             <Button
-              variant="soft"
+              variant="plain"
               onClick={onSuspend}
               title="暂停卡片 (S)"
-              style={{
-                padding: "6px 12px",
-                fontSize: "13px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
-              }}
+              style={{ padding: "4px 6px", fontSize: "14px" }}
             >
               <i className="ti ti-player-pause" />
-              暂停
             </Button>
           )}
           {blockId && onJumpToCard && (
             <Button
-              variant="soft"
-              onClick={() => onJumpToCard(blockId)}
-              style={{
-                padding: "6px 12px",
-                fontSize: "13px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
-              }}
+              variant="plain"
+              onClick={(e: React.MouseEvent) => onJumpToCard(blockId, e.shiftKey)}
+              title="跳转到卡片 (Shift+点击在侧面板打开)"
+              style={{ padding: "4px 6px", fontSize: "14px" }}
             >
-              <i className="ti ti-arrow-right" />
-              跳转到卡片
+              <i className="ti ti-external-link" />
             </Button>
           )}
+          {/* 卡片信息按钮 */}
+          <Button
+            variant="plain"
+            onClick={() => setShowCardInfo(!showCardInfo)}
+            title="卡片信息"
+            style={{
+              padding: "4px 6px",
+              fontSize: "14px",
+              color: showCardInfo ? "var(--orca-color-primary-5)" : undefined
+            }}
+          >
+            <i className="ti ti-info-circle" />
+          </Button>
         </div>
       </div>
+
+      {/* 可折叠的卡片信息面板 */}
+      {showCardInfo && (
+        <div 
+          contentEditable={false}
+          style={{
+            marginBottom: "12px",
+            padding: "12px 16px",
+            backgroundColor: "var(--orca-color-bg-2)",
+            borderRadius: "8px",
+            fontSize: "13px",
+            color: "var(--orca-color-text-2)"
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>遗忘次数</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.lapses ?? 0}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>复习次数</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.reps ?? 0}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>卡片状态</span>
+              <span style={{ 
+                color: srsInfo?.state === State.Review ? "var(--orca-color-success)" : 
+                       srsInfo?.state === State.Learning || srsInfo?.state === State.Relearning ? "var(--orca-color-warning)" :
+                       "var(--orca-color-primary)"
+              }}>
+                {formatCardState(srsInfo?.state)}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>最后复习</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{formatDateTime(srsInfo?.lastReviewed)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>下次到期</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{formatDateTime(srsInfo?.due)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>间隔天数</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.interval ?? 0} 天</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>稳定性</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{(srsInfo?.stability ?? 0).toFixed(2)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>难度</span>
+              <span style={{ color: "var(--orca-color-text-1)" }}>{(srsInfo?.difficulty ?? 0).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 题目区域 */}
       <div className="srs-cloze-question" style={{
@@ -301,10 +422,30 @@ export default function ClozeCardReviewRenderer({
         <>
           <div className="srs-card-grade-buttons" style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: onSkip ? "repeat(5, 1fr)" : "repeat(4, 1fr)",
             gap: "8px",
             marginTop: "16px"
           }}>
+            {/* 跳过按钮 */}
+            {onSkip && (
+              <Button
+                variant="soft"
+                onClick={onSkip}
+                style={{
+                  padding: "12px 8px",
+                  fontSize: "14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px"
+                }}
+              >
+                <span style={{ fontSize: "11px", opacity: 0.7 }}>不评分</span>
+                <span style={{ fontWeight: 600 }}>⏭️</span>
+                <span style={{ fontSize: "12px", opacity: 0.8 }}>跳过</span>
+              </Button>
+            )}
+
             <Button
               variant="dangerous"
               onClick={() => handleGrade("again")}
@@ -317,6 +458,7 @@ export default function ClozeCardReviewRenderer({
                 gap: "4px"
               }}
             >
+              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.again)}</span>
               <span style={{ fontWeight: 600 }}>{formatInterval(intervals.again)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>忘记</span>
             </Button>
@@ -333,6 +475,7 @@ export default function ClozeCardReviewRenderer({
                 gap: "4px"
               }}
             >
+              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.hard)}</span>
               <span style={{ fontWeight: 600 }}>{formatInterval(intervals.hard)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>困难</span>
             </Button>
@@ -349,6 +492,7 @@ export default function ClozeCardReviewRenderer({
                 gap: "4px"
               }}
             >
+              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.good)}</span>
               <span style={{ fontWeight: 600 }}>{formatInterval(intervals.good)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>良好</span>
             </Button>
@@ -367,6 +511,7 @@ export default function ClozeCardReviewRenderer({
                 opacity: 0.9
               }}
             >
+              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.easy)}</span>
               <span style={{ fontWeight: 600 }}>{formatInterval(intervals.easy)}</span>
               <span style={{ fontSize: "12px", opacity: 0.8 }}>简单</span>
             </Button>
@@ -374,18 +519,6 @@ export default function ClozeCardReviewRenderer({
         </>
       )}
 
-      {/* 提示文本 */}
-      <div style={{
-        marginTop: "16px",
-        textAlign: "center",
-        fontSize: "12px",
-        color: "var(--orca-color-text-2)",
-        opacity: 0.7
-      }}>
-        {!showAnswer ? "点击\"显示答案\"查看填空内容" : "根据记忆程度选择评分"}
-      </div>
-
-      {/* SRS 信息 */}
       {/* SRS 详细信息已隐藏 */}
     </div>
   )

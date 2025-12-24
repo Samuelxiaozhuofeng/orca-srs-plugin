@@ -233,15 +233,15 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
           directionType: dir // 关键：标记当前复习的方向类型
         })
       }
-    } else if (cardType === "extracts") {
-      // Extract 卡片：渐进阅读摘录
-      const { ensureExtractSrsState } = await import("./storage")
-      const srsState = await ensureExtractSrsState(block.id, now)
+    } else if (cardType === "excerpt") {
+      // Excerpt 卡片：只显示内容，无正反面
+      const content = block.text || ""
+      const srsState = await ensureCardSrsState(block.id, now)
 
       cards.push({
         id: block.id,
-        front: block.text || "(无内容)",
-        back: "(回忆/理解这段内容)",
+        front: content,  // 摘录内容作为 front
+        back: "",        // 无 back
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         deck: deckName,
@@ -249,19 +249,39 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
       })
     } else {
       // Basic 卡片：传统的正面/反面模式
-      const { front, back } = resolveFrontBack(block)
-      const srsState = await ensureCardSrsState(block.id, now)
+      // 检查是否有子块 - 如果没有子块，当作摘录卡处理
+      const hasChildren = block.children && block.children.length > 0
+      
+      if (!hasChildren) {
+        // 无子块：当作摘录卡处理（只显示内容，无正反面）
+        const content = block.text || ""
+        const srsState = await ensureCardSrsState(block.id, now)
 
-      cards.push({
-        id: block.id,
-        front,
-        back,
-        srs: srsState,
-        isNew: !srsState.lastReviewed || srsState.reps === 0,
-        deck: deckName,
-        tags: extractNonCardTags(block)
-        // clozeNumber 和 directionType 都为 undefined（非特殊卡片）
-      })
+        cards.push({
+          id: block.id,
+          front: content,  // 摘录内容作为 front
+          back: "",        // 无 back
+          srs: srsState,
+          isNew: !srsState.lastReviewed || srsState.reps === 0,
+          deck: deckName,
+          tags: extractNonCardTags(block)
+        })
+      } else {
+        // 有子块：正常的正面/反面模式
+        const { front, back } = resolveFrontBack(block)
+        const srsState = await ensureCardSrsState(block.id, now)
+
+        cards.push({
+          id: block.id,
+          front,
+          back,
+          srs: srsState,
+          isNew: !srsState.lastReviewed || srsState.reps === 0,
+          deck: deckName,
+          tags: extractNonCardTags(block)
+          // clozeNumber 和 directionType 都为 undefined（非特殊卡片）
+        })
+      }
     }
   }
 
@@ -271,35 +291,35 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
 /**
  * 构建复习队列
  * 使用 2:1 策略交错到期卡片和新卡片
+ * 
+ * 子卡片展开逻辑：
+ * - 对于每张卡片，检查它的反链中是否有子卡片
+ * - 如果有，将子卡片链展开并插入到父卡片后面
+ * - 这样可以实现 A1 → B → C → D → A2 → B → C → D 的复习顺序
  *
- * 到期判断逻辑（类似 ANKI）：
- * - 只比较日期，忽略具体的时分秒
- * - 只要卡片的到期日期 <= 今天，就视为到期
- * - 新卡也要检查到期时间：只有到期日期 <= 今天的新卡才会出现在队列中
- * - 这样可以实现 cloze/direction 卡片的分天推送
+ * 到期判断逻辑（精确时间）：
+ * - 使用精确的时分秒进行比较
+ * - 只有卡片的到期时间 <= 当前时间，才视为到期
+ * - 新卡也要检查到期时间
+ * - 这样可以实现 Learning 阶段的精确间隔控制
  *
  * @param cards - ReviewCard 数组
  * @returns 排序后的复习队列
  */
 export function buildReviewQueue(cards: ReviewCard[]): ReviewCard[] {
   const now = new Date()
+  const nowTime = now.getTime()
 
-  // 获取今天的日期（零点），用于日期比较
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const todayEnd = new Date(todayStart)
-  todayEnd.setDate(todayEnd.getDate() + 1) // 明天零点
-
-  // 到期卡片：已复习过 && 到期日期 < 明天零点（即今天或更早）
+  // 到期卡片：已复习过 && 到期时间 <= 当前时间（精确到时分秒）
   const dueCards = cards.filter(card => {
     if (card.isNew) return false
-    return card.srs.due.getTime() < todayEnd.getTime()
+    return card.srs.due.getTime() <= nowTime
   })
 
-  // 新卡片：未复习过 && 到期日期 < 明天零点（即今天或更早）
-  // 关键修改：新卡也要检查到期时间！
+  // 新卡片：未复习过 && 到期时间 <= 当前时间（精确到时分秒）
   const newCards = cards.filter(card => {
     if (!card.isNew) return false
-    return card.srs.due.getTime() < todayEnd.getTime()
+    return card.srs.due.getTime() <= nowTime
   })
 
   const queue: ReviewCard[] = []
@@ -316,4 +336,97 @@ export function buildReviewQueue(cards: ReviewCard[]): ReviewCard[] {
   }
 
   return queue
+}
+
+/**
+ * 构建带子卡片展开的复习队列（异步版本）
+ * 
+ * 对于每张"根卡片"（初始队列中的卡片），收集它的完整子卡片链。
+ * 每个根卡片都会展开自己的子卡片链，子卡片可以重复出现。
+ * 
+ * 例如：初始队列 [A1, A2, B, C, D]，关系 A1,A2 ← B ← C ← D
+ * 
+ * 处理过程：
+ * 1. A1 是根卡片 → 展开子卡片链 → [A1, B, C, D]
+ * 2. A2 是根卡片 → 展开子卡片链 → [A2, B, C, D]
+ * 3. B 是根卡片，但已经作为 A1 的子卡片出现过 → 跳过
+ * 4. C 是根卡片，但已经作为子卡片出现过 → 跳过
+ * 5. D 是根卡片，但已经作为子卡片出现过 → 跳过
+ * 
+ * 最终结果：[A1, B, C, D, A2, B, C, D]（8张）
+ * 
+ * @param cards - ReviewCard 数组
+ * @param pluginName - 插件名称
+ * @returns 展开子卡片后的复习队列
+ */
+export async function buildReviewQueueWithChildren(
+  cards: ReviewCard[],
+  pluginName: string = "srs-plugin"
+): Promise<ReviewCard[]> {
+  // 先用原有逻辑构建基础队列
+  const baseQueue = buildReviewQueue(cards)
+  
+  // 动态导入 childCardCollector 避免循环依赖
+  const { collectChildCards } = await import("./childCardCollector")
+  
+  // 展开后的队列
+  const expandedQueue: ReviewCard[] = []
+  
+  // 已经作为"根卡片"处理过的卡片（用于跳过重复的根卡片）
+  const processedRootKeys = new Set<string>()
+  
+  // 已经出现在队列中的卡片（用于判断根卡片是否应该跳过）
+  const appearedInQueue = new Set<string>()
+  
+  /**
+   * 递归展开一张卡片及其子卡片链
+   * @param card - 当前卡片
+   * @param visitedInChain - 当前链中已访问的卡片（防止循环引用）
+   */
+  async function expandCardChain(
+    card: ReviewCard, 
+    visitedInChain: Set<string>
+  ): Promise<void> {
+    const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+    
+    // 防止循环引用
+    if (visitedInChain.has(cardKey)) {
+      return
+    }
+    visitedInChain.add(cardKey)
+    
+    // 添加当前卡片到队列
+    expandedQueue.push(card)
+    appearedInQueue.add(cardKey)
+    
+    // 收集直接子卡片
+    const childCards = await collectChildCards(card.id, pluginName)
+    
+    // 递归展开每个子卡片
+    for (const childCard of childCards) {
+      await expandCardChain(childCard, visitedInChain)
+    }
+  }
+  
+  // 遍历基础队列中的每张卡片作为"根卡片"
+  for (const card of baseQueue) {
+    const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+    
+    // 如果这张卡片已经作为某个根卡片的子卡片出现过，跳过它作为根卡片
+    if (appearedInQueue.has(cardKey)) {
+      console.log(`[${pluginName}] 跳过根卡片 #${card.id}，已作为子卡片出现`)
+      continue
+    }
+    
+    // 标记为已处理的根卡片
+    processedRootKeys.add(cardKey)
+    
+    // 展开这个根卡片的完整子卡片链
+    const visitedInChain = new Set<string>()
+    await expandCardChain(card, visitedInChain)
+  }
+  
+  console.log(`[${pluginName}] buildReviewQueueWithChildren: 基础队列 ${baseQueue.length} 张，展开后 ${expandedQueue.length} 张`)
+  
+  return expandedQueue
 }

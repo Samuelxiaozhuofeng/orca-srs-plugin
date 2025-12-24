@@ -2,10 +2,16 @@
  * SRS 复习会话组件（使用真实数据队列）
  */
 import type { DbId } from "../orca.d.ts"
-import type { Grade, ReviewCard } from "../srs/types"
+import type { Grade, ReviewCard, CardState, ReviewLogEntry } from "../srs/types"
 import { updateSrsState, updateClozeSrsState, updateDirectionSrsState } from "../srs/storage"
-import { buryCard, suspendCard } from "../srs/cardStatusUtils"
-import { emitCardBuried, emitCardGraded, emitCardSuspended } from "../srs/srsEvents"
+import { postponeCard, suspendCard } from "../srs/cardStatusUtils"
+import { emitCardPostponed, emitCardGraded, emitCardSuspended } from "../srs/srsEvents"
+import { showNotification } from "../srs/settings/reviewSettingsSchema"
+import { saveReviewLog, createReviewLogId } from "../srs/reviewLogStorage"
+import { 
+  markParentCardProcessed, 
+  resetProcessedParentCards 
+} from "../srs/childCardCollector"
 import SrsCardDemo from "./SrsCardDemo"
 
 // 从全局 window 对象获取 React（Orca 插件约定）
@@ -15,10 +21,16 @@ const { Button, ModalOverlay } = orca.components
 type SrsReviewSessionProps = {
   cards: ReviewCard[]
   onClose?: () => void
-  onJumpToCard?: (blockId: DbId) => void
+  onJumpToCard?: (blockId: DbId, shiftKey?: boolean) => void
   inSidePanel?: boolean
   panelId?: string
   pluginName?: string
+  /** 是否为重复复习模式 */
+  isRepeatMode?: boolean
+  /** 当前轮次（仅重复复习模式） */
+  currentRound?: number
+  /** 再复习一轮回调（仅重复复习模式） */
+  onRepeatRound?: () => void
 }
 
 /**
@@ -38,7 +50,10 @@ export default function SrsReviewSession({
   onJumpToCard,
   inSidePanel = false,
   panelId,
-  pluginName = "orca-srs"
+  pluginName = "orca-srs",
+  isRepeatMode = false,
+  currentRound = 1,
+  onRepeatRound
 }: SrsReviewSessionProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [queue, setQueue] = useState<ReviewCard[]>(cards)
@@ -47,6 +62,33 @@ export default function SrsReviewSession({
   const [isGrading, setIsGrading] = useState(false)
   const [lastLog, setLastLog] = useState<string | null>(null)
   const [isMaximized, setIsMaximized] = useState(true)  // 默认最大化
+  const [history, setHistory] = useState<number[]>([])  // 历史记录，存储已访问的卡片索引
+  const [newCardsAdded, setNewCardsAdded] = useState(0)  // 新增卡片计数器
+  const [cardStartTime, setCardStartTime] = useState<number>(Date.now())  // 当前卡片开始复习时间
+  const [internalRound, setInternalRound] = useState(currentRound)  // 内部轮次状态
+
+  // 当外部 cards 或 currentRound 变化时，重置队列和索引（用于"再复习一轮"）
+  useEffect(() => {
+    if (currentRound !== internalRound) {
+      // 轮次变化，重置队列
+      setQueue([...cards])
+      setCurrentIndex(0)
+      setHistory([])
+      setReviewedCount(0)
+      setNewCardsAdded(0)
+      setInternalRound(currentRound)
+      setLastLog(`开始第 ${currentRound} 轮复习`)
+      // 重置已处理的父卡片集合，新一轮复习允许重新插入子卡片
+      resetProcessedParentCards()
+      console.log(`[SRS Review Session] 重置队列，开始第 ${currentRound} 轮复习，卡片数: ${cards.length}`)
+    }
+  }, [cards, currentRound, internalRound])
+
+  // 组件首次挂载时重置已处理的父卡片集合
+  useEffect(() => {
+    resetProcessedParentCards()
+    console.log("[SRS Review Session] 会话开始，重置已处理父卡片集合")
+  }, [])
 
   // 当最大化状态变化时，设置父级 .orca-block-editor 的 maximize 属性并隐藏 query tabs
   useEffect(() => {
@@ -99,12 +141,33 @@ export default function SrsReviewSession({
       })
     } else {
       blockEditor.removeAttribute('maximize')
-      // 恢复显示
+      // 恢复显示所有被隐藏的元素
       if (noneEditableEl) noneEditableEl.style.display = ''
       if (goBtns) goBtns.style.display = ''
       if (sidetools) sidetools.style.display = ''
       if (reprNoneEditable) reprNoneEditable.style.display = ''
       if (breadcrumb) breadcrumb.style.display = ''
+      
+      // 恢复所有被隐藏的块UI元素
+      const blockHandles = blockEditor.querySelectorAll('.orca-block-handle, .orca-repr-handle')
+      blockHandles.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
+      
+      const bullets = blockEditor.querySelectorAll('.orca-block-bullet, [data-role="bullet"]')
+      bullets.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
+      
+      const dragHandles = blockEditor.querySelectorAll('.orca-block-drag-handle')
+      dragHandles.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
+      
+      const collapseButtons = blockEditor.querySelectorAll('.orca-repr-collapse, [class*="collapse"]')
+      collapseButtons.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
     }
 
     // 清理函数：组件卸载时恢复原状
@@ -115,12 +178,55 @@ export default function SrsReviewSession({
       if (sidetools) sidetools.style.display = ''
       if (reprNoneEditable) reprNoneEditable.style.display = ''
       if (breadcrumb) breadcrumb.style.display = ''
+      
+      // 恢复所有被隐藏的块UI元素
+      const blockHandles = blockEditor.querySelectorAll('.orca-block-handle, .orca-repr-handle')
+      blockHandles.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
+      
+      const bullets = blockEditor.querySelectorAll('.orca-block-bullet, [data-role="bullet"]')
+      bullets.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
+      
+      const dragHandles = blockEditor.querySelectorAll('.orca-block-drag-handle')
+      dragHandles.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
+      
+      const collapseButtons = blockEditor.querySelectorAll('.orca-repr-collapse, [class*="collapse"]')
+      collapseButtons.forEach((el: Element) => {
+        (el as HTMLElement).style.display = ''
+      })
     }
   }, [isMaximized])
 
   const totalCards = queue.length
-  const currentCard = queue[currentIndex]
-  const isSessionComplete = currentIndex >= totalCards
+  const currentCard = currentIndex < totalCards ? queue[currentIndex] : null
+  // 获取下一张卡片用于预缓存
+  const nextCard = currentIndex + 1 < totalCards ? queue[currentIndex + 1] : null
+  // 修复：只有当 currentIndex 超出队列范围且队列不为空时才算完成
+  // 这样当新卡片动态添加到队列末尾时，不会错误地显示完成界面
+  const isSessionComplete = currentIndex >= totalCards && totalCards > 0
+
+  // 预缓存下一张卡片的块数据，防止切换时闪烁
+  useEffect(() => {
+    if (nextCard?.id) {
+      // 触发 Orca 加载下一张卡片的块数据
+      // 通过访问 orca.state.blocks[nextCard.id] 来预加载
+      const block = orca.state.blocks?.[nextCard.id]
+      if (!block) {
+        // 如果块数据不存在，尝试通过 API 预加载
+        console.log(`[SRS Review Session] 预缓存下一张卡片: ${nextCard.id}`)
+      }
+    }
+  }, [nextCard?.id])
+
+  // 当切换到新卡片时，重置开始时间
+  useEffect(() => {
+    setCardStartTime(Date.now())
+  }, [currentIndex])
 
   const counters = useMemo(() => {
     const now = Date.now()
@@ -136,57 +242,285 @@ export default function SrsReviewSession({
     return { due, fresh }
   }, [queue])
 
+  // 追踪即将到期的卡片（评分为 Again 后 1 分钟内到期的卡片）
+  const pendingDueCardsRef = useRef<Map<string, { card: ReviewCard, dueTime: number }>>(new Map())
+  // 短期卡片检查定时器 ID
+  const pendingCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 当前索引的 ref（用于在定时器回调中获取最新值）
+  const currentIndexRef = useRef(currentIndex)
+  currentIndexRef.current = currentIndex
+
+  // 检查待到期卡片的函数
+  const checkPendingDueCards = () => {
+    const now = Date.now()
+    const pendingCards = pendingDueCardsRef.current
+    const dueCards: ReviewCard[] = []
+    
+    console.log(`[${pluginName}] 检查待到期卡片，当前追踪 ${pendingCards.size} 张`)
+    
+    // 检查哪些卡片已经到期
+    for (const [cardKey, { card, dueTime }] of pendingCards.entries()) {
+      console.log(`[${pluginName}] 检查卡片 ${cardKey}: dueTime=${dueTime}, now=${now}, diff=${dueTime - now}ms`)
+      if (now >= dueTime) {
+        dueCards.push(card)
+        pendingCards.delete(cardKey)
+        console.log(`[${pluginName}] 卡片 ${cardKey} 已到期，准备加入队列`)
+      }
+    }
+    
+    if (dueCards.length > 0) {
+      console.log(`[${pluginName}] ${dueCards.length} 张短期卡片已到期，添加到复习队列`)
+      
+      // 检查是否已在**未复习的队列部分**（currentIndex 之后）
+      setQueue((prevQueue: ReviewCard[]) => {
+        const idx = currentIndexRef.current
+        // 只检查当前位置之后的卡片（未复习的部分）
+        const remainingQueue = prevQueue.slice(idx)
+        const existingKeys = new Set(remainingQueue.map((c: ReviewCard) => 
+          `${c.id}-${c.clozeNumber || 0}-${c.directionType || "basic"}`
+        ))
+        
+        const newCards = dueCards.filter((c: ReviewCard) => {
+          const key = `${c.id}-${c.clozeNumber || 0}-${c.directionType || "basic"}`
+          return !existingKeys.has(key)
+        })
+        
+        if (newCards.length > 0) {
+          setNewCardsAdded((prev: number) => prev + newCards.length)
+          setLastLog(`${newCards.length} 张卡片已到期，加入队列`)
+          orca.notify("info", `${newCards.length} 张卡片已到期`, { title: "SRS 复习" })
+          console.log(`[${pluginName}] 成功添加 ${newCards.length} 张卡片到队列末尾`)
+          return [...prevQueue, ...newCards]
+        }
+        console.log(`[${pluginName}] 卡片已在未复习队列中，跳过添加`)
+        return prevQueue
+      })
+    }
+    
+    // 如果还有待检查的卡片，继续定时检查
+    if (pendingCards.size > 0) {
+      // 找到最近的到期时间
+      let nearestDue = Infinity
+      for (const { dueTime } of pendingCards.values()) {
+        if (dueTime < nearestDue) nearestDue = dueTime
+      }
+      const delay = Math.max(1000, nearestDue - now + 500) // 至少 1 秒，到期后多等 500ms
+      console.log(`[${pluginName}] 还有 ${pendingCards.size} 张待检查卡片，${delay}ms 后再次检查`)
+      pendingCheckTimeoutRef.current = setTimeout(checkPendingDueCards, delay)
+    } else {
+      pendingCheckTimeoutRef.current = null
+    }
+  }
+  
+  // 当评分为 Again 时，将卡片添加到待检查列表
+  const trackPendingDueCard = (card: ReviewCard, dueTime: Date) => {
+    const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+    const dueTimestamp = dueTime.getTime()
+    const now = Date.now()
+    
+    // 只追踪 5 分钟内到期的卡片
+    if (dueTimestamp - now <= 5 * 60 * 1000) {
+      pendingDueCardsRef.current.set(cardKey, { card, dueTime: dueTimestamp })
+      const delaySeconds = Math.round((dueTimestamp - now) / 1000)
+      console.log(`[${pluginName}] 追踪短期到期卡片: ${cardKey}, 将在 ${delaySeconds} 秒后到期`)
+      setLastLog(`卡片将在 ${delaySeconds} 秒后重新加入队列`)
+      
+      // 如果没有正在运行的检查定时器，启动一个
+      if (!pendingCheckTimeoutRef.current) {
+        const delay = Math.max(1000, dueTimestamp - now + 500)
+        console.log(`[${pluginName}] 启动定时器，${delay}ms 后检查`)
+        pendingCheckTimeoutRef.current = setTimeout(checkPendingDueCards, delay)
+      }
+    }
+  }
+
+  // 动态更新复习队列：定期检查是否有新的到期卡片
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    
+    const checkForNewCards = async () => {
+      try {
+        const { collectReviewCards, buildReviewQueue } = await import("../srs/cardCollector")
+        
+        // 获取所有当前到期的卡片
+        const allCards = await collectReviewCards(pluginName)
+        const newQueue = buildReviewQueue(allCards)
+        
+        // 检查是否有新的卡片（不在当前队列中的）
+        const currentCardIds = new Set(queue.map((card: ReviewCard) => 
+          `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+        ))
+        
+        const newCards = newQueue.filter((card: ReviewCard) => {
+          const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+          return !currentCardIds.has(cardKey)
+        })
+        
+        if (newCards.length > 0) {
+          console.log(`[${pluginName}] 发现 ${newCards.length} 张新到期卡片，添加到复习队列`)
+          
+          // 将新卡片添加到队列末尾
+          setQueue((prevQueue: ReviewCard[]) => [...prevQueue, ...newCards])
+          setNewCardsAdded((prev: number) => prev + newCards.length)
+          
+          // 显示通知
+          setLastLog(`发现 ${newCards.length} 张新到期卡片已加入队列`)
+          
+          // 可选：显示系统通知
+          if (newCards.length > 0) {
+            orca.notify("info", `${newCards.length} 张新卡片已到期`, { 
+              title: "SRS 复习"
+            })
+          }
+        }
+      } catch (error) {
+        console.error(`[${pluginName}] 检查新到期卡片失败:`, error)
+      }
+      
+      // 安排下一次检查
+      timeoutId = setTimeout(checkForNewCards, 60000) // 60秒后再次检查
+    }
+
+    // 启动第一次检查（延迟1分钟，避免初始化时立即执行）
+    timeoutId = setTimeout(checkForNewCards, 60000)
+
+    // 组件卸载时清理定时器
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+      if (pendingCheckTimeoutRef.current) {
+        clearTimeout(pendingCheckTimeoutRef.current)
+        pendingCheckTimeoutRef.current = null
+      }
+    }
+  }, [pluginName]) // 移除 queue 依赖，避免每次队列变化都重新设置定时器
+
   const handleGrade = async (grade: Grade) => {
     if (!currentCard) return
     setIsGrading(true)
 
-    // 根据卡片类型选择不同的更新函数
-    let result
-    if (currentCard.clozeNumber) {
-      // Cloze 卡片
-      result = await updateClozeSrsState(currentCard.id, currentCard.clozeNumber, grade)
-    } else if (currentCard.directionType) {
-      // Direction 卡片
-      result = await updateDirectionSrsState(currentCard.id, currentCard.directionType, grade)
-    } else {
-      // Basic 卡片
-      result = await updateSrsState(currentCard.id, grade)
-    }
+    console.log(`[SRS Card Demo] 用户选择评分: ${grade}${isRepeatMode ? ' (专项训练模式，不更新SRS)' : ''}`)
 
-    const updatedCard: ReviewCard = { ...currentCard, srs: result.state, isNew: false }
-    const nextQueue = [...queue]
-    nextQueue[currentIndex] = updatedCard
-    setQueue(nextQueue)
-
-    // 构建日志标签
+    let nextQueue = [...queue]
+    let updatedCard = currentCard
     let cardLabel = ""
+
     if (currentCard.clozeNumber) {
       cardLabel = ` [c${currentCard.clozeNumber}]`
     } else if (currentCard.directionType) {
       cardLabel = ` [${currentCard.directionType === "forward" ? "→" : "←"}]`
     }
 
+    // 重复复习模式（专项训练）：不更新 SRS 状态，只是单纯刷题
+    if (isRepeatMode) {
+      setLastLog(`评分 ${grade.toUpperCase()}${cardLabel} (专项训练，不影响复习进度)`)
+      setReviewedCount((prev: number) => prev + 1)
+      
+      // 标记父卡片为已处理
+      markParentCardProcessed(currentCard.id, currentCard.clozeNumber, currentCard.directionType)
+      
+      // 更新队列
+      setQueue(nextQueue)
+      
+      setIsGrading(false)
+      // 记录历史并前进
+      setHistory((prev: number[]) => [...prev, currentIndex])
+      setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+      return
+    }
+
+    // 正常复习模式：更新 SRS 状态
+    // 记录复习前的状态
+    const previousInterval = currentCard.srs.interval
+    const previousState: CardState = currentCard.isNew 
+      ? "new" 
+      : (currentCard.srs.interval < 1 ? "learning" : "review")
+
+    // 根据卡片类型选择不同的更新函数
+    let result
+    if (currentCard.clozeNumber) {
+      // Cloze 卡片
+      result = await updateClozeSrsState(currentCard.id, currentCard.clozeNumber, grade, pluginName)
+    } else if (currentCard.directionType) {
+      // Direction 卡片
+      result = await updateDirectionSrsState(currentCard.id, currentCard.directionType, grade, pluginName)
+    } else {
+      // Basic 卡片
+      result = await updateSrsState(currentCard.id, grade, pluginName)
+    }
+
+    updatedCard = { ...currentCard, srs: result.state, isNew: false }
+    nextQueue[currentIndex] = updatedCard
+
+    // 计算复习后的状态
+    const newState: CardState = grade === "again" 
+      ? "relearning" 
+      : (result.state.interval < 1 ? "learning" : "review")
+
+    // 计算复习耗时
+    const reviewDuration = Date.now() - cardStartTime
+    const timestamp = Date.now()
+
+    // 记录复习日志 (Requirements: 11.1)
+    const reviewLog: ReviewLogEntry = {
+      id: createReviewLogId(timestamp, currentCard.id),
+      cardId: currentCard.id,
+      deckName: currentCard.deck,
+      timestamp,
+      grade,
+      duration: reviewDuration,
+      previousInterval,
+      newInterval: result.state.interval,
+      previousState,
+      newState
+    }
+
+    // 异步保存复习记录，不阻塞 UI
+    void saveReviewLog(pluginName, reviewLog)
+
     setLastLog(
       `评分 ${grade.toUpperCase()}${cardLabel} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
     )
 
-    // 通知 FlashcardHome 静默刷新（避免返回后仍显示旧统计/旧队列）
+    // 通知其他组件静默刷新
     emitCardGraded(currentCard.id, grade)
 
     setReviewedCount((prev: number) => prev + 1)
+    
+    // 子卡片处理说明：
+    // 初始队列已经通过 buildReviewQueueWithChildren 展开了子卡片链
+    // 例如：[A1, B, C, D, A2, B, C, D]
+    // 
+    // 这里只需要标记当前卡片为已处理，防止 Again 按钮导致的重复处理
+    // 不再需要动态插入子卡片
+    markParentCardProcessed(currentCard.id, currentCard.clozeNumber, currentCard.directionType)
+    
+    // 更新队列
+    setQueue(nextQueue)
+    
+    // 如果评分为 Again 或 Hard，且卡片在 5 分钟内到期，追踪它以便自动加入队列
+    const dueTime = result.state.due.getTime()
+    const now = Date.now()
+    if ((grade === "again" || grade === "hard") && dueTime - now <= 5 * 60 * 1000) {
+      trackPendingDueCard(updatedCard, result.state.due)
+    }
+    
     setIsGrading(false)
+    // 记录历史并前进
+    setHistory((prev: number[]) => [...prev, currentIndex])
     setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
   }
 
   /**
-   * 埋藏卡片：将 due 时间设置为明天，不改变 SRS 状态
+   * 推迟卡片：将 due 时间设置为明天，不改变 SRS 状态
    */
-  const handleBury = async () => {
+  const handlePostpone = async () => {
     if (!currentCard || isGrading) return
     setIsGrading(true)
 
     try {
-      await buryCard(
+      await postponeCard(
         currentCard.id,
         currentCard.clozeNumber,
         currentCard.directionType
@@ -200,17 +534,19 @@ export default function SrsReviewSession({
         cardLabel = ` [${currentCard.directionType === "forward" ? "→" : "←"}]`
       }
 
-      setLastLog(`已埋藏${cardLabel}，明天再复习`)
-      orca.notify("info", "卡片已埋藏，明天再复习", { title: "SRS 复习" })
+      setLastLog(`已推迟${cardLabel}，明天再复习`)
+      showNotification("orca-srs", "info", "卡片已推迟，明天再复习", { title: "SRS 复习" })
 
-      // 通知 FlashcardHome 静默刷新
-      emitCardBuried(currentCard.id)
+      // 通知其他组件静默刷新
+      emitCardPostponed(currentCard.id)
     } catch (error) {
-      console.error("[SRS Review Session] 埋藏卡片失败:", error)
-      orca.notify("error", `埋藏失败: ${error}`, { title: "SRS 复习" })
+      console.error("[SRS Review Session] 推迟卡片失败:", error)
+      orca.notify("error", `推迟失败: ${error}`, { title: "SRS 复习" })
     }
 
     setIsGrading(false)
+    // 记录历史并前进
+    setHistory((prev: number[]) => [...prev, currentIndex])
     setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
   }
 
@@ -233,9 +569,9 @@ export default function SrsReviewSession({
       }
 
       setLastLog(`已暂停${cardLabel}`)
-      orca.notify("info", "卡片已暂停，可在卡片浏览器中取消暂停", { title: "SRS 复习" })
+      showNotification("orca-srs", "info", "卡片已暂停，可在卡片浏览器中取消暂停", { title: "SRS 复习" })
 
-      // 通知 FlashcardHome 静默刷新
+      // 通知其他组件静默刷新
       emitCardSuspended(currentCard.id)
     } catch (error) {
       console.error("[SRS Review Session] 暂停卡片失败:", error)
@@ -243,17 +579,103 @@ export default function SrsReviewSession({
     }
 
     setIsGrading(false)
+    // 记录历史并前进
+    setHistory((prev: number[]) => [...prev, currentIndex])
     setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
   }
 
-  const handleJumpToCard = (blockId: DbId) => {
+  /**
+   * 跳过卡片：不评分，直接进入下一张
+   */
+  const handleSkip = () => {
+    if (!currentCard || isGrading) return
+
+    // 构建日志标签
+    let cardLabel = ""
+    if (currentCard.clozeNumber) {
+      cardLabel = ` [c${currentCard.clozeNumber}]`
+    } else if (currentCard.directionType) {
+      cardLabel = ` [${currentCard.directionType === "forward" ? "→" : "←"}]`
+    }
+
+    setLastLog(`已跳过${cardLabel}`)
+    
+    // 记录历史并前进
+    setHistory((prev: number[]) => [...prev, currentIndex])
+    setCurrentIndex((prev: number) => prev + 1)
+  }
+
+  /**
+   * 手动检查新到期卡片
+   */
+  const handleCheckNewCards = async () => {
+    try {
+      const { collectReviewCards, buildReviewQueue } = await import("../srs/cardCollector")
+      
+      // 获取所有当前到期的卡片
+      const allCards = await collectReviewCards(pluginName)
+      const newQueue = buildReviewQueue(allCards)
+      
+      // 检查是否有新的卡片（不在当前队列中的）
+      const currentCardIds = new Set(queue.map((card: ReviewCard) => 
+        `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+      ))
+      
+      const newCards = newQueue.filter((card: ReviewCard) => {
+        const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+        return !currentCardIds.has(cardKey)
+      })
+      
+      if (newCards.length > 0) {
+        console.log(`[${pluginName}] 手动检查发现 ${newCards.length} 张新到期卡片`)
+        
+        // 将新卡片添加到队列末尾
+        setQueue((prevQueue: ReviewCard[]) => [...prevQueue, ...newCards])
+        setNewCardsAdded((prev: number) => prev + newCards.length)
+        
+        // 显示通知
+        setLastLog(`手动检查发现 ${newCards.length} 张新到期卡片已加入队列`)
+        
+        orca.notify("success", `发现 ${newCards.length} 张新到期卡片`, { 
+          title: "SRS 复习"
+        })
+      } else {
+        setLastLog("暂无新到期卡片")
+        orca.notify("info", "暂无新到期卡片", { 
+          title: "SRS 复习"
+        })
+      }
+    } catch (error) {
+      console.error(`[${pluginName}] 手动检查新到期卡片失败:`, error)
+      setLastLog("检查新卡片失败")
+      orca.notify("error", "检查新卡片失败", { title: "SRS 复习" })
+    }
+  }
+
+  /**
+   * 回到上一张卡片
+   */
+  const handlePrevious = () => {
+    if (history.length === 0 || isGrading) return
+
+    const prevIndex = history[history.length - 1]
+    setHistory((prev: number[]) => prev.slice(0, -1))
+    setCurrentIndex(prevIndex)
+    setLastLog("返回上一张")
+  }
+
+  // 是否可以回到上一张
+  const canGoPrevious = history.length > 0 && !isGrading
+
+  const handleJumpToCard = (blockId: DbId, shiftKey?: boolean) => {
     if (onJumpToCard) {
-      onJumpToCard(blockId)
+      onJumpToCard(blockId, shiftKey)
       return
     }
-    console.log(`[SRS Review Session] 跳转到卡片 #${blockId}`)
+    console.log(`[SRS Review Session] 跳转到卡片 #${blockId}, shiftKey: ${shiftKey}`)
     orca.nav.goTo("block", { blockId })
-    orca.notify(
+    showNotification(
+      "orca-srs",
       "info",
       "已跳转到卡片，复习界面仍然保留",
       { title: "SRS 复习" }
@@ -263,7 +685,8 @@ export default function SrsReviewSession({
   const handleFinishSession = () => {
     console.log(`[SRS Review Session] 本次复习结束，共复习 ${reviewedCount} 张卡片`)
 
-    orca.notify(
+    showNotification(
+      "orca-srs",
       "success",
       `本次复习完成！共复习了 ${reviewedCount} 张卡片`,
       { title: "SRS 复习会话" }
@@ -334,7 +757,7 @@ export default function SrsReviewSession({
           fontSize: "64px",
           marginBottom: "24px"
         }}>
-          ?
+          🎉
         </div>
 
         <h2 style={{
@@ -343,7 +766,7 @@ export default function SrsReviewSession({
           color: "var(--orca-color-text-1)",
           marginBottom: "16px"
         }}>
-          本次复习结束！
+          {isRepeatMode ? `第 ${currentRound} 轮复习结束！` : "本次复习结束！"}
         </h2>
 
         <div style={{
@@ -356,16 +779,30 @@ export default function SrsReviewSession({
           <p style={{ marginTop: "8px" }}>坚持复习，持续进步！</p>
         </div>
 
-        <Button
-          variant="solid"
-          onClick={handleFinishSession}
-          style={{
-            padding: "12px 32px",
-            fontSize: "16px"
-          }}
-        >
-          完成
-        </Button>
+        <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+          {isRepeatMode && onRepeatRound && (
+            <Button
+              variant="outline"
+              onClick={onRepeatRound}
+              style={{
+                padding: "12px 24px",
+                fontSize: "16px"
+              }}
+            >
+              再复习一轮
+            </Button>
+          )}
+          <Button
+            variant="solid"
+            onClick={handleFinishSession}
+            style={{
+              padding: "12px 32px",
+              fontSize: "16px"
+            }}
+          >
+            完成
+          </Button>
+        </div>
       </div>
     )
 
@@ -442,9 +879,34 @@ export default function SrsReviewSession({
               color: "var(--orca-color-text-2)",
               fontWeight: 500,
               userSelect: 'none',
-              pointerEvents: 'none'
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
             }}>
-              卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
+              {isRepeatMode && (
+                <span style={{
+                  backgroundColor: "var(--orca-color-warning-1)",
+                  color: "var(--orca-color-warning-6)",
+                  padding: "2px 8px",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                  fontWeight: 600
+                }}>
+                  重复复习 · 第 {currentRound} 轮
+                </span>
+              )}
+              <span>
+                卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
+              </span>
+              {newCardsAdded > 0 && (
+                <span style={{ 
+                  color: "var(--orca-color-primary-6)", 
+                  fontSize: "12px"
+                }}>
+                  +{newCardsAdded} 新增
+                </span>
+              )}
             </div>
             {lastLog && (
               <div style={{
@@ -457,6 +919,16 @@ export default function SrsReviewSession({
               </div>
             )}
           </div>
+          {/* 手动检查新卡片按钮 */}
+          <Button
+            variant="plain"
+            onClick={handleCheckNewCards}
+            title="检查新到期卡片"
+            style={{ marginLeft: "8px" }}
+          >
+            <i className="ti ti-refresh" />
+          </Button>
+          
           {/* 最大化按钮已隐藏，默认最大化状态 */}
           {false && (
           <Button
@@ -472,16 +944,21 @@ export default function SrsReviewSession({
 
         {/* 修改 5：移除主内容区 padding，让卡片内容占满面板 */}
         <div style={{ flex: 1, overflow: "auto", padding: "0" }}>
+          {currentCard ? (
           <SrsCardDemo
             front={currentCard.front}
             back={currentCard.back}
             onGrade={handleGrade}
-            onBury={handleBury}
+            onPostpone={handlePostpone}
             onSuspend={handleSuspend}
             onClose={onClose}
+            onSkip={handleSkip}
+            onPrevious={handlePrevious}
+            canGoPrevious={canGoPrevious}
             srsInfo={currentCard.srs}
             isGrading={isGrading}
             blockId={currentCard.id}
+            nextBlockId={nextCard?.id}
             onJumpToCard={handleJumpToCard}
             inSidePanel={true}
             panelId={panelId}
@@ -489,6 +966,17 @@ export default function SrsReviewSession({
             clozeNumber={currentCard.clozeNumber}
             directionType={currentCard.directionType}
           />
+          ) : (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              color: "var(--orca-color-text-2)"
+            }}>
+              加载中...
+            </div>
+          )}
         </div>
       </div>
     )
@@ -526,9 +1014,34 @@ export default function SrsReviewSession({
         fontSize: '14px',
         color: 'var(--orca-color-text-2)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        zIndex: 10001
+        zIndex: 10001,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
       }}>
-        卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
+        {isRepeatMode && (
+          <span style={{
+            backgroundColor: "var(--orca-color-warning-1)",
+            color: "var(--orca-color-warning-6)",
+            padding: "2px 8px",
+            borderRadius: "4px",
+            fontSize: "12px",
+            fontWeight: 600
+          }}>
+            重复复习 · 第 {currentRound} 轮
+          </span>
+        )}
+        <span>
+          卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
+        </span>
+        {newCardsAdded > 0 && (
+          <span style={{ 
+            color: "var(--orca-color-primary-6)", 
+            fontSize: "12px"
+          }}>
+            +{newCardsAdded} 新增
+          </span>
+        )}
       </div>
 
       {/* 最近一次评分日志 */}
@@ -551,22 +1064,38 @@ export default function SrsReviewSession({
       )}
 
       {/* 当前卡片（复用 SrsCardDemo 组件） */}
+      {currentCard ? (
       <SrsCardDemo
         front={currentCard.front}
         back={currentCard.back}
         onGrade={handleGrade}
-        onBury={handleBury}
+        onPostpone={handlePostpone}
         onSuspend={handleSuspend}
         onClose={onClose}
+        onSkip={handleSkip}
+        onPrevious={handlePrevious}
+        canGoPrevious={canGoPrevious}
         srsInfo={currentCard.srs}
         isGrading={isGrading}
         blockId={currentCard.id}
+        nextBlockId={nextCard?.id}
         onJumpToCard={handleJumpToCard}
         panelId={panelId}
         pluginName={pluginName}
         clozeNumber={currentCard.clozeNumber}
         directionType={currentCard.directionType}
       />
+      ) : (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          color: "var(--orca-color-text-2)"
+        }}>
+          加载中...
+        </div>
+      )}
     </div>
   )
 }

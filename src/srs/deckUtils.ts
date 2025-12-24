@@ -5,7 +5,7 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import type { ReviewCard, DeckInfo, DeckStats } from "./types"
+import type { ReviewCard, DeckInfo, DeckStats, TodayStats } from "./types"
 import { isCardTag } from "./tagUtils"
 
 const DEFAULT_DECK_NAME = "Default"
@@ -19,10 +19,9 @@ const deckNameCache = new Map<DbId, string>()
  * - basic: 基本卡（正面/反面）
  * - cloze: 填空卡
  * - direction: 方向卡
- * - 渐进阅读: 渐进阅读 Topic（包含电子书/文章的页面）
- * - extracts: 渐进阅读 Extract（从 Topic 中摘录的笔记块）
+ * - excerpt: 摘录卡（只显示内容，无正反面）
  */
-export type CardType = "basic" | "cloze" | "direction" | "渐进阅读" | "extracts"
+export type CardType = "basic" | "cloze" | "direction" | "excerpt"
 
 /**
  * 从块的标签属性系统中提取卡片类型
@@ -83,16 +82,14 @@ export function extractCardType(block: Block): CardType {
     const firstValue = typeValue[0].trim().toLowerCase()
     if (firstValue === "cloze") return "cloze"
     if (firstValue === "direction") return "direction"
-    if (firstValue === "渐进阅读") return "渐进阅读"
-    if (firstValue === "extracts") return "extracts"
+    if (firstValue === "excerpt") return "excerpt"
     return "basic"
   } else if (typeof typeValue === "string") {
     // 单选类型：直接使用字符串
     const trimmedValue = typeValue.trim().toLowerCase()
     if (trimmedValue === "cloze") return "cloze"
     if (trimmedValue === "direction") return "direction"
-    if (trimmedValue === "渐进阅读") return "渐进阅读"
-    if (trimmedValue === "extracts") return "extracts"
+    if (trimmedValue === "excerpt") return "excerpt"
     return "basic"
   }
 
@@ -205,11 +202,18 @@ async function resolveBlockText(blockId: DbId): Promise<string | null> {
  * 计算 deck 统计信息
  * 从 ReviewCard 列表中统计每个 deck 的卡片数量和到期情况
  * 
+ * 使用精确时间判断到期状态
+ * 
  * @param cards - ReviewCard 数组
  * @returns DeckStats 统计对象
  */
 export function calculateDeckStats(cards: ReviewCard[]): DeckStats {
   const deckMap = new Map<string, DeckInfo>()
+  const now = new Date()
+  const nowTime = now.getTime()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
 
   // 遍历所有卡片，统计各 deck 信息
   for (const card of cards) {
@@ -232,17 +236,17 @@ export function calculateDeckStats(cards: ReviewCard[]): DeckStats {
     if (card.isNew) {
       deckInfo.newCount++
     } else {
-      // 判断卡片属于哪个到期类别
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      // 判断卡片属于哪个到期类别（精确时间判断）
+      const dueTime = card.srs.due.getTime()
 
-      if (card.srs.due < today) {
+      if (dueTime <= nowTime) {
+        // 已到期（精确到时分秒）
         deckInfo.overdueCount++
       } else if (card.srs.due >= today && card.srs.due < tomorrow) {
+        // 今天稍后到期（还没到时间）
         deckInfo.todayCount++
       } else {
+        // 未来到期
         deckInfo.futureCount++
       }
     }
@@ -263,9 +267,62 @@ export function calculateDeckStats(cards: ReviewCard[]): DeckStats {
     totalNew: cards.filter(c => c.isNew).length,
     totalOverdue: cards.filter(c => {
       if (c.isNew) return false
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      return c.srs.due < today
+      return c.srs.due.getTime() <= nowTime
     }).length
+  }
+}
+
+
+/**
+ * 计算 Flash Home 首页统计数据
+ * 
+ * @param cards - ReviewCard 数组
+ * @returns TodayStats 统计对象
+ * 
+ * 统计说明：
+ * - todayCount: 今天到期的复习卡片数（不含新卡）- 使用精确时间判断
+ * - newCount: 新卡数量
+ * - pendingCount: 所有待复习卡片数（已到期，精确到时分秒）
+ * - totalCount: 总卡片数
+ * 
+ * 需求: 1.1, 1.2, 1.3
+ */
+export function calculateHomeStats(cards: ReviewCard[]): TodayStats {
+  const now = new Date()
+  const nowTime = now.getTime()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  let todayCount = 0
+  let newCount = 0
+  let pendingCount = 0
+  const totalCount = cards.length
+
+  for (const card of cards) {
+    if (card.isNew) {
+      newCount++
+    } else {
+      // 非新卡：判断到期状态（精确到时分秒）
+      const dueTime = card.srs.due.getTime()
+
+      if (dueTime <= nowTime) {
+        // 已到期的卡片（精确时间判断）
+        pendingCount++
+
+        // 如果到期时间在今天范围内，也计入 todayCount
+        if (card.srs.due >= today && card.srs.due < tomorrow) {
+          todayCount++
+        }
+      }
+      // 如果 dueTime > nowTime，则是未来到期，不计入任何统计
+    }
+  }
+
+  return {
+    todayCount,
+    newCount,
+    pendingCount,
+    totalCount
   }
 }

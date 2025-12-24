@@ -9,13 +9,7 @@
       "Bash(gh pr list:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(mcp help:*)",
-      "Bash(git add:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\n修复复习完成后关闭按钮无响应的问题\nEOF\n)\")",
-      "Bash(git push)",
-      "Bash(git commit -m \"$(cat <<''EOF''\n修复复习卡片题目区域标签无法点击的问题\nEOF\n)\")",
-      "WebSearch",
-      "WebFetch(domain:help.supermemo.org)"
+      "Bash(mcp help:*)"
     ],
     "deny": [],
     "ask": []
