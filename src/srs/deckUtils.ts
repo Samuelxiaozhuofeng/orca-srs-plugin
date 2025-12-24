@@ -5,8 +5,8 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import type { ReviewCard, DeckInfo, DeckStats, TodayStats } from "./types"
-import { isCardTag } from "./tagUtils"
+import type { ReviewCard, DeckInfo, DeckStats, TodayStats, CardType } from "./types"
+import { isCardTag, isChoiceTag } from "./tagUtils"
 
 const DEFAULT_DECK_NAME = "Default"
 const DECK_PROPERTY_NAME = "牌组"
@@ -14,31 +14,27 @@ const DECK_PROPERTY_NAME = "牌组"
 // 简单缓存：同一轮运行中重复解析同一个牌组块时避免多次请求后端
 const deckNameCache = new Map<DbId, string>()
 
-/**
- * 卡片类型
- * - basic: 基本卡（正面/反面）
- * - cloze: 填空卡
- * - direction: 方向卡
- * - excerpt: 摘录卡（只显示内容，无正反面）
- */
-export type CardType = "basic" | "cloze" | "direction" | "excerpt"
+// Re-export CardType from types.ts for backward compatibility
+export type { CardType } from "./types"
 
 /**
  * 从块的标签属性系统中提取卡片类型
  *
  * 工作原理：
- * 1. 找到 type=2 (RefType.Property) 且 alias="card" 的引用
- * 2. 从引用的 data 数组中找到 name="type" 的属性
- * 3. 返回该属性的 value，如果不存在返回 "basic"
+ * 1. 首先检查是否有 #choice 标签（选择题卡片）
+ * 2. 找到 type=2 (RefType.Property) 且 alias="card" 的引用
+ * 3. 从引用的 data 数组中找到 name="type" 的属性
+ * 4. 返回该属性的 value，如果不存在返回 "basic"
  *
  * 用户操作流程：
  * 1. 在 Orca 标签页面为 #card 标签定义属性 "type"（类型：单选/多选文本）
  * 2. 添加可选值（如 "basic", "cloze", "direction"）
  * 3. 给块打 #card 标签后，从下拉菜单选择 type 值
  * 4. 或者使用 cloze/direction 按钮时自动设置对应类型
+ * 5. 或者添加 #choice 标签创建选择题卡片
  *
  * @param block - 块对象
- * @returns 卡片类型，"basic"、"cloze" 或 "direction"，默认为 "basic"
+ * @returns 卡片类型，"basic"、"cloze"、"direction"、"excerpt" 或 "choice"，默认为 "basic"
  */
 export function extractCardType(block: Block): CardType {
   // 边界情况：块没有引用
@@ -46,7 +42,17 @@ export function extractCardType(block: Block): CardType {
     return "basic"
   }
 
-  // 1. 找到 #card 标签引用
+  // 1. 首先检查是否有 #choice 标签（选择题卡片优先）
+  const hasChoiceTag = block.refs.some(ref =>
+    ref.type === 2 &&        // RefType.Property（标签引用）
+    isChoiceTag(ref.alias)   // 标签名称为 "choice"（大小写不敏感）
+  )
+  
+  if (hasChoiceTag) {
+    return "choice"
+  }
+
+  // 2. 找到 #card 标签引用
   const cardRef = block.refs.find(ref =>
     ref.type === 2 &&      // RefType.Property（标签引用）
     isCardTag(ref.alias)   // 标签名称为 "card"（大小写不敏感）
@@ -62,7 +68,7 @@ export function extractCardType(block: Block): CardType {
     return "basic"
   }
 
-  // 2. 从标签关联数据中读取 type 属性
+  // 3. 从标签关联数据中读取 type 属性
   const typeProperty = cardRef.data.find(d => d.name === "type")
 
   // 边界情况：没有设置 type 属性
@@ -70,7 +76,7 @@ export function extractCardType(block: Block): CardType {
     return "basic"
   }
 
-  // 3. 返回 type 值
+  // 4. 返回 type 值
   const typeValue = typeProperty.value
 
   // 处理多选类型（数组）和单选类型（字符串）
@@ -83,6 +89,7 @@ export function extractCardType(block: Block): CardType {
     if (firstValue === "cloze") return "cloze"
     if (firstValue === "direction") return "direction"
     if (firstValue === "excerpt") return "excerpt"
+    if (firstValue === "choice") return "choice"
     return "basic"
   } else if (typeof typeValue === "string") {
     // 单选类型：直接使用字符串
@@ -90,6 +97,7 @@ export function extractCardType(block: Block): CardType {
     if (trimmedValue === "cloze") return "cloze"
     if (trimmedValue === "direction") return "direction"
     if (trimmedValue === "excerpt") return "excerpt"
+    if (trimmedValue === "choice") return "choice"
     return "basic"
   }
 

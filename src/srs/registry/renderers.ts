@@ -9,6 +9,7 @@ import SrsReviewSessionRenderer from "../../components/SrsReviewSessionRenderer"
 import SrsFlashcardHomeRenderer from "../../components/SrsFlashcardHomeRenderer"
 import ClozeInlineRenderer from "../../components/ClozeInlineRenderer"
 import DirectionInlineRenderer from "../../components/DirectionInlineRenderer"
+import ChoiceCardBlockRenderer from "../../components/ChoiceCardBlockRenderer"
 
 export function registerRenderers(pluginName: string): void {
   // 基本卡块渲染器
@@ -34,6 +35,16 @@ export function registerRenderers(pluginName: string): void {
     "srs.direction-card",
     false,
     SrsCardBlockRenderer,
+    [],
+    false
+  )
+
+  // Choice 卡块渲染器（选择题卡片）
+  // Requirements: 8.1, 8.2
+  orca.renderers.registerBlock(
+    "srs.choice-card",
+    false,
+    ChoiceCardBlockRenderer,
     [],
     false
   )
@@ -76,6 +87,7 @@ export function unregisterRenderers(pluginName: string): void {
   orca.renderers.unregisterBlock("srs.card")
   orca.renderers.unregisterBlock("srs.cloze-card")
   orca.renderers.unregisterBlock("srs.direction-card")
+  orca.renderers.unregisterBlock("srs.choice-card")
   orca.renderers.unregisterBlock("srs.review-session")
   orca.renderers.unregisterBlock("srs.flashcard-home")
   orca.renderers.unregisterInline(`${pluginName}.cloze`)

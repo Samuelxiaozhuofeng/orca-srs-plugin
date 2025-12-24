@@ -50,7 +50,7 @@ export default function SrsFlashcardHomePanel(props: PanelProps) {
       }}
     >
       <SrsErrorBoundary componentName="闪卡主页" errorTitle="闪卡主页加载出错">
-        <SrsFlashcardHome panelId={panelId} pluginName="虎鲸标记-SRS" />
+        <SrsFlashcardHome panelId={panelId} pluginName="srs-plugin" />
       </SrsErrorBoundary>
     </div>
   )

@@ -108,7 +108,16 @@ export async function scanCardsFromTags(pluginName: string) {
         skippedCount++
         continue
       }
-      const reprType = cardType === "cloze" ? "srs.cloze-card" : "srs.card"
+
+      // 根据卡片类型确定 repr type
+      let reprType: string
+      if (cardType === "cloze") {
+        reprType = "srs.cloze-card"
+      } else if (cardType === "choice") {
+        reprType = "srs.choice-card"
+      } else {
+        reprType = "srs.card"
+      }
 
       // 如果已经是对应的卡片类型，跳过
       if (blockWithRepr._repr?.type === reprType) {
@@ -223,7 +232,16 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
   // 识别卡片类型（basic 或 cloze）
   const updatedBlock = orca.state.blocks[blockId] as BlockWithRepr
   const cardType = extractCardType(updatedBlock)
-  const reprType = cardType === "cloze" ? "srs.cloze-card" : "srs.card"
+  
+  // 根据卡片类型确定 repr type
+  let reprType: string
+  if (cardType === "cloze") {
+    reprType = "srs.cloze-card"
+  } else if (cardType === "choice") {
+    reprType = "srs.choice-card"
+  } else {
+    reprType = "srs.card"
+  }
 
   // 修改块的 _repr（Valtio 会自动触发响应式更新）
   block._repr = {

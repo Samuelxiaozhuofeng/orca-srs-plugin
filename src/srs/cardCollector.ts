@@ -247,6 +247,32 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
         deck: deckName,
         tags: extractNonCardTags(block)
       })
+    } else if (cardType === "choice") {
+      // Choice 卡片：选择题卡片
+      // 选择题卡片使用父块文本作为问题，子块作为选项
+      // 选项的提取和乱序在渲染时处理
+      const question = block.text || ""
+      const srsState = await ensureCardSrsState(block.id, now)
+
+      // 检查是否有子块（选项）
+      const hasChildren = block.children && block.children.length > 0
+      
+      if (!hasChildren) {
+        // 无子块：跳过，选择题必须有选项
+        console.log(`[${pluginName}] collectReviewCards: 跳过无选项的选择题卡片 #${block.id}`)
+        continue
+      }
+
+      cards.push({
+        id: block.id,
+        front: question,  // 问题作为 front
+        back: "",         // 选择题不需要传统的 back，答案在选项中
+        srs: srsState,
+        isNew: !srsState.lastReviewed || srsState.reps === 0,
+        deck: deckName,
+        tags: extractNonCardTags(block),
+        content: block.content  // 保存块内容用于渲染
+      })
     } else {
       // Basic 卡片：传统的正面/反面模式
       // 检查是否有子块 - 如果没有子块，当作摘录卡处理

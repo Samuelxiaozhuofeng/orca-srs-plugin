@@ -3,6 +3,72 @@ import type { DbId, ContentFragment } from "../orca.d.ts"
 
 export type Grade = "again" | "hard" | "good" | "easy"
 
+// ============================================
+// 卡片类型
+// ============================================
+
+/**
+ * 卡片类型
+ * - basic: 基础卡片
+ * - cloze: 填空卡片
+ * - direction: 方向卡片
+ * - excerpt: 摘录卡片
+ * - choice: 选择题卡片
+ * - extracts: 渐进阅读摘录卡片
+ * - 渐进阅读: 渐进阅读主题卡片
+ */
+export type CardType = "basic" | "cloze" | "direction" | "excerpt" | "choice" | "extracts" | "渐进阅读"
+
+// ============================================
+// 选择题卡片相关类型 (Choice Card)
+// ============================================
+
+/**
+ * 选择题模式
+ * - single: 单选题（只有一个正确选项）
+ * - multiple: 多选题（有多个正确选项）
+ * - undefined: 未定义（没有标记正确选项）
+ */
+export type ChoiceMode = "single" | "multiple" | "undefined"
+
+/**
+ * 选择项信息
+ */
+export interface ChoiceOption {
+  blockId: DbId              // 选项块 ID
+  text: string               // 选项文本
+  content: ContentFragment[] // 完整内容（用于块渲染）
+  isCorrect: boolean         // 是否为正确选项
+  isAnchor: boolean          // 是否为锚定选项（"以上"等）
+}
+
+/**
+ * 选择题卡片扩展数据
+ */
+export interface ChoiceCardData {
+  options: ChoiceOption[]    // 选项列表
+  mode: ChoiceMode           // 单选/多选模式
+  shuffledOrder: number[]    // 乱序后的索引顺序
+}
+
+/**
+ * 选择统计记录条目
+ */
+export interface ChoiceStatisticsEntry {
+  timestamp: number          // 选择时间戳
+  selectedBlockIds: DbId[]   // 选中的选项 Block IDs
+  correctBlockIds: DbId[]    // 正确选项 Block IDs
+  isCorrect: boolean         // 是否全部正确
+}
+
+/**
+ * 选择统计存储结构
+ */
+export interface ChoiceStatisticsStorage {
+  version: number            // 数据版本号
+  entries: ChoiceStatisticsEntry[]  // 统计记录列表
+}
+
 export type SrsState = {
   stability: number       // 记忆稳定度，越大代表遗忘速度越慢
   difficulty: number      // 记忆难度，1-10 越大越难
@@ -206,6 +272,43 @@ export interface AnswerButtonStats {
   easy: number
   total: number
   correctRate: number           // 正确率 (good + easy) / total
+}
+
+/**
+ * 难度分布 - 分组数据
+ */
+export interface DifficultyBucket {
+  label: string                 // 分组标签 (如 "1-2")
+  minValue: number              // 最小值
+  maxValue: number              // 最大值
+  count: number                 // 卡片数量
+}
+
+/**
+ * 难度分布
+ */
+export interface DifficultyDistribution {
+  buckets: DifficultyBucket[]   // 难度分组
+  averageDifficulty: number     // 平均难度
+  minDifficulty: number         // 最小难度
+  maxDifficulty: number         // 最大难度
+}
+
+/**
+ * 复习时间统计
+ */
+export interface ReviewTimeStats {
+  dailyTime: { date: Date; time: number }[]  // 每日复习时间
+  averagePerDay: number         // 平均每天复习时间 (毫秒)
+  totalTime: number             // 总复习时间 (毫秒)
+}
+
+/**
+ * 复习记录存储结构（按月分片）
+ */
+export interface ReviewLogStorage {
+  version: number               // 数据版本号
+  logs: ReviewLogEntry[]        // 该月的复习记录
 }
 
 /**

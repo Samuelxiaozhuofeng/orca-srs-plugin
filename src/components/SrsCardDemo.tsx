@@ -16,10 +16,13 @@ const { useSnapshot } = window.Valtio
 const { Block, Button, ModalOverlay, BlockBreadcrumb } = orca.components
 
 import type { DbId } from "../orca.d.ts"
-import type { Grade, SrsState } from "../srs/types"
+import type { Grade, SrsState, ChoiceOption } from "../srs/types"
 import ClozeCardReviewRenderer from "./ClozeCardReviewRenderer"
 import DirectionCardReviewRenderer from "./DirectionCardReviewRenderer"
+import ChoiceCardReviewRenderer from "./ChoiceCardReviewRenderer"
 import { extractCardType } from "../srs/deckUtils"
+import { extractChoiceOptions, detectChoiceMode, shuffleOptions, calculateAutoGrade } from "../srs/choiceUtils"
+import { isOrderedTag } from "../srs/tagUtils"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, formatInterval, formatIntervalChinese, previewDueDates, formatDueDate } from "../srs/algorithm"
@@ -368,7 +371,8 @@ export default function SrsCardDemo({
   const isExcerptCard = reprType === "srs.excerpt-card" || (reprType === "srs.card" && questionBlock && totalChildCount === 0)
 
   // 判断是否应该渲染 basic 卡片（用于控制快捷键）
-  const shouldRenderBasicCard = reprType === "srs.card" || 
+  // choice 卡片有自己的快捷键处理，不使用 basic 卡片的快捷键
+  const shouldRenderBasicCard = (reprType === "srs.card" && inferredCardType !== "choice") || 
     (reprType === "srs.cloze-card" && !blockId) ||
     (reprType === "srs.direction-card" && (!blockId || !directionType))
 
@@ -467,6 +471,46 @@ export default function SrsCardDemo({
           panelId={panelId}
           pluginName={pluginName}
           reviewDirection={directionType}  // 传递复习方向
+        />
+      </SrsErrorBoundary>
+    )
+  }
+
+  // 如果是 choice 卡片，使用专门的 Choice 渲染器
+  // Requirements: 3.1, 6.1, 6.2, 6.3, 9.2
+  if (inferredCardType === "choice" && blockId && questionBlock) {
+    // 提取选项
+    const rawOptions = extractChoiceOptions(questionBlock)
+    
+    // 检查是否有 #ordered 标签
+    const hasOrderedTag = questionBlock.refs?.some(
+      (ref: any) => ref.type === 2 && isOrderedTag(ref.alias)
+    ) ?? false
+    
+    // 乱序选项
+    const { options: shuffledOptions } = shuffleOptions(rawOptions, hasOrderedTag)
+    
+    // 检测选择题模式
+    const choiceMode = detectChoiceMode(rawOptions)
+    
+    return (
+      <SrsErrorBoundary componentName="选择题卡片" errorTitle="选择题卡片加载出错">
+        <ChoiceCardReviewRenderer
+          blockId={blockId}
+          options={shuffledOptions}
+          mode={choiceMode}
+          onGrade={onGrade}
+          onPostpone={onPostpone}
+          onSuspend={onSuspend}
+          onClose={onClose}
+          onSkip={onSkip}
+          onPrevious={onPrevious}
+          canGoPrevious={canGoPrevious}
+          srsInfo={srsInfo}
+          isGrading={isGrading}
+          onJumpToCard={onJumpToCard}
+          inSidePanel={inSidePanel}
+          panelId={panelId}
         />
       </SrsErrorBoundary>
     )

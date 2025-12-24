@@ -794,3 +794,316 @@
 .srs-chart-legend-item-animated:hover {
   transform: translateX(2px);
 }
+
+
+/* ========================================
+ * 选择题卡片样式
+ * Requirements: 3.9, 3.10
+ * ======================================== */
+
+/* 选择题卡片容器 */
+.srs-choice-card-container {
+  animation: fadeSlideIn 0.25s ease-out;
+}
+
+/* 选择题题目区域 */
+.srs-choice-question {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.srs-choice-question .orca-block {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 选项列表容器 */
+.srs-choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 选项基础样式 */
+.srs-choice-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+  background-color: var(--orca-color-bg-2);
+  min-height: 48px;
+}
+
+/* 选项悬停效果 */
+.srs-choice-option:hover:not(.srs-choice-option-disabled) {
+  background-color: var(--orca-color-bg-3);
+  transform: translateX(2px);
+}
+
+/* 选项选中状态 */
+.srs-choice-option-selected {
+  background-color: var(--orca-color-primary-1);
+  border-color: var(--orca-color-primary-5);
+}
+
+.srs-choice-option-selected:hover:not(.srs-choice-option-disabled) {
+  background-color: var(--orca-color-primary-2);
+}
+
+/* 答案揭晓后 - 正确且选中 */
+.srs-choice-option-correct-selected {
+  background-color: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+/* 答案揭晓后 - 正确但未选中 */
+.srs-choice-option-correct-unselected {
+  background-color: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* 答案揭晓后 - 错误且选中 */
+.srs-choice-option-incorrect-selected {
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* 禁用状态 */
+.srs-choice-option-disabled {
+  cursor: default;
+}
+
+/* 选项标签 (A, B, C, ...) */
+.srs-choice-option-label {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background-color: var(--orca-color-bg-3);
+  color: var(--orca-color-text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.srs-choice-option-selected .srs-choice-option-label {
+  background-color: var(--orca-color-primary-5);
+  color: white;
+}
+
+.srs-choice-option-correct-selected .srs-choice-option-label,
+.srs-choice-option-correct-unselected .srs-choice-option-label {
+  background-color: rgba(34, 197, 94, 0.8);
+  color: white;
+}
+
+.srs-choice-option-incorrect-selected .srs-choice-option-label {
+  background-color: rgba(239, 68, 68, 0.8);
+  color: white;
+}
+
+/* 选择指示器 (radio/checkbox) */
+.srs-choice-indicator {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--orca-color-border-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  margin-top: 2px;
+}
+
+.srs-choice-indicator-radio {
+  border-radius: 50%;
+}
+
+.srs-choice-indicator-checkbox {
+  border-radius: 4px;
+}
+
+.srs-choice-option-selected .srs-choice-indicator {
+  border-color: var(--orca-color-primary-5);
+  background-color: var(--orca-color-primary-5);
+}
+
+.srs-choice-option-correct-selected .srs-choice-indicator,
+.srs-choice-option-correct-unselected .srs-choice-indicator {
+  border-color: rgba(34, 197, 94, 0.8);
+}
+
+.srs-choice-option-correct-selected .srs-choice-indicator {
+  background-color: rgba(34, 197, 94, 0.8);
+}
+
+.srs-choice-option-incorrect-selected .srs-choice-indicator {
+  border-color: rgba(239, 68, 68, 0.8);
+  background-color: rgba(239, 68, 68, 0.8);
+}
+
+/* 选项内容区域 */
+.srs-choice-option-content {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 选项内容中的图片限制 */
+.srs-choice-option-content img {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+/* 选项内容中的代码块 */
+.srs-choice-option-content pre,
+.srs-choice-option-content code {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* 选项内容中的嵌套列表 */
+.srs-choice-option-content ul,
+.srs-choice-option-content ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+/* 状态图标 */
+.srs-choice-status-icon {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* 提交按钮区域 */
+.srs-choice-submit-area {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.srs-choice-submit-button {
+  padding: 12px 32px;
+  font-size: 16px;
+  background-color: var(--orca-color-primary-5);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.srs-choice-submit-button:hover:not(:disabled) {
+  background-color: var(--orca-color-primary-6);
+  transform: translateY(-1px);
+}
+
+.srs-choice-submit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.srs-choice-submit-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+}
+
+/* 自动评分提示 */
+.srs-choice-grade-hint {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+}
+
+/* 评分按钮高亮（建议评分） */
+.srs-choice-grade-suggested {
+  border-width: 2px !important;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 选项进入动画 */
+.srs-choice-option {
+  animation: optionSlideIn 0.3s ease-out;
+  animation-fill-mode: both;
+}
+
+.srs-choice-option:nth-child(1) { animation-delay: 0.05s; }
+.srs-choice-option:nth-child(2) { animation-delay: 0.1s; }
+.srs-choice-option:nth-child(3) { animation-delay: 0.15s; }
+.srs-choice-option:nth-child(4) { animation-delay: 0.2s; }
+.srs-choice-option:nth-child(5) { animation-delay: 0.25s; }
+.srs-choice-option:nth-child(6) { animation-delay: 0.3s; }
+.srs-choice-option:nth-child(7) { animation-delay: 0.35s; }
+.srs-choice-option:nth-child(8) { animation-delay: 0.4s; }
+.srs-choice-option:nth-child(9) { animation-delay: 0.45s; }
+
+@keyframes optionSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 答案揭晓动画 */
+.srs-choice-option-reveal {
+  animation: optionReveal 0.3s ease-out;
+}
+
+@keyframes optionReveal {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 快捷键提示 */
+.srs-choice-shortcut-hint {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  color: var(--orca-color-text-3);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.srs-choice-option:hover .srs-choice-shortcut-hint {
+  opacity: 1;
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+  .srs-choice-option {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  
+  .srs-choice-option-label {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+  
+  .srs-choice-indicator {
+    width: 18px;
+    height: 18px;
+  }
+}

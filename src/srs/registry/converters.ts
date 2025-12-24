@@ -46,6 +46,16 @@ export function registerConverters(pluginName: string): void {
     }
   )
 
+  // Choice 卡转换器（选择题卡片）
+  orca.converters.registerBlock(
+    "plain",
+    "srs.choice-card",
+    (blockContent: BlockForConversion, repr: Repr) => {
+      const front = repr.front || "（无题目）"
+      return `[SRS 选择题卡片]\n题目: ${front}`
+    }
+  )
+
   // 复习会话转换器
   orca.converters.registerBlock(
     "plain",
@@ -87,6 +97,7 @@ export function unregisterConverters(pluginName: string): void {
   orca.converters.unregisterBlock("plain", "srs.card")
   orca.converters.unregisterBlock("plain", "srs.cloze-card")
   orca.converters.unregisterBlock("plain", "srs.direction-card")
+  orca.converters.unregisterBlock("plain", "srs.choice-card")
   orca.converters.unregisterBlock("plain", "srs.review-session")
   orca.converters.unregisterBlock("plain", "srs.flashcard-home")
   orca.converters.unregisterInline("plain", `${pluginName}.cloze`)
