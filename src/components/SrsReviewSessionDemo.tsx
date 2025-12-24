@@ -3,6 +3,7 @@
  */
 import type { DbId } from "../orca.d.ts"
 import type { Grade, ReviewCard, CardState, ReviewLogEntry } from "../srs/types"
+import type { SessionStatsSummary } from "../srs/sessionProgressTracker"
 import { updateSrsState, updateClozeSrsState, updateDirectionSrsState } from "../srs/storage"
 import { postponeCard, suspendCard } from "../srs/cardStatusUtils"
 import { emitCardPostponed, emitCardGraded, emitCardSuspended } from "../srs/srsEvents"
@@ -12,7 +13,10 @@ import {
   markParentCardProcessed, 
   resetProcessedParentCards 
 } from "../srs/childCardCollector"
+import { formatDuration, formatAccuracyRate } from "../srs/sessionProgressTracker"
+import { useSessionProgressTracker } from "../hooks/useSessionProgressTracker"
 import SrsCardDemo from "./SrsCardDemo"
+import GradeDistributionBar from "./GradeDistributionBar"
 
 // 从全局 window 对象获取 React（Orca 插件约定）
 const { useEffect, useMemo, useRef, useState } = window.React
@@ -66,6 +70,16 @@ export default function SrsReviewSession({
   const [newCardsAdded, setNewCardsAdded] = useState(0)  // 新增卡片计数器
   const [cardStartTime, setCardStartTime] = useState<number>(Date.now())  // 当前卡片开始复习时间
   const [internalRound, setInternalRound] = useState(currentRound)  // 内部轮次状态
+  const [sessionStats, setSessionStats] = useState<SessionStatsSummary | null>(null)  // 会话统计摘要
+
+  // 使用会话进度追踪 Hook
+  const {
+    progressState,
+    accuracyRate,
+    recordGrade: recordProgressGrade,
+    resetSession: resetProgressSession,
+    finishSession: finishProgressSession,
+  } = useSessionProgressTracker({ autoSave: true })
 
   // 当外部 cards 或 currentRound 变化时，重置队列和索引（用于"再复习一轮"）
   useEffect(() => {
@@ -78,11 +92,13 @@ export default function SrsReviewSession({
       setNewCardsAdded(0)
       setInternalRound(currentRound)
       setLastLog(`开始第 ${currentRound} 轮复习`)
+      setSessionStats(null)  // 重置会话统计
+      resetProgressSession()  // 重置进度追踪器
       // 重置已处理的父卡片集合，新一轮复习允许重新插入子卡片
       resetProcessedParentCards()
       console.log(`[SRS Review Session] 重置队列，开始第 ${currentRound} 轮复习，卡片数: ${cards.length}`)
     }
-  }, [cards, currentRound, internalRound])
+  }, [cards, currentRound, internalRound, resetProgressSession])
 
   // 组件首次挂载时重置已处理的父卡片集合
   useEffect(() => {
@@ -416,6 +432,7 @@ export default function SrsReviewSession({
     if (isRepeatMode) {
       setLastLog(`评分 ${grade.toUpperCase()}${cardLabel} (专项训练，不影响复习进度)`)
       setReviewedCount((prev: number) => prev + 1)
+      recordProgressGrade(grade)  // 记录进度追踪
       
       // 标记父卡片为已处理
       markParentCardProcessed(currentCard.id, currentCard.clozeNumber, currentCard.directionType)
@@ -487,6 +504,7 @@ export default function SrsReviewSession({
     emitCardGraded(currentCard.id, grade)
 
     setReviewedCount((prev: number) => prev + 1)
+    recordProgressGrade(grade)  // 记录进度追踪
     
     // 子卡片处理说明：
     // 初始队列已经通过 buildReviewQueueWithChildren 展开了子卡片链
@@ -683,12 +701,14 @@ export default function SrsReviewSession({
   }
 
   const handleFinishSession = () => {
-    console.log(`[SRS Review Session] 本次复习结束，共复习 ${reviewedCount} 张卡片`)
+    // 生成会话统计摘要
+    const stats = finishProgressSession()
+    console.log(`[SRS Review Session] 本次复习结束，共复习 ${stats.totalReviewed} 张卡片`)
 
     showNotification(
       "orca-srs",
       "success",
-      `本次复习完成！共复习了 ${reviewedCount} 张卡片`,
+      `本次复习完成！共复习了 ${stats.totalReviewed} 张卡片`,
       { title: "SRS 复习会话" }
     )
 
@@ -743,40 +763,167 @@ export default function SrsReviewSession({
   // 渲染：复习结束界面
   // ========================================
   if (isSessionComplete) {
+    // 生成会话统计摘要（如果还没有生成）
+    const stats = sessionStats || finishProgressSession()
+    
     const completeContent = (
       <div className="srs-session-complete-container" style={{
         backgroundColor: "var(--orca-color-bg-1)",
         borderRadius: "12px",
-        padding: "48px",
-        maxWidth: "500px",
+        padding: "32px 48px",
+        maxWidth: "520px",
         width: "100%",
         boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
         textAlign: "center"
       }}>
         <div style={{
-          fontSize: "64px",
-          marginBottom: "24px"
+          fontSize: "56px",
+          marginBottom: "16px"
         }}>
           🎉
         </div>
 
         <h2 style={{
-          fontSize: "24px",
+          fontSize: "22px",
           fontWeight: "600",
           color: "var(--orca-color-text-1)",
-          marginBottom: "16px"
+          marginBottom: "24px"
         }}>
           {isRepeatMode ? `第 ${currentRound} 轮复习结束！` : "本次复习结束！"}
         </h2>
 
+        {/* 统计摘要 */}
         <div style={{
-          fontSize: "16px",
-          color: "var(--orca-color-text-2)",
-          marginBottom: "32px",
-          lineHeight: "1.6"
+          backgroundColor: "var(--orca-color-bg-2)",
+          borderRadius: "8px",
+          padding: "20px",
+          marginBottom: "24px",
+          textAlign: "left"
         }}>
-          <p>共复习了 <strong style={{ color: "var(--orca-color-primary-5)" }}>{reviewedCount}</strong> 张卡片</p>
-          <p style={{ marginTop: "8px" }}>坚持复习，持续进步！</p>
+          {/* 核心统计数据 */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: "16px",
+            marginBottom: "20px"
+          }}>
+            {/* 复习卡片数 */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "28px",
+                fontWeight: "600",
+                color: "var(--orca-color-primary-5)"
+              }}>
+                {stats.totalReviewed}
+              </div>
+              <div style={{
+                fontSize: "12px",
+                color: "var(--orca-color-text-3)",
+                marginTop: "4px"
+              }}>
+                复习卡片
+              </div>
+            </div>
+
+            {/* 准确率 */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "28px",
+                fontWeight: "600",
+                color: stats.accuracyRate >= 0.8 
+                  ? "#22c55e" 
+                  : stats.accuracyRate >= 0.6 
+                    ? "#f59e0b" 
+                    : "#ef4444"
+              }}>
+                {formatAccuracyRate(stats.accuracyRate)}
+              </div>
+              <div style={{
+                fontSize: "12px",
+                color: "var(--orca-color-text-3)",
+                marginTop: "4px"
+              }}>
+                准确率
+              </div>
+            </div>
+
+            {/* 会话总时长 */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "28px",
+                fontWeight: "600",
+                color: "var(--orca-color-text-1)"
+              }}>
+                {formatDuration(stats.totalSessionTime)}
+              </div>
+              <div style={{
+                fontSize: "12px",
+                color: "var(--orca-color-text-3)",
+                marginTop: "4px"
+              }}>
+                总时长
+              </div>
+            </div>
+
+            {/* 平均每卡耗时 */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "28px",
+                fontWeight: "600",
+                color: "var(--orca-color-text-1)"
+              }}>
+                {stats.totalReviewed > 0 
+                  ? `${Math.round(stats.averageTimePerCard / 1000)}s`
+                  : "0s"
+                }
+              </div>
+              <div style={{
+                fontSize: "12px",
+                color: "var(--orca-color-text-3)",
+                marginTop: "4px"
+              }}>
+                平均每卡
+              </div>
+            </div>
+          </div>
+
+          {/* 有效复习时长（如果与总时长差异较大才显示） */}
+          {stats.totalSessionTime > 0 && 
+           stats.effectiveReviewTime < stats.totalSessionTime * 0.9 && (
+            <div style={{
+              fontSize: "12px",
+              color: "var(--orca-color-text-3)",
+              textAlign: "center",
+              marginBottom: "16px"
+            }}>
+              有效复习时长: {formatDuration(stats.effectiveReviewTime)}
+            </div>
+          )}
+
+          {/* 评分分布条 */}
+          <div>
+            <div style={{
+              fontSize: "13px",
+              color: "var(--orca-color-text-2)",
+              marginBottom: "8px",
+              textAlign: "center"
+            }}>
+              评分分布
+            </div>
+            <GradeDistributionBar 
+              distribution={stats.gradeDistribution} 
+              showLabels={true}
+              height={28}
+            />
+          </div>
+        </div>
+
+        <div style={{
+          fontSize: "14px",
+          color: "var(--orca-color-text-2)",
+          marginBottom: "24px"
+        }}>
+          坚持复习，持续进步！
         </div>
 
         <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>

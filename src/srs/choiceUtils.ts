@@ -52,7 +52,7 @@ export function isAnchorOption(text: string): boolean {
  * @returns 选择项数组
  */
 export function extractChoiceOptions(block: Block): ChoiceOption[] {
-  if (!block.children || block.children.length === 0) {
+  if (!block || !block.children || block.children.length === 0) {
     return []
   }
 
