@@ -9,7 +9,9 @@
       "Bash(gh pr list:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(mcp help:*)"
+      "Bash(mcp help:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm install)"
     ],
     "deny": [],
     "ask": []

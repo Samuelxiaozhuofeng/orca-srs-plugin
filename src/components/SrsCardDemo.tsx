@@ -126,13 +126,7 @@ function QuestionBlock({ blockId, panelId, fallback }: QuestionBlockProps) {
     }
   }, [blockId])
 
-  // 阻止 Tab 键缩进/减少缩进操作，防止光标偏移
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-  }
+
 
   if (!blockId || !panelId) {
     return (
@@ -154,7 +148,6 @@ function QuestionBlock({ blockId, panelId, fallback }: QuestionBlockProps) {
       <div
         ref={containerRef}
         className="srs-question-block"
-        onKeyDown={handleKeyDown}
         data-orca-block-root="true"
       >
         <Block
@@ -182,6 +175,10 @@ type AnswerBlockProps = {
 function AnswerBlock({ blockId, panelId, fallback }: AnswerBlockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+
+
+
 
   // 使用 MutationObserver 隐藏父块内容，只显示子块
   useEffect(() => {
@@ -323,9 +320,11 @@ export default function SrsCardDemo({
 }: SrsCardDemoProps) {
   const [showAnswer, setShowAnswer] = useState(false)
   const [showCardInfo, setShowCardInfo] = useState(false)
-  
+
   // 用于追踪上一个 blockId，检测卡片切换
   const prevBlockIdRef = useRef<DbId | undefined>(blockId)
+
+
 
   // 当 blockId 变化时重置状态，防止闪烁
   useEffect(() => {
