@@ -49,7 +49,7 @@ export default function ChoiceOptionRenderer({
   // 为每个选项生成唯一的虚拟 panelId
   const virtualPanelId = useMemo(() => `choice-option-${blockId}`, [blockId])
 
-  // 设置样式隐藏不需要的元素和正确标记
+  // 设置样式隐藏不需要的元素
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -85,15 +85,6 @@ export default function ChoiceOptionRenderer({
         margin: 0 !important;
         padding: 0 !important;
       }
-      /* 隐藏正确标记标签（答案揭晓前） */
-      ${!isAnswerRevealed ? `
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="correct"],
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="Correct"],
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="CORRECT"],
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="正确"] {
-        display: none !important;
-      }
-      ` : ''}
       /* 图片尺寸限制 */
       [data-choice-option="${uniqueId}"] img {
         max-width: 100%;
@@ -114,6 +105,60 @@ export default function ChoiceOptionRenderer({
       if (existingStyle) {
         document.head.removeChild(existingStyle)
       }
+    }
+  }, [blockId])
+
+  // 隐藏正确标签（答案揭晓前）- 使用 JS 直接操作 DOM
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    // 正确标签的匹配模式（大小写不敏感）
+    const correctPatterns = ['correct', '正确']
+    
+    const hideCorrectTags = () => {
+      // 查找所有可能的标签元素
+      const allElements = container.querySelectorAll('a, span, [class*="tag"], [class*="ref"]')
+      
+      allElements.forEach((el: Element) => {
+        const htmlEl = el as HTMLElement
+        const text = htmlEl.textContent?.trim().toLowerCase() || ''
+        const href = htmlEl.getAttribute('href')?.toLowerCase() || ''
+        
+        // 检查是否是正确标签
+        const isCorrectTag = correctPatterns.some(pattern => {
+          const lowerPattern = pattern.toLowerCase()
+          return text === `#${lowerPattern}` || 
+                 text === lowerPattern ||
+                 href.includes(`/${lowerPattern}`) ||
+                 href.endsWith(lowerPattern)
+        })
+        
+        if (isCorrectTag) {
+          if (isAnswerRevealed) {
+            htmlEl.style.display = ''
+          } else {
+            htmlEl.style.display = 'none'
+          }
+        }
+      })
+    }
+
+    // 初始执行
+    hideCorrectTags()
+    
+    // 使用 MutationObserver 监听 DOM 变化（因为 Block 组件可能异步渲染）
+    const observer = new MutationObserver(() => {
+      hideCorrectTags()
+    })
+    
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+    })
+
+    return () => {
+      observer.disconnect()
     }
   }, [blockId, isAnswerRevealed])
 
