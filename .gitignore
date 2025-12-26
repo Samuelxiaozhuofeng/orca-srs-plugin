@@ -36,3 +36,6 @@ dist-ssr
 
 # YoYo AI version control directory
 .yoyo/
+create-release.bat
+deploy.bat
+dist.zip
