@@ -102,9 +102,11 @@ export async function scanCardsFromTags(pluginName: string) {
       // 识别卡片类型（basic 或 cloze）
       const cardType = extractCardType(block)
 
-      // 方向卡是单行可编辑卡片（由方向标记 + 标签属性驱动），不走这里的 _repr 转换逻辑
-      if (cardType === "direction") {
-        console.log(`[${pluginName}] 跳过：块 #${block.id} 是 direction 卡片（不转换 _repr）`)
+      // 方向卡/列表卡不走这里的 _repr 转换逻辑
+      // - 方向卡：单行可编辑卡片（由方向标记 + 标签属性驱动）
+      // - 列表卡：容器卡片（条目在子块上存储 SRS 状态）
+      if (cardType === "direction" || cardType === "list") {
+        console.log(`[${pluginName}] 跳过：块 #${block.id} 是 ${cardType} 卡片（不转换 _repr）`)
         skippedCount++
         continue
       }
@@ -272,4 +274,3 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
   // 返回结果供 undo 使用
   return { blockId, originalRepr, originalText }
 }
-

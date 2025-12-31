@@ -11,12 +11,25 @@ import { extractDeckName, extractCardType } from "./deckUtils"
 import { extractCardStatus } from "./cardStatusUtils"
 import { 
   ensureCardSrsState,
+  ensureCardSrsStateWithInitialDue,
   ensureClozeSrsState,
   ensureDirectionSrsState
 } from "./storage"
 import { getAllClozeNumbers } from "./clozeUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
 import { isCardTag } from "./tagUtils"
+
+function getTodayMidnight(): Date {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+function getTomorrowMidnight(): Date {
+  const tomorrow = getTodayMidnight()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow
+}
 
 /**
  * 从块的 refs 中提取非 card 标签
@@ -140,6 +153,9 @@ export async function collectSrsBlocks(pluginName: string = "srs-plugin"): Promi
 export async function collectReviewCards(pluginName: string = "srs-plugin"): Promise<ReviewCard[]> {
   const blocks = await collectSrsBlocks(pluginName)
   const now = new Date()
+  const nowTime = now.getTime()
+  const todayMidnight = getTodayMidnight()
+  const tomorrowMidnight = getTomorrowMidnight()
   const cards: ReviewCard[] = []
 
   for (const block of blocks) {
@@ -273,6 +289,48 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
         tags: extractNonCardTags(block),
         content: block.content  // 保存块内容用于渲染
       })
+    } else if (cardType === "list") {
+      // List 卡片：只取直接子块作为条目，逐次推送
+      const itemIds = (block.children ?? []) as DbId[]
+
+      if (itemIds.length === 0) {
+        console.log(`[${pluginName}] collectReviewCards: 跳过无条目的列表卡 #${block.id}`)
+        continue
+      }
+
+      // 在当前顺序下，从前到后找到第一个 due<=now 的条目作为“正式可复习条目”
+      let dueIndex = -1
+      let dueItemId: DbId | null = null
+      let dueItemSrs: ReviewCard["srs"] | null = null
+
+      for (let i = 0; i < itemIds.length; i++) {
+        const itemId = itemIds[i]
+        const initialDue = i === 0 ? todayMidnight : tomorrowMidnight
+        const srsState = await ensureCardSrsStateWithInitialDue(itemId, initialDue)
+        if (srsState.due.getTime() <= nowTime) {
+          dueIndex = i + 1 // 1-based
+          dueItemId = itemId
+          dueItemSrs = srsState
+          break
+        }
+      }
+
+      if (!dueItemId || !dueItemSrs || dueIndex === -1) {
+        continue
+      }
+
+      cards.push({
+        id: block.id,
+        front: block.text || "",
+        back: "",
+        srs: dueItemSrs,
+        isNew: !dueItemSrs.lastReviewed || dueItemSrs.reps === 0,
+        deck: deckName,
+        tags: extractNonCardTags(block),
+        listItemId: dueItemId,
+        listItemIndex: dueIndex,
+        listItemIds: itemIds
+      })
     } else {
       // Basic 卡片：传统的正面/反面模式
       // 检查是否有子块 - 如果没有子块，当作摘录卡处理
@@ -393,7 +451,7 @@ export async function buildReviewQueueWithChildren(
   const baseQueue = buildReviewQueue(cards)
   
   // 动态导入 childCardCollector 避免循环依赖
-  const { collectChildCards } = await import("./childCardCollector")
+  const { collectChildCards, getCardKey } = await import("./childCardCollector")
   
   // 展开后的队列
   const expandedQueue: ReviewCard[] = []
@@ -413,7 +471,7 @@ export async function buildReviewQueueWithChildren(
     card: ReviewCard, 
     visitedInChain: Set<string>
   ): Promise<void> {
-    const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+    const cardKey = getCardKey(card)
     
     // 防止循环引用
     if (visitedInChain.has(cardKey)) {
@@ -436,7 +494,7 @@ export async function buildReviewQueueWithChildren(
   
   // 遍历基础队列中的每张卡片作为"根卡片"
   for (const card of baseQueue) {
-    const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+    const cardKey = getCardKey(card)
     
     // 如果这张卡片已经作为某个根卡片的子卡片出现过，跳过它作为根卡片
     if (appearedInQueue.has(cardKey)) {

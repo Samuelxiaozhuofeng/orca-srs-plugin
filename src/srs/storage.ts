@@ -435,6 +435,27 @@ export const ensureCardSrsState = async (
 }
 
 /**
+ * 确保普通卡片存在 SRS 属性（支持自定义初始 due）
+ *
+ * 用于需要“按规则初始化 due”的场景（如列表卡条目：第 1 条今天到期，其余条目明天到期）。
+ * 若块已存在任何 `srs.` 前缀属性，则不会覆盖现有状态。
+ *
+ * @param blockId - 块 ID
+ * @param initialDue - 首次初始化时写入的 due 时间
+ */
+export const ensureCardSrsStateWithInitialDue = async (
+  blockId: DbId,
+  initialDue: Date
+): Promise<SrsState> => {
+  const block = await getBlockCached(blockId)
+  const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
+  if (!hasAnySrsProps) {
+    return await writeInitialSrsState(blockId, initialDue)
+  }
+  return await loadCardSrsState(blockId)
+}
+
+/**
  * 确保 Cloze 某个填空编号存在 SRS 属性：若没有 `srs.cN.` 前缀属性，则写入初始状态（含分天偏移）。
  */
 export const ensureClozeSrsState = async (

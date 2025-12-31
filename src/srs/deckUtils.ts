@@ -88,6 +88,7 @@ export function extractCardType(block: Block): CardType {
     const firstValue = typeValue[0].trim().toLowerCase()
     if (firstValue === "cloze") return "cloze"
     if (firstValue === "direction") return "direction"
+    if (firstValue === "list") return "list"
     if (firstValue === "excerpt") return "excerpt"
     if (firstValue === "choice") return "choice"
     return "basic"
@@ -96,6 +97,7 @@ export function extractCardType(block: Block): CardType {
     const trimmedValue = typeValue.trim().toLowerCase()
     if (trimmedValue === "cloze") return "cloze"
     if (trimmedValue === "direction") return "direction"
+    if (trimmedValue === "list") return "list"
     if (trimmedValue === "excerpt") return "excerpt"
     if (trimmedValue === "choice") return "choice"
     return "basic"

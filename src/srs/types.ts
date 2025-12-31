@@ -12,12 +12,13 @@ export type Grade = "again" | "hard" | "good" | "easy"
  * - basic: 基础卡片
  * - cloze: 填空卡片
  * - direction: 方向卡片
+ * - list: 列表卡片
  * - excerpt: 摘录卡片
  * - choice: 选择题卡片
  * - extracts: 渐进阅读摘录卡片
  * - 渐进阅读: 渐进阅读主题卡片
  */
-export type CardType = "basic" | "cloze" | "direction" | "excerpt" | "choice" | "extracts" | "渐进阅读"
+export type CardType = "basic" | "cloze" | "direction" | "list" | "excerpt" | "choice" | "extracts" | "渐进阅读"
 
 // ============================================
 // 选择题卡片相关类型 (Choice Card)
@@ -90,6 +91,11 @@ export type ReviewCard = {
   deck: string  // 修改：从 deck?: string 改为必填
   clozeNumber?: number  // 填空编号（仅 cloze 卡片使用）
   directionType?: "forward" | "backward"  // 方向类型（仅 direction 卡片使用）
+  // 列表卡相关字段（仅 list 卡片使用）
+  listItemId?: DbId  // 当前复习的条目子块 ID（用于独立 SRS / 日志）
+  listItemIndex?: number  // 条目序号（从 1 开始，基于当前 children 顺序）
+  listItemIds?: DbId[]  // 列表条目子块 ID 列表（基于当前 children 顺序）
+  isAuxiliaryPreview?: boolean  // 是否为辅助预览（不计入统计、不更新 SRS）
   content?: ContentFragment[]  // 块内容（仅 cloze 卡片使用，用于渲染填空）
   tags?: TagInfo[]  // 额外标签（排除 #card）
 }

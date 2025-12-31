@@ -12,6 +12,7 @@ import { extractDeckName, extractCardType } from "./deckUtils"
 import { extractCardStatus } from "./cardStatusUtils"
 import { 
   ensureCardSrsState,
+  ensureCardSrsStateWithInitialDue,
   ensureClozeSrsState,
   ensureDirectionSrsState
 } from "./storage"
@@ -178,6 +179,18 @@ function extractNonCardTags(block: BlockWithRepr): TagInfo[] {
   return tags
 }
 
+function getTodayMidnight(): Date {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+function getTomorrowMidnight(): Date {
+  const tomorrow = getTodayMidnight()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow
+}
+
 /**
  * 将单个块转换为 ReviewCard 数组
  * 
@@ -208,6 +221,9 @@ export async function convertBlockToReviewCards(
   // 识别卡片类型
   const cardType = extractCardType(block)
   const deckName = await extractDeckName(block)
+  const nowTime = Date.now()
+  const todayMidnight = getTodayMidnight()
+  const tomorrowMidnight = getTomorrowMidnight()
 
   if (cardType === "cloze") {
     // Cloze 卡片：为每个填空编号生成独立的 ReviewCard
@@ -284,6 +300,45 @@ export async function convertBlockToReviewCards(
       isNew: !srsState.lastReviewed || srsState.reps === 0,
       deck: deckName,
       tags: extractNonCardTags(block)
+    })
+  } else if (cardType === "list") {
+    // List 卡片：只取直接子块作为条目，逐次推送
+    const itemIds = (block.children ?? []) as DbId[]
+    if (itemIds.length === 0) {
+      return cards
+    }
+
+    let dueIndex = -1
+    let dueItemId: DbId | null = null
+    let dueItemSrs: ReviewCard["srs"] | null = null
+
+    for (let i = 0; i < itemIds.length; i++) {
+      const itemId = itemIds[i]
+      const initialDue = i === 0 ? todayMidnight : tomorrowMidnight
+      const srsState = await ensureCardSrsStateWithInitialDue(itemId, initialDue)
+      if (srsState.due.getTime() <= nowTime) {
+        dueIndex = i + 1
+        dueItemId = itemId
+        dueItemSrs = srsState
+        break
+      }
+    }
+
+    if (!dueItemId || !dueItemSrs || dueIndex === -1) {
+      return cards
+    }
+
+    cards.push({
+      id: block.id,
+      front: block.text || "",
+      back: "",
+      srs: dueItemSrs,
+      isNew: !dueItemSrs.lastReviewed || dueItemSrs.reps === 0,
+      deck: deckName,
+      tags: extractNonCardTags(block),
+      listItemId: dueItemId,
+      listItemIndex: dueIndex,
+      listItemIds: itemIds
     })
   } else {
     // Basic 卡片：传统的正面/反面模式

@@ -1285,7 +1285,7 @@ function CardListView({
           <>
             {displayedCards.map((card, index) => (
               <CardListItem
-                key={`${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}-${index}`}
+                key={`${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}-${card.listItemId || 0}-${index}`}
                 card={card}
                 panelId={panelId}
                 onCardClick={onCardClick}

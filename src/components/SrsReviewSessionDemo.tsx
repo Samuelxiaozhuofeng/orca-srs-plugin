@@ -4,14 +4,22 @@
 import type { DbId } from "../orca.d.ts"
 import type { Grade, ReviewCard, CardState, ReviewLogEntry } from "../srs/types"
 import type { SessionStatsSummary } from "../srs/sessionProgressTracker"
-import { updateSrsState, updateClozeSrsState, updateDirectionSrsState } from "../srs/storage"
+import {
+  updateSrsState,
+  updateClozeSrsState,
+  updateDirectionSrsState,
+  ensureCardSrsStateWithInitialDue,
+  loadCardSrsState,
+  invalidateBlockCache
+} from "../srs/storage"
 import { postponeCard, suspendCard } from "../srs/cardStatusUtils"
 import { emitCardPostponed, emitCardGraded, emitCardSuspended } from "../srs/srsEvents"
 import { showNotification } from "../srs/settings/reviewSettingsSchema"
 import { saveReviewLog, createReviewLogId } from "../srs/reviewLogStorage"
 import { 
   markParentCardProcessed, 
-  resetProcessedParentCards 
+  resetProcessedParentCards,
+  getCardKey as getReviewCardKey
 } from "../srs/childCardCollector"
 import { formatDuration, formatAccuracyRate } from "../srs/sessionProgressTracker"
 import { useSessionProgressTracker } from "../hooks/useSessionProgressTracker"
@@ -46,6 +54,18 @@ function formatSimpleDate(date: Date): string {
   const month = date.getMonth() + 1
   const day = date.getDate()
   return `${month}-${day}`
+}
+
+function getTodayMidnight(): Date {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+function getTomorrowMidnight(): Date {
+  const tomorrow = getTodayMidnight()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow
 }
 
 export default function SrsReviewSession({
@@ -292,14 +312,9 @@ export default function SrsReviewSession({
         const idx = currentIndexRef.current
         // 只检查当前位置之后的卡片（未复习的部分）
         const remainingQueue = prevQueue.slice(idx)
-        const existingKeys = new Set(remainingQueue.map((c: ReviewCard) => 
-          `${c.id}-${c.clozeNumber || 0}-${c.directionType || "basic"}`
-        ))
+        const existingKeys = new Set(remainingQueue.map((c: ReviewCard) => getReviewCardKey(c)))
         
-        const newCards = dueCards.filter((c: ReviewCard) => {
-          const key = `${c.id}-${c.clozeNumber || 0}-${c.directionType || "basic"}`
-          return !existingKeys.has(key)
-        })
+        const newCards = dueCards.filter((c: ReviewCard) => !existingKeys.has(getReviewCardKey(c)))
         
         if (newCards.length > 0) {
           setNewCardsAdded((prev: number) => prev + newCards.length)
@@ -330,7 +345,7 @@ export default function SrsReviewSession({
   
   // 当评分为 Again 时，将卡片添加到待检查列表
   const trackPendingDueCard = (card: ReviewCard, dueTime: Date) => {
-    const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+    const cardKey = getReviewCardKey(card)
     const dueTimestamp = dueTime.getTime()
     const now = Date.now()
     
@@ -363,14 +378,9 @@ export default function SrsReviewSession({
         const newQueue = buildReviewQueue(allCards)
         
         // 检查是否有新的卡片（不在当前队列中的）
-        const currentCardIds = new Set(queue.map((card: ReviewCard) => 
-          `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
-        ))
+        const currentCardIds = new Set(queue.map((card: ReviewCard) => getReviewCardKey(card)))
         
-        const newCards = newQueue.filter((card: ReviewCard) => {
-          const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
-          return !currentCardIds.has(cardKey)
-        })
+        const newCards = newQueue.filter((card: ReviewCard) => !currentCardIds.has(getReviewCardKey(card)))
         
         if (newCards.length > 0) {
           console.log(`[${pluginName}] 发现 ${newCards.length} 张新到期卡片，添加到复习队列`)
@@ -421,11 +431,14 @@ export default function SrsReviewSession({
     let nextQueue = [...queue]
     let updatedCard = currentCard
     let cardLabel = ""
+    const isListCard = !!currentCard.listItemId && !!currentCard.listItemIndex && !!currentCard.listItemIds
 
     if (currentCard.clozeNumber) {
       cardLabel = ` [c${currentCard.clozeNumber}]`
     } else if (currentCard.directionType) {
       cardLabel = ` [${currentCard.directionType === "forward" ? "→" : "←"}]`
+    } else if (isListCard) {
+      cardLabel = ` [L${currentCard.listItemIndex}/${currentCard.listItemIds!.length}]`
     }
 
     // 重复复习模式（专项训练）：不更新 SRS 状态，只是单纯刷题
@@ -435,13 +448,36 @@ export default function SrsReviewSession({
       recordProgressGrade(grade)  // 记录进度追踪
       
       // 标记父卡片为已处理
-      markParentCardProcessed(currentCard.id, currentCard.clozeNumber, currentCard.directionType)
+      markParentCardProcessed(
+        currentCard.id,
+        currentCard.clozeNumber,
+        currentCard.directionType,
+        currentCard.listItemId
+      )
       
       // 更新队列
       setQueue(nextQueue)
       
       setIsGrading(false)
       // 记录历史并前进
+      setHistory((prev: number[]) => [...prev, currentIndex])
+      setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+      return
+    }
+
+    // 列表卡辅助预览：允许评分，但不计入统计/不更新 SRS/不写日志
+    if (isListCard && currentCard.isAuxiliaryPreview) {
+      setLastLog(`评分 ${grade.toUpperCase()}${cardLabel}（辅助预览，不计入统计）`)
+
+      markParentCardProcessed(
+        currentCard.id,
+        currentCard.clozeNumber,
+        currentCard.directionType,
+        currentCard.listItemId
+      )
+
+      setQueue(nextQueue)
+      setIsGrading(false)
       setHistory((prev: number[]) => [...prev, currentIndex])
       setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
       return
@@ -462,6 +498,9 @@ export default function SrsReviewSession({
     } else if (currentCard.directionType) {
       // Direction 卡片
       result = await updateDirectionSrsState(currentCard.id, currentCard.directionType, grade, pluginName)
+    } else if (isListCard) {
+      // List 卡片：更新条目子块的 SRS 状态（父块仅负责渲染与结构）
+      result = await updateSrsState(currentCard.listItemId!, grade, pluginName)
     } else {
       // Basic 卡片
       result = await updateSrsState(currentCard.id, grade, pluginName)
@@ -479,10 +518,13 @@ export default function SrsReviewSession({
     const reviewDuration = Date.now() - cardStartTime
     const timestamp = Date.now()
 
+    // 日志与事件：列表卡使用条目子块 ID 作为 cardId，确保条目独立统计
+    const logCardId = isListCard ? currentCard.listItemId! : currentCard.id
+
     // 记录复习日志 (Requirements: 11.1)
     const reviewLog: ReviewLogEntry = {
-      id: createReviewLogId(timestamp, currentCard.id),
-      cardId: currentCard.id,
+      id: createReviewLogId(timestamp, logCardId),
+      cardId: logCardId,
       deckName: currentCard.deck,
       timestamp,
       grade,
@@ -501,7 +543,7 @@ export default function SrsReviewSession({
     )
 
     // 通知其他组件静默刷新
-    emitCardGraded(currentCard.id, grade)
+    emitCardGraded(logCardId, grade)
 
     setReviewedCount((prev: number) => prev + 1)
     recordProgressGrade(grade)  // 记录进度追踪
@@ -512,7 +554,90 @@ export default function SrsReviewSession({
     // 
     // 这里只需要标记当前卡片为已处理，防止 Again 按钮导致的重复处理
     // 不再需要动态插入子卡片
-    markParentCardProcessed(currentCard.id, currentCard.clozeNumber, currentCard.directionType)
+    markParentCardProcessed(
+      currentCard.id,
+      currentCard.clozeNumber,
+      currentCard.directionType,
+      currentCard.listItemId
+    )
+
+    // 列表卡规则：Good/Easy 才解锁下一条；Again/Hard 将后续条目安排到明天，并当日以辅助预览继续
+    if (isListCard) {
+      const itemIds = currentCard.listItemIds ?? []
+      const currentIdx0 = (currentCard.listItemIndex ?? 1) - 1
+      const tomorrow = getTomorrowMidnight()
+
+      // 工具：写入 due（仅改 due，不改其他参数）
+      const setDue = async (itemId: DbId, due: Date) => {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.setProperties",
+          null,
+          [itemId],
+          [{ name: "srs.due", type: 5, value: due }]
+        )
+        invalidateBlockCache(itemId)
+      }
+
+      // 工具：构建列表条目卡片
+      const buildListItemCard = async (
+        itemId: DbId,
+        index1: number,
+        isAux: boolean
+      ): Promise<ReviewCard> => {
+        // 初始化缺失的 SRS（第 1 条今天，其余明天）
+        const initialDue = index1 === 1 ? getTodayMidnight() : tomorrow
+        await ensureCardSrsStateWithInitialDue(itemId, initialDue)
+        const srsState = await loadCardSrsState(itemId)
+        return {
+          id: currentCard.id,
+          front: currentCard.front,
+          back: currentCard.back,
+          srs: srsState,
+          isNew: !srsState.lastReviewed || srsState.reps === 0,
+          deck: currentCard.deck,
+          tags: currentCard.tags,
+          listItemId: itemId,
+          listItemIndex: index1,
+          listItemIds: itemIds,
+          isAuxiliaryPreview: isAux
+        }
+      }
+
+      const existingKeys = new Set(nextQueue.slice(currentIndex + 1).map(getReviewCardKey))
+
+      if (grade === "good" || grade === "easy") {
+        const nextIdx0 = currentIdx0 + 1
+        if (nextIdx0 < itemIds.length) {
+          const nextItemId = itemIds[nextIdx0]
+          // 解锁下一条：将 due 调整为现在，使其当天进入正式复习
+          await ensureCardSrsStateWithInitialDue(nextItemId, tomorrow)
+          await setDue(nextItemId, new Date())
+
+          const nextCard = await buildListItemCard(nextItemId, nextIdx0 + 1, false)
+          if (!existingKeys.has(getReviewCardKey(nextCard))) {
+            nextQueue.push(nextCard)
+          }
+        }
+      } else if (grade === "again" || grade === "hard") {
+        // 后续条目：若 due 早于明天零点，则推迟到明天零点
+        for (let i = currentIdx0 + 1; i < itemIds.length; i++) {
+          const itemId = itemIds[i]
+          await ensureCardSrsStateWithInitialDue(itemId, tomorrow)
+          const srsState = await loadCardSrsState(itemId)
+          if (srsState.due.getTime() < tomorrow.getTime()) {
+            await setDue(itemId, tomorrow)
+          }
+
+          const auxCard = await buildListItemCard(itemId, i + 1, true)
+          if (!existingKeys.has(getReviewCardKey(auxCard))) {
+            nextQueue.push(auxCard)
+            existingKeys.add(getReviewCardKey(auxCard))
+          }
+        }
+
+        setLastLog(`评分 ${grade.toUpperCase()}${cardLabel} -> 后续条目已安排明天，今日以辅助预览继续`)
+      }
+    }
     
     // 更新队列
     setQueue(nextQueue)
@@ -538,8 +663,9 @@ export default function SrsReviewSession({
     setIsGrading(true)
 
     try {
+      const postponeBlockId = currentCard.listItemId ?? currentCard.id
       await postponeCard(
-        currentCard.id,
+        postponeBlockId,
         currentCard.clozeNumber,
         currentCard.directionType
       )
@@ -550,13 +676,15 @@ export default function SrsReviewSession({
         cardLabel = ` [c${currentCard.clozeNumber}]`
       } else if (currentCard.directionType) {
         cardLabel = ` [${currentCard.directionType === "forward" ? "→" : "←"}]`
+      } else if (currentCard.listItemIndex && currentCard.listItemIds) {
+        cardLabel = ` [L${currentCard.listItemIndex}/${currentCard.listItemIds.length}]`
       }
 
       setLastLog(`已推迟${cardLabel}，明天再复习`)
       showNotification("orca-srs", "info", "卡片已推迟，明天再复习", { title: "SRS 复习" })
 
       // 通知其他组件静默刷新
-      emitCardPostponed(currentCard.id)
+      emitCardPostponed(postponeBlockId)
     } catch (error) {
       console.error("[SRS Review Session] 推迟卡片失败:", error)
       orca.notify("error", `推迟失败: ${error}`, { title: "SRS 复习" })
@@ -614,6 +742,8 @@ export default function SrsReviewSession({
       cardLabel = ` [c${currentCard.clozeNumber}]`
     } else if (currentCard.directionType) {
       cardLabel = ` [${currentCard.directionType === "forward" ? "→" : "←"}]`
+    } else if (currentCard.listItemIndex && currentCard.listItemIds) {
+      cardLabel = ` [L${currentCard.listItemIndex}/${currentCard.listItemIds.length}]`
     }
 
     setLastLog(`已跳过${cardLabel}`)
@@ -635,14 +765,9 @@ export default function SrsReviewSession({
       const newQueue = buildReviewQueue(allCards)
       
       // 检查是否有新的卡片（不在当前队列中的）
-      const currentCardIds = new Set(queue.map((card: ReviewCard) => 
-        `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
-      ))
+      const currentCardIds = new Set(queue.map((card: ReviewCard) => getReviewCardKey(card)))
       
-      const newCards = newQueue.filter((card: ReviewCard) => {
-        const cardKey = `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
-        return !currentCardIds.has(cardKey)
-      })
+      const newCards = newQueue.filter((card: ReviewCard) => !currentCardIds.has(getReviewCardKey(card)))
       
       if (newCards.length > 0) {
         console.log(`[${pluginName}] 手动检查发现 ${newCards.length} 张新到期卡片`)
@@ -1112,6 +1237,10 @@ export default function SrsReviewSession({
             pluginName={pluginName}
             clozeNumber={currentCard.clozeNumber}
             directionType={currentCard.directionType}
+            listItemId={currentCard.listItemId}
+            listItemIndex={currentCard.listItemIndex}
+            listItemIds={currentCard.listItemIds}
+            isAuxiliaryPreview={currentCard.isAuxiliaryPreview}
           />
           ) : (
             <div style={{
@@ -1231,6 +1360,10 @@ export default function SrsReviewSession({
         pluginName={pluginName}
         clozeNumber={currentCard.clozeNumber}
         directionType={currentCard.directionType}
+        listItemId={currentCard.listItemId}
+        listItemIndex={currentCard.listItemIndex}
+        listItemIds={currentCard.listItemIds}
+        isAuxiliaryPreview={currentCard.isAuxiliaryPreview}
       />
       ) : (
         <div style={{

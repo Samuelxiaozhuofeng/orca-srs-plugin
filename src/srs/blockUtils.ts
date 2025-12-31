@@ -5,6 +5,7 @@
  */
 
 import type { Block, Repr } from "../orca.d.ts"
+import { isCardTag } from "./tagUtils"
 
 /**
  * 扩展 Block 类型以包含 _repr 属性（运行时存在但类型定义中缺失）
@@ -28,9 +29,13 @@ export function removeHashTags(text: string): string {
  */
 export function isSrsCardBlock(block: BlockWithRepr): boolean {
   const reprType = block._repr?.type
+  const hasCardTag = block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
   return (
     reprType === "srs.card" ||
     reprType === "srs.cloze-card" ||
+    reprType === "srs.direction-card" ||
+    reprType === "srs.choice-card" ||
+    hasCardTag ||
     block.properties?.some(prop => prop.name === "srs.isCard")
   )
 }

@@ -20,6 +20,7 @@ import type { Grade, SrsState, ChoiceOption } from "../srs/types";
 import ClozeCardReviewRenderer from "./ClozeCardReviewRenderer";
 import DirectionCardReviewRenderer from "./DirectionCardReviewRenderer";
 import ChoiceCardReviewRenderer from "./ChoiceCardReviewRenderer";
+import ListCardReviewRenderer from "./ListCardReviewRenderer"
 import { extractCardType } from "../srs/deckUtils";
 import {
   extractChoiceOptions,
@@ -387,6 +388,11 @@ type SrsCardDemoProps = {
   pluginName?: string;
   clozeNumber?: number; // 填空卡片的填空编号
   directionType?: "forward" | "backward"; // 方向卡片的复习方向
+  // 列表卡相关字段
+  listItemId?: DbId;
+  listItemIndex?: number;
+  listItemIds?: DbId[];
+  isAuxiliaryPreview?: boolean;
 };
 
 export default function SrsCardDemo({
@@ -409,16 +415,20 @@ export default function SrsCardDemo({
   pluginName = "orca-srs",
   clozeNumber,
   directionType,
+  listItemId,
+  listItemIndex,
+  listItemIds,
+  isAuxiliaryPreview = false,
 }: SrsCardDemoProps) {
   const [showAnswer, setShowAnswer] = useState(false);
   const [showCardInfo, setShowCardInfo] = useState(false);
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
-  // 需要同时考虑 blockId、clozeNumber 和 directionType
+  // 需要同时考虑 blockId、clozeNumber、directionType、listItemId
   const prevCardKeyRef = useRef<string>("");
   const currentCardKey = `${blockId}-${clozeNumber ?? 0}-${
     directionType ?? "basic"
-  }`;
+  }-${listItemId ?? 0}`;
 
   // 当卡片变化时重置状态，防止闪烁
   useEffect(() => {
@@ -454,6 +464,8 @@ export default function SrsCardDemo({
       ? "srs.cloze-card"
       : inferredCardType === "direction"
       ? "srs.direction-card"
+      : inferredCardType === "list"
+      ? "srs.list-card"
       : inferredCardType === "excerpt"
       ? "srs.excerpt-card"
       : "srs.card";
@@ -469,7 +481,8 @@ export default function SrsCardDemo({
   const shouldRenderBasicCard =
     (reprType === "srs.card" && inferredCardType !== "choice") ||
     (reprType === "srs.cloze-card" && !blockId) ||
-    (reprType === "srs.direction-card" && (!blockId || !directionType));
+    (reprType === "srs.direction-card" && (!blockId || !directionType)) ||
+    (reprType === "srs.list-card" && (!blockId || !listItemId));
 
   const handleGrade = async (grade: Grade) => {
     if (isGrading) return;
@@ -605,6 +618,33 @@ export default function SrsCardDemo({
         />
       </SrsErrorBoundary>
     );
+  }
+
+  // 如果是 list 卡片，使用专门的 List 渲染器
+  if (reprType === "srs.list-card" && blockId && listItemId && listItemIndex && listItemIds) {
+    return (
+      <SrsErrorBoundary componentName="列表卡片" errorTitle="列表卡片加载出错">
+        <ListCardReviewRenderer
+          blockId={blockId}
+          listItemId={listItemId}
+          listItemIndex={listItemIndex}
+          listItemIds={listItemIds}
+          isAuxiliaryPreview={isAuxiliaryPreview}
+          onGrade={onGrade}
+          onPostpone={onPostpone}
+          onSuspend={onSuspend}
+          onClose={onClose}
+          onSkip={onSkip}
+          onPrevious={onPrevious}
+          canGoPrevious={canGoPrevious}
+          srsInfo={srsInfo}
+          isGrading={isGrading}
+          onJumpToCard={onJumpToCard}
+          inSidePanel={inSidePanel}
+          panelId={panelId}
+        />
+      </SrsErrorBoundary>
+    )
   }
 
   // 如果是 choice 卡片，使用专门的 Choice 渲染器

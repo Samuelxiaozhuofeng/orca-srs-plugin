@@ -56,6 +56,10 @@
    - 基于 Orca broadcasts 的跨组件事件通知
    - 关键文件：`src/srs/srsEvents.ts`
 
+11. **[SRS 列表卡.md](SRS%20列表卡.md)** ⭐ 新增
+   - 列表卡的创建、调度与辅助预览规则
+   - 关键文件：`src/srs/listCardCreator.ts`、`src/srs/cardCollector.ts`、`src/components/ListCardReviewRenderer.tsx`
+
 ## 文档结构说明
 
 每个模块文档采用统一的结构：

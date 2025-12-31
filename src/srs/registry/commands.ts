@@ -9,6 +9,7 @@ import { BlockWithRepr } from "../blockUtils"
 import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
 import { createCloze } from "../clozeUtils"
 import { insertDirection } from "../directionUtils"
+import { createListCardFromBlock } from "../listCardCreator"
 import { makeAICardFromBlock } from "../ai/aiCardCreator"
 import { testAIConnection } from "../ai/aiService"
 
@@ -77,6 +78,29 @@ export function registerCommands(
     },
     {
       label: "SRS: 创建 Cloze 填空",
+      hasArgs: false
+    }
+  )
+
+  // 列表卡命令：将当前块转换为列表卡（子块作为条目）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.createListCard`,
+    async (editor, ...args) => {
+      const [panelId, rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置")
+        return null
+      }
+      const result = await createListCardFromBlock(cursor, _pluginName)
+      return result ? { ret: result, undoArgs: result } : null
+    },
+    async undoArgs => {
+      // 列表卡涉及标签/属性/多个子块初始化，撤销交由编辑器原生命令栈处理，这里仅记录日志
+      if (!undoArgs || !undoArgs.blockId) return
+      console.log(`[${_pluginName}] 列表卡撤销：块 #${undoArgs.blockId}`)
+    },
+    {
+      label: "SRS: 创建列表卡",
       hasArgs: false
     }
   )
@@ -238,6 +262,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
   

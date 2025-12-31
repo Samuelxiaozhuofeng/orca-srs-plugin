@@ -398,7 +398,7 @@ export default function DifficultCardsView({
         ) : (
           filteredCards.map((info: DifficultCardInfo, index: number) => (
             <DifficultCardItem
-              key={`${info.card.id}-${info.card.clozeNumber || 0}-${info.card.directionType || "basic"}-${index}`}
+              key={`${info.card.id}-${info.card.clozeNumber || 0}-${info.card.directionType || "basic"}-${info.card.listItemId || 0}-${index}`}
               info={info}
               panelId={panelId}
               onCardClick={handleCardClick}

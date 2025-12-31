@@ -38,8 +38,12 @@ const processedParentCards = new Set<string>()
 export function getParentCardKey(
   blockId: DbId,
   clozeNumber?: number,
-  directionType?: string
+  directionType?: string,
+  listItemId?: DbId
 ): string {
+  if (listItemId !== undefined) {
+    return `${blockId}-list-${listItemId}`
+  }
   return `${blockId}-${clozeNumber || 0}-${directionType || "basic"}`
 }
 
@@ -49,9 +53,10 @@ export function getParentCardKey(
 export function isParentCardProcessed(
   blockId: DbId,
   clozeNumber?: number,
-  directionType?: string
+  directionType?: string,
+  listItemId?: DbId
 ): boolean {
-  const key = getParentCardKey(blockId, clozeNumber, directionType)
+  const key = getParentCardKey(blockId, clozeNumber, directionType, listItemId)
   return processedParentCards.has(key)
 }
 
@@ -61,9 +66,10 @@ export function isParentCardProcessed(
 export function markParentCardProcessed(
   blockId: DbId,
   clozeNumber?: number,
-  directionType?: string
+  directionType?: string,
+  listItemId?: DbId
 ): void {
-  const key = getParentCardKey(blockId, clozeNumber, directionType)
+  const key = getParentCardKey(blockId, clozeNumber, directionType, listItemId)
   processedParentCards.add(key)
   console.log(`[orca-srs] 标记父卡片已处理: ${key}`)
 }
@@ -190,6 +196,9 @@ export async function hasChildCards(blockId: DbId): Promise<boolean> {
  * @returns 唯一键字符串
  */
 export function getCardKey(card: ReviewCard): string {
+  if (card.listItemId !== undefined) {
+    return `${card.id}-list-${card.listItemId}`
+  }
   return `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
 }
 
