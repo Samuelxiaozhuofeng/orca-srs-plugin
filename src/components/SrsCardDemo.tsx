@@ -205,7 +205,74 @@ function AnswerBlock({ blockId, panelId, fallback }: AnswerBlockProps) {
     const container = containerRef.current;
     if (!container || !blockId) return;
 
+    const getCollapsedState = (el: Element): boolean | null => {
+      const ariaExpanded = el.getAttribute("aria-expanded");
+      if (ariaExpanded === "false") return true;
+      if (ariaExpanded === "true") return false;
+
+      const dataState = el.getAttribute("data-state");
+      if (dataState === "closed") return true;
+      if (dataState === "open") return false;
+
+      const dataCollapsed = el.getAttribute("data-collapsed");
+      if (dataCollapsed === "true") return true;
+      if (dataCollapsed === "false") return false;
+
+      if (
+        el.classList.contains("collapsed") ||
+        el.classList.contains("is-collapsed")
+      ) {
+        return true;
+      }
+
+      return null;
+    };
+
+    const ensureChildrenVisible = () => {
+      const rootBlock = container.querySelector<HTMLElement>(
+        ":scope > .orca-block"
+      );
+
+      // 只在根块层级做“兜底展开”，避免误触发其他区域的折叠切换
+      if (rootBlock) {
+        const childrenSelector =
+          ":scope > .orca-block-children, :scope > .orca-repr-children, :scope [data-role='children'], :scope [data-testid='children']";
+        const collapseSelector =
+          ":scope > .orca-repr > .orca-repr-collapse, :scope > .orca-repr [data-role='collapse'], :scope > .orca-repr [data-testid='collapse']";
+
+        const children = rootBlock.querySelector<HTMLElement>(childrenSelector);
+        if (children) {
+          children.style.display = "";
+          children.style.visibility = "";
+          children.hidden = false;
+        } else {
+          const collapseEl = rootBlock.querySelector<HTMLElement>(
+            collapseSelector
+          );
+          if (collapseEl) {
+            const collapsed = getCollapsedState(collapseEl);
+            if (collapsed !== false) {
+              collapseEl.click();
+            }
+          }
+        }
+      }
+
+      // 同步把已渲染出来的 children 容器强制显示（适配“折叠但仍渲染 children，只是隐藏”的实现）
+      const allChildren = container.querySelectorAll<HTMLElement>(
+        ".orca-block-children, .orca-repr-children, [data-role='children'], [data-testid='children']"
+      );
+      allChildren.forEach((node: HTMLElement) => {
+        node.style.display = "";
+        node.style.visibility = "";
+        node.hidden = false;
+      });
+    };
+
     const hideParentContent = () => {
+      // basic 卡片答案区需要展示子块内容，不能受原页面折叠状态影响
+      ensureChildrenVisible();
+
       // 隐藏父块的主内容区域（题目），但保留子块
       const mainContent = container.querySelector<HTMLElement>(
         ":scope > .orca-block > .orca-repr > .orca-repr-main"
@@ -294,6 +361,7 @@ function AnswerBlock({ blockId, panelId, fallback }: AnswerBlockProps) {
         blockId={blockId}
         blockLevel={0}
         indentLevel={0}
+        initiallyCollapsed={false}
       />
     </div>
   );
