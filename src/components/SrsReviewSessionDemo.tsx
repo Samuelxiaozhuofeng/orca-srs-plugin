@@ -408,12 +408,11 @@ export default function SrsReviewSession({
     if (dueCards.length > 0) {
       console.log(`[${pluginName}] ${dueCards.length} 张短期卡片已到期，添加到复习队列`)
       
-      // 检查是否已在**未复习的队列部分**（currentIndex 之后）
+      // 检查是否已在**整个队列**中（防止同一张卡片在一次会话中被多次添加）
       setQueue((prevQueue: ReviewCard[]) => {
-        const idx = currentIndexRef.current
-        // 只检查当前位置之后的卡片（未复习的部分）
-        const remainingQueue = prevQueue.slice(idx)
-        const existingKeys = new Set(remainingQueue.map((c: ReviewCard) => getReviewCardKey(c)))
+        // 检查整个队列，而不仅仅是 currentIndex 之后的部分
+        // 这样可以防止同一张卡片在一次会话中被多次复习
+        const existingKeys = new Set(prevQueue.map((c: ReviewCard) => getReviewCardKey(c)))
         
         const newCards = dueCards.filter((c: ReviewCard) => !existingKeys.has(getReviewCardKey(c)))
         
@@ -424,7 +423,7 @@ export default function SrsReviewSession({
           console.log(`[${pluginName}] 成功添加 ${newCards.length} 张卡片到队列末尾`)
           return [...prevQueue, ...newCards]
         }
-        console.log(`[${pluginName}] 卡片已在未复习队列中，跳过添加`)
+        console.log(`[${pluginName}] 卡片已在队列中，跳过添加`)
         return prevQueue
       })
     }
@@ -478,28 +477,25 @@ export default function SrsReviewSession({
         const allCards = await collectReviewCards(pluginName)
         const newQueue = buildReviewQueue(allCards)
         
-        // 检查是否有新的卡片（不在当前队列中的）
-        const currentCardIds = new Set(queue.map((card: ReviewCard) => getReviewCardKey(card)))
-        
-        const newCards = newQueue.filter((card: ReviewCard) => !currentCardIds.has(getReviewCardKey(card)))
-        
-        if (newCards.length > 0) {
-          console.log(`[${pluginName}] 发现 ${newCards.length} 张新到期卡片，添加到复习队列`)
+        // 使用 setQueue 的函数形式来获取最新的队列状态
+        setQueue((prevQueue: ReviewCard[]) => {
+          // 检查是否有新的卡片（不在当前队列中的）
+          const currentCardIds = new Set(prevQueue.map((card: ReviewCard) => getReviewCardKey(card)))
           
-          // 将新卡片添加到队列末尾
-          setQueue((prevQueue: ReviewCard[]) => [...prevQueue, ...newCards])
-          setNewCardsAdded((prev: number) => prev + newCards.length)
+          const newCards = newQueue.filter((card: ReviewCard) => !currentCardIds.has(getReviewCardKey(card)))
           
-          // 显示通知
-          setLastLog(`发现 ${newCards.length} 张新到期卡片已加入队列`)
-          
-          // 可选：显示系统通知
           if (newCards.length > 0) {
+            console.log(`[${pluginName}] 发现 ${newCards.length} 张新到期卡片，添加到复习队列`)
+            setNewCardsAdded((prev: number) => prev + newCards.length)
+            setLastLog(`发现 ${newCards.length} 张新到期卡片已加入队列`)
             orca.notify("info", `${newCards.length} 张新卡片已到期`, { 
               title: "SRS 复习"
             })
+            return [...prevQueue, ...newCards]
           }
-        }
+          
+          return prevQueue
+        })
       } catch (error) {
         console.error(`[${pluginName}] 检查新到期卡片失败:`, error)
       }
@@ -865,22 +861,29 @@ export default function SrsReviewSession({
       const allCards = await collectReviewCards(pluginName)
       const newQueue = buildReviewQueue(allCards)
       
-      // 检查是否有新的卡片（不在当前队列中的）
-      const currentCardIds = new Set(queue.map((card: ReviewCard) => getReviewCardKey(card)))
+      // 使用 setQueue 的函数形式来获取最新的队列状态，避免闭包问题
+      let foundNewCards = 0
+      setQueue((prevQueue: ReviewCard[]) => {
+        // 检查是否有新的卡片（不在当前队列中的）
+        const currentCardIds = new Set(prevQueue.map((card: ReviewCard) => getReviewCardKey(card)))
+        
+        const newCards = newQueue.filter((card: ReviewCard) => !currentCardIds.has(getReviewCardKey(card)))
+        
+        foundNewCards = newCards.length
+        
+        if (newCards.length > 0) {
+          console.log(`[${pluginName}] 手动检查发现 ${newCards.length} 张新到期卡片`)
+          setNewCardsAdded((prev: number) => prev + newCards.length)
+          setLastLog(`手动检查发现 ${newCards.length} 张新到期卡片已加入队列`)
+          return [...prevQueue, ...newCards]
+        }
+        
+        return prevQueue
+      })
       
-      const newCards = newQueue.filter((card: ReviewCard) => !currentCardIds.has(getReviewCardKey(card)))
-      
-      if (newCards.length > 0) {
-        console.log(`[${pluginName}] 手动检查发现 ${newCards.length} 张新到期卡片`)
-        
-        // 将新卡片添加到队列末尾
-        setQueue((prevQueue: ReviewCard[]) => [...prevQueue, ...newCards])
-        setNewCardsAdded((prev: number) => prev + newCards.length)
-        
-        // 显示通知
-        setLastLog(`手动检查发现 ${newCards.length} 张新到期卡片已加入队列`)
-        
-        orca.notify("success", `发现 ${newCards.length} 张新到期卡片`, { 
+      // 显示通知（在 setQueue 回调外部）
+      if (foundNewCards > 0) {
+        orca.notify("success", `发现 ${foundNewCards} 张新到期卡片`, { 
           title: "SRS 复习"
         })
       } else {

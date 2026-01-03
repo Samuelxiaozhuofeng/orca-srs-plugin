@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SRS 卡片组件
  *
  * 题目与答案区域直接嵌入 Orca Block，用户可以像在正文中一样编辑，
@@ -442,6 +442,10 @@ export default function SrsCardDemo({
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state);
 
+  // 块加载状态
+  const [isBlockLoading, setIsBlockLoading] = useState(false)
+  const [blockLoadAttempted, setBlockLoadAttempted] = useState(false)
+
   // 使用 useMemo 缓存派生数据，明确依赖关系
   const { questionBlock, answerBlockIds, totalChildCount, inferredCardType } =
     useMemo(() => {
@@ -457,6 +461,32 @@ export default function SrsCardDemo({
         inferredCardType: cardType,
       };
     }, [snapshot?.blocks, blockId]);
+
+  // 当块数据不存在时，尝试从后端加载
+  useEffect(() => {
+    if (blockId && !questionBlock && !isBlockLoading && !blockLoadAttempted) {
+      setIsBlockLoading(true)
+      orca.invokeBackend("get-block", blockId)
+        .then((block: any) => {
+          if (!block) {
+            // 块确实不存在，标记为已尝试加载
+            console.log(`[SRS Card Demo] 卡片 #${blockId} 确实已被删除`)
+          }
+          setBlockLoadAttempted(true)
+          setIsBlockLoading(false)
+        })
+        .catch((error: any) => {
+          console.warn(`[SRS Card Demo] 加载卡片 #${blockId} 失败:`, error)
+          setBlockLoadAttempted(true)
+          setIsBlockLoading(false)
+        })
+    }
+  }, [blockId, questionBlock, isBlockLoading, blockLoadAttempted])
+
+  // 当卡片切换时，重置加载状态
+  useEffect(() => {
+    setBlockLoadAttempted(false)
+  }, [currentCardKey])
 
   // 确定 reprType
   const reprType =
@@ -538,19 +568,25 @@ export default function SrsCardDemo({
     return previewDueDates(fullState);
   }, [srsInfo]);
 
-  // 块数据可能只是尚未加载；不要误判为“已删除”并要求用户手动跳过
+  // 如果块确认已被删除（已尝试加载但仍不存在），自动跳过
+  useEffect(() => {
+    if (blockId && !questionBlock && blockLoadAttempted && !isBlockLoading && onSkip) {
+      console.log(`[SRS Card Demo] 卡片 #${blockId} 已被删除，自动跳过`)
+      onSkip()
+    }
+  }, [blockId, questionBlock, blockLoadAttempted, isBlockLoading, onSkip])
+
+  // 如果块数据不存在，显示加载状态
   if (blockId && !questionBlock) {
     return (
-      <div
-        style={{
-          backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "12px",
-          padding: "32px",
-          textAlign: "center",
-          color: "var(--orca-color-text-2)",
-        }}
-      >
-        <div style={{ fontSize: "14px", opacity: 0.75 }}>卡片加载中...</div>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "200px",
+        color: "var(--orca-color-text-2)"
+      }}>
+        加载中...
       </div>
     )
   }
@@ -884,16 +920,16 @@ export default function SrsCardDemo({
               minHeight: "80px",
             }}
           >
-            <div
-              contentEditable={false}
-              style={{
-                fontSize: "18px",
-                fontWeight: "600",
-                color: "var(--orca-color-text-2)",
-                marginBottom: "16px",
-                textAlign: "center",
-              }}
-            >
+            {/* 摘录卡片也显示面包屑导航 */}
+            {blockId && <BlockBreadcrumb key={blockId} blockId={blockId} />}
+            
+            <div contentEditable={false} style={{
+              fontSize: "18px",
+              fontWeight: "600",
+              color: "var(--orca-color-text-2)",
+              marginBottom: "16px",
+              textAlign: "center",
+            }}>
               摘录
             </div>
 

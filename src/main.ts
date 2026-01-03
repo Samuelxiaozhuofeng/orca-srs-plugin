@@ -25,6 +25,7 @@ import { aiSettingsSchema } from "./srs/ai/aiSettingsSchema"
 import { reviewSettingsSchema } from "./srs/settings/reviewSettingsSchema"
 import { getOrCreateReviewSessionBlock, cleanupReviewSessionBlock } from "./srs/reviewSessionManager"
 import { getOrCreateFlashcardHomeBlock } from "./srs/flashcardHomeManager"
+import { cleanupDeletedCards } from "./srs/deletedCardCleanup"
 
 // 插件全局状态
 let pluginName: string
@@ -60,6 +61,15 @@ export async function load(_name: string) {
   registerContextMenu(pluginName)
 
   console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器、右键菜单已注册`)
+
+  // 延迟执行已删除卡片清理（避免阻塞启动）
+  setTimeout(async () => {
+    try {
+      await cleanupDeletedCards(pluginName)
+    } catch (error) {
+      console.warn(`[${pluginName}] 清理已删除卡片时出错:`, error)
+    }
+  }, 3000) // 延迟 3 秒执行
 }
 
 /**
