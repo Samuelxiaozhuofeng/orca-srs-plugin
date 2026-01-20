@@ -256,6 +256,12 @@ export async function updateBlockDirection(
     false
   )
 
+  const liveBlock = orca.state.blocks?.[blockId] as Block | undefined
+  if (liveBlock) {
+    liveBlock.content = newContent
+    liveBlock.text = newContent.map((f) => f.v || "").join("")
+  }
+
   // 更新 _repr
   const blockWithRepr = block as BlockWithRepr
   if (blockWithRepr._repr) {
