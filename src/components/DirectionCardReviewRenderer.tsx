@@ -96,12 +96,40 @@ export default function DirectionCardReviewRenderer({
       prevCardKeyRef.current = currentCardKey
     }
   }, [currentCardKey])
+
+  useEffect(() => {
+    setBlockLoadAttempted(false)
+  }, [currentCardKey])
 
   const snapshot = useSnapshot(orca.state)
+  const [isBlockLoading, setIsBlockLoading] = useState(false)
+  const [blockLoadAttempted, setBlockLoadAttempted] = useState(false)
+
   const block = useMemo(() => {
     return snapshot?.blocks?.[blockId]
   }, [snapshot?.blocks, blockId])
 
+  useEffect(() => {
+    if (!block && !isBlockLoading && !blockLoadAttempted) {
+      setIsBlockLoading(true)
+      orca.invokeBackend("get-block", blockId)
+        .then((fetched: any) => {
+          if (fetched) {
+            const stateAny = orca.state as any
+            if (!stateAny.blocks) stateAny.blocks = {}
+            stateAny.blocks[blockId] = fetched
+          }
+          setBlockLoadAttempted(true)
+          setIsBlockLoading(false)
+        })
+        .catch((error: any) => {
+          console.warn(`[SRS Direction] Failed to load block #${blockId}:`, error)
+          setBlockLoadAttempted(true)
+          setIsBlockLoading(false)
+        })
+    }
+  }, [blockId, block, isBlockLoading, blockLoadAttempted])
+
   // 解析方向卡内容
   const dirInfo = useMemo(() => {
     return extractDirectionInfo(block?.content, pluginName)
@@ -159,19 +187,47 @@ export default function DirectionCardReviewRenderer({
   }, [srsInfo])
 
   // 块数据可能只是尚未加载；不要误判为“已删除”
-  if (!block) {
-    return (
-      <div style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "32px",
-        textAlign: "center",
-        color: "var(--orca-color-text-2)"
-      }}>
-        <div style={{ fontSize: "14px", opacity: 0.75 }}>卡片加载中...</div>
-      </div>
-    )
-  }
+  const isBlockDeleted = Boolean(!block && blockLoadAttempted && !isBlockLoading)
+
+  if (isBlockDeleted) {
+    return (
+      <div style={{
+        backgroundColor: "var(--orca-color-bg-1)",
+        borderRadius: "12px",
+        padding: "32px",
+        textAlign: "center",
+        color: "var(--orca-color-text-2)"
+      }}>
+        <div style={{ fontSize: "16px", marginBottom: "8px" }}>
+          该卡片已被删除
+        </div>
+        <div style={{ fontSize: "14px", opacity: 0.7 }}>
+          请跳过此卡片继续复习
+        </div>
+        {onSkip && (
+          <Button variant="outline" onClick={onSkip} style={{ marginTop: "16px" }}>
+            跳过
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  if (!block) {
+    return (
+      <div style={{
+        backgroundColor: "var(--orca-color-bg-1)",
+        borderRadius: "12px",
+        padding: "32px",
+        textAlign: "center",
+        color: "var(--orca-color-text-2)"
+      }}>
+        <div style={{ fontSize: "14px", opacity: 0.75 }}>
+          卡片加载中...
+        </div>
+      </div>
+    )
+  }
 
   if (!dirInfo) {
     return (
