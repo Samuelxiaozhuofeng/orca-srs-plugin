@@ -469,8 +469,12 @@ export default function SrsCardDemo({
       orca.invokeBackend("get-block", blockId)
         .then((block: any) => {
           if (!block) {
-            // 块确实不存在，标记为已尝试加载
-            console.log(`[SRS Card Demo] 卡片 #${blockId} 确实已被删除`)
+            // ???????????????
+            console.log(`[SRS Card Demo] ?? #${blockId} ??????`)
+          } else {
+            const stateAny = orca.state as any
+            if (!stateAny.blocks) stateAny.blocks = {}
+            stateAny.blocks[blockId] = block
           }
           setBlockLoadAttempted(true)
           setIsBlockLoading(false)
@@ -487,6 +491,8 @@ export default function SrsCardDemo({
   useEffect(() => {
     setBlockLoadAttempted(false)
   }, [currentCardKey])
+
+  const isBlockDeleted = Boolean(blockId && !questionBlock && blockLoadAttempted && !isBlockLoading)
 
   // 确定 reprType
   const reprType =
@@ -569,14 +575,33 @@ export default function SrsCardDemo({
   }, [srsInfo]);
 
   // 如果块确认已被删除（已尝试加载但仍不存在），自动跳过
-  useEffect(() => {
-    if (blockId && !questionBlock && blockLoadAttempted && !isBlockLoading && onSkip) {
-      console.log(`[SRS Card Demo] 卡片 #${blockId} 已被删除，自动跳过`)
-      onSkip()
-    }
-  }, [blockId, questionBlock, blockLoadAttempted, isBlockLoading, onSkip])
+    // 如果块数据不存在，显示加载状态
+  if (isBlockDeleted) {
+    return (
+      <div
+        style={{
+          backgroundColor: "var(--orca-color-bg-1)",
+          borderRadius: "12px",
+          padding: "32px",
+          textAlign: "center",
+          color: "var(--orca-color-text-2)",
+        }}
+      >
+        <div style={{ fontSize: "16px", marginBottom: "8px" }}>
+          该卡片已被删除
+        </div>
+        <div style={{ fontSize: "14px", opacity: 0.7 }}>
+          请跳过此卡片继续复习
+        </div>
+        {onSkip && (
+          <Button variant="outline" onClick={onSkip} style={{ marginTop: "16px" }}>
+            跳过
+          </Button>
+        )}
+      </div>
+    )
+  }
 
-  // 如果块数据不存在，显示加载状态
   if (blockId && !questionBlock) {
     return (
       <div style={{

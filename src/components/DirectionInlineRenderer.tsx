@@ -69,11 +69,8 @@ export default function DirectionInlineRenderer({
   const currentColor = DIRECTION_COLORS[currentDir] || DIRECTION_COLORS.forward
   const currentLabel = DIRECTION_LABELS[currentDir] || DIRECTION_LABELS.forward
 
-  const handleClick = useCallback(
+  const handleToggle = useCallback(
     async (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-
       if (isUpdating) return
 
       setIsUpdating(true)
@@ -100,7 +97,8 @@ export default function DirectionInlineRenderer({
     <span
       ref={ref}
       className="orca-inline srs-direction-inline"
-      onClick={handleClick as any}
+      onClick={handleToggle as any}
+      contentEditable={false}
       style={{
         cursor: isUpdating ? "wait" : "pointer",
         display: "inline-flex",
@@ -114,7 +112,8 @@ export default function DirectionInlineRenderer({
         backgroundColor: "var(--orca-color-bg-2)",
         color: currentColor,
         transition: "all 0.2s ease",
-        opacity: isUpdating ? 0.5 : 1
+        opacity: isUpdating ? 0.5 : 1,
+        userSelect: "text"
       }}
       title={`方向卡 (${currentLabel}) - 点击切换`}
     >

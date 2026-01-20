@@ -98,7 +98,7 @@ export function registerRenderers(pluginName: string): void {
   // Direction inline 渲染器
   orca.renderers.registerInline(
     `${pluginName}.direction`,
-    false,
+    true,
     DirectionInlineRenderer
   )
 }

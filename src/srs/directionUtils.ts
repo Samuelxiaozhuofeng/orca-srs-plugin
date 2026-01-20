@@ -112,14 +112,25 @@ export async function insertDirection(
     )
 
     // 添加 #card 标签，type=direction
-    const hasCardTag = block.refs?.some(
+    let currentBlock = orca.state.blocks[blockId] as Block
+    if (!currentBlock?.refs) {
+      try {
+        const fetched = await orca.invokeBackend("get-block", blockId)
+        if (fetched) {
+          currentBlock = fetched as Block
+        }
+      } catch (error) {
+        console.warn(`[${pluginName}] 获取当前块失败:`, error)
+      }
+    }
+    const cardRef = currentBlock?.refs?.find(
       (ref) => ref.type === 2 && isCardTag(ref.alias)
     )
 
-    if (!hasCardTag) {
+    if (!cardRef) {
       await orca.commands.invokeEditorCommand(
         "core.editor.insertTag",
-        cursor,
+        null,
         blockId,
         "card",
         [
@@ -128,24 +139,18 @@ export async function insertDirection(
           { name: "status", value: "" }  // 空字符串表示正常状态
         ]
       )
-      
+
       // 确保 #card 标签块有属性定义（首次使用时自动初始化）
       await ensureCardTagProperties(pluginName)
     } else {
       // 更新已有标签的 type 属性
-      const cardRef = block.refs?.find(
-        (ref) => ref.type === 2 && isCardTag(ref.alias)
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setRefData",
+        null,
+        cardRef,
+        [{ name: "type", value: "direction" }]
       )
-      if (cardRef) {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.setRefData",
-          null,
-          cardRef,
-          [{ name: "type", value: "direction" }]
-        )
-      }
     }
-
     // 注意：Direction 卡片保持为普通可编辑文本块（不设置 srs.direction-card _repr），
     // 以支持“先插入符号，再输入右侧答案”的单行编辑体验。
 
