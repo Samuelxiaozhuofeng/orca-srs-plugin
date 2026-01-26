@@ -335,21 +335,6 @@ export function registerCommands(
     "SRS: 切换渐进阅读自动标签"
   )
 
-  // 渐进阅读编辑器命令（用于斜杠命令调用）
-  orca.commands.registerEditorCommand(
-    `${pluginName}.startIncrementalReadingSessionEditor`,
-    async () => {
-      console.log(`[${_pluginName}] 打开渐进阅读面板（编辑器命令）`)
-      const { startIncrementalReadingSession } = await import("../../main")
-      await startIncrementalReadingSession()
-      return null
-    },
-    async () => {},
-    {
-      label: "SRS: 打开渐进阅读面板",
-      hasArgs: false
-    }
-  )
 }
 
 export function unregisterCommands(pluginName: string): void {
@@ -373,5 +358,4 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.startIncrementalReadingSession`)
   orca.commands.unregisterCommand(`${pluginName}.openIRManager`)
   orca.commands.unregisterCommand(`${pluginName}.toggleAutoExtractMark`)
-  orca.commands.unregisterEditorCommand(`${pluginName}.startIncrementalReadingSessionEditor`)
 }

@@ -42,25 +42,18 @@ function isAlreadyExtract(block: Block): boolean {
 }
 
 /**
- * 查找块的父级 Topic（若存在）
+ * 获取块的父级 Topic（若存在）
+ *
+ * NOTE: We rely on `block.parent` which is already used by IR breadcrumb.
  */
-function findParentTopic(blockId: DbId): Block | null {
-  // 遍历所有块，找到包含该 blockId 作为子块的父块
-  const allBlocks = orca.state.blocks as Record<number, Block | undefined>
+function getParentTopic(block: Block): Block | null {
+  const parentId = block.parent
+  if (!parentId) return null
 
-  for (const block of Object.values(allBlocks)) {
-    if (!block || !block.children) continue
+  const parentBlock = (orca.state.blocks?.[parentId] as Block | undefined)
+  if (!parentBlock) return null
 
-    // 如果这个块的children包含当前blockId
-    if (block.children.includes(blockId)) {
-      // 检查父块是否是Topic
-      if (isIncrementalReadingTopic(block)) {
-        return block
-      }
-    }
-  }
-
-  return null
+  return isIncrementalReadingTopic(parentBlock) ? parentBlock : null
 }
 
 /**
@@ -83,8 +76,8 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
     return
   }
 
-  // 检查父块是否是Topic
-  const parentTopic = findParentTopic(blockId)
+  // 检查父块是否是 Topic（仅标记 Topic 的直接子块）
+  const parentTopic = getParentTopic(block)
   if (!parentTopic) {
     return
   }
@@ -152,23 +145,18 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
 }
 
 /**
- * 扫描Topic的所有子块，标记未标记的Extract
+ * 扫描所有块，标记 Topic 的直接子块为 Extract
+ *
+ * Complexity: O(N) over current blocks.
  */
-async function scanAndMarkTopicChildren(pluginName: string): Promise<void> {
+async function scanAndMarkEligibleExtracts(pluginName: string): Promise<void> {
   const allBlocks = orca.state.blocks as Record<number, Block | undefined>
 
   for (const block of Object.values(allBlocks)) {
     if (!block) continue
-
-    // 检查是否是Topic
-    if (!isIncrementalReadingTopic(block)) continue
-
-    // 检查Topic的所有子块
-    if (!block.children || block.children.length === 0) continue
-
-    for (const childId of block.children) {
-      await autoMarkAsExtract(childId, pluginName)
-    }
+    const parentTopic = getParentTopic(block)
+    if (!parentTopic) continue
+    await autoMarkAsExtract(block.id, pluginName)
   }
 }
 
@@ -182,7 +170,7 @@ export function startAutoMarkExtract(pluginName: string): void {
   console.log(`[${pluginName}] 启动渐进阅读自动标记`)
 
   // 首次扫描现有的Topic子块
-  scanAndMarkTopicChildren(pluginName).catch(error => {
+  scanAndMarkEligibleExtracts(pluginName).catch(error => {
     console.error(`[${pluginName}] 初始扫描失败:`, error)
   })
 
@@ -190,13 +178,35 @@ export function startAutoMarkExtract(pluginName: string): void {
   // 使用setTimeout延迟处理，避免频繁触发
   let timeoutId: ReturnType<typeof setTimeout> | null = null
 
-  unsubscribe = (window as any).Valtio.subscribe(orca.state.blocks, () => {
+  unsubscribe = (window as any).Valtio.subscribe(orca.state.blocks, (ops?: any) => {
     if (timeoutId) {
       clearTimeout(timeoutId)
     }
 
     timeoutId = setTimeout(() => {
-      scanAndMarkTopicChildren(pluginName).catch(error => {
+      // Prefer op-based incremental handling if Valtio provides `ops`.
+      // Fallback to O(N) scan if `ops` is unavailable.
+      if (Array.isArray(ops)) {
+        const candidateIds: DbId[] = []
+        for (const op of ops) {
+          if (!op || op.type !== "set") continue
+          if (!Array.isArray(op.path) || op.path.length < 1) continue
+          const rawId = op.path[0]
+          const parsedId = typeof rawId === "number" ? rawId : Number(String(rawId))
+          if (!Number.isFinite(parsedId)) continue
+          candidateIds.push(parsedId as DbId)
+        }
+
+        if (candidateIds.length > 0) {
+          Promise.allSettled(candidateIds.map(id => autoMarkAsExtract(id, pluginName)))
+            .catch(error => {
+              console.error(`[${pluginName}] 自动标记失败:`, error)
+            })
+          return
+        }
+      }
+
+      scanAndMarkEligibleExtracts(pluginName).catch(error => {
         console.error(`[${pluginName}] 自动标记失败:`, error)
       })
     }, 500) // 500ms防抖

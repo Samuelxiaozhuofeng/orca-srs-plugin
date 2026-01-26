@@ -108,7 +108,7 @@ export function registerUIComponents(pluginName: string): void {
     icon: "ti ti-book-2",
     group: "SRS",
     title: "渐进阅读",
-    command: `${pluginName}.startIncrementalReadingSessionEditor`
+    command: `${pluginName}.startIncrementalReadingSession`
   })
 }
 

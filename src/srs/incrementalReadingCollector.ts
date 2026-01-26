@@ -22,6 +22,13 @@ export type IRCard = {
 }
 
 /**
+ * 获取指定日期的本地日开始时间（00:00:00）
+ */
+function getDayStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+/**
  * 收集所有带 #card 标签的块（只用于渐进阅读过滤）
  */
 async function collectTaggedBlocks(pluginName: string): Promise<Block[]> {
@@ -70,7 +77,7 @@ export async function collectIRCardsFromBlocks(
   blocks: Block[],
   pluginName: string = "srs-plugin"
 ): Promise<IRCard[]> {
-  const nowTime = Date.now()
+  const todayStartTime = getDayStart(new Date()).getTime()
   const results: IRCard[] = []
 
   for (const block of blocks) {
@@ -81,8 +88,9 @@ export async function collectIRCardsFromBlocks(
       await ensureIRState(block.id)
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
+      const dueDayStartTime = getDayStart(state.due).getTime()
 
-      if (isNew || state.due.getTime() <= nowTime) {
+      if (isNew || dueDayStartTime <= todayStartTime) {
         results.push({
           id: block.id,
           cardType,

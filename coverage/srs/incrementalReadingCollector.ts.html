@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">52.32% </span>
+                <span class="strong">53.4% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>45/86</span>
+                <span class='fraction'>47/88</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">52.38% </span>
+                <span class="strong">54.76% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>22/42</span>
+                <span class='fraction'>23/42</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">61.53% </span>
+                <span class="strong">64.28% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>8/13</span>
+                <span class='fraction'>9/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">50% </span>
+                <span class="strong">51.28% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>38/76</span>
+                <span class='fraction'>40/78</span>
             </div>
         
             
@@ -264,7 +264,15 @@
 <a name='L199'></a><a href='#L199'>199</a>
 <a name='L200'></a><a href='#L200'>200</a>
 <a name='L201'></a><a href='#L201'>201</a>
-<a name='L202'></a><a href='#L202'>202</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -285,6 +293,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">8x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -335,21 +350,22 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -364,7 +380,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -476,7 +492,7 @@ import { extractCardType } from "./deckUtils"
 import { isCardTag } from "./tagUtils"
 import { ensureIRState, loadIRState } from "./incrementalReadingStorage"
 &nbsp;
-export type IRCardType = "渐进阅读" | "extracts"
+export type IRCardType = "topic" | "extracts"
 &nbsp;
 export type IRCard = {
   id: DbId
@@ -486,6 +502,13 @@ export type IRCard = {
   lastRead: Date | null
   readCount: number
   isNew: boolean
+}
+&nbsp;
+/**
+ * 获取指定日期的本地日开始时间（00:00:00）
+ */
+function getDayStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 &nbsp;
 /**
@@ -537,19 +560,20 @@ export async function collectIRCardsFromBlocks(
   blocks: Block[],
   pluginName: string = "srs-plugin"
 ): Promise&lt;IRCard[]&gt; {
-  const nowTime = Date.now()
+  const todayStartTime = getDayStart(new Date()).getTime()
   const results: IRCard[] = []
 &nbsp;
   for (const block of blocks) {
     const cardType = extractCardType(block)
-    if (cardType !== "渐进阅读" &amp;&amp; cardType !== "extracts") continue
+    if (cardType !== "topic" &amp;&amp; cardType !== "extracts") continue
 &nbsp;
     try {
       await ensureIRState(block.id)
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
+      const dueDayStartTime = getDayStart(state.due).getTime()
 &nbsp;
-      <span class="missing-if-branch" title="else path not taken" >E</span>if (isNew || state.due.getTime() &lt;= nowTime) {
+      if (isNew || dueDayStartTime &lt;= todayStartTime) {
         results.push({
           id: block.id,
           cardType,
@@ -579,7 +603,7 @@ export async function collectAllIRCardsFromBlocks(
 &nbsp;
   for (const block of blocks) {
     const cardType = extractCardType(block)
-    if (cardType !== "渐进阅读" &amp;&amp; cardType !== "extracts") continue
+    if (cardType !== "topic" &amp;&amp; cardType !== "extracts") continue
 &nbsp;
     try {
       await ensureIRState(block.id)
@@ -633,7 +657,7 @@ export async function <span class="fstat-no" title="function not covered" >colle
 &nbsp;
 function compareCardType(a: IRCardType, b: IRCardType): number {
   <span class="missing-if-branch" title="if path not taken" >I</span>if (a === b) <span class="cstat-no" title="statement not covered" >return 0</span>
-  <span class="missing-if-branch" title="else path not taken" >E</span>if (a === "渐进阅读") return -1
+  <span class="missing-if-branch" title="else path not taken" >E</span>if (a === "topic") return -1
 <span class="cstat-no" title="statement not covered" >  return 1</span>
 }
 &nbsp;
@@ -673,7 +697,7 @@ export function buildIRQueue(cards: IRCard[]): IRCard[] {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-19T07:14:02.711Z
+                at 2026-01-21T14:04:48.443Z
             </div>
         <script src="../prettify.js"></script>
         <script>

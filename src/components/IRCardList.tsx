@@ -94,19 +94,31 @@ export default function IRCardList({
     let cancelled = false
 
     const loadMissingTitles = async () => {
-      const missingIds = cards
-        .map(card => card.id)
-        .filter(id => !blockTitles[id] && !(orca.state.blocks?.[id] as Block | undefined)?.text)
+      const missingIds = Array.from(new Set(
+        cards
+          .map(card => card.id)
+          .filter(id => !blockTitles[id] && !(orca.state.blocks?.[id] as Block | undefined)?.text)
+      ))
 
       if (missingIds.length === 0) return
 
       try {
-        const results = await Promise.all(
-          missingIds.map(async id => {
-            const block = await orca.invokeBackend("get-block", id) as Block | undefined
-            return { id, text: block?.text || "(无标题)" }
-          })
-        )
+        const results: Array<{ id: DbId; text: string }> = []
+        const BATCH_SIZE = 200
+
+        for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
+          const batchIds = missingIds.slice(i, i + BATCH_SIZE)
+          const blocks = await orca.invokeBackend("get-blocks", batchIds) as Block[] | undefined
+          const fetched = new Map<DbId, Block>()
+          for (const block of (blocks ?? [])) {
+            fetched.set(block.id, block)
+          }
+
+          for (const id of batchIds) {
+            const block = fetched.get(id)
+            results.push({ id, text: block?.text || "(无标题)" })
+          }
+        }
 
         if (cancelled) return
         setBlockTitles((prev: Record<string, string>) => {

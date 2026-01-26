@@ -83,4 +83,46 @@ describe("incrementalReadingCollector", () => {
 
     vi.useRealTimers()
   })
+
+  it("should filter due cards by day boundary and keep new cards", async () => {
+    const now = new Date(2025, 0, 22, 15, 30, 0)
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
+    const blocks: Block[] = [
+      createBlock(1, "extracts"),
+      createBlock(2, "topic"),
+      createBlock(3, "extracts"),
+      createBlock(4, "topic")
+    ]
+
+    const stateMap = new Map<DbId, { priority: number; lastRead: Date | null; readCount: number; due: Date }>([
+      [1, { priority: 5, lastRead: null, readCount: 0, due: new Date(2025, 0, 23, 9, 0, 0) }],
+      [2, { priority: 8, lastRead: new Date(2025, 0, 21, 9, 0, 0), readCount: 1, due: new Date(2025, 0, 22, 23, 59, 0) }],
+      [3, { priority: 6, lastRead: new Date(2025, 0, 21, 9, 0, 0), readCount: 1, due: new Date(2025, 0, 23, 0, 0, 0) }],
+      [4, { priority: 4, lastRead: new Date(2025, 0, 20, 9, 0, 0), readCount: 2, due: new Date(2025, 0, 21, 12, 0, 0) }]
+    ])
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now
+    })
+
+    vi.mocked(loadIRState).mockImplementation(async (blockId: DbId) => {
+      const state = stateMap.get(blockId)
+      if (!state) {
+        throw new Error("missing state")
+      }
+      return state
+    })
+
+    const results = await collectIRCardsFromBlocks(blocks)
+
+    expect(results.map(card => card.id)).toEqual([1, 2, 4])
+    expect(results.find(card => card.id === 1)?.isNew).toBe(true)
+
+    vi.useRealTimers()
+  })
 })
