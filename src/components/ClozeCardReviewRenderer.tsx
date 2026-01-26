@@ -14,7 +14,7 @@ const { Button, ModalOverlay } = orca.components
 import type { DbId, ContentFragment } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
-import { previewIntervals, formatInterval, previewDueDates, formatDueDate } from "../srs/algorithm"
+import { previewIntervals, previewDueDates, formatDueDate } from "../srs/algorithm"
 import { State } from "ts-fsrs"
 
 /**
@@ -470,93 +470,151 @@ export default function ClozeCardReviewRenderer({
           }}>
             {/* 跳过按钮 */}
             {onSkip && (
-              <Button
-                variant="soft"
+              <button
                 onClick={onSkip}
                 style={{
-                  padding: "12px 8px",
+                  padding: "16px 8px",
                   fontSize: "14px",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  gap: "4px"
+                  gap: "6px",
+                  backgroundColor: "rgba(156, 163, 175, 0.12)",
+                  border: "1px solid rgba(156, 163, 175, 0.2)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.18)"
+                  e.currentTarget.style.transform = "translateY(-2px)"
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.12)"
+                  e.currentTarget.style.transform = "translateY(0)"
                 }}
               >
-                <span style={{ fontSize: "11px", opacity: 0.7 }}>不评分</span>
-                <span style={{ fontWeight: 600 }}>⏭️</span>
-                <span style={{ fontSize: "12px", opacity: 0.8 }}>跳过</span>
-              </Button>
+                <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>不评分</div>
+                <span style={{ fontSize: "32px", lineHeight: "1" }}>⏭️</span>
+                <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>跳过</span>
+              </button>
             )}
 
-            <Button
-              variant="dangerous"
+            <button
               onClick={() => handleGrade("again")}
               style={{
-                padding: "12px 8px",
+                padding: "16px 8px",
                 fontSize: "14px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "4px"
+                gap: "6px",
+                backgroundColor: "rgba(239, 68, 68, 0.12)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.18)"
+                e.currentTarget.style.transform = "translateY(-2px)"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)"
+                e.currentTarget.style.transform = "translateY(0)"
               }}
             >
-              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.again)}</span>
-              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.again)}</span>
-              <span style={{ fontSize: "12px", opacity: 0.8 }}>忘记</span>
-            </Button>
+              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.again)}</div>
+              <span style={{ fontSize: "32px", lineHeight: "1" }}>😞</span>
+              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>忘记</span>
+            </button>
 
-            <Button
-              variant="soft"
+            <button
               onClick={() => handleGrade("hard")}
               style={{
-                padding: "12px 8px",
+                padding: "16px 8px",
                 fontSize: "14px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "4px"
+                gap: "6px",
+                backgroundColor: "rgba(251, 191, 36, 0.12)",
+                border: "1px solid rgba(251, 191, 36, 0.2)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.18)"
+                e.currentTarget.style.transform = "translateY(-2px)"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.12)"
+                e.currentTarget.style.transform = "translateY(0)"
               }}
             >
-              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.hard)}</span>
-              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.hard)}</span>
-              <span style={{ fontSize: "12px", opacity: 0.8 }}>困难</span>
-            </Button>
+              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.hard)}</div>
+              <span style={{ fontSize: "32px", lineHeight: "1" }}>😐</span>
+              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>困难</span>
+            </button>
 
-            <Button
-              variant="solid"
+            <button
               onClick={() => handleGrade("good")}
               style={{
-                padding: "12px 8px",
+                padding: "16px 8px",
                 fontSize: "14px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "4px"
+                gap: "6px",
+                backgroundColor: "rgba(34, 197, 94, 0.12)",
+                border: "1px solid rgba(34, 197, 94, 0.2)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.18)"
+                e.currentTarget.style.transform = "translateY(-2px)"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.12)"
+                e.currentTarget.style.transform = "translateY(0)"
               }}
             >
-              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.good)}</span>
-              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.good)}</span>
-              <span style={{ fontSize: "12px", opacity: 0.8 }}>良好</span>
-            </Button>
+              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.good)}</div>
+              <span style={{ fontSize: "32px", lineHeight: "1" }}>😊</span>
+              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>良好</span>
+            </button>
 
-            <Button
-              variant="solid"
+            <button
               onClick={() => handleGrade("easy")}
               style={{
-                padding: "12px 8px",
+                padding: "16px 8px",
                 fontSize: "14px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "4px",
-                backgroundColor: "var(--orca-color-primary-5)",
-                opacity: 0.9
+                gap: "6px",
+                backgroundColor: "rgba(59, 130, 246, 0.12)",
+                border: "1px solid rgba(59, 130, 246, 0.2)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.18)"
+                e.currentTarget.style.transform = "translateY(-2px)"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.12)"
+                e.currentTarget.style.transform = "translateY(0)"
               }}
             >
-              <span style={{ fontSize: "11px", opacity: 0.7 }}>{formatDueDate(dueDates.easy)}</span>
-              <span style={{ fontWeight: 600 }}>{formatInterval(intervals.easy)}</span>
-              <span style={{ fontSize: "12px", opacity: 0.8 }}>简单</span>
-            </Button>
+              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.easy)}</div>
+              <span style={{ fontSize: "32px", lineHeight: "1" }}>😄</span>
+              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>简单</span>
+            </button>
           </div>
         </>
       )}
