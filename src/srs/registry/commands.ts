@@ -13,6 +13,8 @@ import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
 import { makeAICardFromBlock } from "../ai/aiCardCreator"
 import { testAIConnection } from "../ai/aiService"
+import { startInteractiveCardCreation } from "../ai/aiInteractiveCardCreator"
+import { testAIConfigWithDetails } from "../ai/aiConfigValidator"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../incrementalReadingAutoMark"
 import {
   getIncrementalReadingSettings,
@@ -252,15 +254,38 @@ export function registerCommands(
       console.log(`[${_pluginName}] 测试 AI 连接`)
       orca.notify("info", "正在测试 AI 连接...", { title: "AI 连接测试" })
       
-      const result = await testAIConnection(_pluginName)
+      const result = await testAIConfigWithDetails(_pluginName)
       
       if (result.success) {
         orca.notify("success", result.message, { title: "AI 连接测试" })
       } else {
-        orca.notify("error", result.message, { title: "AI 连接测试" })
+        orca.notify("error", result.message, { title: "AI 连接测试失败" })
+        console.error("[AI 连接测试] 详细信息:", result.details)
       }
     },
     "SRS: 测试 AI 连接"
+  )
+
+  orca.commands.registerEditorCommand(
+    `${pluginName}.interactiveAICard`,
+    async (editor, ...args) => {
+      const [panelId, rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置")
+        return null
+      }
+      
+      const { startInteractiveCardCreationNew } = await import("../ai/aiInteractiveCardCreatorNew")
+      await startInteractiveCardCreationNew(cursor, _pluginName)
+      return null
+    },
+    async undoArgs => {
+      console.log(`[${_pluginName}] AI 智能制卡撤销（暂不支持批量撤销）`)
+    },
+    {
+      label: "SRS: AI 智能制卡（交互式）",
+      hasArgs: false
+    }
   )
 
   // 打开旧复习面板命令（块渲染器模式）
@@ -345,9 +370,8 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
-  
-  // AI 命令注销
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.interactiveAICard`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
   

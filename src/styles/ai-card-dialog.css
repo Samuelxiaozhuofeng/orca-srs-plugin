@@ -1,0 +1,70 @@
+/* AI Card Generation Dialog Styles */
+
+.ai-card-dialog {
+  /* 确保背景不透明 */
+  background: var(--orca-bg-primary, #ffffff) !important;
+  position: relative;
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .ai-card-dialog {
+    background: var(--orca-bg-primary, #1e1e1e) !important;
+    border-color: var(--orca-border, #404040) !important;
+  }
+  
+  .ai-card-dialog h2,
+  .ai-card-dialog h3,
+  .ai-card-dialog strong {
+    color: var(--orca-text-primary, #e0e0e0) !important;
+  }
+  
+  .ai-card-dialog p,
+  .ai-card-dialog span {
+    color: var(--orca-text-primary, #d0d0d0) !important;
+  }
+  
+  .ai-card-dialog input {
+    background: var(--orca-bg-secondary, #2a2a2a) !important;
+    color: var(--orca-text-primary, #e0e0e0) !important;
+    border-color: var(--orca-border, #404040) !important;
+  }
+  
+  .ai-card-dialog input::placeholder {
+    color: var(--orca-text-tertiary, #808080) !important;
+  }
+}
+
+/* 滚动条样式 */
+.ai-card-dialog::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ai-card-dialog::-webkit-scrollbar-track {
+  background: var(--orca-bg-secondary, #f5f5f5);
+  border-radius: 4px;
+}
+
+.ai-card-dialog::-webkit-scrollbar-thumb {
+  background: var(--orca-border, #d0d0d0);
+  border-radius: 4px;
+}
+
+.ai-card-dialog::-webkit-scrollbar-thumb:hover {
+  background: var(--orca-text-tertiary, #999);
+}
+
+/* 深色模式滚动条 */
+@media (prefers-color-scheme: dark) {
+  .ai-card-dialog::-webkit-scrollbar-track {
+    background: var(--orca-bg-secondary, #2a2a2a);
+  }
+  
+  .ai-card-dialog::-webkit-scrollbar-thumb {
+    background: var(--orca-border, #404040);
+  }
+  
+  .ai-card-dialog::-webkit-scrollbar-thumb:hover {
+    background: var(--orca-text-tertiary, #606060);
+  }
+}

@@ -8,9 +8,12 @@
  */
 
 import React from "react"
+import { AIDialogMount } from "../../components/AIDialogMount"
 
 export function registerUIComponents(pluginName: string): void {
-  // ============ 顶部栏按钮 (Headbar) ============
+  orca.headbar.registerHeadbarButton(`${pluginName}.aiDialogMount`, () => (
+    <AIDialogMount pluginName={pluginName} />
+  ))
   
   // 复习按钮 - 开始复习会话
   orca.headbar.registerHeadbarButton(`${pluginName}.reviewButton`, () => (
@@ -95,6 +98,13 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.makeAICard`
   })
 
+  orca.slashCommands.registerSlashCommand(`${pluginName}.interactiveAI`, {
+    icon: "ti ti-sparkles",
+    group: "SRS",
+    title: "AI 智能制卡（交互式）",
+    command: `${pluginName}.interactiveAICard`
+  })
+
   // ============ 渐进阅读斜杠命令 ============
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.ir`, {
@@ -113,7 +123,8 @@ export function registerUIComponents(pluginName: string): void {
 }
 
 export function unregisterUIComponents(pluginName: string): void {
-  // 顶部栏按钮
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
+  
   orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.incrementalReadingButton`)
@@ -127,6 +138,7 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionForward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionBackward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.aiCard`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.interactiveAI`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
 }
