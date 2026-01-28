@@ -11,6 +11,7 @@ import { createCloze } from "../clozeUtils"
 import { insertDirection } from "../directionUtils"
 import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
+import { createExtract } from "../extractUtils"
 import { makeAICardFromBlock } from "../ai/aiCardCreator"
 import { testAIConnection } from "../ai/aiService"
 import { startInteractiveCardCreation } from "../ai/aiInteractiveCardCreator"
@@ -108,6 +109,38 @@ export function registerCommands(
     },
     {
       label: "SRS: 创建 Topic 卡片",
+      hasArgs: false
+    }
+  )
+
+  // 摘录命令：将选中文本摘录为子块（Alt+X / Cmd+X）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.createExtract`,
+    async (editor, ...args) => {
+      const [panelId, rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置")
+        return null
+      }
+      const result = await createExtract(cursor, _pluginName)
+      return result ? { ret: result, undoArgs: result } : null
+    },
+    async undoArgs => {
+      // 撤销：删除创建的摘录子块
+      if (!undoArgs || !undoArgs.extractBlockId) return
+      try {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.deleteBlocks",
+          null,
+          [undoArgs.extractBlockId]
+        )
+        console.log(`[${_pluginName}] 已撤销摘录：删除块 #${undoArgs.extractBlockId}`)
+      } catch (error) {
+        console.error(`[${_pluginName}] 撤销摘录失败:`, error)
+      }
+    },
+    {
+      label: "SRS: 创建摘录（Extract）",
       hasArgs: false
     }
   )
@@ -367,6 +400,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createTopicCard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.createExtract`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
