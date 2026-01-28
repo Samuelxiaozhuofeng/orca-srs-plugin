@@ -7,13 +7,11 @@ import {
 } from "../srs/incrementalReadingManagerUtils"
 
 const { useEffect, useMemo, useState } = window.React
-const { Checkbox, Button } = orca.components
+const { Button } = orca.components
 
 type IRCardListProps = {
   cards: IRCard[]
-  selectedIds: Set<DbId>
   expandedGroups: Record<IRDateGroupKey, boolean>
-  onSelectionChange: (next: Set<DbId>) => void
   onCardClick: (cardId: DbId) => void
   onToggleGroup: (groupKey: IRDateGroupKey) => void
 }
@@ -82,9 +80,7 @@ function truncateText(text: string, maxLength: number): string {
 
 export default function IRCardList({
   cards,
-  selectedIds,
   expandedGroups,
-  onSelectionChange,
   onCardClick,
   onToggleGroup
 }: IRCardListProps) {
@@ -154,16 +150,6 @@ export default function IRCardList({
     )
   }
 
-  const handleSelectionToggle = (cardId: DbId, checked: boolean) => {
-    const next = new Set(selectedIds)
-    if (checked) {
-      next.add(cardId)
-    } else {
-      next.delete(cardId)
-    }
-    onSelectionChange(next)
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       {groups.map((group: IRCardGroup) => {
@@ -214,11 +200,11 @@ export default function IRCardList({
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
                 {group.cards.map(card => {
                   const title = truncateText(getBlockTitle(card.id, blockTitles), 50)
-                  const isSelected = selectedIds.has(card.id)
 
                   return (
                     <div
                       key={card.id}
+                      onClick={() => onCardClick(card.id)}
                       style={{
                         display: "flex",
                         alignItems: "flex-start",
@@ -227,23 +213,18 @@ export default function IRCardList({
                         borderRadius: "8px",
                         padding: "10px",
                         backgroundColor: style.itemBg ?? "var(--orca-color-bg-1)",
-                        color: style.itemText ?? "var(--orca-color-text-1)"
+                        color: style.itemText ?? "var(--orca-color-text-1)",
+                        cursor: "pointer"
                       }}
+                      title="点击在侧面板打开"
                     >
-                      <Checkbox
-                        checked={isSelected}
-                        onChange={(event: { checked: boolean }) => handleSelectionToggle(card.id, event.checked)}
-                      />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
-                          onClick={() => onCardClick(card.id)}
                           style={{
                             fontSize: "14px",
                             fontWeight: 600,
-                            cursor: "pointer",
                             color: style.itemText ?? "var(--orca-color-text-1)"
                           }}
-                          title="点击在侧面板打开"
                         >
                           {title}
                         </div>
@@ -256,7 +237,6 @@ export default function IRCardList({
                           color: style.itemText ?? "var(--orca-color-text-3)"
                         }}>
                           <span>类型：{card.cardType}</span>
-                          <span>优先级：{card.priority}</span>
                           <span>到期：{formatSimpleDate(card.due)}</span>
                           <span>已读：{card.readCount}</span>
                         </div>

@@ -90,7 +90,7 @@ export async function collectIRCardsFromBlocks(
       const isNew = !state.lastRead
       const dueDayStartTime = getDayStart(state.due).getTime()
 
-      if (isNew || dueDayStartTime <= todayStartTime) {
+      if (dueDayStartTime <= todayStartTime) {
         results.push({
           id: block.id,
           cardType,

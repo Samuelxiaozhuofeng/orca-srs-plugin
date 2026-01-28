@@ -3,12 +3,12 @@
  */
 import type { Block, DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
-import { markAsRead, updatePriority } from "../srs/incrementalReadingStorage"
+import { markAsRead } from "../srs/incrementalReadingStorage"
 import { ensureCardSrsState } from "../srs/storage"
 import { ensureCardTagProperties } from "../srs/tagPropertyInit"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
-const { useEffect, useRef, useState } = window.React
+const { useEffect, useState } = window.React
 const { Button, Block: OrcaBlock } = orca.components
 
 type IncrementalReadingSessionProps = {
@@ -32,9 +32,7 @@ export default function IncrementalReadingSessionDemo({
 }: IncrementalReadingSessionProps) {
   const [queue, setQueue] = useState<IRCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [priorityValue, setPriorityValue] = useState<number>(5)
   const [isWorking, setIsWorking] = useState<boolean>(false)
-  const priorityTimerRef = useRef<number | null>(null)
   const buttonStyle = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   const currentCard = queue[currentIndex]
@@ -43,12 +41,6 @@ export default function IncrementalReadingSessionDemo({
     setQueue(cards)
     setCurrentIndex(0)
   }, [cards])
-
-  useEffect(() => {
-    if (currentCard) {
-      setPriorityValue(currentCard.priority)
-    }
-  }, [currentCard?.id])
 
   const removeCardAtIndex = (index: number) => {
     setQueue((prev: IRCard[]) => {
@@ -192,37 +184,6 @@ export default function IncrementalReadingSessionDemo({
     }
   }
 
-  const applyPriority = async (value: number) => {
-    if (!currentCard) return
-
-    try {
-      const nextState = await updatePriority(currentCard.id, value)
-      setQueue((prev: IRCard[]) => prev.map((card: IRCard, index: number) => {
-        if (index !== currentIndex) return card
-        return {
-          ...card,
-          priority: nextState.priority,
-          due: nextState.due
-        }
-      }))
-    } catch (error) {
-      console.error("[IR Session] 更新优先级失败:", error)
-      orca.notify("error", "优先级更新失败", { title: "渐进阅读" })
-    }
-  }
-
-  const handlePriorityChange = (value: number) => {
-    setPriorityValue(value)
-
-    if (priorityTimerRef.current) {
-      clearTimeout(priorityTimerRef.current)
-    }
-
-    priorityTimerRef.current = window.setTimeout(() => {
-      void applyPriority(value)
-    }, 200)
-  }
-
   const handleClose = () => {
     if (onClose) {
       onClose()
@@ -296,30 +257,7 @@ export default function IncrementalReadingSessionDemo({
           color: "var(--orca-color-text-2)"
         }}>
           <span>类型：{currentCard.cardType}</span>
-          <span>优先级：{currentCard.priority}</span>
           <span>到期：{formatSimpleDate(currentCard.due)}</span>
-        </div>
-      </div>
-
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px"
-      }}>
-        <div style={{ fontSize: "12px", color: "var(--orca-color-text-2)" }}>优先级调整</div>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <input
-            type="range"
-            min={1}
-            max={10}
-            step={1}
-            value={priorityValue}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-              handlePriorityChange(Number(event.currentTarget.value))
-            }}
-            style={{ flex: 1 }}
-          />
-          <div style={{ width: "32px", textAlign: "center" }}>{priorityValue}</div>
         </div>
       </div>
 
