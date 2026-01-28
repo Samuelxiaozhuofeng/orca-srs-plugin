@@ -12,6 +12,7 @@
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
 import { calculateNextDue, getPriorityFromTag } from "./incrementalReadingScheduler"
+import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
 
 const DEFAULT_PRIORITY_CHOICE = "中优先级"
 
@@ -60,6 +61,11 @@ function getParentTopic(block: Block): Block | null {
  * 自动标记块为Extract
  */
 async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<void> {
+  const { enableAutoExtractMark } = getIncrementalReadingSettings(pluginName)
+  if (!enableAutoExtractMark) {
+    return
+  }
+
   // 避免重复处理
   if (processedBlocks.has(blockId)) {
     return
@@ -150,6 +156,11 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
  * Complexity: O(N) over current blocks.
  */
 async function scanAndMarkEligibleExtracts(pluginName: string): Promise<void> {
+  const { enableAutoExtractMark } = getIncrementalReadingSettings(pluginName)
+  if (!enableAutoExtractMark) {
+    return
+  }
+
   const allBlocks = orca.state.blocks as Record<number, Block | undefined>
 
   for (const block of Object.values(allBlocks)) {

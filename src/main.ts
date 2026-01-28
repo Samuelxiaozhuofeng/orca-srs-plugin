@@ -83,8 +83,7 @@ export async function load(_name: string) {
       console.log(`[${pluginName}] 渐进阅读自动标记已关闭`)
     }
   } catch (error) {
-    console.warn(`[${pluginName}] 读取渐进阅读设置失败，按默认启用处理:`, error)
-    startAutoMarkExtract(pluginName)
+    console.warn(`[${pluginName}] 读取渐进阅读设置失败，按默认关闭处理:`, error)
   }
 
   // 延迟执行已删除卡片清理（避免阻塞启动）

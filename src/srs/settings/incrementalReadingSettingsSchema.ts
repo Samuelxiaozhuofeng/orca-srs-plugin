@@ -16,7 +16,7 @@ export const incrementalReadingSettingsSchema = {
   [INCREMENTAL_READING_SETTINGS_KEYS.enableAutoExtractMark]: {
     label: "启用渐进阅读自动标签",
     type: "boolean" as const,
-    defaultValue: true,
+    defaultValue: false,
     description: "启用后自动为渐进阅读 Topic 的子块标记为 Extract"
   }
 }
