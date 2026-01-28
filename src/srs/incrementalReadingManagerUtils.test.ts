@@ -7,6 +7,7 @@ function createCard(id: number, due: Date, isNew: boolean): IRCard {
     id,
     cardType: "extracts",
     priority: 5,
+    position: null,
     due,
     lastRead: isNew ? null : new Date(due.getTime() - 3600),
     readCount: isNew ? 0 : 1,

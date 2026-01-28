@@ -6,9 +6,11 @@
  * - ir.lastRead: Date | null
  * - ir.readCount: number
  * - ir.due: Date
+ * - ir.position: number | null (Topic 队列位置，数值越小越靠前)
  */
 
 import type { Block, DbId } from "../orca.d.ts"
+import { extractCardType } from "./deckUtils"
 import { calculateNextDue, normalizePriority } from "./incrementalReadingScheduler"
 
 export type IRState = {
@@ -16,6 +18,7 @@ export type IRState = {
   lastRead: Date | null
   readCount: number
   due: Date
+  position: number | null
 }
 
 const DEFAULT_PRIORITY = 5
@@ -56,6 +59,15 @@ const parseNumber = (value: any, fallback: number): number => {
   return fallback
 }
 
+const parseOptionalNumber = (value: any): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const num = Number(value)
+    if (Number.isFinite(num)) return num
+  }
+  return null
+}
+
 const parseDate = (value: any, fallback: Date | null): Date | null => {
   if (!value) return fallback
   const parsed = new Date(value)
@@ -69,7 +81,8 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
     priority: normalizedPriority,
     lastRead,
     readCount: 0,
-    due: calculateNextDue(normalizedPriority, baseDate)
+    due: calculateNextDue(normalizedPriority, baseDate),
+    position: null
   }
 }
 
@@ -92,6 +105,7 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
     const lastRead = parseDate(readProp(block, "ir.lastRead"), null)
     const readCount = parseNumber(readProp(block, "ir.readCount"), 0)
     const due = parseDate(readProp(block, "ir.due"), null)
+    const position = parseOptionalNumber(readProp(block, "ir.position"))
 
     const priority = normalizePriority(rawPriority)
     const normalizedDue = due ?? calculateNextDue(priority, lastRead ?? now)
@@ -100,7 +114,8 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
       priority,
       lastRead,
       readCount,
-      due: normalizedDue
+      due: normalizedDue,
+      position
     }
   } catch (error) {
     console.error("[IR] 读取渐进阅读状态失败:", error)
@@ -114,16 +129,19 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
  */
 export async function saveIRState(blockId: DbId, state: IRState): Promise<void> {
   try {
+    const props = [
+      { name: "ir.priority", value: state.priority, type: 3 },
+      { name: "ir.lastRead", value: state.lastRead ?? null, type: 5 },
+      { name: "ir.readCount", value: state.readCount, type: 3 },
+      { name: "ir.due", value: state.due, type: 5 },
+      { name: "ir.position", value: state.position ?? null, type: 3 }
+    ]
+
     await orca.commands.invokeEditorCommand(
       "core.editor.setProperties",
       null,
       [blockId],
-      [
-        { name: "ir.priority", value: state.priority, type: 3 },
-        { name: "ir.lastRead", value: state.lastRead ?? null, type: 5 },
-        { name: "ir.readCount", value: state.readCount, type: 3 },
-        { name: "ir.due", value: state.due, type: 5 }
-      ]
+      props
     )
 
     invalidateIrBlockCache(blockId)
@@ -147,24 +165,35 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
     const hasLastRead = props.some(prop => prop.name === "ir.lastRead")
     const hasReadCount = props.some(prop => prop.name === "ir.readCount")
     const hasDue = props.some(prop => prop.name === "ir.due")
+    const hasPosition = props.some(prop => prop.name === "ir.position")
+
+    const cardType = block ? extractCardType(block) : "basic"
+    const isTopic = cardType === "topic"
+
     const rawPriority = parseNumber(readProp(block, "ir.priority"), DEFAULT_PRIORITY)
     const normalizedPriority = normalizePriority(rawPriority)
     const rawDue = parseDate(readProp(block, "ir.due"), null)
+    const rawPosition = parseOptionalNumber(readProp(block, "ir.position"))
 
     const shouldWrite = !hasPriority
       || !hasLastRead
       || !hasReadCount
       || !hasDue
+      || (isTopic && !hasPosition)
       || rawPriority !== normalizedPriority
       || !rawDue
+      || (isTopic && rawPosition === null)
 
     if (shouldWrite) {
-      const baseDate = state.lastRead ?? new Date()
+      // Topic 的队列位置独立于优先级；缺失时初始化为当前时间戳（越新越靠后）。
+      const nextPosition = isTopic ? (rawPosition ?? state.position ?? Date.now()) : state.position
       const normalizedState: IRState = {
         priority: normalizedPriority,
         lastRead: state.lastRead,
         readCount: state.readCount,
-        due: calculateNextDue(normalizedPriority, baseDate)
+        // 保留已有 due（如 Book IR 的分散排期），仅在缺失时由 loadIRState 补齐。
+        due: state.due,
+        position: nextPosition
       }
       await saveIRState(blockId, normalizedState)
       return normalizedState
@@ -189,7 +218,8 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
       priority: prev.priority,
       lastRead: now,
       readCount: prev.readCount + 1,
-      due: calculateNextDue(prev.priority, now)
+      due: calculateNextDue(prev.priority, now),
+      position: prev.position
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -213,7 +243,8 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
       priority: normalizedPriority,
       lastRead: prev.lastRead,
       readCount: prev.readCount,
-      due: calculateNextDue(normalizedPriority, now)
+      due: calculateNextDue(normalizedPriority, now),
+      position: prev.position
     }
 
     await saveIRState(blockId, nextState)

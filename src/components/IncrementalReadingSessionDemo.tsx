@@ -3,14 +3,13 @@
  */
 import type { Block, DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
-import { markAsRead } from "../srs/incrementalReadingStorage"
+import { markAsRead, updatePosition, updatePriority } from "../srs/irSessionActions"
 import { ensureCardSrsState } from "../srs/storage"
 import { ensureCardTagProperties } from "../srs/tagPropertyInit"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
 const { useEffect, useState } = window.React
 const { Button, Block: OrcaBlock } = orca.components
-
 type IncrementalReadingSessionProps = {
   cards: IRCard[]
   panelId: string
@@ -36,6 +35,7 @@ export default function IncrementalReadingSessionDemo({
   const buttonStyle = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   const currentCard = queue[currentIndex]
+  const isTopicCard = currentCard?.cardType === "topic"
 
   useEffect(() => {
     setQueue(cards)
@@ -64,6 +64,141 @@ export default function IncrementalReadingSessionDemo({
     } catch (error) {
       console.error("[IR Session] 标记已读失败:", error)
       orca.notify("error", "标记已读失败", { title: "渐进阅读" })
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  const pickNextPriority = (current: number): number => {
+    // 复用现有数值优先级分段：高(>=8) / 中(4-7) / 低(<=3)
+    if (current >= 8) return 5
+    if (current >= 4) return 2
+    return 9
+  }
+
+  const handleTogglePriority = async () => {
+    console.log("[IR Session] toggle priority click", {
+      hasCard: Boolean(currentCard),
+      isTopicCard,
+      isWorking,
+      currentIndex,
+      cardId: currentCard?.id,
+      priority: currentCard?.priority
+    })
+    if (!currentCard || !isTopicCard || isWorking) {
+      console.log("[IR Session] toggle priority ignored", {
+        reason: !currentCard ? "no-card" : isWorking ? "working" : "not-topic"
+      })
+      return
+    }
+    setIsWorking(true)
+
+    try {
+      const next = pickNextPriority(currentCard.priority)
+      console.log("[IR Session] toggle priority next", { cardId: currentCard.id, from: currentCard.priority, to: next })
+      const nextState = await updatePriority(currentCard.id, next)
+      console.log("[IR Session] toggle priority updated", { cardId: currentCard.id, priority: nextState.priority })
+      setQueue((prev: IRCard[]) => prev.map((card: IRCard, idx: number) =>
+        idx === currentIndex ? { ...card, priority: nextState.priority } : card
+      ))
+      orca.notify("success", "已切换优先级", { title: "渐进阅读" })
+    } catch (error) {
+      console.error("[IR Session] 切换优先级失败:", error)
+      orca.notify("error", "切换优先级失败", { title: "渐进阅读" })
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  const computeMovedPosition = (
+    direction: "forward" | "back",
+    indices: number[],
+    topicPos: number
+  ): number | null => {
+    const currentTopicIndex = indices[topicPos]
+    if (currentTopicIndex === undefined) return null
+
+    if (direction === "forward") {
+      if (topicPos <= 0) return null
+      const prevTopicIndex = indices[topicPos - 1]
+      const prevPrevTopicIndex = indices[topicPos - 2]
+      const prevPos = queue[prevTopicIndex]?.position ?? Date.now()
+      const prevPrevPos = prevPrevTopicIndex !== undefined ? (queue[prevPrevTopicIndex]?.position ?? null) : null
+      return prevPrevPos !== null ? (prevPrevPos + prevPos) / 2 : prevPos - 1
+    }
+
+    if (topicPos >= indices.length - 1) return null
+    const nextTopicIndex = indices[topicPos + 1]
+    const nextNextTopicIndex = indices[topicPos + 2]
+    const nextPos = queue[nextTopicIndex]?.position ?? Date.now()
+    const nextNextPos = nextNextTopicIndex !== undefined ? (queue[nextNextTopicIndex]?.position ?? null) : null
+    return nextNextPos !== null ? (nextPos + nextNextPos) / 2 : nextPos + 1
+  }
+
+  const handleMoveTopic = async (direction: "forward" | "back") => {
+    console.log("[IR Session] move topic click", {
+      direction,
+      hasCard: Boolean(currentCard),
+      isTopicCard,
+      isWorking,
+      currentIndex,
+      cardId: currentCard?.id,
+      position: currentCard?.position
+    })
+    if (!currentCard || !isTopicCard || isWorking) {
+      console.log("[IR Session] move topic ignored", {
+        reason: !currentCard ? "no-card" : isWorking ? "working" : "not-topic"
+      })
+      return
+    }
+
+    const topicIndices = queue
+      .map((card: IRCard, idx: number) => card.cardType === "topic" ? idx : -1)
+      .filter((idx: number) => idx >= 0)
+    console.log("[IR Session] move topic indices", { topicIndices })
+
+    const topicPos = topicIndices.indexOf(currentIndex)
+    if (topicPos < 0) {
+      console.log("[IR Session] move topic ignored", { reason: "topic-not-found", currentIndex })
+      return
+    }
+
+    const newPosition = computeMovedPosition(direction, topicIndices, topicPos)
+    if (newPosition === null) {
+      console.log("[IR Session] move topic ignored", { reason: "no-new-position", topicPos, topicIndices })
+      return
+    }
+
+    const targetIndex = direction === "forward"
+      ? topicIndices[topicPos - 1]
+      : topicIndices[topicPos + 1]
+
+    if (targetIndex === undefined) {
+      console.log("[IR Session] move topic ignored", { reason: "no-target-index", topicPos, topicIndices })
+      return
+    }
+
+    setIsWorking(true)
+
+    try {
+      console.log("[IR Session] move topic updating", { cardId: currentCard.id, newPosition, targetIndex })
+      await updatePosition(currentCard.id, newPosition)
+      console.log("[IR Session] move topic updated", { cardId: currentCard.id, newPosition })
+
+      setQueue((prev: IRCard[]) => {
+        const next: IRCard[] = [...prev]
+        const removed = next.splice(currentIndex, 1)[0]
+        const moved = { ...removed, position: newPosition }
+        const insertIndex = direction === "forward" ? targetIndex : targetIndex
+        next.splice(insertIndex, 0, moved)
+        setCurrentIndex(insertIndex)
+        return next
+      })
+
+      orca.notify("success", direction === "forward" ? "已靠前" : "已靠后", { title: "渐进阅读" })
+    } catch (error) {
+      console.error("[IR Session] 推送 Topic 失败:", error)
+      orca.notify("error", "推送失败", { title: "渐进阅读" })
     } finally {
       setIsWorking(false)
     }
@@ -266,9 +401,26 @@ export default function IncrementalReadingSessionDemo({
         gap: "8px",
         flexWrap: "wrap"
       }}>
-        <Button variant="solid" onClick={handleMarkRead} style={buttonStyle}>
-          标记已读
-        </Button>
+        {isTopicCard ? (
+          <>
+            <Button variant="solid" onClick={handleMarkRead} style={buttonStyle}>
+              已读
+            </Button>
+            <Button variant="plain" onClick={() => handleMoveTopic("forward")} style={buttonStyle}>
+              靠前
+            </Button>
+            <Button variant="plain" onClick={() => handleMoveTopic("back")} style={buttonStyle}>
+              靠后
+            </Button>
+            <Button variant="plain" onClick={handleTogglePriority} style={buttonStyle}>
+              优先级切换
+            </Button>
+          </>
+        ) : (
+          <Button variant="solid" onClick={handleMarkRead} style={buttonStyle}>
+            标记已读
+          </Button>
+        )}
         <Button variant="plain" onClick={handleSkip} style={buttonStyle}>
           跳过
         </Button>

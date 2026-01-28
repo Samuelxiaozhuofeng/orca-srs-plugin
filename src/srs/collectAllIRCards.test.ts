@@ -51,17 +51,18 @@ describe("collectAllIRCardsFromBlocks", () => {
       createBlock(3, "basic")
     ]
 
-    const stateMap = new Map<DbId, { priority: number; lastRead: Date | null; readCount: number; due: Date }>([
-      [1, { priority: 3, lastRead: new Date(now.getTime() - 3600), readCount: 2, due: new Date(now.getTime() + 7 * 86400000) }],
-      [2, { priority: 8, lastRead: new Date(now.getTime() - 7200), readCount: 5, due: new Date(now.getTime() + 30 * 86400000) }],
-      [3, { priority: 5, lastRead: new Date(now.getTime() - 7200), readCount: 1, due: new Date(now.getTime() - 86400000) }]
+    const stateMap = new Map<DbId, { priority: number; lastRead: Date | null; readCount: number; due: Date; position: number | null }>([
+      [1, { priority: 3, lastRead: new Date(now.getTime() - 3600), readCount: 2, due: new Date(now.getTime() + 7 * 86400000), position: null }],
+      [2, { priority: 8, lastRead: new Date(now.getTime() - 7200), readCount: 5, due: new Date(now.getTime() + 30 * 86400000), position: 1 }],
+      [3, { priority: 5, lastRead: new Date(now.getTime() - 7200), readCount: 1, due: new Date(now.getTime() - 86400000), position: null }]
     ])
 
     vi.mocked(ensureIRState).mockResolvedValue({
       priority: 5,
       lastRead: null,
       readCount: 0,
-      due: now
+      due: now,
+      position: null
     })
 
     vi.mocked(loadIRState).mockImplementation(async (blockId: DbId) => {

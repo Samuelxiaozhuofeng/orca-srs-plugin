@@ -48,8 +48,14 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
       setPluginName(currentPluginName)
 
       const { collectIRCards, buildIRQueue } = await import("../srs/incrementalReadingCollector")
+      const { getIncrementalReadingSettings } = await import("../srs/settings/incrementalReadingSettingsSchema")
       const cards = await collectIRCards(currentPluginName)
-      const queue = buildIRQueue(cards)
+      const settings = getIncrementalReadingSettings(currentPluginName)
+      const queue = await buildIRQueue(cards, {
+        topicQuotaPercent: settings.topicQuotaPercent,
+        dailyLimit: settings.dailyLimit,
+        enableAutoDefer: settings.enableAutoDefer
+      })
       setCards(queue)
     } catch (error) {
       console.error("[IR Session Renderer] 加载阅读队列失败:", error)
