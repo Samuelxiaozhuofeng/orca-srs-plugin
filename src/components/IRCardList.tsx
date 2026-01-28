@@ -6,8 +6,11 @@ import {
   IRCardGroup
 } from "../srs/incrementalReadingManagerUtils"
 
-const { useEffect, useMemo, useState } = window.React
+const { useCallback, useEffect, useMemo, useState } = window.React
 const { Button } = orca.components
+
+/** 每个分组默认显示的卡片数量 */
+const PAGE_SIZE = 20
 
 type IRCardListProps = {
   cards: IRCard[]
@@ -85,6 +88,18 @@ export default function IRCardList({
   onToggleGroup
 }: IRCardListProps) {
   const [blockTitles, setBlockTitles] = useState<Record<string, string>>({})
+  const [groupDisplayCounts, setGroupDisplayCounts] = useState<Record<IRDateGroupKey, number>>({} as Record<IRDateGroupKey, number>)
+
+  const getDisplayCount = useCallback((groupKey: IRDateGroupKey) => {
+    return groupDisplayCounts[groupKey] ?? PAGE_SIZE
+  }, [groupDisplayCounts])
+
+  const handleLoadMore = useCallback((groupKey: IRDateGroupKey) => {
+    setGroupDisplayCounts((prev: Record<IRDateGroupKey, number>) => ({
+      ...prev,
+      [groupKey]: (prev[groupKey] ?? PAGE_SIZE) + PAGE_SIZE
+    }))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -196,56 +211,79 @@ export default function IRCardList({
               </Button>
             </div>
 
-            {isExpanded && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
-                {group.cards.map(card => {
-                  const title = truncateText(getBlockTitle(card.id, blockTitles), 50)
+            {isExpanded && (() => {
+              const displayCount = getDisplayCount(group.key)
+              const visibleCards = group.cards.slice(0, displayCount)
+              const hasMore = group.cards.length > displayCount
+              const remaining = group.cards.length - displayCount
 
-                  return (
-                    <div
-                      key={card.id}
-                      onClick={() => onCardClick(card.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: "10px",
-                        border: `1px solid ${style.borderColor}`,
-                        borderRadius: "8px",
-                        padding: "10px",
-                        backgroundColor: style.itemBg ?? "var(--orca-color-bg-1)",
-                        color: style.itemText ?? "var(--orca-color-text-1)",
-                        cursor: "pointer"
-                      }}
-                      title="点击在侧面板打开"
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            fontWeight: 600,
-                            color: style.itemText ?? "var(--orca-color-text-1)"
-                          }}
-                        >
-                          {title}
-                        </div>
-                        <div style={{
-                          marginTop: "6px",
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+                  {visibleCards.map(card => {
+                    const title = truncateText(getBlockTitle(card.id, blockTitles), 50)
+
+                    return (
+                      <div
+                        key={card.id}
+                        onClick={() => onCardClick(card.id)}
+                        style={{
                           display: "flex",
-                          flexWrap: "wrap",
-                          gap: "12px",
-                          fontSize: "12px",
-                          color: style.itemText ?? "var(--orca-color-text-3)"
-                        }}>
-                          <span>类型：{card.cardType}</span>
-                          <span>到期：{formatSimpleDate(card.due)}</span>
-                          <span>已读：{card.readCount}</span>
+                          alignItems: "flex-start",
+                          gap: "10px",
+                          border: `1px solid ${style.borderColor}`,
+                          borderRadius: "8px",
+                          padding: "10px",
+                          backgroundColor: style.itemBg ?? "var(--orca-color-bg-1)",
+                          color: style.itemText ?? "var(--orca-color-text-1)",
+                          cursor: "pointer"
+                        }}
+                        title="点击在侧面板打开"
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 600,
+                              color: style.itemText ?? "var(--orca-color-text-1)"
+                            }}
+                          >
+                            {title}
+                          </div>
+                          <div style={{
+                            marginTop: "6px",
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "12px",
+                            fontSize: "12px",
+                            color: style.itemText ?? "var(--orca-color-text-3)"
+                          }}>
+                            <span>类型：{card.cardType}</span>
+                            <span>到期：{formatSimpleDate(card.due)}</span>
+                            <span>已读：{card.readCount}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    )
+                  })}
+                  {hasMore && (
+                    <Button
+                      variant="plain"
+                      onClick={() => handleLoadMore(group.key)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        marginTop: "4px",
+                        borderRadius: "6px",
+                        border: "1px dashed var(--orca-color-border-2)",
+                        color: "var(--orca-color-text-2)"
+                      }}
+                    >
+                      加载更多（剩余 {remaining} 张）
+                    </Button>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )
       })}

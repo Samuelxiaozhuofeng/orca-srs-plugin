@@ -75,11 +75,15 @@ export function groupIRCardsByDate(cards: IRCard[], now: Date = new Date()): IRC
   }
 
   return IR_GROUP_ORDER
-    .map(key => ({
-      key,
-      title: key,
-      cards: groups.get(key) ?? []
-    }))
+    .map(key => {
+      const groupCards = groups.get(key) ?? []
+      groupCards.sort((a, b) => a.due.getTime() - b.due.getTime())
+      return {
+        key,
+        title: key,
+        cards: groupCards
+      }
+    })
     .filter(group => group.cards.length > 0)
 }
 
