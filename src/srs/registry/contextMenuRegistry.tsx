@@ -6,7 +6,7 @@
  */
 
 import React from "react"
-import type { DbId } from "../../orca.d.ts"
+import type { DbId, Block } from "../../orca.d.ts"
 import { BlockWithRepr } from "../blockUtils"
 import {
   isQueryBlock,
@@ -15,6 +15,8 @@ import {
   estimateCardCount
 } from "../blockCardCollector"
 import { createRepeatReviewSession } from "../repeatReviewManager"
+import { getChapterBlockIds, getChapterBlockIdsAsync } from "../bookIRCreator"
+import { showIRBookDialog } from "../../components/IRBookDialogMount"
 
 /** 已注册的菜单项 ID 列表 */
 const registeredMenuIds: string[] = []
@@ -122,6 +124,31 @@ export function registerContextMenu(pluginName: string): void {
     }
   })
   registeredMenuIds.push(childrenMenuId)
+
+  // 注册渐进阅读书籍菜单项（当块包含 inline references 时显示）
+  const bookIRMenuId = `${pluginName}.createBookIR`
+  orca.blockMenuCommands.registerBlockMenuCommand(bookIRMenuId, {
+    worksOnMultipleBlocks: false,
+    render: (blockId: DbId, _rootBlockId: DbId, close: () => void) => {
+      // 获取块数据
+      const block = orca.state.blocks?.[blockId] as Block | undefined
+
+      // 对非查询块显示
+      if (!block || isQueryBlock(block as BlockWithRepr)) {
+        return null
+      }
+
+      return (
+        <BookIRMenuItem
+          blockId={blockId}
+          block={block}
+          pluginName={pluginName}
+          close={close}
+        />
+      )
+    }
+  })
+  registeredMenuIds.push(bookIRMenuId)
 
   console.log(`[${pluginName}] 右键菜单已注册`)
 }
@@ -350,6 +377,78 @@ function ChildrenBlockMenuItem({
     <MenuText
       preIcon="ti ti-cards"
       title={`复习此块卡片 (${cardCount})`}
+      onClick={handleClick}
+    />
+  )
+}
+
+/**
+ * 渐进阅读书籍菜单项组件
+ * 当块包含 inline references 时显示"创建渐进阅读书籍"选项
+ */
+function BookIRMenuItem({
+  blockId,
+  block,
+  pluginName,
+  close
+}: {
+  blockId: DbId
+  block: Block
+  pluginName: string
+  close: () => void
+}) {
+  const [chapterCount, setChapterCount] = React.useState<number>(0)
+  const [isLoading, setIsLoading] = React.useState(true)
+
+  React.useEffect(() => {
+    let cancelled = false
+
+    async function fetchChapterCount() {
+      try {
+        const chapterIds = await getChapterBlockIdsAsync(block)
+        if (!cancelled) {
+          setChapterCount(chapterIds.length)
+          setIsLoading(false)
+        }
+      } catch (error) {
+        console.error(`[${pluginName}] 获取章节数量失败:`, error)
+        if (!cancelled) {
+          setChapterCount(0)
+          setIsLoading(false)
+        }
+      }
+    }
+
+    fetchChapterCount()
+
+    return () => {
+      cancelled = true
+    }
+  }, [block, pluginName])
+
+  const handleClick = async () => {
+    close()
+
+    const chapterIds = await getChapterBlockIdsAsync(block)
+    if (chapterIds.length === 0) {
+      orca.notify("warn", "该块没有内联引用", { title: "渐进阅读" })
+      return
+    }
+
+    const bookTitle = block.text?.trim() || "未命名书籍"
+    showIRBookDialog(chapterIds, bookTitle, blockId)
+  }
+
+  if (isLoading || chapterCount === 0) {
+    return null
+  }
+
+  const MenuText = orca.components.MenuText
+
+  return (
+    <MenuText
+      preIcon="ti ti-book"
+      title={`创建渐进阅读书籍 (${chapterCount} 章)`}
       onClick={handleClick}
     />
   )

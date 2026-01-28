@@ -9,10 +9,15 @@
 
 import React from "react"
 import { AIDialogMount } from "../../components/AIDialogMount"
+import { IRBookDialogMount } from "../../components/IRBookDialogMount"
 
 export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.aiDialogMount`, () => (
     <AIDialogMount pluginName={pluginName} />
+  ))
+
+  orca.headbar.registerHeadbarButton(`${pluginName}.irBookDialogMount`, () => (
+    <IRBookDialogMount pluginName={pluginName} />
   ))
   
   // 复习按钮 - 开始复习会话
@@ -124,6 +129,7 @@ export function registerUIComponents(pluginName: string): void {
 
 export function unregisterUIComponents(pluginName: string): void {
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.irBookDialogMount`)
   
   orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
