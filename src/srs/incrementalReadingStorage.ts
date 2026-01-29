@@ -284,6 +284,34 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
 }
 
 /**
+ * 标记已读并更新优先级：更新 priority/lastRead/readCount/due
+ */
+export async function markAsReadWithPriority(
+  blockId: DbId,
+  newPriority: number
+): Promise<IRState> {
+  try {
+    const prev = await loadIRState(blockId)
+    const now = new Date()
+    const block = await getBlockCached(blockId)
+    const normalizedPriority = normalizePriority(newPriority)
+    const nextState: IRState = {
+      priority: normalizedPriority,
+      lastRead: now,
+      readCount: prev.readCount + 1,
+      due: computeNextDue(block, normalizedPriority, now),
+      position: prev.position
+    }
+    await saveIRState(blockId, nextState)
+    return nextState
+  } catch (error) {
+    console.error("[IR] 标记已读并更新优先级失败:", error)
+    orca.notify("error", "标记已读并更新优先级失败", { title: "渐进阅读" })
+    throw error
+  }
+}
+
+/**
  * 更新优先级并重算 due（基于当前时间）
  */
 export async function updatePriority(blockId: DbId, newPriority: number): Promise<IRState> {
