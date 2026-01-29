@@ -60,6 +60,12 @@
    - 列表卡的创建、调度与辅助预览规则
    - 关键文件：`src/srs/listCardCreator.ts`、`src/srs/cardCollector.ts`、`src/components/ListCardReviewRenderer.tsx`
 
+### 协作与流程
+
+12. **[仓库贡献指南.md](仓库贡献指南.md)** ⭐ 新增
+   - 构建要求与模块文档同步规范
+   - 关键文件：`AGENTS.md`、`package.json`
+
 ## 文档结构说明
 
 每个模块文档采用统一的结构：
@@ -82,3 +88,4 @@
 ## 更新记录
 
 - 2025-12-08：创建模块文档结构
+- 2026-01-29：新增仓库贡献与文档维护指南
