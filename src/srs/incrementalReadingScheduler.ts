@@ -53,6 +53,26 @@ const normalizePriorityChoice = (value: unknown): IRPriorityChoice | null => {
     : null
 }
 
+const readNumericPriority = (block: Block): number | null => {
+  const rawValue = block.properties?.find(prop => prop.name === "ir.priority")?.value
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) return rawValue
+  if (typeof rawValue === "string") {
+    const parsed = Number(rawValue)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+/**
+ * 将数值优先级映射为“高/中/低”
+ */
+export function mapNumericPriorityToChoice(priority: number): IRPriorityChoice {
+  const normalized = normalizePriority(priority)
+  if (normalized >= 8) return "高优先级"
+  if (normalized >= 4) return "中优先级"
+  return "低优先级"
+}
+
 /**
  * 从块的 #card 标签中提取 priority 单选属性
  * 
@@ -80,6 +100,30 @@ export function getPriorityFromTag(block: Block): IRPriorityChoice | null {
     return normalizePriorityChoice(rawValue[0])
   }
   return normalizePriorityChoice(rawValue)
+}
+
+/**
+ * 获取 Topic 的“有效优先级（高/中/低）”
+ *
+ * 规则：
+ * - 如果 #card.priority 已被用户明确设置（非默认值），优先使用它
+ * - 否则回退到 ir.priority 的数值映射（便于支持会话内切换）
+ */
+export function getPriorityChoiceFromTopic(
+  block: Block,
+  fallback: IRPriorityChoice = DEFAULT_PRIORITY_CHOICE
+): IRPriorityChoice {
+  const tagPriority = getPriorityFromTag(block)
+  if (tagPriority && tagPriority !== fallback) {
+    return tagPriority
+  }
+
+  const numericPriority = readNumericPriority(block)
+  if (numericPriority !== null) {
+    return mapNumericPriorityToChoice(numericPriority)
+  }
+
+  return tagPriority ?? fallback
 }
 
 const randomIntInclusive = (min: number, max: number): number =>

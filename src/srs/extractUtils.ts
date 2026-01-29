@@ -9,11 +9,37 @@
  */
 
 import type { Block, ContentFragment, CursorData, DbId } from "../orca.d.ts"
+import { extractCardType } from "./deckUtils"
 import { ensureIRState } from "./incrementalReadingStorage"
+import type { IRPriorityChoice } from "./incrementalReadingScheduler"
+import { getPriorityChoiceFromTopic } from "./incrementalReadingScheduler"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
 
 const DEFAULT_PRIORITY_CHOICE = "中优先级"
+
+const findNearestTopic = (block: Block): Block | null => {
+  let current: Block | undefined = block
+  let guard = 0
+
+  while (current && guard < 100) {
+    if (extractCardType(current) === "topic") {
+      return current
+    }
+    const parentId = current.parent
+    if (!parentId) return null
+    current = orca.state.blocks?.[parentId] as Block | undefined
+    guard += 1
+  }
+
+  return null
+}
+
+const resolveInheritedPriority = (block: Block): IRPriorityChoice => {
+  const topic = findNearestTopic(block)
+  if (!topic) return DEFAULT_PRIORITY_CHOICE
+  return getPriorityChoiceFromTopic(topic, DEFAULT_PRIORITY_CHOICE)
+}
 
 /**
  * 创建摘录子块并初始化其 #card 与渐进阅读状态
@@ -108,6 +134,7 @@ export async function createExtract(
 
   // 2) 为摘录块添加/更新 #card 标签属性
   try {
+    const inheritedPriority = resolveInheritedPriority(block)
     const extractBlock = orca.state.blocks?.[extractBlockId] as Block | undefined
     const hasCardTag = extractBlock?.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
 
@@ -121,7 +148,7 @@ export async function createExtract(
           { name: "type", value: "extracts" },
           { name: "牌组", value: [] },
           { name: "status", value: "" },
-          { name: "priority", value: [DEFAULT_PRIORITY_CHOICE] }
+          { name: "priority", value: [inheritedPriority] }
         ]
       )
       await ensureCardTagProperties(pluginName)
@@ -132,7 +159,7 @@ export async function createExtract(
         const hasPriority = cardRef.data?.some(data => data.name === "priority") ?? false
         const refData: Array<{ name: string; value: unknown }> = [{ name: "type", value: "extracts" }]
         if (!hasPriority) {
-          refData.push({ name: "priority", value: [DEFAULT_PRIORITY_CHOICE] })
+          refData.push({ name: "priority", value: [inheritedPriority] })
         }
         await orca.commands.invokeEditorCommand(
           "core.editor.setRefData",

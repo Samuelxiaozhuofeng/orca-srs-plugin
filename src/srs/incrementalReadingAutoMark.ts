@@ -11,7 +11,7 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
-import { calculateNextDue, getPriorityFromTag } from "./incrementalReadingScheduler"
+import { calculateNextDue, getPriorityChoiceFromTopic } from "./incrementalReadingScheduler"
 import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
 
 const DEFAULT_PRIORITY_CHOICE = "中优先级"
@@ -89,7 +89,7 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
   }
 
   // Extract 继承父 Topic 的 priority，用于初始排期
-  const inheritedPriority = getPriorityFromTag(parentTopic) ?? DEFAULT_PRIORITY_CHOICE
+    const inheritedPriority = getPriorityChoiceFromTopic(parentTopic, DEFAULT_PRIORITY_CHOICE)
   console.log(`[${pluginName}] 自动标记 Extract: 块 ${blockId}`)
 
   try {
