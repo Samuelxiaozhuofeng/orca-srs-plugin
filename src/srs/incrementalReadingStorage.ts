@@ -11,7 +11,7 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
-import { calculateNextDue, normalizePriority } from "./incrementalReadingScheduler"
+import { calculateNextDue, getPriorityFromTag, normalizePriority } from "./incrementalReadingScheduler"
 
 export type IRState = {
   priority: number
@@ -30,6 +30,12 @@ const DEFAULT_PRIORITY = 5
 const blockCache = new Map<DbId, Block | null>()
 
 const getBlockCached = async (blockId: DbId): Promise<Block | undefined> => {
+  const fromState = orca.state.blocks?.[blockId] as Block | undefined
+  if (fromState) {
+    blockCache.set(blockId, fromState)
+    return fromState
+  }
+
   if (blockCache.has(blockId)) {
     return blockCache.get(blockId) ?? undefined
   }
@@ -86,6 +92,23 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
   }
 }
 
+const computeNextDue = (
+  block: Block | undefined,
+  numericPriority: number,
+  baseDate: Date
+): Date => {
+  if (block) {
+    const cardType = extractCardType(block)
+    if (cardType === "extracts") {
+      const tagPriority = getPriorityFromTag(block)
+      if (tagPriority) {
+        return calculateNextDue(tagPriority, baseDate)
+      }
+    }
+  }
+  return calculateNextDue(numericPriority, baseDate)
+}
+
 // ============================================================================
 // 核心 API
 // ============================================================================
@@ -108,7 +131,7 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
     const position = parseOptionalNumber(readProp(block, "ir.position"))
 
     const priority = normalizePriority(rawPriority)
-    const normalizedDue = due ?? calculateNextDue(priority, lastRead ?? now)
+    const normalizedDue = due ?? computeNextDue(block, priority, lastRead ?? now)
 
     return {
       priority,
@@ -214,11 +237,12 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
   try {
     const prev = await loadIRState(blockId)
     const now = new Date()
+    const block = await getBlockCached(blockId)
     const nextState: IRState = {
       priority: prev.priority,
       lastRead: now,
       readCount: prev.readCount + 1,
-      due: calculateNextDue(prev.priority, now),
+      due: computeNextDue(block, prev.priority, now),
       position: prev.position
     }
     await saveIRState(blockId, nextState)
@@ -238,12 +262,13 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
     const prev = await loadIRState(blockId)
     const now = new Date()
     const normalizedPriority = normalizePriority(newPriority)
+    const block = await getBlockCached(blockId)
 
     const nextState: IRState = {
       priority: normalizedPriority,
       lastRead: prev.lastRead,
       readCount: prev.readCount,
-      due: calculateNextDue(normalizedPriority, now),
+      due: computeNextDue(block, normalizedPriority, now),
       position: prev.position
     }
 
