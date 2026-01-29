@@ -109,6 +109,15 @@ export async function createExtract(
     return null
   }
 
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.formatHighlightYellow",
+      cursor
+    )
+  } catch (error) {
+    console.warn(`[${pluginName}] 高亮原文失败:`, error)
+  }
+
   // 1) 创建子块（摘录块）
   let extractBlockId: DbId
   try {
