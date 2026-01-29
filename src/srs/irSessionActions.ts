@@ -1,8 +1,29 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRState } from "./incrementalReadingStorage"
-import { loadIRState, markAsRead, saveIRState, updatePriority as updatePriorityInternal } from "./incrementalReadingStorage"
+import { deleteIRState, loadIRState, markAsRead, saveIRState, updatePriority as updatePriorityInternal } from "./incrementalReadingStorage"
+import { deleteCardSrsData } from "./storage"
 
 export { markAsRead }
+
+/**
+ * 完成渐进阅读：移除 #card 标签并清理 SRS/IR 状态
+ */
+export async function completeIRCard(blockId: DbId): Promise<void> {
+  try {
+    await deleteCardSrsData(blockId)
+    await deleteIRState(blockId)
+    await orca.commands.invokeEditorCommand(
+      "core.editor.removeTag",
+      null,
+      blockId,
+      "card"
+    )
+  } catch (error) {
+    console.error("[IR] 读完处理失败:", error)
+    orca.notify("error", "读完处理失败", { title: "渐进阅读" })
+    throw error
+  }
+}
 
 /**
  * 更新 Topic 队列位置（ir.position），不改变优先级/到期等其他状态。

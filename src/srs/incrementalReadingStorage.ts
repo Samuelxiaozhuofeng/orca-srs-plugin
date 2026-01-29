@@ -176,6 +176,35 @@ export async function saveIRState(blockId: DbId, state: IRState): Promise<void> 
 }
 
 /**
+ * 删除渐进阅读状态（移除所有 ir.* 属性）
+ */
+export async function deleteIRState(blockId: DbId): Promise<void> {
+  try {
+    const block = await getBlockCached(blockId)
+    const propertyNames = block?.properties
+      ?.filter(prop => prop.name.startsWith("ir."))
+      .map(prop => prop.name) ?? []
+
+    if (propertyNames.length === 0) {
+      return
+    }
+
+    await orca.commands.invokeEditorCommand(
+      "core.editor.deleteProperties",
+      null,
+      [blockId],
+      propertyNames
+    )
+
+    invalidateIrBlockCache(blockId)
+  } catch (error) {
+    console.error("[IR] 删除渐进阅读状态失败:", error)
+    orca.notify("error", "删除渐进阅读状态失败", { title: "渐进阅读" })
+    throw error
+  }
+}
+
+/**
  * 确保块存在渐进阅读状态（仅在缺失时初始化）
  */
 export async function ensureIRState(blockId: DbId): Promise<IRState> {

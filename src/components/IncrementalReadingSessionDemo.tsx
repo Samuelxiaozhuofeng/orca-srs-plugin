@@ -1,15 +1,12 @@
 /**
  * 渐进阅读会话组件
  */
-import type { Block, DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
-import { markAsRead, updatePosition, updatePriority } from "../srs/irSessionActions"
-import { ensureCardSrsState } from "../srs/storage"
-import { ensureCardTagProperties } from "../srs/tagPropertyInit"
+import { completeIRCard, markAsRead, updatePosition, updatePriority } from "../srs/irSessionActions"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
 const { useEffect, useState } = window.React
-const { Button, Block: OrcaBlock } = orca.components
+const { Button, Block: OrcaBlock, ConfirmBox } = orca.components
 type IncrementalReadingSessionProps = {
   cards: IRCard[]
   panelId: string
@@ -26,7 +23,6 @@ function formatSimpleDate(date: Date): string {
 export default function IncrementalReadingSessionDemo({
   cards,
   panelId,
-  pluginName = "orca-srs",
   onClose
 }: IncrementalReadingSessionProps) {
   const [queue, setQueue] = useState<IRCard[]>(cards)
@@ -229,91 +225,17 @@ export default function IncrementalReadingSessionDemo({
     }
   }
 
-  const handleCreateCard = async () => {
+  const handleCompleteRead = async () => {
     if (!currentCard || isWorking) return
     setIsWorking(true)
 
     try {
-      const parentBlock = (orca.state.blocks?.[currentCard.id] as Block | undefined)
-        ?? await orca.invokeBackend("get-block", currentCard.id) as Block | undefined
-
-      if (!parentBlock) {
-        orca.notify("error", "无法获取当前块", { title: "渐进阅读" })
-        return
-      }
-
-      const questionText = parentBlock.text?.trim() || "问题"
-      const answerText = "答案"
-
-      const childBlockId = await orca.commands.invokeEditorCommand(
-        "core.editor.insertBlock",
-        null,
-        parentBlock,
-        "lastChild",
-        [{ t: "t", v: questionText }]
-      ) as DbId
-
-      if (!childBlockId) {
-        orca.notify("error", "创建卡片失败", { title: "渐进阅读" })
-        return
-      }
-
-      const childBlock = (orca.state.blocks?.[childBlockId] as Block | undefined)
-        ?? await orca.invokeBackend("get-block", childBlockId) as Block | undefined
-
-      if (!childBlock) {
-        orca.notify("error", "无法获取新建卡片块", { title: "渐进阅读" })
-        return
-      }
-
-      const answerBlockId = await orca.commands.invokeEditorCommand(
-        "core.editor.insertBlock",
-        null,
-        childBlock,
-        "lastChild",
-        [{ t: "t", v: answerText }]
-      ) as DbId
-
-      if (!answerBlockId) {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.deleteBlocks",
-          null,
-          [childBlockId]
-        )
-        orca.notify("error", "创建答案失败", { title: "渐进阅读" })
-        return
-      }
-
-      await orca.commands.invokeEditorCommand(
-        "core.editor.insertTag",
-        null,
-        childBlockId,
-        "card",
-        [
-          { name: "type", value: "basic" },
-          { name: "牌组", value: [] },
-          { name: "status", value: "" }
-        ]
-      )
-
-      await ensureCardTagProperties(pluginName)
-
-      const childWithRepr = orca.state.blocks?.[childBlockId] as any
-      if (childWithRepr) {
-        childWithRepr._repr = {
-          type: "srs.card",
-          front: questionText,
-          back: answerText,
-          cardType: "basic"
-        }
-      }
-
-      await ensureCardSrsState(childBlockId)
-
-      orca.notify("success", "已在当前摘录下生成卡片", { title: "渐进阅读" })
+      await completeIRCard(currentCard.id)
+      removeCardAtIndex(currentIndex)
+      orca.notify("success", "已读完并移出队列", { title: "渐进阅读" })
     } catch (error) {
-      console.error("[IR Session] 生成卡片失败:", error)
-      orca.notify("error", "生成卡片失败", { title: "渐进阅读" })
+      console.error("[IR Session] 读完处理失败:", error)
+      orca.notify("error", "读完处理失败", { title: "渐进阅读" })
     } finally {
       setIsWorking(false)
     }
@@ -424,9 +346,19 @@ export default function IncrementalReadingSessionDemo({
         <Button variant="plain" onClick={handleSkip} style={buttonStyle}>
           跳过
         </Button>
-        <Button variant="plain" onClick={handleCreateCard} style={buttonStyle}>
-          生成卡片
-        </Button>
+        <ConfirmBox
+          text="确认读完当前卡片？将移除 #card 标签并清除 SRS/IR 状态。"
+          onConfirm={async (_e, close) => {
+            await handleCompleteRead()
+            close()
+          }}
+        >
+          {(open) => (
+            <Button variant="plain" onClick={open} style={buttonStyle}>
+              读完
+            </Button>
+          )}
+        </ConfirmBox>
         <Button variant="plain" onClick={handleDelete} style={buttonStyle}>
           删除
         </Button>
