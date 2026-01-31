@@ -35,7 +35,10 @@ Add and follow this prompt when handling code changes:
 1) mcp__ace-tool__search_context：先在代码库中搜索相关实现
    - project_root_path 固定为 /Users/samdagreat/Documents/vibe coding/orca-srs-plugin
    - query 根据问题给出清晰的自然语言描述 + 关键词
-2) mcp__sequential-thinking__sequentialthinking：用 3-5 步结构化思考，并逐步产出思路，直到 nextThoughtNeeded=false
+
+2) mcp__notebooklm__notebook_query：若对 Orca Note 插件开发 API / 接口细节有疑惑，优先向 NotebookLM 提问（不要猜）
+   - notebook_id 固定为 0d60cb64-7c77-414d-95be-ee10e7607a32
+   - query 清晰描述疑问，并附上相关接口名/类型名/代码片段（如有）
 
 输出时仅给出结论与行动建议，不要展示内部思考过程。
 ```
