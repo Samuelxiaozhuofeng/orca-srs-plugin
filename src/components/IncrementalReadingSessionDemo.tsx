@@ -5,7 +5,7 @@ import type { IRCard } from "../srs/incrementalReadingCollector"
 import { completeIRCard, markAsRead, markAsReadWithPriorityShift, updatePriority } from "../srs/irSessionActions"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
-const { useEffect, useState } = window.React
+const { useEffect, useRef, useState } = window.React
 const { Button, Block: OrcaBlock, ConfirmBox } = orca.components
 type IncrementalReadingSessionProps = {
   cards: IRCard[]
@@ -28,10 +28,69 @@ export default function IncrementalReadingSessionDemo({
   const [queue, setQueue] = useState<IRCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isWorking, setIsWorking] = useState<boolean>(false)
+  const sessionRootRef = useRef<HTMLDivElement | null>(null)
+  const autoJumpedCardIdRef = useRef<number | null>(null)
   const buttonStyle = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   const currentCard = queue[currentIndex]
   const isTopicCard = currentCard?.cardType === "topic"
+
+  useEffect(() => {
+    if (!currentCard) return
+    autoJumpedCardIdRef.current = null
+  }, [currentCard?.id])
+
+  useEffect(() => {
+    if (!currentCard) return
+
+    const resumeBlockId = currentCard.resumeBlockId
+    if (!resumeBlockId || resumeBlockId === currentCard.id) return
+    if (autoJumpedCardIdRef.current === currentCard.id) return
+
+    const container = sessionRootRef.current
+    if (!container) return
+
+    let cancelled = false
+
+    const findResumeElement = (): HTMLElement | null => {
+      const selectors = [
+        `#block-${resumeBlockId}`,
+        `[data-block-id="${resumeBlockId}"]`,
+        `[data-blockid="${resumeBlockId}"]`,
+        `[data-id="${resumeBlockId}"]`,
+        `[blockid="${resumeBlockId}"]`
+      ]
+
+      for (const selector of selectors) {
+        const el = container.querySelector<HTMLElement>(selector)
+        if (el) return el
+      }
+
+      return null
+    }
+
+    const tryScroll = (): boolean => {
+      const el = findResumeElement()
+      if (!el) return false
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      autoJumpedCardIdRef.current = currentCard.id
+      return true
+    }
+
+    // 等待块内容渲染后再定位（最多重试几次）
+    let attempts = 0
+    const tick = () => {
+      if (cancelled) return
+      attempts += 1
+      if (tryScroll() || attempts >= 8) return
+      setTimeout(tick, 250)
+    }
+
+    setTimeout(tick, 50)
+    return () => {
+      cancelled = true
+    }
+  }, [currentCard?.id, currentCard?.resumeBlockId])
 
   useEffect(() => {
     setQueue(cards)
@@ -217,7 +276,7 @@ export default function IncrementalReadingSessionDemo({
       padding: "16px",
       height: "100%",
       overflow: "auto"
-    }}>
+    }} ref={sessionRootRef}>
       <div style={{
         display: "flex",
         justifyContent: "space-between",

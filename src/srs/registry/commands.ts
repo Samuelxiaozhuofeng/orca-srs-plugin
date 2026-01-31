@@ -17,10 +17,12 @@ import { testAIConnection } from "../ai/aiService"
 import { startInteractiveCardCreation } from "../ai/aiInteractiveCardCreator"
 import { testAIConfigWithDetails } from "../ai/aiConfigValidator"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../incrementalReadingAutoMark"
+import { loadIRState, updateResumeBlockId } from "../incrementalReadingStorage"
 import {
   getIncrementalReadingSettings,
   INCREMENTAL_READING_SETTINGS_KEYS
 } from "../settings/incrementalReadingSettingsSchema"
+import { isCardTag } from "../tagUtils"
 
 export function registerCommands(
   pluginName: string
@@ -393,6 +395,58 @@ export function registerCommands(
     "SRS: 切换渐进阅读自动标签"
   )
 
+  // 渐进阅读：记录当前阅读进度（用于下次自动跳转继续阅读）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.irRecordProgress`,
+    async (editor, ...args) => {
+      const [_panelId, _rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置", { title: "渐进阅读" })
+        return null
+      }
+
+      const currentBlockId = cursor.focus.blockId
+
+      // 从光标位置向上寻找最近的 #card（允许在任意子块上执行）
+      let cardBlockId: number | null = null
+      let current = orca.state.blocks?.[currentBlockId] as Block | undefined
+      let guard = 0
+      while (current && guard < 200) {
+        const hasCardTag = current.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias))
+        if (hasCardTag) {
+          cardBlockId = current.id
+          break
+        }
+        if (!current.parent) break
+        current = orca.state.blocks?.[current.parent] as Block | undefined
+        guard += 1
+      }
+
+      if (!cardBlockId) {
+        orca.notify("warn", "未找到包含 #card 的父块，无法记录渐进阅读进度", { title: "渐进阅读" })
+        return null
+      }
+
+      const prev = await loadIRState(cardBlockId)
+      await updateResumeBlockId(cardBlockId, currentBlockId)
+
+      orca.notify("success", `已记录阅读进度：#${currentBlockId}`, { title: "渐进阅读" })
+
+      return {
+        ret: { cardId: cardBlockId, resumeBlockId: currentBlockId },
+        undoArgs: { cardId: cardBlockId, prevResumeBlockId: prev.resumeBlockId }
+      }
+    },
+    async undoArgs => {
+      if (!undoArgs || typeof undoArgs.cardId !== "number") return
+      await updateResumeBlockId(undoArgs.cardId, undoArgs.prevResumeBlockId ?? null)
+    },
+    {
+      label: "IR: 记录阅读进度（ir_record）",
+      hasArgs: false
+    }
+  )
+
 }
 
 export function unregisterCommands(pluginName: string): void {
@@ -406,6 +460,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.interactiveAICard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.irRecordProgress`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
   

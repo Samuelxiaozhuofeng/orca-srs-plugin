@@ -24,6 +24,7 @@ export type IRCard = {
   lastRead: Date | null
   readCount: number
   isNew: boolean
+  resumeBlockId: DbId | null
 }
 
 export type IRQueueOptions = {
@@ -118,7 +119,8 @@ export async function collectIRCardsFromBlocks(
           due: state.due,
           lastRead: state.lastRead,
           readCount: state.readCount,
-          isNew
+          isNew,
+          resumeBlockId: state.resumeBlockId
         })
       }
     } catch (error) {
@@ -155,7 +157,8 @@ export async function collectAllIRCardsFromBlocks(
         due: state.due,
         lastRead: state.lastRead,
         readCount: state.readCount,
-        isNew
+        isNew,
+        resumeBlockId: state.resumeBlockId
       })
     } catch (error) {
       console.error(`[${pluginName}] collectAllIRCardsFromBlocks: 处理块 #${block.id} 失败:`, error)
@@ -286,7 +289,8 @@ async function deferOverflowCards(
       lastRead: card.lastRead,
       readCount: card.readCount,
       due: card.due,
-      position: nextPosition
+      position: nextPosition,
+      resumeBlockId: card.resumeBlockId
     }))
   })
 
@@ -296,7 +300,8 @@ async function deferOverflowCards(
       lastRead: card.lastRead,
       readCount: card.readCount,
       due: nextDayStart,
-      position: card.position
+      position: card.position,
+      resumeBlockId: card.resumeBlockId
     }))
   })
 

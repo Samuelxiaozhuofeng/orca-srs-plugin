@@ -11,7 +11,8 @@ function createCard(id: number, due: Date, isNew: boolean): IRCard {
     due,
     lastRead: isNew ? null : new Date(due.getTime() - 3600),
     readCount: isNew ? 0 : 1,
-    isNew
+    isNew,
+    resumeBlockId: null
   }
 }
 

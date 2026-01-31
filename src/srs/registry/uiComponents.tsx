@@ -125,6 +125,13 @@ export function registerUIComponents(pluginName: string): void {
     title: "渐进阅读",
     command: `${pluginName}.startIncrementalReadingSession`
   })
+
+  orca.slashCommands.registerSlashCommand(`${pluginName}.ir_record`, {
+    icon: "ti ti-bookmark",
+    group: "SRS",
+    title: "ir_record",
+    command: `${pluginName}.irRecordProgress`
+  })
 }
 
 export function unregisterUIComponents(pluginName: string): void {
@@ -147,4 +154,5 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.interactiveAI`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)
 }

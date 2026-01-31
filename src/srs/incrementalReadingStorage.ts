@@ -7,6 +7,7 @@
  * - ir.readCount: number
  * - ir.due: Date
  * - ir.position: number | null (Topic 队列位置，数值越小越靠前)
+ * - ir.resumeBlockId: number | null (继续阅读：下次打开卡片时跳转到该 blockId)
  */
 
 import type { Block, DbId } from "../orca.d.ts"
@@ -19,6 +20,11 @@ export type IRState = {
   readCount: number
   due: Date
   position: number | null
+  /**
+   * 渐进阅读“继续阅读”进度：下次打开卡片时跳转到该 blockId
+   * - null 表示未设置
+   */
+  resumeBlockId: DbId | null
 }
 
 const DEFAULT_PRIORITY = 5
@@ -88,7 +94,8 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
     lastRead,
     readCount: 0,
     due: calculateNextDue(normalizedPriority, baseDate),
-    position: null
+    position: null,
+    resumeBlockId: null
   }
 }
 
@@ -129,6 +136,7 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
     const readCount = parseNumber(readProp(block, "ir.readCount"), 0)
     const due = parseDate(readProp(block, "ir.due"), null)
     const position = parseOptionalNumber(readProp(block, "ir.position"))
+    const resumeBlockId = parseOptionalNumber(readProp(block, "ir.resumeBlockId"))
 
     const priority = normalizePriority(rawPriority)
     const normalizedDue = due ?? computeNextDue(block, priority, lastRead ?? now)
@@ -138,7 +146,8 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
       lastRead,
       readCount,
       due: normalizedDue,
-      position
+      position,
+      resumeBlockId
     }
   } catch (error) {
     console.error("[IR] 读取渐进阅读状态失败:", error)
@@ -157,7 +166,8 @@ export async function saveIRState(blockId: DbId, state: IRState): Promise<void> 
       { name: "ir.lastRead", value: state.lastRead ?? null, type: 5 },
       { name: "ir.readCount", value: state.readCount, type: 3 },
       { name: "ir.due", value: state.due, type: 5 },
-      { name: "ir.position", value: state.position ?? null, type: 3 }
+      { name: "ir.position", value: state.position ?? null, type: 3 },
+      { name: "ir.resumeBlockId", value: state.resumeBlockId ?? null, type: 3 }
     ]
 
     await orca.commands.invokeEditorCommand(
@@ -245,7 +255,8 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
         readCount: state.readCount,
         // 保留已有 due（如 Book IR 的分散排期），仅在缺失时由 loadIRState 补齐。
         due: state.due,
-        position: nextPosition
+        position: nextPosition,
+        resumeBlockId: state.resumeBlockId
       }
       await saveIRState(blockId, normalizedState)
       return normalizedState
@@ -272,7 +283,8 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
       lastRead: now,
       readCount: prev.readCount + 1,
       due: computeNextDue(block, prev.priority, now),
-      position: prev.position
+      position: prev.position,
+      resumeBlockId: prev.resumeBlockId
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -300,7 +312,8 @@ export async function markAsReadWithPriority(
       lastRead: now,
       readCount: prev.readCount + 1,
       due: computeNextDue(block, normalizedPriority, now),
-      position: prev.position
+      position: prev.position,
+      resumeBlockId: prev.resumeBlockId
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -326,7 +339,8 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
       lastRead: prev.lastRead,
       readCount: prev.readCount,
       due: computeNextDue(block, normalizedPriority, now),
-      position: prev.position
+      position: prev.position,
+      resumeBlockId: prev.resumeBlockId
     }
 
     await saveIRState(blockId, nextState)
@@ -369,4 +383,26 @@ export async function bulkUpdatePriority(
   })
 
   return { success, failed }
+}
+
+/**
+ * 更新“继续阅读”进度：仅修改 ir.resumeBlockId，不改变其它 IR 状态
+ */
+export async function updateResumeBlockId(
+  blockId: DbId,
+  resumeBlockId: DbId | null
+): Promise<IRState> {
+  try {
+    const prev = await loadIRState(blockId)
+    const nextState: IRState = {
+      ...prev,
+      resumeBlockId
+    }
+    await saveIRState(blockId, nextState)
+    return nextState
+  } catch (error) {
+    console.error("[IR] 更新阅读进度失败:", error)
+    orca.notify("error", "更新阅读进度失败", { title: "渐进阅读" })
+    throw error
+  }
 }
