@@ -33,6 +33,17 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [pluginName, setPluginName] = useState("orca-srs")
+  const [queueInfo, setQueueInfo] = useState<{
+    dailyLimit: number
+    totalDueCount: number
+    overflowCount: number
+    enableOverflowDefer: boolean
+  }>({
+    dailyLimit: 0,
+    totalDueCount: 0,
+    overflowCount: 0,
+    enableOverflowDefer: true
+  })
 
   useEffect(() => {
     void loadReadingQueue()
@@ -49,14 +60,19 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
 
       const { collectIRCards, buildIRQueue } = await import("../srs/incrementalReadingCollector")
       const { getIncrementalReadingSettings } = await import("../srs/settings/incrementalReadingSettingsSchema")
-      const cards = await collectIRCards(currentPluginName)
+      const dueCards = await collectIRCards(currentPluginName)
       const settings = getIncrementalReadingSettings(currentPluginName)
-      const queue = await buildIRQueue(cards, {
+      const queue = await buildIRQueue(dueCards, {
         topicQuotaPercent: settings.topicQuotaPercent,
-        dailyLimit: settings.dailyLimit,
-        enableAutoDefer: settings.enableAutoDefer
+        dailyLimit: settings.dailyLimit
       })
       setCards(queue)
+      setQueueInfo({
+        dailyLimit: settings.dailyLimit,
+        totalDueCount: dueCards.length,
+        overflowCount: settings.dailyLimit > 0 ? Math.max(0, dueCards.length - queue.length) : 0,
+        enableOverflowDefer: settings.enableAutoDefer
+      })
     } catch (error) {
       console.error("[IR Session Renderer] 加载阅读队列失败:", error)
       setErrorMessage(error instanceof Error ? error.message : `${error}`)
@@ -68,6 +84,28 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
 
   const handleClose = () => {
     orca.nav.close(panelId)
+  }
+
+  const handleDeferOverflow = async (): Promise<number> => {
+    try {
+      const currentPluginName = pluginName
+      const { collectIRCards, buildIRQueue, deferIROverflow } = await import("../srs/incrementalReadingCollector")
+      const { getIncrementalReadingSettings } = await import("../srs/settings/incrementalReadingSettingsSchema")
+
+      const dueCards = await collectIRCards(currentPluginName)
+      const settings = getIncrementalReadingSettings(currentPluginName)
+      const queue = await buildIRQueue(dueCards, {
+        topicQuotaPercent: settings.topicQuotaPercent,
+        dailyLimit: settings.dailyLimit
+      })
+
+      const { deferredCount } = await deferIROverflow(dueCards, queue, { now: new Date() })
+      await loadReadingQueue()
+      return deferredCount
+    } catch (error) {
+      console.error("[IR Session Renderer] 溢出推后失败:", error)
+      throw error
+    }
   }
 
   const renderContent = () => {
@@ -112,6 +150,11 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
           cards={cards}
           panelId={panelId}
           pluginName={pluginName}
+          dailyLimit={queueInfo.dailyLimit}
+          totalDueCount={queueInfo.totalDueCount}
+          overflowCount={queueInfo.overflowCount}
+          enableOverflowDefer={queueInfo.enableOverflowDefer}
+          onDeferOverflow={handleDeferOverflow}
           onClose={handleClose}
         />
       </SrsErrorBoundary>

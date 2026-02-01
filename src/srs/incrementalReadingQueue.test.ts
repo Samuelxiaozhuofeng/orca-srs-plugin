@@ -32,7 +32,6 @@ describe("incrementalReadingQueue", () => {
     const queue = await buildIRQueue(cards, {
       topicQuotaPercent: 100,
       dailyLimit: 1,
-      enableAutoDefer: false,
       now
     })
     expect(queue.map(card => card.id)).toEqual([10])
@@ -50,7 +49,6 @@ describe("incrementalReadingQueue", () => {
     const queue = await buildIRQueue(cards, {
       topicQuotaPercent: 50,
       dailyLimit: 2,
-      enableAutoDefer: false,
       now
     })
     expect(queue.map(card => card.id)).toEqual([1, 10])
@@ -65,10 +63,8 @@ describe("incrementalReadingQueue", () => {
 
     const queue = await buildIRQueue(cards, {
       topicQuotaPercent: 0,
-      dailyLimit: 0,
-      enableAutoDefer: false
+      dailyLimit: 0
     })
     expect(queue.map(card => card.id)).toEqual([22, 21, 23])
   })
 })
-

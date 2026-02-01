@@ -11,6 +11,11 @@ type IncrementalReadingSessionProps = {
   cards: IRCard[]
   panelId: string
   pluginName?: string
+  dailyLimit?: number
+  totalDueCount?: number
+  overflowCount?: number
+  enableOverflowDefer?: boolean
+  onDeferOverflow?: () => Promise<number>
   onClose?: () => void
 }
 
@@ -49,6 +54,11 @@ function MetaChip({ label, value }: { label: string; value: string }) {
 export default function IncrementalReadingSessionDemo({
   cards,
   panelId,
+  dailyLimit,
+  totalDueCount,
+  overflowCount,
+  enableOverflowDefer = true,
+  onDeferOverflow,
   onClose
 }: IncrementalReadingSessionProps) {
   const [queue, setQueue] = useState<IRCard[]>(cards)
@@ -288,6 +298,34 @@ export default function IncrementalReadingSessionDemo({
     }
   }
 
+  const normalizedDailyLimit = typeof dailyLimit === "number" ? dailyLimit : 0
+  const normalizedTotalDueCount = typeof totalDueCount === "number" ? totalDueCount : 0
+  const normalizedOverflowCount = typeof overflowCount === "number" ? overflowCount : 0
+  const canDeferOverflow = Boolean(
+    enableOverflowDefer &&
+    normalizedDailyLimit > 0 &&
+    normalizedOverflowCount > 0 &&
+    typeof onDeferOverflow === "function"
+  )
+
+  const handleDeferOverflow = async () => {
+    if (!canDeferOverflow || !onDeferOverflow || isWorking) return
+    setIsWorking(true)
+    try {
+      const deferredCount = await onDeferOverflow()
+      if (deferredCount > 0) {
+        orca.notify("success", `已推后溢出 ${deferredCount} 张`, { title: "渐进阅读" })
+      } else {
+        orca.notify("info", "当前没有需要推后的溢出卡片", { title: "渐进阅读" })
+      }
+    } catch (error) {
+      console.error("[IR Session] 溢出推后失败:", error)
+      orca.notify("error", "溢出推后失败", { title: "渐进阅读" })
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
   if (queue.length === 0) {
     return (
       <div style={{
@@ -325,16 +363,41 @@ export default function IncrementalReadingSessionDemo({
       <div style={{
         display: "flex",
         justifyContent: "space-between",
-        alignItems: "center"
+        alignItems: "center",
+        gap: "12px"
       }}>
         <div style={{ fontSize: "13px", color: "var(--orca-color-text-2)" }}>
           进度 {currentIndex + 1} / {queue.length}
         </div>
-        {onClose && (
-          <Button variant="plain" onClick={handleClose}>
-            关闭
-          </Button>
-        )}
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          {normalizedDailyLimit > 0 ? (
+            <>
+              <MetaChip label="今日候选" value={`${normalizedTotalDueCount}`} />
+              <MetaChip label="上限" value={`${normalizedDailyLimit}`} />
+              {normalizedOverflowCount > 0 ? <MetaChip label="溢出" value={`${normalizedOverflowCount}`} /> : null}
+            </>
+          ) : null}
+          {canDeferOverflow ? (
+            <ConfirmBox
+              text={`确认把溢出（未入选今天队列）的 ${normalizedOverflowCount} 张卡片推后吗？该操作会修改它们的排期。`}
+              onConfirm={async (_e, close) => {
+                await handleDeferOverflow()
+                close()
+              }}
+            >
+              {(open) => (
+                <Button variant="outline" onClick={open} style={buttonStyle}>
+                  一键把溢出推后
+                </Button>
+              )}
+            </ConfirmBox>
+          ) : null}
+          {onClose ? (
+            <Button variant="plain" onClick={handleClose}>
+              关闭
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div style={{

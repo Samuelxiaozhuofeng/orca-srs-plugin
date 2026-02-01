@@ -38,7 +38,6 @@ export type IRCard = {
 export type IRQueueOptions = {
   topicQuotaPercent?: number
   dailyLimit?: number
-  enableAutoDefer?: boolean
   now?: Date
 }
 
@@ -244,10 +243,6 @@ function normalizeLimit(value: number | undefined, fallback: number): number {
   return Math.max(0, Math.floor(raw))
 }
 
-function normalizeAutoDefer(value: boolean | undefined, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback
-}
-
 function interleaveByRatio(topics: IRCard[], extracts: IRCard[], ratio: number): IRCard[] {
   if (ratio <= 0) return [...extracts]
   if (ratio >= 1) return [...topics]
@@ -342,12 +337,14 @@ async function deferOverflowCards(
   const results = await Promise.allSettled(tasks)
   const failed = results.filter(result => result.status === "rejected")
   if (failed.length > 0) {
-    console.warn("[IR] 自动后移失败", { failed: failed.length })
+    console.warn("[IR] 溢出推后失败", { failed: failed.length })
   }
 }
 
 /**
  * 构建渐进阅读队列（Topic 配额 + Extract 配额）
+ *
+ * 注意：该函数只负责“选择今天最多 N 张并排序”，不会写回任何排期状态（不会修改 due/intervalDays）。
  */
 export async function buildIRQueue(cards: IRCard[], options: IRQueueOptions = {}): Promise<IRCard[]> {
   const topics = sortTopics(cards.filter(card => card.cardType === "topic"))
@@ -358,7 +355,6 @@ export async function buildIRQueue(cards: IRCard[], options: IRQueueOptions = {}
     DEFAULT_IR_TOPIC_QUOTA_PERCENT
   )
   const dailyLimit = normalizeLimit(options.dailyLimit, DEFAULT_IR_DAILY_LIMIT)
-  const enableAutoDefer = normalizeAutoDefer(options.enableAutoDefer, true)
   const ratio = topicQuotaPercent / 100
 
   if (dailyLimit <= 0) {
@@ -399,22 +395,37 @@ export async function buildIRQueue(cards: IRCard[], options: IRQueueOptions = {}
     ...interleaveByRatio(selectedTopics, selectedDueExtracts, ratio)
   ]
 
-  if (enableAutoDefer && totalAvailable > totalTarget) {
-    const selectedIds = new Set(queue.map(card => card.id))
-    const deferredTopics = topics.filter(card => !selectedIds.has(card.id))
-    const deferredExtracts = extracts.filter(card => !selectedIds.has(card.id))
-    const maxPositionSeed = getMaxTopicPosition(topics, Date.now())
-    try {
-      await deferOverflowCards(
-        deferredTopics,
-        deferredExtracts,
-        now,
-        maxPositionSeed
-      )
-    } catch (error) {
-      console.warn("[IR] 自动后移异常:", error)
-    }
+  return queue
+}
+
+/**
+ * 将“溢出（未入选今天队列）”的卡片按优先级推后，并写回排期状态。
+ *
+ * - 用于“明确按钮”触发（例如：一键把溢出推后）
+ * - 不会影响已入选 `queue` 的卡片
+ */
+export async function deferIROverflow(
+  dueCards: IRCard[],
+  queue: IRCard[],
+  options: { now?: Date } = {}
+): Promise<{ deferredCount: number }> {
+  const topics = sortTopics(dueCards.filter(card => card.cardType === "topic"))
+  const extracts = sortExtracts(dueCards.filter(card => card.cardType === "extracts"))
+  const selectedIds = new Set(queue.map(card => card.id))
+
+  const deferredTopics = topics.filter(card => !selectedIds.has(card.id))
+  const deferredExtracts = extracts.filter(card => !selectedIds.has(card.id))
+  const deferredCount = deferredTopics.length + deferredExtracts.length
+  if (deferredCount === 0) return { deferredCount: 0 }
+
+  const now = options.now ?? new Date()
+  const maxPositionSeed = getMaxTopicPosition(topics, Date.now())
+
+  try {
+    await deferOverflowCards(deferredTopics, deferredExtracts, now, maxPositionSeed)
+  } catch (error) {
+    console.warn("[IR] 溢出推后异常:", error)
   }
 
-  return queue
+  return { deferredCount }
 }

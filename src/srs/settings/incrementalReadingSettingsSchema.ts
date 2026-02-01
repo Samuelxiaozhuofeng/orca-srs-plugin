@@ -38,10 +38,10 @@ export const incrementalReadingSettingsSchema = {
     description: "每天最多推送的渐进阅读卡片数量，设为 0 表示不限制"
   },
   [INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer]: {
-    label: "超额自动后移",
+    label: "启用溢出推后按钮",
     type: "boolean" as const,
     defaultValue: true,
-    description: "超出每日上限时，自动把溢出内容按优先级推后到之后的排期"
+    description: "当到期卡超过每日上限时，显示“一键把溢出推后”按钮；打开面板只展示，不会自动改排期"
   }
 }
 

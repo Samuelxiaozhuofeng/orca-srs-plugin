@@ -1,6 +1,6 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
-import { collectAllIRCards } from "../srs/incrementalReadingCollector"
+import { buildIRQueue, collectAllIRCards, deferIROverflow } from "../srs/incrementalReadingCollector"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../srs/incrementalReadingAutoMark"
 import {
   DEFAULT_IR_DAILY_LIMIT,
@@ -21,7 +21,7 @@ import IRCardList from "./IRCardList"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
-const { BlockShell, Button } = orca.components
+const { BlockShell, Button, ConfirmBox } = orca.components
 
 type RendererProps = {
   panelId: string
@@ -47,6 +47,10 @@ function normalizeDailyLimit(value: number): number {
   const rounded = Math.round(value)
   if (rounded < 0) return 0
   return rounded
+}
+
+function getDayStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
 type IRSettingsCardProps = {
@@ -350,7 +354,7 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
                 flexDirection: "column",
                 gap: "8px"
               }}>
-                <div style={labelStyle}>超额自动后移</div>
+                <div style={labelStyle}>溢出推后按钮</div>
                 <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <input
                     type="checkbox"
@@ -360,11 +364,11 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
                     }}
                   />
                   <span style={{ fontSize: "13px", color: "var(--orca-color-text-1)" }}>
-                    超出上限时把溢出内容推后
+                    显示“一键把溢出推后”
                   </span>
                 </label>
                 <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
-                  超出每日上限时，自动把未入选的卡片按优先级推后到之后的排期。
+                  当到期卡超过每日上限时，提供手动按钮；打开面板只展示，不会自动改排期。
                 </div>
               </div>
             </div>
@@ -391,6 +395,18 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
   const [cards, setCards] = useState<IRCard[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [todayQueueInfo, setTodayQueueInfo] = useState<{
+    dailyLimit: number
+    totalDueCount: number
+    overflowCount: number
+    enableOverflowDefer: boolean
+  }>({
+    dailyLimit: 0,
+    totalDueCount: 0,
+    overflowCount: 0,
+    enableOverflowDefer: true
+  })
+  const [isDeferringOverflow, setIsDeferringOverflow] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Record<IRDateGroupKey, boolean>>(() => ({
     ...IR_GROUP_DEFAULT_EXPANDED
   }))
@@ -410,6 +426,25 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
       const currentPluginName = await loadPluginName()
       const allCards = await collectAllIRCards(currentPluginName)
       setCards(allCards)
+
+      const settings = getIncrementalReadingSettings(currentPluginName)
+      const now = new Date()
+      const todayStartTime = getDayStart(now).getTime()
+      const dueCards = allCards.filter((card: IRCard) => {
+        if (!(card.due instanceof Date)) return false
+        return getDayStart(card.due).getTime() <= todayStartTime
+      })
+      const queue = await buildIRQueue(dueCards, {
+        topicQuotaPercent: settings.topicQuotaPercent,
+        dailyLimit: settings.dailyLimit,
+        now
+      })
+      setTodayQueueInfo({
+        dailyLimit: settings.dailyLimit,
+        totalDueCount: dueCards.length,
+        overflowCount: settings.dailyLimit > 0 ? Math.max(0, dueCards.length - queue.length) : 0,
+        enableOverflowDefer: settings.enableAutoDefer
+      })
     } catch (error) {
       console.error("[IR Manager] 加载卡片失败:", error)
       setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -432,6 +467,38 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
       ...prev,
       [groupKey]: !prev[groupKey]
     }))
+  }
+
+  const handleDeferOverflow = async () => {
+    if (isDeferringOverflow) return
+    setIsDeferringOverflow(true)
+    try {
+      const settings = getIncrementalReadingSettings(pluginName)
+      const now = new Date()
+      const todayStartTime = getDayStart(now).getTime()
+      const dueCards = cards.filter((card: IRCard) => {
+        if (!(card.due instanceof Date)) return false
+        return getDayStart(card.due).getTime() <= todayStartTime
+      })
+      const queue = await buildIRQueue(dueCards, {
+        topicQuotaPercent: settings.topicQuotaPercent,
+        dailyLimit: settings.dailyLimit,
+        now
+      })
+
+      const { deferredCount } = await deferIROverflow(dueCards, queue, { now })
+      await loadCards()
+      if (deferredCount > 0) {
+        orca.notify("success", `已推后溢出 ${deferredCount} 张`, { title: "渐进阅读" })
+      } else {
+        orca.notify("info", "当前没有需要推后的溢出卡片", { title: "渐进阅读" })
+      }
+    } catch (error) {
+      console.error("[IR Manager] 溢出推后失败:", error)
+      orca.notify("error", "溢出推后失败", { title: "渐进阅读" })
+    } finally {
+      setIsDeferringOverflow(false)
+    }
   }
 
   const header = useMemo(() => (
@@ -459,6 +526,54 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
   ), [loadCards, panelId])
 
   const renderContent = () => {
+    const showOverflowAction = Boolean(
+      todayQueueInfo.enableOverflowDefer &&
+      todayQueueInfo.dailyLimit > 0 &&
+      todayQueueInfo.overflowCount > 0 &&
+      !isLoading &&
+      !errorMessage
+    )
+
+    const overflowActionCard = todayQueueInfo.dailyLimit > 0 ? (
+      <div style={{
+        border: "1px solid var(--orca-color-border-1)",
+        backgroundColor: "var(--orca-color-bg-1)",
+        borderRadius: "12px",
+        padding: "14px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: 700 }}>今日队列（只展示，不自动改排期）</div>
+            <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)" }}>
+              今日候选 {todayQueueInfo.totalDueCount} · 上限 {todayQueueInfo.dailyLimit} · 溢出 {todayQueueInfo.overflowCount}
+            </div>
+          </div>
+          {showOverflowAction ? (
+            <ConfirmBox
+              text={`确认把溢出（未入选今天队列）的 ${todayQueueInfo.overflowCount} 张卡片推后吗？该操作会修改它们的排期。`}
+              onConfirm={async (_e, close) => {
+                await handleDeferOverflow()
+                close()
+              }}
+            >
+              {(open) => (
+                <Button
+                  variant="outline"
+                  onClick={open}
+                  style={isDeferringOverflow ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+                >
+                  一键把溢出推后
+                </Button>
+              )}
+            </ConfirmBox>
+          ) : null}
+        </div>
+      </div>
+    ) : null
+
     const cardsSection = isLoading ? (
       <div style={{
         display: "flex",
@@ -488,6 +603,7 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
       </div>
     ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {overflowActionCard}
         <IRStatistics cards={cards} />
         <IRCardList
           cards={cards}

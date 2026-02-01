@@ -7,7 +7,7 @@
  * - ir.readCount: number
  * - ir.due: Date
  * - ir.intervalDays: number (当前间隔天数，用于计算下一次 due)
- * - ir.postponeCount: number (累计推后次数：手动推后 + 自动后移)
+ * - ir.postponeCount: number (累计推后次数：手动推后 + 溢出推后)
  * - ir.stage: string (漏斗阶段)
  * - ir.lastAction: string (最近一次动作)
  * - ir.position: number | null (Topic 队列位置，数值越小越靠前)
