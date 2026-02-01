@@ -7,6 +7,7 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import type { IRPriorityChoice } from "./incrementalReadingScheduler"
+import { getIntervalDays } from "./incrementalReadingScheduler"
 import { invalidateIrBlockCache } from "./incrementalReadingStorage"
 import { isCardTag } from "./tagUtils"
 
@@ -160,6 +161,8 @@ export async function setupBookIR(
 
   const dueDates = calculateChapterDueDates(chapterIds.length, totalDays)
   const numericPriority = mapPriorityChoiceToNumeric(priority)
+  const baseIntervalDays = getIntervalDays(numericPriority)
+  const positionBase = Date.now()
 
   const success: DbId[] = []
   const failed: DbId[] = []
@@ -215,7 +218,14 @@ export async function setupBookIR(
           { name: "ir.priority", value: numericPriority, type: 3 },
           { name: "ir.lastRead", value: null, type: 5 },
           { name: "ir.readCount", value: 0, type: 3 },
-          { name: "ir.due", value: due, type: 5 }
+          { name: "ir.due", value: due, type: 5 },
+          { name: "ir.intervalDays", value: baseIntervalDays, type: 3 },
+          { name: "ir.postponeCount", value: 0, type: 3 },
+          { name: "ir.stage", value: "topic.preview", type: 2 },
+          { name: "ir.lastAction", value: "init", type: 2 },
+          // 维持章节顺序（越小越靠前），并尽量追加到现有 Topic 队列尾部
+          { name: "ir.position", value: positionBase + i, type: 3 },
+          { name: "ir.resumeBlockId", value: null, type: 3 }
         ]
       )
       invalidateIrBlockCache(blockId)

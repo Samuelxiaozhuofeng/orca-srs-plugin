@@ -2,7 +2,7 @@
  * 渐进阅读会话组件
  */
 import type { IRCard } from "../srs/incrementalReadingCollector"
-import { completeIRCard, markAsRead, markAsReadWithPriorityShift, updatePriority } from "../srs/irSessionActions"
+import { completeIRCard, markAsRead, markAsReadWithPriorityShift, postpone, updatePriority } from "../srs/irSessionActions"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
 const { useEffect, useRef, useState } = window.React
@@ -18,6 +18,32 @@ function formatSimpleDate(date: Date): string {
   const month = date.getMonth() + 1
   const day = date.getDate()
   return `${month}-${day}`
+}
+
+function formatIntervalDays(days: number): string {
+  if (!Number.isFinite(days)) return "-"
+  const rounded = Math.round(days * 100) / 100
+  return Number.isInteger(rounded) ? `${rounded}d` : `${rounded}d`
+}
+
+function MetaChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "2px 8px",
+      borderRadius: "999px",
+      border: "1px solid var(--orca-color-border-1)",
+      background: "var(--orca-color-bg-1)",
+      fontSize: "12px",
+      lineHeight: 1.6,
+      whiteSpace: "nowrap"
+    }}>
+      <span style={{ color: "var(--orca-color-text-3)" }}>{label}</span>
+      <span style={{ color: "var(--orca-color-text-2)" }}>{value}</span>
+    </span>
+  )
 }
 
 export default function IncrementalReadingSessionDemo({
@@ -154,7 +180,15 @@ export default function IncrementalReadingSessionDemo({
       const nextState = await updatePriority(currentCard.id, next)
       console.log("[IR Session] toggle priority updated", { cardId: currentCard.id, priority: nextState.priority })
       setQueue((prev: IRCard[]) => prev.map((card: IRCard, idx: number) =>
-        idx === currentIndex ? { ...card, priority: nextState.priority } : card
+        idx === currentIndex ? {
+          ...card,
+          priority: nextState.priority,
+          due: nextState.due,
+          intervalDays: nextState.intervalDays,
+          postponeCount: nextState.postponeCount,
+          stage: nextState.stage,
+          lastAction: nextState.lastAction
+        } : card
       ))
       orca.notify("success", "已切换优先级", { title: "渐进阅读" })
     } catch (error) {
@@ -196,9 +230,20 @@ export default function IncrementalReadingSessionDemo({
     }
   }
 
-  const handleSkip = () => {
+  const handlePostpone = async () => {
     if (!currentCard || isWorking) return
-    removeCardAtIndex(currentIndex)
+    setIsWorking(true)
+
+    try {
+      const result = await postpone(currentCard.id)
+      removeCardAtIndex(currentIndex)
+      orca.notify("success", `已推后 ${result.days} 天`, { title: "渐进阅读" })
+    } catch (error) {
+      console.error("[IR Session] 推后失败:", error)
+      orca.notify("error", "推后失败", { title: "渐进阅读" })
+    } finally {
+      setIsWorking(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -306,11 +351,18 @@ export default function IncrementalReadingSessionDemo({
           display: "flex",
           gap: "12px",
           flexWrap: "wrap",
-          fontSize: "12px",
-          color: "var(--orca-color-text-2)"
+          alignItems: "center"
         }}>
-          <span>类型：{currentCard.cardType}</span>
-          <span>到期：{formatSimpleDate(currentCard.due)}</span>
+          <MetaChip label="类型" value={currentCard.cardType} />
+          <MetaChip label="到期" value={formatSimpleDate(currentCard.due)} />
+          <MetaChip
+            label="调度"
+            value={`P${currentCard.priority} · ${formatIntervalDays(currentCard.intervalDays)} · 推后${currentCard.postponeCount}`}
+          />
+          <MetaChip
+            label="状态"
+            value={`${currentCard.stage} · ${currentCard.lastAction}`}
+          />
         </div>
       </div>
 
@@ -333,8 +385,8 @@ export default function IncrementalReadingSessionDemo({
             优先级切换
           </Button>
         )}
-        <Button variant="plain" onClick={handleSkip} style={buttonStyle}>
-          跳过
+        <Button variant="plain" onClick={handlePostpone} style={buttonStyle}>
+          推后
         </Button>
         <ConfirmBox
           text="确认读完当前卡片？将移除 #card 标签并清除 SRS/IR 状态。"

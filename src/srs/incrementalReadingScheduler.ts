@@ -14,6 +14,8 @@ const DEFAULT_PRIORITY_CHOICE: IRPriorityChoice = "中优先级"
 
 export type IRPriorityChoice = typeof PRIORITY_CHOICES[number]
 
+export type IRPriorityRank = 1 | 2 | 3
+
 /**
  * 规范化优先级到 1-10
  */
@@ -129,6 +131,12 @@ export function getPriorityChoiceFromTopic(
 const randomIntInclusive = (min: number, max: number): number =>
   Math.floor(Math.random() * (max - min + 1)) + min
 
+export function getPriorityRank(choice: IRPriorityChoice | null): IRPriorityRank {
+  if (choice === "高优先级") return 3
+  if (choice === "中优先级") return 2
+  return 1
+}
+
 /**
  * 根据优先级区间随机生成间隔天数，避免同日堆积
  *
@@ -142,6 +150,20 @@ export function getRandomIntervalDays(priority: IRPriorityChoice | string): numb
   if (normalized === "高优先级") return randomIntInclusive(1, 2)
   if (normalized === "中优先级") return randomIntInclusive(3, 5)
   return randomIntInclusive(7, 10)
+}
+
+export function getExtractBaseIntervalDays(priority: IRPriorityChoice | string): number {
+  const normalized = normalizePriorityChoice(priority) ?? DEFAULT_PRIORITY_CHOICE
+  if (normalized === "高优先级") return 1
+  if (normalized === "中优先级") return 2
+  return 3
+}
+
+export function getPostponeDays(priority: IRPriorityChoice | string): number {
+  const normalized = normalizePriorityChoice(priority) ?? DEFAULT_PRIORITY_CHOICE
+  if (normalized === "高优先级") return randomIntInclusive(1, 2)
+  if (normalized === "中优先级") return randomIntInclusive(3, 5)
+  return randomIntInclusive(7, 14)
 }
 
 /**

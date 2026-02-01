@@ -7,6 +7,7 @@ vi.mock("./incrementalReadingStorage", () => ({
 
 import type { Block, BlockProperty, BlockRef, DbId } from "../orca.d.ts"
 import { collectAllIRCardsFromBlocks } from "./incrementalReadingCollector"
+import type { IRState } from "./incrementalReadingStorage"
 import { ensureIRState, loadIRState } from "./incrementalReadingStorage"
 
 function createCardRef(blockId: DbId, typeValue: string): BlockRef {
@@ -51,10 +52,10 @@ describe("collectAllIRCardsFromBlocks", () => {
       createBlock(3, "basic")
     ]
 
-    const stateMap = new Map<DbId, { priority: number; lastRead: Date | null; readCount: number; due: Date; position: number | null; resumeBlockId: DbId | null }>([
-      [1, { priority: 3, lastRead: new Date(now.getTime() - 3600), readCount: 2, due: new Date(now.getTime() + 7 * 86400000), position: null, resumeBlockId: null }],
-      [2, { priority: 8, lastRead: new Date(now.getTime() - 7200), readCount: 5, due: new Date(now.getTime() + 30 * 86400000), position: 1, resumeBlockId: 221 }],
-      [3, { priority: 5, lastRead: new Date(now.getTime() - 7200), readCount: 1, due: new Date(now.getTime() - 86400000), position: null, resumeBlockId: null }]
+    const stateMap = new Map<DbId, IRState>([
+      [1, { priority: 3, lastRead: new Date(now.getTime() - 3600), readCount: 2, due: new Date(now.getTime() + 7 * 86400000), intervalDays: 7, postponeCount: 0, stage: "extract.raw", lastAction: "init", position: null, resumeBlockId: null }],
+      [2, { priority: 8, lastRead: new Date(now.getTime() - 7200), readCount: 5, due: new Date(now.getTime() + 30 * 86400000), intervalDays: 30, postponeCount: 0, stage: "topic.preview", lastAction: "init", position: 1, resumeBlockId: 221 }],
+      [3, { priority: 5, lastRead: new Date(now.getTime() - 7200), readCount: 1, due: new Date(now.getTime() - 86400000), intervalDays: 5, postponeCount: 0, stage: "extract.raw", lastAction: "init", position: null, resumeBlockId: null }]
     ])
 
     vi.mocked(ensureIRState).mockResolvedValue({
@@ -62,6 +63,10 @@ describe("collectAllIRCardsFromBlocks", () => {
       lastRead: null,
       readCount: 0,
       due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "topic.preview",
+      lastAction: "init",
       position: null,
       resumeBlockId: null
     })

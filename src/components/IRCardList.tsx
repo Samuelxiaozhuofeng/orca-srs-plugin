@@ -70,6 +70,12 @@ function formatSimpleDate(date: Date): string {
   return `${month}-${day}`
 }
 
+function formatIntervalDays(days: number): string {
+  if (!Number.isFinite(days)) return "-"
+  const rounded = Math.round(days * 100) / 100
+  return Number.isInteger(rounded) ? `${rounded}d` : `${rounded}d`
+}
+
 function getBlockTitle(blockId: DbId, titleMap: Record<string, string>): string {
   const fromState = orca.state.blocks?.[blockId] as Block | undefined
   if (fromState?.text) return fromState.text
@@ -260,6 +266,8 @@ export default function IRCardList({
                             <span>类型：{card.cardType}</span>
                             <span>到期：{formatSimpleDate(card.due)}</span>
                             <span>已读：{card.readCount}</span>
+                            <span>调度：P{card.priority} · {formatIntervalDays(card.intervalDays)} · 推后{card.postponeCount}</span>
+                            <span>状态：{card.stage} · {card.lastAction}</span>
                           </div>
                         </div>
                       </div>

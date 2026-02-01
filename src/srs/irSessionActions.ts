@@ -5,7 +5,9 @@ import {
   deleteIRState,
   loadIRState,
   markAsRead,
+  markAsReadWithTagPriorityReset,
   markAsReadWithPriority,
+  postpone,
   saveIRState,
   updatePriority as updatePriorityInternal
 } from "./incrementalReadingStorage"
@@ -14,6 +16,7 @@ import { isCardTag } from "./tagUtils"
 import { deleteCardSrsData } from "./storage"
 
 export { markAsRead, markAsReadWithPriority }
+export { postpone }
 
 const PRIORITY_ORDER: IRPriorityChoice[] = ["低优先级", "中优先级", "高优先级"]
 const PRIORITY_TO_NUMERIC: Record<IRPriorityChoice, number> = {
@@ -105,7 +108,7 @@ export async function markAsReadWithPriorityShift(
 ): Promise<void> {
   if (cardType === "extracts") {
     await updateExtractPriorityTag(blockId, direction)
-    await markAsRead(blockId)
+    await markAsReadWithTagPriorityReset(blockId)
     return
   }
 
