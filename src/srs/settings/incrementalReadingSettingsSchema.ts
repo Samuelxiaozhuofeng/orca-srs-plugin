@@ -41,7 +41,7 @@ export const incrementalReadingSettingsSchema = {
     label: "超额自动后移",
     type: "boolean" as const,
     defaultValue: true,
-    description: "超出每日上限时，自动把低优先级内容顺延到之后的排期"
+    description: "超出每日上限时，自动把溢出内容按优先级推后到之后的排期"
   }
 }
 

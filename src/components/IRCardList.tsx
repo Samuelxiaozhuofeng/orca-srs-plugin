@@ -266,7 +266,7 @@ export default function IRCardList({
                             <span>类型：{card.cardType}</span>
                             <span>到期：{formatSimpleDate(card.due)}</span>
                             <span>已读：{card.readCount}</span>
-                            <span>调度：P{card.priority} · {formatIntervalDays(card.intervalDays)} · 推后{card.postponeCount}</span>
+                            <span>调度：Prio {card.priority} · {formatIntervalDays(card.intervalDays)} · 推后{card.postponeCount}</span>
                             <span>状态：{card.stage} · {card.lastAction}</span>
                           </div>
                         </div>

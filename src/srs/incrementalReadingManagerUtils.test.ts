@@ -6,9 +6,7 @@ function createCard(id: number, due: Date, isNew: boolean): IRCard {
   return {
     id,
     cardType: "extracts",
-    effectivePriority: "中优先级",
-    effectivePriorityRank: 2,
-    priority: 5,
+    priority: 50,
     position: null,
     due,
     intervalDays: 2,

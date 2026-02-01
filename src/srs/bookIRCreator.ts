@@ -6,12 +6,9 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import type { IRPriorityChoice } from "./incrementalReadingScheduler"
-import { getIntervalDays } from "./incrementalReadingScheduler"
+import { DEFAULT_IR_PRIORITY, getTopicBaseIntervalDays, normalizePriority } from "./incrementalReadingScheduler"
 import { invalidateIrBlockCache } from "./incrementalReadingStorage"
 import { isCardTag } from "./tagUtils"
-
-export type { IRPriorityChoice } from "./incrementalReadingScheduler"
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -19,13 +16,6 @@ function getTodayMidnight(): Date {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return today
-}
-
-function mapPriorityChoiceToNumeric(choice: IRPriorityChoice): number {
-  // 与 getIntervalDays 的分段更匹配：高(>=8)、中(4-5)、低(<=3)
-  if (choice === "高优先级") return 9
-  if (choice === "中优先级") return 5
-  return 2
 }
 
 /**
@@ -152,7 +142,7 @@ export function calculateChapterDueDates(chapterCount: number, totalDays: number
  */
 export async function setupBookIR(
   chapterIds: DbId[],
-  priority: IRPriorityChoice,
+  priority: number,
   totalDays: number
 ): Promise<{ success: DbId[]; failed: DbId[] }> {
   if (!Array.isArray(chapterIds) || chapterIds.length === 0) {
@@ -160,8 +150,10 @@ export async function setupBookIR(
   }
 
   const dueDates = calculateChapterDueDates(chapterIds.length, totalDays)
-  const numericPriority = mapPriorityChoiceToNumeric(priority)
-  const baseIntervalDays = getIntervalDays(numericPriority)
+  const numericPriority = normalizePriority(
+    Number.isFinite(priority) ? priority : DEFAULT_IR_PRIORITY
+  )
+  const baseIntervalDays = getTopicBaseIntervalDays(numericPriority)
   const positionBase = Date.now()
 
   const success: DbId[] = []
@@ -192,20 +184,19 @@ export async function setupBookIR(
           [
             { name: "type", value: "topic" },
             { name: "牌组", value: [] },
-            { name: "status", value: "" },
-            { name: "priority", value: [priority] }
+            { name: "status", value: "" }
           ]
         )
       } else {
-        // 更新既有 #card：type=topic；priority 仅在缺失时补齐
+        // 更新既有 #card：type=topic
         const cardRef = block.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
         if (cardRef) {
-          const hasPriority = cardRef.data?.some(data => data.name === "priority") ?? false
-          const refData: Array<{ name: string; value: any }> = [{ name: "type", value: "topic" }]
-          if (!hasPriority) {
-            refData.push({ name: "priority", value: [priority] })
-          }
-          await orca.commands.invokeEditorCommand("core.editor.setRefData", null, cardRef, refData)
+          await orca.commands.invokeEditorCommand(
+            "core.editor.setRefData",
+            null,
+            cardRef,
+            [{ name: "type", value: "topic" }]
+          )
         }
       }
 

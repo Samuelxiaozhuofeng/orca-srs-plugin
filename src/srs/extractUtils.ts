@@ -10,13 +10,10 @@
 
 import type { Block, ContentFragment, CursorData, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
-import { ensureIRState } from "./incrementalReadingStorage"
-import type { IRPriorityChoice } from "./incrementalReadingScheduler"
-import { getPriorityChoiceFromTopic } from "./incrementalReadingScheduler"
+import { ensureIRState, loadIRState, updatePriority } from "./incrementalReadingStorage"
+import { DEFAULT_IR_PRIORITY, normalizePriority } from "./incrementalReadingScheduler"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
-
-const DEFAULT_PRIORITY_CHOICE = "中优先级"
 
 const findNearestTopic = (block: Block): Block | null => {
   let current: Block | undefined = block
@@ -35,10 +32,15 @@ const findNearestTopic = (block: Block): Block | null => {
   return null
 }
 
-const resolveInheritedPriority = (block: Block): IRPriorityChoice => {
+const resolveInheritedPriority = async (block: Block): Promise<number> => {
   const topic = findNearestTopic(block)
-  if (!topic) return DEFAULT_PRIORITY_CHOICE
-  return getPriorityChoiceFromTopic(topic, DEFAULT_PRIORITY_CHOICE)
+  if (!topic) return DEFAULT_IR_PRIORITY
+  try {
+    const state = await loadIRState(topic.id)
+    return normalizePriority(state.priority)
+  } catch {
+    return DEFAULT_IR_PRIORITY
+  }
 }
 
 /**
@@ -142,8 +144,9 @@ export async function createExtract(
   }
 
   // 2) 为摘录块添加/更新 #card 标签属性
+  const inheritedPriority = await resolveInheritedPriority(block)
+
   try {
-    const inheritedPriority = resolveInheritedPriority(block)
     const extractBlock = orca.state.blocks?.[extractBlockId] as Block | undefined
     const hasCardTag = extractBlock?.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
 
@@ -156,25 +159,18 @@ export async function createExtract(
         [
           { name: "type", value: "extracts" },
           { name: "牌组", value: [] },
-          { name: "status", value: "" },
-          { name: "priority", value: [inheritedPriority] }
+          { name: "status", value: "" }
         ]
       )
       await ensureCardTagProperties(pluginName)
     } else {
       const cardRef = extractBlock?.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
       if (cardRef) {
-        // 仅补齐缺失的 priority，避免覆盖用户已有选择
-        const hasPriority = cardRef.data?.some(data => data.name === "priority") ?? false
-        const refData: Array<{ name: string; value: unknown }> = [{ name: "type", value: "extracts" }]
-        if (!hasPriority) {
-          refData.push({ name: "priority", value: [inheritedPriority] })
-        }
         await orca.commands.invokeEditorCommand(
           "core.editor.setRefData",
           null,
           cardRef,
-          refData
+          [{ name: "type", value: "extracts" }]
         )
       }
     }
@@ -187,6 +183,8 @@ export async function createExtract(
   // 3) 初始化渐进阅读状态（ir.*）
   try {
     await ensureIRState(extractBlockId)
+    // Extract 继承父 Topic 的 ir.priority（单一真相）
+    await updatePriority(extractBlockId, inheritedPriority)
   } catch (error) {
     console.error(`[${pluginName}] 初始化渐进阅读状态失败:`, error)
     orca.notify("error", `初始化渐进阅读状态失败: ${error}`, { title: "渐进阅读" })

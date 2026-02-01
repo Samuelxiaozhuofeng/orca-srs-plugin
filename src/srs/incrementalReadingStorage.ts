@@ -2,7 +2,7 @@
  * 渐进阅读状态存储模块
  *
  * 使用 Block Properties 存储 ir.* 状态：
- * - ir.priority: number (1-10)
+ * - ir.priority: number (0-100)
  * - ir.lastRead: Date | null
  * - ir.readCount: number
  * - ir.due: Date
@@ -16,13 +16,12 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
+import { syncCardTagPriority } from "./cardTagRefData"
 import {
+  DEFAULT_IR_PRIORITY,
   getExtractBaseIntervalDays,
   getPostponeDays,
-  getPriorityChoiceFromTopic,
-  getPriorityFromTag,
-  getIntervalDays,
-  mapNumericPriorityToChoice,
+  getTopicBaseIntervalDays,
   normalizePriority
 } from "./incrementalReadingScheduler"
 
@@ -59,7 +58,7 @@ export type IRState = {
   resumeBlockId: DbId | null
 }
 
-const DEFAULT_PRIORITY = 5
+const DEFAULT_PRIORITY = DEFAULT_IR_PRIORITY
 const DAY_MS = 24 * 60 * 60 * 1000
 const TOPIC_MAX_INTERVAL_DAYS = 60
 const EXTRACT_MAX_INTERVAL_DAYS = 30
@@ -160,12 +159,11 @@ function computeBaseIntervalDays(
   const normalizedPriority = normalizePriority(numericPriority)
   const cardType = block ? extractCardType(block) : "topic"
 
-  if (cardType === "extracts" && block) {
-    const choice = getPriorityFromTag(block) ?? mapNumericPriorityToChoice(normalizedPriority)
-    return getExtractBaseIntervalDays(choice)
+  if (cardType === "extracts") {
+    return getExtractBaseIntervalDays(normalizedPriority)
   }
 
-  return getIntervalDays(normalizedPriority)
+  return getTopicBaseIntervalDays(normalizedPriority)
 }
 
 function growIntervalDays(
@@ -181,7 +179,7 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
   const normalizedPriority = normalizePriority(priority)
   const cardType = "topic"
   const baseDate = new Date()
-  const intervalDays = clampIntervalDays(cardType, getIntervalDays(normalizedPriority))
+  const intervalDays = clampIntervalDays(cardType, getTopicBaseIntervalDays(normalizedPriority))
   return {
     priority: normalizedPriority,
     lastRead,
@@ -278,6 +276,7 @@ export async function saveIRState(blockId: DbId, state: IRState): Promise<void> 
     )
 
     invalidateIrBlockCache(blockId)
+    await syncCardTagPriority(blockId, state.priority)
   } catch (error) {
     console.error("[IR] 保存渐进阅读状态失败:", error)
     orca.notify("error", "保存渐进阅读状态失败", { title: "渐进阅读" })
@@ -575,47 +574,9 @@ export async function updateResumeBlockId(
 }
 
 /**
- * 标记已读并重置间隔（用于 Extract 改变 #card.priority 后“拉回”到基础间隔）
- */
-export async function markAsReadWithTagPriorityReset(blockId: DbId): Promise<IRState> {
-  try {
-    const prev = await loadIRState(blockId)
-    const now = new Date()
-    const block = await getBlockCached(blockId)
-    const cardType = block ? extractCardType(block) : "extracts"
-    const nextIntervalDays = clampIntervalDays(
-      cardType,
-      computeBaseIntervalDays(block, prev.priority)
-    )
-
-    const nextState: IRState = {
-      priority: prev.priority,
-      lastRead: now,
-      readCount: prev.readCount + 1,
-      intervalDays: nextIntervalDays,
-      postponeCount: prev.postponeCount,
-      stage: prev.stage,
-      lastAction: "priority",
-      due: computeDueFromIntervalDays(now, nextIntervalDays),
-      position: prev.position,
-      resumeBlockId: prev.resumeBlockId
-    }
-    await saveIRState(blockId, nextState)
-    return nextState
-  } catch (error) {
-    console.error("[IR] 标记已读并重置间隔失败:", error)
-    orca.notify("error", "标记已读失败", { title: "渐进阅读" })
-    throw error
-  }
-}
-
-/**
  * 推后（Postpone）：写回 due/intervalDays/postponeCount/lastAction
  *
- * 天数按优先级档位自动决定：
- * - 高：1-2 天
- * - 中：3-5 天
- * - 低：7-14 天
+ * 天数按数值优先级自动决定（高优先级推后更短，低优先级推后更长）
  */
 export async function postpone(blockId: DbId): Promise<{ state: IRState; days: number }> {
   try {
@@ -624,10 +585,8 @@ export async function postpone(blockId: DbId): Promise<{ state: IRState; days: n
     const block = await getBlockCached(blockId)
     const cardType = block ? extractCardType(block) : "topic"
 
-    const effectiveChoice = block
-      ? getPriorityChoiceFromTopic(block, mapNumericPriorityToChoice(prev.priority))
-      : mapNumericPriorityToChoice(prev.priority)
-    const days = getPostponeDays(effectiveChoice)
+    const irCardType = cardType === "extracts" ? "extracts" : "topic"
+    const days = getPostponeDays(irCardType, prev.priority)
     const nextIntervalDays = clampIntervalDays(cardType, days)
 
     const nextState: IRState = {

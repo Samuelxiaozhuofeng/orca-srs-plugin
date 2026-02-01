@@ -151,10 +151,10 @@ export default function IncrementalReadingSessionDemo({
   }
 
   const pickNextPriority = (current: number): number => {
-    // 复用现有数值优先级分段：高(>=8) / 中(4-7) / 低(<=3)
-    if (current >= 8) return 5
-    if (current >= 4) return 2
-    return 9
+    // 0-100：快速三档循环（20/50/80）
+    if (current >= 70) return 50
+    if (current >= 30) return 20
+    return 80
   }
 
   const handleTogglePriority = async () => {
@@ -357,7 +357,7 @@ export default function IncrementalReadingSessionDemo({
           <MetaChip label="到期" value={formatSimpleDate(currentCard.due)} />
           <MetaChip
             label="调度"
-            value={`P${currentCard.priority} · ${formatIntervalDays(currentCard.intervalDays)} · 推后${currentCard.postponeCount}`}
+            value={`Prio ${currentCard.priority} · ${formatIntervalDays(currentCard.intervalDays)} · 推后${currentCard.postponeCount}`}
           />
           <MetaChip
             label="状态"

@@ -9,13 +9,8 @@ import { extractCardType } from "./deckUtils"
 import { isCardTag } from "./tagUtils"
 import { ensureIRState, loadIRState, saveIRState } from "./incrementalReadingStorage"
 import type { IRLastAction, IRStage } from "./incrementalReadingStorage"
-import type { IRPriorityChoice } from "./incrementalReadingScheduler"
 import {
-  getPostponeDays,
-  getPriorityChoiceFromTopic,
-  getPriorityFromTag,
-  getPriorityRank,
-  mapNumericPriorityToChoice
+  getPostponeDays
 } from "./incrementalReadingScheduler"
 import {
   DEFAULT_IR_DAILY_LIMIT,
@@ -27,8 +22,6 @@ export type IRCardType = "topic" | "extracts"
 export type IRCard = {
   id: DbId
   cardType: IRCardType
-  effectivePriority: IRPriorityChoice
-  effectivePriorityRank: number
   priority: number
   position: number | null
   due: Date
@@ -117,19 +110,12 @@ export async function collectIRCardsFromBlocks(
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
       const dueDayStartTime = getDayStart(state.due).getTime()
-      const fallbackChoice = mapNumericPriorityToChoice(state.priority)
-      const effectivePriority = cardType === "topic"
-        ? getPriorityChoiceFromTopic(block, fallbackChoice)
-        : (getPriorityFromTag(block) ?? fallbackChoice)
-      const effectivePriorityRank = getPriorityRank(effectivePriority)
 
       // 按“天”边界判断是否到期（包括新卡），确保排期生效。
       if (dueDayStartTime <= todayStartTime) {
         results.push({
           id: block.id,
           cardType,
-          effectivePriority,
-          effectivePriorityRank,
           priority: state.priority,
           position: state.position,
           due: state.due,
@@ -168,17 +154,10 @@ export async function collectAllIRCardsFromBlocks(
       await ensureIRState(block.id)
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
-      const fallbackChoice = mapNumericPriorityToChoice(state.priority)
-      const effectivePriority = cardType === "topic"
-        ? getPriorityChoiceFromTopic(block, fallbackChoice)
-        : (getPriorityFromTag(block) ?? fallbackChoice)
-      const effectivePriorityRank = getPriorityRank(effectivePriority)
 
       results.push({
         id: block.id,
         cardType,
-        effectivePriority,
-        effectivePriorityRank,
         priority: state.priority,
         position: state.position,
         due: state.due,
@@ -228,16 +207,22 @@ export async function collectAllIRCards(pluginName: string = "srs-plugin"): Prom
 }
 
 function compareTopicPosition(a: IRCard, b: IRCard): number {
+  if (a.priority !== b.priority) return b.priority - a.priority
+
+  const dueDelta = a.due.getTime() - b.due.getTime()
+  if (dueDelta !== 0) return dueDelta
+
   const aPos = a.position ?? Number.POSITIVE_INFINITY
   const bPos = b.position ?? Number.POSITIVE_INFINITY
   if (aPos !== bPos) return aPos - bPos
+
   return a.id - b.id
 }
 
 function compareExtracts(a: IRCard, b: IRCard): number {
   const dueDelta = a.due.getTime() - b.due.getTime()
   if (dueDelta !== 0) return dueDelta
-  if (a.effectivePriorityRank !== b.effectivePriorityRank) return b.effectivePriorityRank - a.effectivePriorityRank
+  if (a.priority !== b.priority) return b.priority - a.priority
   return a.id - b.id
 }
 
@@ -319,7 +304,7 @@ async function deferOverflowCards(
 
   topics.forEach((card, index) => {
     const nextPosition = maxPositionSeed + index + 1
-    const postponeDays = getPostponeDays(card.effectivePriority)
+    const postponeDays = getPostponeDays("topic", card.priority)
     const nextIntervalDays = clampIntervalDays("topic", postponeDays)
     const nextDue = new Date(now.getTime() + nextIntervalDays * DAY_MS)
     tasks.push(saveIRState(card.id, {
@@ -337,7 +322,7 @@ async function deferOverflowCards(
   })
 
   extracts.forEach(card => {
-    const postponeDays = getPostponeDays(card.effectivePriority)
+    const postponeDays = getPostponeDays("extracts", card.priority)
     const nextIntervalDays = clampIntervalDays("extracts", postponeDays)
     const nextDue = new Date(now.getTime() + nextIntervalDays * DAY_MS)
     tasks.push(saveIRState(card.id, {
@@ -383,44 +368,36 @@ export async function buildIRQueue(cards: IRCard[], options: IRQueueOptions = {}
   const totalAvailable = topics.length + extracts.length
   const totalTarget = Math.min(dailyLimit, totalAvailable)
 
-  const tiers: Array<{ topics: IRCard[]; extracts: IRCard[] }> = [
-    { topics: topics.filter(card => card.effectivePriorityRank === 3), extracts: extracts.filter(card => card.effectivePriorityRank === 3) },
-    { topics: topics.filter(card => card.effectivePriorityRank === 2), extracts: extracts.filter(card => card.effectivePriorityRank === 2) },
-    { topics: topics.filter(card => card.effectivePriorityRank === 1), extracts: extracts.filter(card => card.effectivePriorityRank === 1) }
-  ]
+  const now = options.now ?? new Date()
+  const todayStartTime = getDayStart(now).getTime()
 
-  const selectedTopics: IRCard[] = []
-  const selectedExtracts: IRCard[] = []
-  let remainingSlots = totalTarget
+  // Extract（复习）优先：先把“已逾期”的 extracts 放到队列最前面，避免被 topicQuota 稀释。
+  const overdueExtracts = extracts.filter(card => getDayStart(card.due).getTime() < todayStartTime)
+  const dueExtracts = extracts.filter(card => getDayStart(card.due).getTime() >= todayStartTime)
 
-  for (const tier of tiers) {
-    let topicIndex = 0
-    let extractIndex = 0
+  const selectedOverdueExtracts = overdueExtracts.slice(0, totalTarget)
+  let remainingSlots = totalTarget - selectedOverdueExtracts.length
 
-    while (remainingSlots > 0 && (topicIndex < tier.topics.length || extractIndex < tier.extracts.length)) {
-      const currentRatio = selectedTopics.length / Math.max(1, selectedTopics.length + selectedExtracts.length)
-      const wantTopic = currentRatio < ratio
+  const maxTopics = Math.min(
+    topics.length,
+    Math.max(0, Math.round(totalTarget * ratio))
+  )
+  const selectedTopics = topics.slice(0, Math.min(maxTopics, remainingSlots))
+  remainingSlots -= selectedTopics.length
 
-      if (wantTopic && topicIndex < tier.topics.length) {
-        selectedTopics.push(tier.topics[topicIndex++])
-        remainingSlots -= 1
-        continue
-      }
+  const selectedDueExtracts = dueExtracts.slice(0, remainingSlots)
+  remainingSlots -= selectedDueExtracts.length
 
-      if (extractIndex < tier.extracts.length) {
-        selectedExtracts.push(tier.extracts[extractIndex++])
-        remainingSlots -= 1
-        continue
-      }
-
-      if (topicIndex < tier.topics.length) {
-        selectedTopics.push(tier.topics[topicIndex++])
-        remainingSlots -= 1
-      }
-    }
+  if (remainingSlots > 0) {
+    const extraTopics = topics.slice(selectedTopics.length, selectedTopics.length + remainingSlots)
+    selectedTopics.push(...extraTopics)
+    remainingSlots -= extraTopics.length
   }
 
-  const queue = interleaveByRatio(selectedTopics, selectedExtracts, ratio)
+  const queue = [
+    ...selectedOverdueExtracts,
+    ...interleaveByRatio(selectedTopics, selectedDueExtracts, ratio)
+  ]
 
   if (enableAutoDefer && totalAvailable > totalTarget) {
     const selectedIds = new Set(queue.map(card => card.id))
@@ -431,7 +408,7 @@ export async function buildIRQueue(cards: IRCard[], options: IRQueueOptions = {}
       await deferOverflowCards(
         deferredTopics,
         deferredExtracts,
-        options.now ?? new Date(),
+        now,
         maxPositionSeed
       )
     } catch (error) {

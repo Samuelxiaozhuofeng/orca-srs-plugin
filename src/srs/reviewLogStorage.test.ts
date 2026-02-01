@@ -82,7 +82,8 @@ const reviewLogEntryArbitrary = fc.record({
 }) as fc.Arbitrary<ReviewLogEntry>
 
 // 清理函数
-function clearMockStorage() {
+async function clearMockStorage() {
+  await clearAllReviewLogs(PLUGIN_NAME)
   Object.keys(mockStorage).forEach(key => delete mockStorage[key])
   mockDataKeys.length = 0
   clearLogCache()
@@ -90,7 +91,7 @@ function clearMockStorage() {
 
 describe('reviewLogStorage', () => {
   beforeEach(async () => {
-    clearMockStorage()
+    await clearMockStorage()
     vi.clearAllMocks()
   })
 
@@ -176,7 +177,7 @@ describe('reviewLogStorage', () => {
           uniqueLogsArbitrary,
           async (logs) => {
             // 清理存储
-            clearMockStorage()
+            await clearMockStorage()
             
             // 保存所有记录
             for (const log of logs) {
@@ -215,7 +216,7 @@ describe('reviewLogStorage', () => {
     })
 
     it('should filter logs by date range correctly', async () => {
-      clearMockStorage()
+      await clearMockStorage()
       
       // 创建跨越多个月份的记录
       const logs: ReviewLogEntry[] = [
@@ -292,7 +293,7 @@ describe('reviewLogStorage', () => {
           validDateArbitrary,
           async (logs, cleanupDate) => {
             // 清理存储
-            clearMockStorage()
+            await clearMockStorage()
             
             // 保存所有记录
             for (const log of logs) {
@@ -334,14 +335,14 @@ describe('reviewLogStorage', () => {
     })
 
     it('should handle empty storage gracefully', async () => {
-      clearMockStorage()
+      await clearMockStorage()
       
       const cleanedCount = await cleanupOldLogs(PLUGIN_NAME, new Date())
       expect(cleanedCount).toBe(0)
     })
 
     it('should clean up entire months when all logs are old', async () => {
-      clearMockStorage()
+      await clearMockStorage()
       
       // 创建 2023 年的记录
       const oldLog: ReviewLogEntry = {
@@ -372,7 +373,7 @@ describe('reviewLogStorage', () => {
 
   describe('clearAllReviewLogs', () => {
     it('should remove all logs from storage', async () => {
-      clearMockStorage()
+      await clearMockStorage()
       
       // 保存一些记录
       const logs: ReviewLogEntry[] = [

@@ -11,10 +11,9 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
-import { calculateNextDue, getPriorityChoiceFromTopic } from "./incrementalReadingScheduler"
+import { calculateNextDue, DEFAULT_IR_PRIORITY } from "./incrementalReadingScheduler"
+import { loadIRState, updatePriority } from "./incrementalReadingStorage"
 import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
-
-const DEFAULT_PRIORITY_CHOICE = "中优先级"
 
 /**
  * 判断块是否为渐进阅读 Topic
@@ -88,8 +87,13 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
     return
   }
 
-  // Extract 继承父 Topic 的 priority，用于初始排期
-    const inheritedPriority = getPriorityChoiceFromTopic(parentTopic, DEFAULT_PRIORITY_CHOICE)
+  // Extract 继承父 Topic 的 ir.priority（单一真相），用于初始排期
+  let inheritedPriority = DEFAULT_IR_PRIORITY
+  try {
+    inheritedPriority = (await loadIRState(parentTopic.id)).priority
+  } catch {
+    inheritedPriority = DEFAULT_IR_PRIORITY
+  }
   console.log(`[${pluginName}] 自动标记 Extract: 块 ${blockId}`)
 
   try {
@@ -102,8 +106,7 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
       [
         { name: "type", value: "extracts" },
         { name: "牌组", value: [] },
-        { name: "status", value: "" },
-        { name: "priority", value: [inheritedPriority] }
+        { name: "status", value: "" }
       ]
     )
 
@@ -130,10 +133,11 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
 
     // 初始化渐进阅读状态（ir.*）
     const { ensureIRState, invalidateIrBlockCache } = await import("./incrementalReadingStorage")
-    const state = await ensureIRState(blockId)
-    const baseDate = state.lastRead ?? new Date()
-    // 使用随机区间重算 due，避免同日堆积
-    const nextDue = calculateNextDue(inheritedPriority, baseDate)
+    await ensureIRState(blockId)
+    await updatePriority(blockId, inheritedPriority)
+
+    // 使用随机抖动重算 due，避免同日堆积（不改变 intervalDays）
+    const nextDue = calculateNextDue("extracts", inheritedPriority, new Date())
 
     await orca.commands.invokeEditorCommand(
       "core.editor.setProperties",

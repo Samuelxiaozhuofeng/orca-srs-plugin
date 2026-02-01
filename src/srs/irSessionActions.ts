@@ -1,49 +1,27 @@
-import type { Block, DbId } from "../orca.d.ts"
+import type { DbId } from "../orca.d.ts"
 import type { IRState } from "./incrementalReadingStorage"
-import type { IRPriorityChoice } from "./incrementalReadingScheduler"
 import {
   deleteIRState,
   loadIRState,
   markAsRead,
-  markAsReadWithTagPriorityReset,
   markAsReadWithPriority,
   postpone,
   saveIRState,
   updatePriority as updatePriorityInternal
 } from "./incrementalReadingStorage"
-import { getPriorityFromTag, mapNumericPriorityToChoice } from "./incrementalReadingScheduler"
-import { isCardTag } from "./tagUtils"
 import { deleteCardSrsData } from "./storage"
 
 export { markAsRead, markAsReadWithPriority }
 export { postpone }
 
-const PRIORITY_ORDER: IRPriorityChoice[] = ["低优先级", "中优先级", "高优先级"]
-const PRIORITY_TO_NUMERIC: Record<IRPriorityChoice, number> = {
-  "低优先级": 2,
-  "中优先级": 5,
-  "高优先级": 9
+const clampPriority = (value: number): number => {
+  if (!Number.isFinite(value)) return 50
+  return Math.min(100, Math.max(0, Math.round(value)))
 }
 
-const stepPriorityChoice = (
-  current: IRPriorityChoice,
-  direction: "forward" | "back"
-): IRPriorityChoice => {
-  const index = PRIORITY_ORDER.indexOf(current)
-  if (index < 0) return "中优先级"
-  const nextIndex = direction === "forward"
-    ? Math.min(PRIORITY_ORDER.length - 1, index + 1)
-    : Math.max(0, index - 1)
-  return PRIORITY_ORDER[nextIndex]
-}
-
-const stepNumericPriority = (
-  current: number,
-  direction: "forward" | "back"
-): number => {
-  const choice = mapNumericPriorityToChoice(current)
-  const nextChoice = stepPriorityChoice(choice, direction)
-  return PRIORITY_TO_NUMERIC[nextChoice]
+const shiftPriority = (current: number, direction: "forward" | "back"): number => {
+  const step = 10
+  return clampPriority(direction === "forward" ? current + step : current - step)
 }
 
 /**
@@ -66,54 +44,17 @@ export async function completeIRCard(blockId: DbId): Promise<void> {
   }
 }
 
-async function updateExtractPriorityTag(
-  blockId: DbId,
-  direction: "forward" | "back"
-): Promise<IRPriorityChoice> {
-  const block =
-    (orca.state.blocks?.[blockId] as Block | undefined)
-    || ((await orca.invokeBackend("get-block", blockId)) as Block | undefined)
-
-  if (!block) {
-    throw new Error(`找不到块 #${blockId}`)
-  }
-
-  const cardRef = block.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
-  if (!cardRef) {
-    throw new Error(`块 #${blockId} 没有 #card 标签`)
-  }
-
-  const tagPriority = getPriorityFromTag(block)
-  const fallbackPriority = mapNumericPriorityToChoice((await loadIRState(blockId)).priority)
-  const current = tagPriority ?? fallbackPriority
-  const nextChoice = stepPriorityChoice(current, direction)
-
-  await orca.commands.invokeEditorCommand(
-    "core.editor.setRefData",
-    null,
-    cardRef,
-    [{ name: "priority", value: [nextChoice] }]
-  )
-
-  return nextChoice
-}
-
 /**
- * 标记已读并按方向调整优先级（Topic: ir.priority, Extract: #card.priority）
+ * 标记已读并按方向调整优先级（统一使用 ir.priority）
  */
 export async function markAsReadWithPriorityShift(
   blockId: DbId,
-  cardType: "topic" | "extracts",
+  _cardType: "topic" | "extracts",
   direction: "forward" | "back"
 ): Promise<void> {
-  if (cardType === "extracts") {
-    await updateExtractPriorityTag(blockId, direction)
-    await markAsReadWithTagPriorityReset(blockId)
-    return
-  }
-
+  void _cardType
   const prev = await loadIRState(blockId)
-  const nextPriority = stepNumericPriority(prev.priority, direction)
+  const nextPriority = shiftPriority(prev.priority, direction)
   await markAsReadWithPriority(blockId, nextPriority)
 }
 

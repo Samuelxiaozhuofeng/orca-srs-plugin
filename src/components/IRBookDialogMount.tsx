@@ -7,7 +7,7 @@
 
 import type { DbId } from "../orca.d.ts"
 import { ensureCardTagProperties } from "../srs/tagPropertyInit"
-import { setupBookIR, type IRPriorityChoice } from "../srs/bookIRCreator"
+import { setupBookIR } from "../srs/bookIRCreator"
 
 const { React, Valtio } = window as any
 const { useSnapshot } = Valtio
@@ -48,8 +48,8 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
 
   const chapterCount = snap.chapterIds?.length ?? 0
 
-  // 默认值：中优先级 + 30 天
-  const [priority, setPriority] = useState("中优先级" as IRPriorityChoice)
+  // 默认值：priority=50 + 30 天
+  const [priority, setPriority] = useState(50)
   const [totalDays, setTotalDays] = useState(30)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -125,11 +125,15 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            <span style={{ fontSize: "13px", color: "var(--orca-text-primary, #333)" }}>优先级</span>
-            <select
+            <span style={{ fontSize: "13px", color: "var(--orca-text-primary, #333)" }}>优先级（0-100）</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
               value={priority}
               disabled={isSubmitting}
-              onChange={(e) => setPriority(e.target.value as IRPriorityChoice)}
+              onChange={(e) => setPriority(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
               style={{
                 padding: "8px 10px",
                 borderRadius: "8px",
@@ -137,11 +141,7 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
                 background: "var(--orca-bg-primary, #fff)",
                 color: "var(--orca-text-primary, #333)"
               }}
-            >
-              <option value="高优先级">高优先级</option>
-              <option value="中优先级">中优先级</option>
-              <option value="低优先级">低优先级</option>
-            </select>
+            />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>

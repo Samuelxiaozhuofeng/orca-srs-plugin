@@ -1,25 +1,25 @@
-import type { IRPriorityChoice } from "../srs/incrementalReadingScheduler"
-
 const { useState, useMemo, useCallback } = window.React
 const { ModalOverlay, Button } = orca.components
 
 type IRBookSetupDialogProps = {
   chapterCount: number
   bookTitle: string
-  onConfirm: (priority: IRPriorityChoice, totalDays: number) => void | Promise<void>
+  onConfirm: (priority: number, totalDays: number) => void | Promise<void>
   onCancel: () => void
 }
-
-const PRIORITY_OPTIONS: Array<{ label: string; value: IRPriorityChoice }> = [
-  { label: "高优先级", value: "高优先级" },
-  { label: "中优先级", value: "中优先级" },
-  { label: "低优先级", value: "低优先级" }
-]
 
 function clampInteger(value: number, min: number): number {
   if (!Number.isFinite(value)) return min
   const rounded = Math.round(value)
   return rounded < min ? min : rounded
+}
+
+function clampRange(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  const rounded = Math.round(value)
+  if (rounded < min) return min
+  if (rounded > max) return max
+  return rounded
 }
 
 export default function IRBookSetupDialog({
@@ -33,10 +33,11 @@ export default function IRBookSetupDialog({
     return normalized
   }, [chapterCount])
 
-  const [priority, setPriority] = useState<IRPriorityChoice>("中优先级")
+  const [priorityInput, setPriorityInput] = useState<number>(50)
   const [totalDaysInput, setTotalDaysInput] = useState<number>(() => minDays * 2)
   const [isWorking, setIsWorking] = useState(false)
 
+  const priority = useMemo(() => clampRange(priorityInput, 0, 100), [priorityInput])
   const totalDays = useMemo(() => clampInteger(totalDaysInput, minDays), [totalDaysInput, minDays])
 
   const schedulePreview = useMemo(() => {
@@ -143,30 +144,22 @@ export default function IRBookSetupDialog({
           gap: "12px"
         }}>
           <div style={{ flex: "1 1 220px", minWidth: "220px", display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={labelStyle}>优先级</div>
-            <select
-              value={priority}
-              onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
-                setPriority(event.currentTarget.value as IRPriorityChoice)
+            <div style={labelStyle}>优先级（0-100）</div>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={priorityInput}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                const next = Number(event.currentTarget.value)
+                if (!Number.isFinite(next)) return
+                setPriorityInput(next)
               }}
-              style={{
-                ...inputBaseStyle,
-                appearance: "none",
-                backgroundImage: "linear-gradient(45deg, transparent 50%, var(--orca-color-text-3) 50%), linear-gradient(135deg, var(--orca-color-text-3) 50%, transparent 50%)",
-                backgroundPosition: "calc(100% - 18px) calc(50% - 2px), calc(100% - 12px) calc(50% - 2px)",
-                backgroundSize: "6px 6px, 6px 6px",
-                backgroundRepeat: "no-repeat",
-                paddingRight: "36px"
-              }}
-            >
-              {PRIORITY_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              style={inputBaseStyle}
+            />
             <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
-              更高优先级将更频繁推送章节。
+              数值越高，章节推送越频繁。
             </div>
           </div>
 

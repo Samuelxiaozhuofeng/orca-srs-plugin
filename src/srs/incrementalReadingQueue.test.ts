@@ -2,29 +2,65 @@ import { describe, expect, it } from "vitest"
 import type { IRCard } from "./incrementalReadingCollector"
 import { buildIRQueue } from "./incrementalReadingCollector"
 
+function makeCard(partial: Partial<IRCard> & Pick<IRCard, "id" | "cardType">): IRCard {
+  const base: IRCard = {
+    id: partial.id,
+    cardType: partial.cardType,
+    priority: 50,
+    position: partial.cardType === "topic" ? 1 : null,
+    due: new Date("2026-01-19T08:00:00"),
+    intervalDays: 5,
+    postponeCount: 0,
+    stage: partial.cardType === "topic" ? "topic.preview" : "extract.raw",
+    lastAction: "init",
+    lastRead: null,
+    readCount: 0,
+    isNew: true,
+    resumeBlockId: null
+  }
+  return { ...base, ...partial }
+}
+
 describe("incrementalReadingQueue", () => {
-  it("should keep high priority cards in dailyLimit (strong guarantee)", async () => {
+  it("should prioritize overdue extracts over topics (dailyLimit)", async () => {
+    const now = new Date("2026-01-19T12:00:00")
     const cards: IRCard[] = [
-      { id: 1, cardType: "topic", effectivePriority: "中优先级", effectivePriorityRank: 2, priority: 5, position: 1, due: new Date("2025-01-01"), intervalDays: 5, postponeCount: 0, stage: "topic.preview", lastAction: "init", lastRead: null, readCount: 0, isNew: true, resumeBlockId: null },
-      { id: 2, cardType: "topic", effectivePriority: "中优先级", effectivePriorityRank: 2, priority: 5, position: 2, due: new Date("2025-01-01"), intervalDays: 5, postponeCount: 0, stage: "topic.preview", lastAction: "init", lastRead: null, readCount: 0, isNew: true, resumeBlockId: null },
-      { id: 3, cardType: "topic", effectivePriority: "中优先级", effectivePriorityRank: 2, priority: 5, position: 3, due: new Date("2025-01-01"), intervalDays: 5, postponeCount: 0, stage: "topic.preview", lastAction: "init", lastRead: null, readCount: 0, isNew: true, resumeBlockId: null },
-      { id: 10, cardType: "extracts", effectivePriority: "高优先级", effectivePriorityRank: 3, priority: 5, position: null, due: new Date("2025-01-01"), intervalDays: 1, postponeCount: 0, stage: "extract.raw", lastAction: "init", lastRead: new Date(), readCount: 1, isNew: false, resumeBlockId: null },
-      { id: 11, cardType: "extracts", effectivePriority: "低优先级", effectivePriorityRank: 1, priority: 5, position: null, due: new Date("2025-01-01"), intervalDays: 3, postponeCount: 0, stage: "extract.raw", lastAction: "init", lastRead: new Date(), readCount: 1, isNew: false, resumeBlockId: null }
+      makeCard({ id: 1, cardType: "topic", priority: 100, position: 1, due: new Date("2026-01-19T08:00:00") }),
+      makeCard({ id: 10, cardType: "extracts", priority: 80, due: new Date("2026-01-18T08:00:00"), isNew: false, lastRead: new Date("2026-01-01T00:00:00"), readCount: 1 })
     ]
 
     const queue = await buildIRQueue(cards, {
-      topicQuotaPercent: 80,
+      topicQuotaPercent: 100,
+      dailyLimit: 1,
+      enableAutoDefer: false,
+      now
+    })
+    expect(queue.map(card => card.id)).toEqual([10])
+  })
+
+  it("should respect topicQuotaPercent when no overdue extracts", async () => {
+    const now = new Date("2026-01-19T12:00:00")
+    const cards: IRCard[] = [
+      makeCard({ id: 1, cardType: "topic", priority: 90, position: 1, due: new Date("2026-01-19T08:00:00") }),
+      makeCard({ id: 2, cardType: "topic", priority: 80, position: 2, due: new Date("2026-01-19T08:00:00") }),
+      makeCard({ id: 10, cardType: "extracts", priority: 90, due: new Date("2026-01-19T08:00:00"), isNew: false, lastRead: new Date("2026-01-01T00:00:00"), readCount: 1 }),
+      makeCard({ id: 11, cardType: "extracts", priority: 10, due: new Date("2026-01-19T08:00:00"), isNew: false, lastRead: new Date("2026-01-01T00:00:00"), readCount: 1 })
+    ]
+
+    const queue = await buildIRQueue(cards, {
+      topicQuotaPercent: 50,
       dailyLimit: 2,
-      enableAutoDefer: false
+      enableAutoDefer: false,
+      now
     })
     expect(queue.map(card => card.id)).toEqual([1, 10])
   })
 
-  it("should sort extracts by due then effectivePriorityRank", async () => {
+  it("should sort extracts by due then priority (no dailyLimit)", async () => {
     const cards: IRCard[] = [
-      { id: 21, cardType: "extracts", effectivePriority: "中优先级", effectivePriorityRank: 2, priority: 5, position: null, due: new Date("2025-01-01"), intervalDays: 2, postponeCount: 0, stage: "extract.raw", lastAction: "init", lastRead: null, readCount: 0, isNew: true, resumeBlockId: null },
-      { id: 22, cardType: "extracts", effectivePriority: "高优先级", effectivePriorityRank: 3, priority: 5, position: null, due: new Date("2025-01-01"), intervalDays: 1, postponeCount: 0, stage: "extract.raw", lastAction: "init", lastRead: null, readCount: 0, isNew: true, resumeBlockId: null },
-      { id: 23, cardType: "extracts", effectivePriority: "低优先级", effectivePriorityRank: 1, priority: 5, position: null, due: new Date("2025-01-01"), intervalDays: 3, postponeCount: 0, stage: "extract.raw", lastAction: "init", lastRead: null, readCount: 0, isNew: true, resumeBlockId: null }
+      makeCard({ id: 21, cardType: "extracts", priority: 30, due: new Date("2026-01-19T08:00:00") }),
+      makeCard({ id: 22, cardType: "extracts", priority: 90, due: new Date("2026-01-19T08:00:00") }),
+      makeCard({ id: 23, cardType: "extracts", priority: 10, due: new Date("2026-01-20T08:00:00") })
     ]
 
     const queue = await buildIRQueue(cards, {
@@ -35,3 +71,4 @@ describe("incrementalReadingQueue", () => {
     expect(queue.map(card => card.id)).toEqual([22, 21, 23])
   })
 })
+

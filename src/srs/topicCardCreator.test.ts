@@ -78,7 +78,6 @@ describe("topicCardCreator", () => {
         { name: "type", value: "topic" },
         { name: "牌组", value: [] },
         { name: "status", value: "" },
-        { name: "priority", value: ["中优先级"] },
       ]
     )
     expect(ensureCardTagProperties).toHaveBeenCalledWith("orca-srs")
@@ -101,7 +100,6 @@ describe("topicCardCreator", () => {
       cardRef,
       [
         { name: "type", value: "topic" },
-        { name: "priority", value: ["中优先级"] },
       ]
     )
     expect(ensureIRState).toHaveBeenCalledWith(blockId)

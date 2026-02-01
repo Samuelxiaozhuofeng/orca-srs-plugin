@@ -1,184 +1,82 @@
 /**
  * 渐进阅读调度算法
  *
- * 根据静态优先级映射到固定间隔天数，计算下一次到期时间。
+ * 基于数值优先级（0-100）计算间隔、推后与下一次到期时间。
+ *
+ * 设计原则：
+ * - `ir.priority` 是唯一真相；不从 #card 的 ref.data 读取优先级
+ * - 允许会话中动态调整优先级
+ * - 为避免同日堆积，在 due 上加入少量随机抖动
  */
 
-import type { Block } from "../orca.d.ts"
-import { isCardTag } from "./tagUtils"
+export const DEFAULT_IR_PRIORITY = 50
 
-const DEFAULT_PRIORITY = 5
-const PRIORITY_PROPERTY_NAME = "priority"
-const PRIORITY_CHOICES = ["高优先级", "中优先级", "低优先级"] as const
-const DEFAULT_PRIORITY_CHOICE: IRPriorityChoice = "中优先级"
-
-export type IRPriorityChoice = typeof PRIORITY_CHOICES[number]
-
-export type IRPriorityRank = 1 | 2 | 3
+export type IRCardType = "topic" | "extracts"
 
 /**
- * 规范化优先级到 1-10
+ * 规范化优先级到 0-100（整数）
  */
 export function normalizePriority(priority: number): number {
-  if (!Number.isFinite(priority)) return DEFAULT_PRIORITY
+  if (!Number.isFinite(priority)) return DEFAULT_IR_PRIORITY
   const rounded = Math.round(priority)
-  if (rounded < 1) return 1
-  if (rounded > 10) return 10
+  if (rounded < 0) return 0
+  if (rounded > 100) return 100
   return rounded
 }
 
-/**
- * 获取优先级对应的间隔天数
- *
- * 映射规则：
- * - 10 → 1 天
- * - 8-9 → 2 天
- * - 6-7 → 3 天
- * - 4-5 → 5 天
- * - 1-3 → 7 天
- */
-export function getIntervalDays(priority: number): number {
-  const normalized = normalizePriority(priority)
-
-  if (normalized === 10) return 1
-  if (normalized >= 8) return 2
-  if (normalized >= 6) return 3
-  if (normalized >= 4) return 5
-  return 7
-}
-
-const normalizePriorityChoice = (value: unknown): IRPriorityChoice | null => {
-  if (typeof value !== "string") return null
-  const trimmed = value.trim()
-  return PRIORITY_CHOICES.includes(trimmed as IRPriorityChoice)
-    ? (trimmed as IRPriorityChoice)
-    : null
-}
-
-const readNumericPriority = (block: Block): number | null => {
-  const rawValue = block.properties?.find(prop => prop.name === "ir.priority")?.value
-  if (typeof rawValue === "number" && Number.isFinite(rawValue)) return rawValue
-  if (typeof rawValue === "string") {
-    const parsed = Number(rawValue)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return null
-}
-
-/**
- * 将数值优先级映射为“高/中/低”
- */
-export function mapNumericPriorityToChoice(priority: number): IRPriorityChoice {
-  const normalized = normalizePriority(priority)
-  if (normalized >= 8) return "高优先级"
-  if (normalized >= 4) return "中优先级"
-  return "低优先级"
-}
-
-/**
- * 从块的 #card 标签中提取 priority 单选属性
- * 
- * 返回值仅限：高优先级/中优先级/低优先级
- */
-export function getPriorityFromTag(block: Block): IRPriorityChoice | null {
-  if (!block.refs || block.refs.length === 0) {
-    return null
-  }
-
-  const cardRef = block.refs.find(ref =>
-    ref.type === 2 && isCardTag(ref.alias)
-  )
-  if (!cardRef?.data || cardRef.data.length === 0) {
-    return null
-  }
-
-  const priorityProp = cardRef.data.find(data => data.name === PRIORITY_PROPERTY_NAME)
-  if (!priorityProp) {
-    return null
-  }
-
-  const rawValue = priorityProp.value
-  if (Array.isArray(rawValue)) {
-    return normalizePriorityChoice(rawValue[0])
-  }
-  return normalizePriorityChoice(rawValue)
-}
-
-/**
- * 获取 Topic 的“有效优先级（高/中/低）”
- *
- * 规则：
- * - 如果 #card.priority 已被用户明确设置（非默认值），优先使用它
- * - 否则回退到 ir.priority 的数值映射（便于支持会话内切换）
- */
-export function getPriorityChoiceFromTopic(
-  block: Block,
-  fallback: IRPriorityChoice = DEFAULT_PRIORITY_CHOICE
-): IRPriorityChoice {
-  const tagPriority = getPriorityFromTag(block)
-  if (tagPriority && tagPriority !== fallback) {
-    return tagPriority
-  }
-
-  const numericPriority = readNumericPriority(block)
-  if (numericPriority !== null) {
-    return mapNumericPriorityToChoice(numericPriority)
-  }
-
-  return tagPriority ?? fallback
-}
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const randomIntInclusive = (min: number, max: number): number =>
   Math.floor(Math.random() * (max - min + 1)) + min
 
-export function getPriorityRank(choice: IRPriorityChoice | null): IRPriorityRank {
-  if (choice === "高优先级") return 3
-  if (choice === "中优先级") return 2
-  return 1
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
+
+export function getBaseIntervalDays(cardType: IRCardType, priority: number): number {
+  const p = normalizePriority(priority) / 100
+
+  if (cardType === "extracts") {
+    // 高优先级更频繁
+    return Math.max(1, Math.round(lerp(7, 1, p)))
+  }
+
+  return Math.max(1, Math.round(lerp(14, 2, p)))
 }
 
-/**
- * 根据优先级区间随机生成间隔天数，避免同日堆积
- *
- * - 高优先级：1-2 天
- * - 中优先级：3-5 天
- * - 低优先级：7-10 天
- */
-export function getRandomIntervalDays(priority: IRPriorityChoice | string): number {
-  const normalized = normalizePriorityChoice(priority) ?? DEFAULT_PRIORITY_CHOICE
-
-  if (normalized === "高优先级") return randomIntInclusive(1, 2)
-  if (normalized === "中优先级") return randomIntInclusive(3, 5)
-  return randomIntInclusive(7, 10)
+export function getExtractBaseIntervalDays(priority: number): number {
+  return getBaseIntervalDays("extracts", priority)
 }
 
-export function getExtractBaseIntervalDays(priority: IRPriorityChoice | string): number {
-  const normalized = normalizePriorityChoice(priority) ?? DEFAULT_PRIORITY_CHOICE
-  if (normalized === "高优先级") return 1
-  if (normalized === "中优先级") return 2
-  return 3
+export function getTopicBaseIntervalDays(priority: number): number {
+  return getBaseIntervalDays("topic", priority)
 }
 
-export function getPostponeDays(priority: IRPriorityChoice | string): number {
-  const normalized = normalizePriorityChoice(priority) ?? DEFAULT_PRIORITY_CHOICE
-  if (normalized === "高优先级") return randomIntInclusive(1, 2)
-  if (normalized === "中优先级") return randomIntInclusive(3, 5)
-  return randomIntInclusive(7, 14)
+export function getPostponeDays(cardType: IRCardType, priority: number): number {
+  const p = normalizePriority(priority) / 100
+  const inv = 1 - p
+
+  if (cardType === "extracts") {
+    const min = Math.max(1, Math.round(lerp(1, 4, inv)))
+    const max = Math.max(min, Math.round(lerp(2, 10, inv)))
+    return randomIntInclusive(min, max)
+  }
+
+  const min = Math.max(1, Math.round(lerp(1, 7, inv)))
+  const max = Math.max(min, Math.round(lerp(2, 14, inv)))
+  return randomIntInclusive(min, max)
 }
 
 /**
  * 计算下一次到期时间
- * @param priority - 优先级
+ * @param cardType - 卡片类型
+ * @param priority - 优先级（0-100）
  * @param baseDate - 基准时间（通常为当前时间或上次阅读时间）
  */
 export function calculateNextDue(
-  priority: number | IRPriorityChoice,
+  cardType: IRCardType,
+  priority: number,
   baseDate: Date = new Date()
 ): Date {
-  const intervalDays = typeof priority === "number"
-    ? getIntervalDays(priority)
-    : getRandomIntervalDays(priority)
-  const next = new Date(baseDate.getTime())
-  next.setDate(next.getDate() + intervalDays)
-  return next
+  const intervalDays = getBaseIntervalDays(cardType, priority)
+  const jitterMs = Math.floor(Math.random() * 12 * 60 * 60 * 1000) // 0-12h
+  return new Date(baseDate.getTime() + intervalDays * DAY_MS + jitterMs)
 }
