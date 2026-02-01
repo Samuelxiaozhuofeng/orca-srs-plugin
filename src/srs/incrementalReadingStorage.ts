@@ -605,3 +605,29 @@ export async function postpone(blockId: DbId): Promise<{ state: IRState; days: n
     throw error
   }
 }
+
+/**
+ * 提前到“今天”：仅修改 ir.due，不改变其它 IR 状态
+ *
+ * - 以本地日 00:00 作为“今天”边界，确保会话面板能识别为“今天到期”
+ */
+export async function advanceDueToToday(
+  blockId: DbId,
+  options: { now?: Date } = {}
+): Promise<IRState> {
+  try {
+    const prev = await loadIRState(blockId)
+    const now = options.now ?? new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const nextState: IRState = {
+      ...prev,
+      due: todayStart
+    }
+    await saveIRState(blockId, nextState)
+    return nextState
+  } catch (error) {
+    console.error("[IR] advanceDueToToday failed:", error)
+    orca.notify("error", "提前学失败（写入排期失败）", { title: "渐进阅读" })
+    throw error
+  }
+}

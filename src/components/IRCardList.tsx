@@ -17,6 +17,8 @@ type IRCardListProps = {
   expandedGroups: Record<IRDateGroupKey, boolean>
   onCardClick: (cardId: DbId) => void
   onToggleGroup: (groupKey: IRDateGroupKey) => void
+  onAdvanceLearn?: (cardId: DbId) => void
+  advancingIds?: Record<string, boolean>
 }
 
 type GroupStyle = {
@@ -91,7 +93,9 @@ export default function IRCardList({
   cards,
   expandedGroups,
   onCardClick,
-  onToggleGroup
+  onToggleGroup,
+  onAdvanceLearn,
+  advancingIds
 }: IRCardListProps) {
   const [blockTitles, setBlockTitles] = useState<Record<string, string>>({})
   const [groupDisplayCounts, setGroupDisplayCounts] = useState<Record<IRDateGroupKey, number>>({} as Record<IRDateGroupKey, number>)
@@ -176,6 +180,12 @@ export default function IRCardList({
       {groups.map((group: IRCardGroup) => {
         const style = groupStyles[group.key]
         const isExpanded = expandedGroups[group.key]
+        const canAdvanceLearnGroup = (
+          group.key === "明天" ||
+          group.key === "未来7天" ||
+          group.key === "新卡" ||
+          group.key === "7天后"
+        )
 
         return (
           <div
@@ -227,6 +237,8 @@ export default function IRCardList({
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
                   {visibleCards.map(card => {
                     const title = truncateText(getBlockTitle(card.id, blockTitles), 50)
+                    const canAdvanceLearn = Boolean(onAdvanceLearn && canAdvanceLearnGroup)
+                    const isAdvancing = Boolean(advancingIds?.[String(card.id)])
 
                     return (
                       <div
@@ -270,6 +282,25 @@ export default function IRCardList({
                             <span>状态：{card.stage} · {card.lastAction}</span>
                           </div>
                         </div>
+                        {canAdvanceLearn ? (
+                          <div style={{ flexShrink: 0 }}>
+                            <Button
+                              variant="outline"
+                              onClick={(event: React.MouseEvent) => {
+                                event.stopPropagation()
+                                onAdvanceLearn?.(card.id)
+                              }}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: "999px",
+                                fontSize: "12px",
+                                ...(isAdvancing ? { opacity: 0.6, pointerEvents: "none" as const } : undefined)
+                              }}
+                            >
+                              提前学
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}

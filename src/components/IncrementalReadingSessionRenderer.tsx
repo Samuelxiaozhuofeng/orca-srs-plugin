@@ -1,5 +1,6 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
+import { popNextIRSessionFocusCardId } from "../srs/incrementalReadingSessionManager"
 import IncrementalReadingSessionDemo from "./IncrementalReadingSessionDemo"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
@@ -49,6 +50,20 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
     void loadReadingQueue()
   }, [blockId])
 
+  useEffect(() => {
+    const handleFocus = (event: Event) => {
+      const custom = event as CustomEvent | undefined
+      const detail = custom?.detail as { pluginName?: string } | undefined
+      if (detail?.pluginName && detail.pluginName !== pluginName) return
+      void loadReadingQueue()
+    }
+
+    window.addEventListener("orca-srs:ir-session-focus", handleFocus as EventListener)
+    return () => {
+      window.removeEventListener("orca-srs:ir-session-focus", handleFocus as EventListener)
+    }
+  }, [pluginName, blockId])
+
   const loadReadingQueue = async () => {
     setIsLoading(true)
     setErrorMessage(null)
@@ -66,7 +81,23 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
         topicQuotaPercent: settings.topicQuotaPercent,
         dailyLimit: settings.dailyLimit
       })
-      setCards(queue)
+      const focusCardId = await popNextIRSessionFocusCardId(currentPluginName)
+      const focusedQueue = (() => {
+        if (!focusCardId) return queue
+        const focusCard = dueCards.find(card => card.id === focusCardId)
+        if (!focusCard) return queue
+        const withoutFocus = queue.filter(card => card.id !== focusCardId)
+        const next = [focusCard, ...withoutFocus]
+
+        // 保证 focusCard 一定在队列中：若启用 dailyLimit，则挤掉队尾
+        const dailyLimit = settings.dailyLimit
+        if (typeof dailyLimit === "number" && dailyLimit > 0 && next.length > dailyLimit) {
+          return next.slice(0, dailyLimit)
+        }
+        return next
+      })()
+
+      setCards(focusedQueue)
       setQueueInfo({
         dailyLimit: settings.dailyLimit,
         totalDueCount: dueCards.length,

@@ -7,6 +7,7 @@ import type { DbId } from "../orca.d.ts"
 
 let irSessionBlockId: DbId | null = null
 const STORAGE_KEY = "incrementalReadingSessionBlockId"
+const FOCUS_CARD_KEY = "incrementalReadingSessionFocusCardId"
 
 /**
  * 获取或创建渐进阅读会话块
@@ -81,6 +82,34 @@ export async function cleanupIncrementalReadingSessionBlock(pluginName: string):
   }
 
   await orca.plugins.removeData(pluginName, STORAGE_KEY)
+}
+
+/**
+ * 设置“下次打开/刷新会话时要优先展示的卡片”（一次性）
+ *
+ * 用于“提前学”等场景：先写入 focusCardId，再打开会话面板即可。
+ */
+export async function setNextIRSessionFocusCardId(
+  pluginName: string,
+  focusCardId: DbId
+): Promise<void> {
+  await orca.plugins.setData(pluginName, FOCUS_CARD_KEY, focusCardId)
+}
+
+/**
+ * 读取并清空“会话 focusCardId”（一次性使用）
+ */
+export async function popNextIRSessionFocusCardId(
+  pluginName: string
+): Promise<DbId | null> {
+  try {
+    const raw = await orca.plugins.getData(pluginName, FOCUS_CARD_KEY)
+    await orca.plugins.removeData(pluginName, FOCUS_CARD_KEY)
+    return typeof raw === "number" ? raw : null
+  } catch (error) {
+    console.warn("[IR] popNextIRSessionFocusCardId failed:", error)
+    return null
+  }
 }
 
 async function resolveBlock(blockId: DbId) {

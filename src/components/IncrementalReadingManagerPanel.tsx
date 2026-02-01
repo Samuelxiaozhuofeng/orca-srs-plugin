@@ -2,6 +2,8 @@ import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
 import { buildIRQueue, collectAllIRCards, deferIROverflow } from "../srs/incrementalReadingCollector"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../srs/incrementalReadingAutoMark"
+import { setNextIRSessionFocusCardId } from "../srs/incrementalReadingSessionManager"
+import { advanceDueToToday } from "../srs/incrementalReadingStorage"
 import {
   DEFAULT_IR_DAILY_LIMIT,
   DEFAULT_IR_TOPIC_QUOTA_PERCENT,
@@ -407,6 +409,8 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
     enableOverflowDefer: true
   })
   const [isDeferringOverflow, setIsDeferringOverflow] = useState(false)
+  const advancingRef = useRef<Set<DbId>>(new Set())
+  const [advancingIds, setAdvancingIds] = useState<Record<string, boolean>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<IRDateGroupKey, boolean>>(() => ({
     ...IR_GROUP_DEFAULT_EXPANDED
   }))
@@ -468,6 +472,37 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
       [groupKey]: !prev[groupKey]
     }))
   }
+
+  const handleAdvanceLearn = useCallback(async (cardId: DbId) => {
+    if (advancingRef.current.has(cardId)) return
+    advancingRef.current.add(cardId)
+    setAdvancingIds((prev: Record<string, boolean>) => ({
+      ...prev,
+      [String(cardId)]: true
+    }))
+
+    try {
+      await advanceDueToToday(cardId, { now: new Date() })
+      await setNextIRSessionFocusCardId(pluginName, cardId)
+
+      // 若会话面板已打开，触发其刷新并优先展示 focusCard
+      window.dispatchEvent(new CustomEvent("orca-srs:ir-session-focus", { detail: { pluginName } }))
+
+      await orca.commands.invokeCommand(`${pluginName}.startIncrementalReadingSession`)
+      await loadCards()
+      orca.notify("success", "已提前到今天，并在渐进阅读会话中打开", { title: "渐进阅读" })
+    } catch (error) {
+      console.error("[IR Manager] 提前学失败:", error)
+      orca.notify("error", "提前学失败", { title: "渐进阅读" })
+    } finally {
+      advancingRef.current.delete(cardId)
+      setAdvancingIds((prev: Record<string, boolean>) => {
+        const next = { ...prev }
+        delete next[String(cardId)]
+        return next
+      })
+    }
+  }, [pluginName, loadCards])
 
   const handleDeferOverflow = async () => {
     if (isDeferringOverflow) return
@@ -610,6 +645,8 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
           expandedGroups={expandedGroups}
           onCardClick={handleCardClick}
           onToggleGroup={handleToggleGroup}
+          onAdvanceLearn={handleAdvanceLearn}
+          advancingIds={advancingIds}
         />
       </div>
     )
