@@ -7,6 +7,10 @@ import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
 const { useEffect, useRef, useState } = window.React
 const { Button, Block: OrcaBlock, ConfirmBox } = orca.components
+
+type SessionCard = IRCard & {
+  isCardMaking?: boolean
+}
 type IncrementalReadingSessionProps = {
   cards: IRCard[]
   panelId: string
@@ -61,7 +65,7 @@ export default function IncrementalReadingSessionDemo({
   onDeferOverflow,
   onClose
 }: IncrementalReadingSessionProps) {
-  const [queue, setQueue] = useState<IRCard[]>(cards)
+  const [queue, setQueue] = useState<SessionCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isWorking, setIsWorking] = useState<boolean>(false)
   const sessionRootRef = useRef<HTMLDivElement | null>(null)
@@ -70,6 +74,7 @@ export default function IncrementalReadingSessionDemo({
 
   const currentCard = queue[currentIndex]
   const isTopicCard = currentCard?.cardType === "topic"
+  const isCardMaking = Boolean(!isTopicCard && currentCard?.isCardMaking)
 
   useEffect(() => {
     if (!currentCard) return
@@ -134,8 +139,8 @@ export default function IncrementalReadingSessionDemo({
   }, [cards])
 
   const removeCardAtIndex = (index: number) => {
-    setQueue((prev: IRCard[]) => {
-      const next = prev.filter((_: IRCard, idx: number) => idx !== index)
+    setQueue((prev: SessionCard[]) => {
+      const next = prev.filter((_: SessionCard, idx: number) => idx !== index)
       const nextIndex = next.length === 0
         ? 0
         : Math.min(index, next.length - 1)
@@ -149,6 +154,12 @@ export default function IncrementalReadingSessionDemo({
     setIsWorking(true)
 
     try {
+      if (isCardMaking) {
+        removeCardAtIndex(currentIndex)
+        orca.notify("success", "已完成制卡并进入下一张", { title: "渐进阅读" })
+        return
+      }
+
       await markAsRead(currentCard.id)
       removeCardAtIndex(currentIndex)
       orca.notify("success", "已标记为已读", { title: "渐进阅读" })
@@ -240,8 +251,27 @@ export default function IncrementalReadingSessionDemo({
     }
   }
 
+  const handleMakeCard = async () => {
+    if (!currentCard || isTopicCard || isCardMaking || isWorking) return
+    setIsWorking(true)
+
+    try {
+      // 初始化为“普通块”：移除 #card + 清除 SRS/IR 数据，便于用 basic/cloze/direction 重新制卡
+      await completeIRCard(currentCard.id)
+      setQueue((prev: SessionCard[]) => prev.map((card: SessionCard, idx: number) =>
+        idx === currentIndex ? { ...card, isCardMaking: true } : card
+      ))
+      orca.notify("success", "已初始化：现在可直接编辑并使用命令制卡；完成后点“已读”进入下一张", { title: "渐进阅读" })
+    } catch (error) {
+      console.error("[IR Session] 制卡初始化失败:", error)
+      orca.notify("error", "制卡初始化失败", { title: "渐进阅读" })
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
   const handlePostpone = async () => {
-    if (!currentCard || isWorking) return
+    if (!currentCard || isCardMaking || isWorking) return
     setIsWorking(true)
 
     try {
@@ -277,7 +307,7 @@ export default function IncrementalReadingSessionDemo({
   }
 
   const handleCompleteRead = async () => {
-    if (!currentCard || isWorking) return
+    if (!currentCard || isCardMaking || isWorking) return
     setIsWorking(true)
 
     try {
@@ -409,7 +439,7 @@ export default function IncrementalReadingSessionDemo({
         borderRadius: "8px",
         background: "var(--orca-color-bg-2)"
       }}>
-        <IncrementalReadingBreadcrumb blockId={currentCard.id} panelId={panelId} />
+        <IncrementalReadingBreadcrumb blockId={currentCard.id} panelId={panelId} cardType={currentCard.cardType} />
         <div style={{
           display: "flex",
           gap: "12px",
@@ -435,35 +465,54 @@ export default function IncrementalReadingSessionDemo({
         flexWrap: "wrap"
       }}>
         <Button variant="solid" onClick={handleMarkRead} style={buttonStyle}>
-          {isTopicCard ? "已读" : "标记已读"}
+          {isTopicCard ? "已读" : (isCardMaking ? "下一张" : "标记已读")}
         </Button>
-        <Button variant="plain" onClick={() => handleAdjustPriority("forward")} style={buttonStyle}>
-          靠前
-        </Button>
-        <Button variant="plain" onClick={() => handleAdjustPriority("back")} style={buttonStyle}>
-          靠后
-        </Button>
-        {isTopicCard && (
-          <Button variant="plain" onClick={handleTogglePriority} style={buttonStyle}>
-            优先级切换
-          </Button>
-        )}
-        <Button variant="plain" onClick={handlePostpone} style={buttonStyle}>
-          推后
-        </Button>
-        <ConfirmBox
-          text="确认读完当前卡片？将移除 #card 标签并清除 SRS/IR 状态。"
-          onConfirm={async (_e, close) => {
-            await handleCompleteRead()
-            close()
-          }}
-        >
-          {(open) => (
-            <Button variant="plain" onClick={open} style={buttonStyle}>
-              读完
+        {!isCardMaking ? (
+          <>
+            <Button variant="plain" onClick={() => handleAdjustPriority("forward")} style={buttonStyle}>
+              靠前
             </Button>
-          )}
-        </ConfirmBox>
+            <Button variant="plain" onClick={() => handleAdjustPriority("back")} style={buttonStyle}>
+              靠后
+            </Button>
+            {isTopicCard && (
+              <Button variant="plain" onClick={handleTogglePriority} style={buttonStyle}>
+                优先级切换
+              </Button>
+            )}
+            {!isTopicCard && (
+              <ConfirmBox
+                text="确认进入制卡模式？将移除 #card 标签并清除 SRS/IR 状态，便于重新制卡。"
+                onConfirm={async (_e, close) => {
+                  await handleMakeCard()
+                  close()
+                }}
+              >
+                {(open) => (
+                  <Button variant="plain" onClick={open} style={buttonStyle}>
+                    制卡
+                  </Button>
+                )}
+              </ConfirmBox>
+            )}
+            <Button variant="plain" onClick={handlePostpone} style={buttonStyle}>
+              推后
+            </Button>
+            <ConfirmBox
+              text="确认读完当前卡片？将移除 #card 标签并清除 SRS/IR 状态。"
+              onConfirm={async (_e, close) => {
+                await handleCompleteRead()
+                close()
+              }}
+            >
+              {(open) => (
+                <Button variant="plain" onClick={open} style={buttonStyle}>
+                  读完
+                </Button>
+              )}
+            </ConfirmBox>
+          </>
+        ) : null}
         <Button variant="plain" onClick={handleDelete} style={buttonStyle}>
           删除
         </Button>

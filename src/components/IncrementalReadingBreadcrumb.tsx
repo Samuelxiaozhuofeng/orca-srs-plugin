@@ -8,6 +8,7 @@ const DEFAULT_MAX_TEXT_LENGTH = 24
 type BreadcrumbProps = {
   blockId: DbId
   panelId: string
+  cardType?: "topic" | "extracts"
   maxDepth?: number
 }
 
@@ -52,13 +53,18 @@ async function findRootBlock(blockId: DbId, maxDepth: number): Promise<Block | u
   return current
 }
 
-async function findBreadcrumbItems(blockId: DbId, maxDepth: number): Promise<BreadcrumbItem[]> {
+async function findBreadcrumbItems(
+  blockId: DbId,
+  maxDepth: number,
+  cardType?: "topic" | "extracts"
+): Promise<BreadcrumbItem[]> {
   const cardBlock = await getBlock(blockId)
   if (!cardBlock) return []
 
   // Extract 卡：顶部显示父块（extract 的 father block），而不是 extract 本身。
   let focusBlock = cardBlock
-  if (extractCardType(cardBlock) === "extracts" && cardBlock.parent) {
+  const isExtractCard = cardType === "extracts" || (!cardType && extractCardType(cardBlock) === "extracts")
+  if (isExtractCard && cardBlock.parent) {
     const parentBlock = await getBlock(cardBlock.parent)
     if (parentBlock) {
       focusBlock = parentBlock
@@ -91,6 +97,7 @@ async function findBreadcrumbItems(blockId: DbId, maxDepth: number): Promise<Bre
 export default function IncrementalReadingBreadcrumb({
   blockId,
   panelId,
+  cardType,
   maxDepth = 20
 }: BreadcrumbProps) {
   const [items, setItems] = useState<BreadcrumbItem[]>([])
@@ -100,7 +107,7 @@ export default function IncrementalReadingBreadcrumb({
 
     const loadPath = async () => {
       try {
-        const path = await findBreadcrumbItems(blockId, maxDepth)
+        const path = await findBreadcrumbItems(blockId, maxDepth, cardType)
         if (!cancelled) {
           setItems(path)
         }
@@ -114,7 +121,7 @@ export default function IncrementalReadingBreadcrumb({
     return () => {
       cancelled = true
     }
-  }, [blockId, maxDepth])
+  }, [blockId, cardType, maxDepth])
 
   if (items.length === 0) {
     return null
