@@ -72,17 +72,20 @@ const EXTRACT_GROWTH_FACTOR = 1.35
 const blockCache = new Map<DbId, Block | null>()
 
 const getBlockCached = async (blockId: DbId): Promise<Block | undefined> => {
-  const fromState = orca.state.blocks?.[blockId] as Block | undefined
-  if (fromState) {
-    blockCache.set(blockId, fromState)
-    return fromState
-  }
-
   if (blockCache.has(blockId)) {
     return blockCache.get(blockId) ?? undefined
   }
 
+  // 注意：orca.state.blocks 可能是旧快照（properties 不一定最新），会导致 IR 状态“读回旧值”。
+  // 这里优先从后端 get-block 拉取最新数据，并用内存缓存避免重复请求。
   const block = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  if (!block) {
+    const fromState = orca.state.blocks?.[blockId] as Block | undefined
+    if (fromState) {
+      blockCache.set(blockId, fromState)
+      return fromState
+    }
+  }
   blockCache.set(blockId, block ?? null)
   return block
 }
@@ -96,7 +99,15 @@ export const invalidateIrBlockCache = (blockId: DbId): void => {
 // ============================================================================
 
 const readProp = (block: Block | undefined, name: string): any =>
-  block?.properties?.find(prop => prop.name === name)?.value
+  (() => {
+    const value = block?.properties?.find(prop => prop.name === name)?.value
+    // Orca 的 type=2 等属性在 get-block 时可能返回为单元素数组（如 ["read"]）。
+    // 这里统一解包，避免 parseString 读取不到导致 UI 仍显示 init。
+    if (Array.isArray(value)) {
+      return value.length > 0 ? value[0] : undefined
+    }
+    return value
+  })()
 
 const parseNumber = (value: any, fallback: number): number => {
   if (typeof value === "number") return value
