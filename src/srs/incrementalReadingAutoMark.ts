@@ -11,7 +11,7 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
-import { calculateNextDue, DEFAULT_IR_PRIORITY } from "./incrementalReadingScheduler"
+import { DEFAULT_IR_PRIORITY } from "./incrementalReadingScheduler"
 import { loadIRState, updatePriority } from "./incrementalReadingStorage"
 import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
 
@@ -135,16 +135,6 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
     const { ensureIRState, invalidateIrBlockCache } = await import("./incrementalReadingStorage")
     await ensureIRState(blockId)
     await updatePriority(blockId, inheritedPriority)
-
-    // 使用随机抖动重算 due，避免同日堆积（不改变 intervalDays）
-    const nextDue = calculateNextDue("extracts", inheritedPriority, new Date())
-
-    await orca.commands.invokeEditorCommand(
-      "core.editor.setProperties",
-      null,
-      [blockId],
-      [{ name: "ir.due", value: nextDue, type: 5 }]
-    )
     invalidateIrBlockCache(blockId)
 
     processedBlocks.add(blockId)

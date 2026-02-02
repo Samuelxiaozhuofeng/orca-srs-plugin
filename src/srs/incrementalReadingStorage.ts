@@ -17,6 +17,7 @@
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
 import { syncCardTagPriority } from "./cardTagRefData"
+import { computeDispersedIntervalDays, computeDueFromIntervalDays } from "./incrementalReadingDispersal"
 import {
   DEFAULT_IR_PRIORITY,
   getExtractBaseIntervalDays,
@@ -59,7 +60,6 @@ export type IRState = {
 }
 
 const DEFAULT_PRIORITY = DEFAULT_IR_PRIORITY
-const DAY_MS = 24 * 60 * 60 * 1000
 const TOPIC_MAX_INTERVAL_DAYS = 60
 const EXTRACT_MAX_INTERVAL_DAYS = 30
 const TOPIC_GROWTH_FACTOR = 1.25
@@ -141,6 +141,62 @@ const parseDate = (value: any, fallback: Date | null): Date | null => {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed
 }
 
+function getLocalDayStartMs(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
+function getBlockCreatedDate(block: Block): Date | null {
+  return parseDate((block as any).created, null)
+}
+
+async function computeNewExtractQueueDelayDays(
+  blockId: DbId,
+  block: Block,
+  baseIntervalDays: number
+): Promise<number> {
+  const parentId = block.parent
+  if (!parentId) return 0
+
+  // Parent's `children` list is time-sensitive during rapid extract creation.
+  // Avoid using a potentially stale cached parent here, otherwise all extracts
+  // may see the same empty/old children list and end up with queueDelay=0.
+  blockCache.delete(parentId)
+  const parent = await getBlockCached(parentId)
+  if (!parent) return 0
+  if (extractCardType(parent) !== "topic") return 0
+
+  const created = getBlockCreatedDate(block)
+  if (!created) return 0
+  const dayStartMs = getLocalDayStartMs(created)
+  const createdMs = created.getTime()
+
+  const children = Array.isArray(parent.children) ? parent.children : []
+  if (children.length === 0) return 0
+
+  const siblingBlocks = await Promise.all(
+    children.map(async id => (await getBlockCached(id as DbId)) ?? null)
+  )
+
+  let index = 0
+  for (const sibling of siblingBlocks) {
+    if (!sibling || sibling.id === blockId) continue
+    const siblingCreated = getBlockCreatedDate(sibling)
+    if (!siblingCreated) continue
+    if (getLocalDayStartMs(siblingCreated) !== dayStartMs) continue
+
+    const siblingMs = siblingCreated.getTime()
+    if (siblingMs < createdMs || (siblingMs === createdMs && sibling.id < blockId)) {
+      index++
+    }
+  }
+
+  // Per-extract queue spreading:
+  // - Keep it modest for short-base (high-priority) cards
+  // - Cap at 0.5 day per step so it doesn't explode too fast
+  const stepDays = Math.min(0.5, Math.max(0.15, baseIntervalDays * 0.2))
+  return index * stepDays
+}
+
 function getMaxIntervalDays(cardType: string): number {
   if (cardType === "extracts") return EXTRACT_MAX_INTERVAL_DAYS
   return TOPIC_MAX_INTERVAL_DAYS
@@ -153,9 +209,29 @@ function clampIntervalDays(cardType: string, raw: number): number {
   return Math.min(max, Math.max(1, value))
 }
 
-function computeDueFromIntervalDays(baseDate: Date, intervalDays: number): Date {
-  const next = new Date(baseDate.getTime() + intervalDays * DAY_MS)
-  return next
+function isNewCard(state: Pick<IRState, "readCount" | "lastRead">): boolean {
+  return state.readCount === 0 && !state.lastRead
+}
+
+function computeDispersedSchedule(
+  blockId: DbId,
+  cardType: string,
+  baseDate: Date,
+  baseIntervalDays: number,
+  options: { isNew: boolean; queueDelayDays?: number }
+): { intervalDays: number; due: Date } {
+  const dispersalCardType = cardType === "extracts" ? "extracts" : "topic"
+  const dispersed = computeDispersedIntervalDays({
+    blockId,
+    cardType: dispersalCardType,
+    baseDate,
+    baseIntervalDays,
+    isNew: options.isNew,
+    queueDelayDays: options.queueDelayDays
+  })
+  const intervalDays = clampIntervalDays(cardType, dispersed)
+  const due = computeDueFromIntervalDays(baseDate, intervalDays)
+  return { intervalDays, due }
 }
 
 function getInitialStage(cardType: string): IRStage {
@@ -366,11 +442,14 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
     // 兼容 Book IR：批量初始化章节时会预设分散 due（但旧版本没写 intervalDays）。
     // 对“未读的新卡”（readCount=0 且 lastRead=null）保留预设 due，避免分散排期被迁移覆盖。
     const preservePresetDue = Boolean(isLegacy && rawDue && state.readCount === 0 && !state.lastRead)
+    const shouldRecomputeSchedule = !preservePresetDue && (isLegacy || !rawDue)
+    const nextSchedule = shouldRecomputeSchedule
+      ? computeDispersedSchedule(blockId, cardType, now, intervalDays, { isNew: isNewCard(state) })
+      : null
     const due = preservePresetDue
       ? rawDue!
-      : (isLegacy
-        ? computeDueFromIntervalDays(now, intervalDays)
-        : (rawDue ?? computeDueFromIntervalDays(now, intervalDays)))
+      : (nextSchedule?.due ?? rawDue ?? computeDueFromIntervalDays(now, intervalDays))
+    const nextIntervalDays = nextSchedule?.intervalDays ?? intervalDays
 
     const postponeCount = Math.max(
       0,
@@ -402,7 +481,7 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
         priority: normalizedPriority,
         lastRead: state.lastRead,
         readCount: state.readCount,
-        intervalDays,
+        intervalDays: nextIntervalDays,
         postponeCount,
         stage,
         lastAction,
@@ -432,16 +511,17 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
     const now = new Date()
     const block = await getBlockCached(blockId)
     const cardType = block ? extractCardType(block) : "topic"
-    const nextIntervalDays = growIntervalDays(cardType, prev.intervalDays)
+    const baseIntervalDays = growIntervalDays(cardType, prev.intervalDays)
+    const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, { isNew: isNewCard(prev) })
     const nextState: IRState = {
       priority: prev.priority,
       lastRead: now,
       readCount: prev.readCount + 1,
-      intervalDays: nextIntervalDays,
+      intervalDays: schedule.intervalDays,
       postponeCount: prev.postponeCount,
       stage: prev.stage,
       lastAction: "read",
-      due: computeDueFromIntervalDays(now, nextIntervalDays),
+      due: schedule.due,
       position: prev.position,
       resumeBlockId: prev.resumeBlockId
     }
@@ -467,19 +547,20 @@ export async function markAsReadWithPriority(
     const block = await getBlockCached(blockId)
     const normalizedPriority = normalizePriority(newPriority)
     const cardType = block ? extractCardType(block) : "topic"
-    const nextIntervalDays = clampIntervalDays(
+    const baseIntervalDays = clampIntervalDays(
       cardType,
       computeBaseIntervalDays(block, normalizedPriority)
     )
+    const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, { isNew: isNewCard(prev) })
     const nextState: IRState = {
       priority: normalizedPriority,
       lastRead: now,
       readCount: prev.readCount + 1,
-      intervalDays: nextIntervalDays,
+      intervalDays: schedule.intervalDays,
       postponeCount: prev.postponeCount,
       stage: prev.stage,
       lastAction: "priority",
-      due: computeDueFromIntervalDays(now, nextIntervalDays),
+      due: schedule.due,
       position: prev.position,
       resumeBlockId: prev.resumeBlockId
     }
@@ -502,20 +583,34 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
     const normalizedPriority = normalizePriority(newPriority)
     const block = await getBlockCached(blockId)
     const cardType = block ? extractCardType(block) : "topic"
-    const nextIntervalDays = clampIntervalDays(
+    const baseIntervalDays = clampIntervalDays(
       cardType,
       computeBaseIntervalDays(block, normalizedPriority)
     )
+    const shouldApplyQueueDelay = Boolean(
+      block
+        && cardType === "extracts"
+        && isNewCard(prev)
+        && (prev.lastAction === "init" || prev.lastAction === "migrate")
+    )
+    const queueDelayDays = shouldApplyQueueDelay
+      ? await computeNewExtractQueueDelayDays(blockId, block!, baseIntervalDays)
+      : 0
+
+    const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
+      isNew: isNewCard(prev),
+      queueDelayDays
+    })
 
     const nextState: IRState = {
       priority: normalizedPriority,
       lastRead: prev.lastRead,
       readCount: prev.readCount,
-      intervalDays: nextIntervalDays,
+      intervalDays: schedule.intervalDays,
       postponeCount: prev.postponeCount,
       stage: prev.stage,
       lastAction: "priority",
-      due: computeDueFromIntervalDays(now, nextIntervalDays),
+      due: schedule.due,
       position: prev.position,
       resumeBlockId: prev.resumeBlockId
     }

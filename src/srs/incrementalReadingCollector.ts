@@ -7,6 +7,7 @@
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
 import { isCardTag } from "./tagUtils"
+import { computeDueFromIntervalDays } from "./incrementalReadingDispersal"
 import { ensureIRState, loadIRState, saveIRState } from "./incrementalReadingStorage"
 import type { IRLastAction, IRStage } from "./incrementalReadingStorage"
 import {
@@ -290,7 +291,6 @@ async function deferOverflowCards(
 ): Promise<void> {
   if (topics.length === 0 && extracts.length === 0) return
 
-  const DAY_MS = 24 * 60 * 60 * 1000
   const clampIntervalDays = (cardType: IRCardType, rawDays: number): number => {
     const max = cardType === "extracts" ? 30 : 60
     return Math.min(max, Math.max(1, rawDays))
@@ -301,7 +301,7 @@ async function deferOverflowCards(
     const nextPosition = maxPositionSeed + index + 1
     const postponeDays = getPostponeDays("topic", card.priority)
     const nextIntervalDays = clampIntervalDays("topic", postponeDays)
-    const nextDue = new Date(now.getTime() + nextIntervalDays * DAY_MS)
+    const nextDue = computeDueFromIntervalDays(now, nextIntervalDays)
     tasks.push(saveIRState(card.id, {
       priority: card.priority,
       lastRead: card.lastRead,
@@ -319,7 +319,7 @@ async function deferOverflowCards(
   extracts.forEach(card => {
     const postponeDays = getPostponeDays("extracts", card.priority)
     const nextIntervalDays = clampIntervalDays("extracts", postponeDays)
-    const nextDue = new Date(now.getTime() + nextIntervalDays * DAY_MS)
+    const nextDue = computeDueFromIntervalDays(now, nextIntervalDays)
     tasks.push(saveIRState(card.id, {
       priority: card.priority,
       lastRead: card.lastRead,
