@@ -9,6 +9,14 @@ let irSessionBlockId: DbId | null = null
 const STORAGE_KEY = "incrementalReadingSessionBlockId"
 const FOCUS_CARD_KEY = "incrementalReadingSessionFocusCardId"
 
+export const IR_SESSION_STORAGE_KEY = STORAGE_KEY
+export const IR_SESSION_FOCUS_CARD_KEY = FOCUS_CARD_KEY
+
+export async function getStoredIncrementalReadingSessionBlockId(pluginName: string): Promise<DbId | null> {
+  const storedId = await orca.plugins.getData(pluginName, STORAGE_KEY)
+  return typeof storedId === "number" ? storedId : null
+}
+
 /**
  * 获取或创建渐进阅读会话块
  */

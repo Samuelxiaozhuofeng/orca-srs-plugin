@@ -64,6 +64,7 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
   const [settings, setSettings] = useState<IncrementalReadingSettings | null>(null)
   const [isLoadingSettings, setIsLoadingSettings] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
   const [topicQuotaPercentInput, setTopicQuotaPercentInput] = useState<string>("")
   const [dailyLimitInput, setDailyLimitInput] = useState<string>("")
   const lastSavedRef = useRef<IncrementalReadingSettings | null>(null)
@@ -182,7 +183,7 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
     outline: "none"
   }
 
-  const disabledStyle = isSaving
+  const busyStyle = (isSaving || isResetting)
     ? { opacity: 0.6, pointerEvents: "none" as const }
     : undefined
 
@@ -196,6 +197,38 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
     enableAutoDefer:
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue
   } satisfies IncrementalReadingSettings
+
+  const handleResetIrData = useCallback(async () => {
+    if (!pluginName) return
+    setIsResetting(true)
+    try {
+      const { resetIncrementalReadingData } = await import("../srs/incrementalReadingReset")
+      const result = await resetIncrementalReadingData(pluginName, { disableAutoExtractMark: true })
+
+      if (result.errors.length > 0) {
+        orca.notify(
+          "warn",
+          `已清理 ${result.totalCleaned}/${result.totalFound} 个 Topic/Extracts；失败 ${result.errors.length} 个（详见控制台）`,
+          { title: "渐进阅读" }
+        )
+        console.warn("[IR Reset] errors:", result.errors)
+      } else {
+        orca.notify(
+          "success",
+          `已清理 ${result.totalCleaned} 个 Topic/Extracts（#card + srs.* + ir.*）`,
+          { title: "渐进阅读" }
+        )
+      }
+
+      // 同步设置 UI（重置过程中可能关闭了自动标签开关）
+      await loadSettings()
+    } catch (error) {
+      console.error("[IR Manager] 清空 IR 数据失败:", error)
+      orca.notify("error", `清空 IR 数据失败: ${error}`, { title: "渐进阅读" })
+    } finally {
+      setIsResetting(false)
+    }
+  }, [pluginName, loadSettings])
 
   return (
     <div style={cardStyle}>
@@ -227,14 +260,14 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
             <Button
               variant="outline"
               onClick={() => saveSettings(schemaDefaults, { notify: true })}
-              style={disabledStyle}
+              style={busyStyle}
             >
               恢复默认
             </Button>
             <Button
               variant="plain"
               onClick={loadSettings}
-              style={disabledStyle}
+              style={busyStyle}
               title="重新读取当前设置"
             >
               <i className="ti ti-refresh" />
@@ -249,7 +282,7 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
             加载设置中...
           </div>
         ) : (
-          <div style={disabledStyle}>
+          <div style={busyStyle}>
             <div style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
@@ -372,6 +405,39 @@ function IRSettingsCard({ pluginName }: IRSettingsCardProps) {
                 <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
                   当到期卡超过每日上限时，提供手动按钮；打开面板只展示，不会自动改排期。
                 </div>
+              </div>
+
+              <div style={{
+                border: "1px solid var(--orca-color-border-1)",
+                backgroundColor: "var(--orca-color-bg-2)",
+                borderRadius: "12px",
+                padding: "12px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px"
+              }}>
+                <div style={{ ...labelStyle, color: "var(--orca-color-danger-5)" }}>危险操作：清空 IR 数据</div>
+                <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
+                  会批量移除所有 <code>#card</code> 且 <code>type=topic/extracts</code> 的标签，并删除这些块上的
+                  <code>srs.*</code>/<code>ir.*</code> 属性；同时清理 IR 会话记录。不可撤销，建议先备份。
+                </div>
+                <ConfirmBox
+                  text="确认要清空所有 Topic/Extracts 的渐进阅读信息吗？这会删除 #card 标签并清理 srs.* / ir.*（不可撤销）。"
+                  onConfirm={async (_e, close) => {
+                    await handleResetIrData()
+                    close()
+                  }}
+                >
+                  {(open) => (
+                    <Button
+                      variant="outline"
+                      onClick={open}
+                      style={isResetting ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+                    >
+                      {isResetting ? "清理中..." : "清空 IR 数据"}
+                    </Button>
+                  )}
+                </ConfirmBox>
               </div>
             </div>
           </div>
