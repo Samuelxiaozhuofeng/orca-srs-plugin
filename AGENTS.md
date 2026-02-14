@@ -42,3 +42,15 @@ Add and follow this prompt when handling code changes:
 
 输出时仅给出结论与行动建议，不要展示内部思考过程。
 ```
+
+<!-- OMX:RUNTIME:START -->
+<session_context>
+**Session:** omx-1771063736120-w2ugu9 | 2026-02-14T10:08:56.944Z
+
+**Compaction Protocol:**
+Before context compaction, preserve critical state:
+1. Write progress checkpoint via state_write MCP tool
+2. Save key decisions to notepad via notepad_write_working
+3. If context is >80% full, proactively checkpoint state
+</session_context>
+<!-- OMX:RUNTIME:END -->
