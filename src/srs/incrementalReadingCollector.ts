@@ -9,7 +9,7 @@ import { extractCardType } from "./deckUtils"
 import { isCardTag } from "./tagUtils"
 import { computeDueFromIntervalDays } from "./incrementalReadingDispersal"
 import { ensureIRState, loadIRState, saveIRState } from "./incrementalReadingStorage"
-import type { IRLastAction, IRStage } from "./incrementalReadingStorage"
+import type { IRLastAction, IRReadingBreakpoint, IRStage } from "./incrementalReadingStorage"
 import {
   getPostponeDays
 } from "./incrementalReadingScheduler"
@@ -34,6 +34,7 @@ export type IRCard = {
   readCount: number
   isNew: boolean
   resumeBlockId: DbId | null
+  readingBreakpoint?: IRReadingBreakpoint | null
 }
 
 export type IRQueueOptions = {
@@ -126,7 +127,8 @@ export async function collectIRCardsFromBlocks(
           lastRead: state.lastRead,
           readCount: state.readCount,
           isNew,
-          resumeBlockId: state.resumeBlockId
+          resumeBlockId: state.resumeBlockId,
+          readingBreakpoint: state.readingBreakpoint ?? null
         })
       }
     } catch (error) {
@@ -168,7 +170,8 @@ export async function collectAllIRCardsFromBlocks(
         lastRead: state.lastRead,
         readCount: state.readCount,
         isNew,
-        resumeBlockId: state.resumeBlockId
+        resumeBlockId: state.resumeBlockId,
+        readingBreakpoint: state.readingBreakpoint ?? null
       })
     } catch (error) {
       console.error(`[${pluginName}] collectAllIRCardsFromBlocks: 处理块 #${block.id} 失败:`, error)
@@ -312,7 +315,8 @@ async function deferOverflowCards(
       stage: card.stage,
       lastAction: "autoPostpone",
       position: nextPosition,
-      resumeBlockId: card.resumeBlockId
+      resumeBlockId: card.resumeBlockId,
+      readingBreakpoint: card.readingBreakpoint ?? null
     }))
   })
 
@@ -330,7 +334,8 @@ async function deferOverflowCards(
       stage: card.stage,
       lastAction: "autoPostpone",
       position: card.position,
-      resumeBlockId: card.resumeBlockId
+      resumeBlockId: card.resumeBlockId,
+      readingBreakpoint: card.readingBreakpoint ?? null
     }))
   })
 

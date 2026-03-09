@@ -17,7 +17,7 @@ import { testAIConnection } from "../ai/aiService"
 import { startInteractiveCardCreation } from "../ai/aiInteractiveCardCreator"
 import { testAIConfigWithDetails } from "../ai/aiConfigValidator"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../incrementalReadingAutoMark"
-import { loadIRState, updateResumeBlockId } from "../incrementalReadingStorage"
+import { loadIRState, updateReadingBreakpoint, updateResumeBlockId } from "../incrementalReadingStorage"
 import {
   getIncrementalReadingSettings,
   INCREMENTAL_READING_SETTINGS_KEYS
@@ -428,18 +428,43 @@ export function registerCommands(
       }
 
       const prev = await loadIRState(cardBlockId)
-      await updateResumeBlockId(cardBlockId, currentBlockId)
+      const selectedText = (() => {
+        const selection = window.getSelection()
+        if (!selection) return null
+        const normalized = selection.toString().replace(/\s+/g, " ").trim()
+        if (!normalized) return null
+        return normalized.length <= 160 ? normalized : `${normalized.slice(0, 157)}...`
+      })()
+      await updateReadingBreakpoint(cardBlockId, {
+        resumeBlockId: currentBlockId,
+        focusText: selectedText,
+        selection: {
+          rootBlockId: cardBlockId,
+          anchor: { ...cursor.anchor },
+          focus: { ...cursor.focus },
+          isForward: cursor.isForward
+        }
+      })
 
       orca.notify("success", `已记录阅读进度：#${currentBlockId}`, { title: "渐进阅读" })
 
       return {
         ret: { cardId: cardBlockId, resumeBlockId: currentBlockId },
-        undoArgs: { cardId: cardBlockId, prevResumeBlockId: prev.resumeBlockId }
+        undoArgs: {
+          cardId: cardBlockId,
+          prevResumeBlockId: prev.resumeBlockId,
+          prevReadingBreakpoint: prev.readingBreakpoint ?? null
+        }
       }
     },
     async undoArgs => {
       if (!undoArgs || typeof undoArgs.cardId !== "number") return
       await updateResumeBlockId(undoArgs.cardId, undoArgs.prevResumeBlockId ?? null)
+      await updateReadingBreakpoint(undoArgs.cardId, {
+        previewBlockId: undoArgs.prevReadingBreakpoint?.previewBlockId ?? null,
+        focusText: undoArgs.prevReadingBreakpoint?.focusText ?? null,
+        selection: undoArgs.prevReadingBreakpoint?.selection ?? null
+      })
     },
     {
       label: "IR: 记录阅读进度（ir_record）",

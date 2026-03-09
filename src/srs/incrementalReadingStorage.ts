@@ -14,7 +14,7 @@
  * - ir.resumeBlockId: number | null (继续阅读：下次打开卡片时跳转到该 blockId)
  */
 
-import type { Block, DbId } from "../orca.d.ts"
+import type { Block, CursorNodeData, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
 import { syncCardTagPriority } from "./cardTagRefData"
 import { computeDispersedIntervalDays, computeDueFromIntervalDays } from "./incrementalReadingDispersal"
@@ -42,6 +42,20 @@ export type IRLastAction =
   | "autoPostpone"
   | "complete"
 
+export type IRReadingBreakpointSelection = {
+  rootBlockId: DbId
+  anchor: CursorNodeData
+  focus: CursorNodeData
+  isForward: boolean
+}
+
+export type IRReadingBreakpoint = {
+  previewBlockId: DbId | null
+  focusText: string | null
+  selection: IRReadingBreakpointSelection | null
+  updatedAt: Date | null
+}
+
 export type IRState = {
   priority: number
   lastRead: Date | null
@@ -57,6 +71,10 @@ export type IRState = {
    * - null 表示未设置
    */
   resumeBlockId: DbId | null
+  /**
+   * 阅读断点：用于恢复上次阅读现场
+   */
+  readingBreakpoint?: IRReadingBreakpoint | null
 }
 
 const DEFAULT_PRIORITY = DEFAULT_IR_PRIORITY
@@ -139,6 +157,112 @@ const parseDate = (value: any, fallback: Date | null): Date | null => {
   if (!value) return fallback
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? fallback : parsed
+}
+
+const normalizeFocusText = (value: any): string | null => {
+  if (typeof value !== "string") return null
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (normalized.length === 0) return null
+  if (normalized.length <= 200) return normalized
+  return `${normalized.slice(0, 197)}...`
+}
+
+const normalizeCursorNode = (value: any): CursorNodeData | null => {
+  if (!value || typeof value !== "object") return null
+
+  const blockId = parseOptionalNumber((value as CursorNodeData).blockId)
+  const index = parseNumber((value as CursorNodeData).index, Number.NaN)
+  const offset = parseNumber((value as CursorNodeData).offset, Number.NaN)
+  const isInline = typeof (value as CursorNodeData).isInline === "boolean"
+    ? (value as CursorNodeData).isInline
+    : true
+
+  if (blockId === null || !Number.isFinite(index) || !Number.isFinite(offset)) {
+    return null
+  }
+
+  return {
+    blockId,
+    isInline,
+    index,
+    offset
+  }
+}
+
+const normalizeReadingBreakpointSelection = (value: any): IRReadingBreakpointSelection | null => {
+  if (!value || typeof value !== "object") return null
+
+  const rootBlockId = parseOptionalNumber((value as IRReadingBreakpointSelection).rootBlockId)
+  const anchor = normalizeCursorNode((value as IRReadingBreakpointSelection).anchor)
+  const focus = normalizeCursorNode((value as IRReadingBreakpointSelection).focus)
+  const isForward = typeof (value as IRReadingBreakpointSelection).isForward === "boolean"
+    ? (value as IRReadingBreakpointSelection).isForward
+    : true
+
+  if (rootBlockId === null || !anchor || !focus) {
+    return null
+  }
+
+  return {
+    rootBlockId,
+    anchor,
+    focus,
+    isForward
+  }
+}
+
+const normalizeReadingBreakpoint = (
+  value: IRReadingBreakpoint | null | undefined
+): IRReadingBreakpoint | null => {
+  if (!value) return null
+
+  const previewBlockId = parseOptionalNumber(value.previewBlockId)
+  const focusText = normalizeFocusText(value.focusText)
+  const selection = normalizeReadingBreakpointSelection(value.selection)
+  const updatedAt = parseDate(value.updatedAt, null)
+
+  if (previewBlockId === null && !focusText && !selection) {
+    return null
+  }
+
+  return {
+    previewBlockId,
+    focusText,
+    selection,
+    updatedAt
+  }
+}
+
+const parseReadingBreakpoint = (value: any): IRReadingBreakpoint | null => {
+  const raw = parseString(value, null)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw)
+    return normalizeReadingBreakpoint({
+      previewBlockId: parsed?.previewBlockId ?? null,
+      focusText: parsed?.focusText ?? null,
+      selection: parsed?.selection ?? null,
+      updatedAt: parseDate(parsed?.updatedAt, null)
+    })
+  } catch (error) {
+    console.warn("[IR] 解析阅读断点失败:", error)
+    return null
+  }
+}
+
+const serializeReadingBreakpoint = (
+  value: IRReadingBreakpoint | null | undefined
+): string | null => {
+  const normalized = normalizeReadingBreakpoint(value)
+  if (!normalized) return null
+
+  return JSON.stringify({
+    previewBlockId: normalized.previewBlockId,
+    focusText: normalized.focusText,
+    selection: normalized.selection,
+    updatedAt: normalized.updatedAt?.toISOString() ?? null
+  })
 }
 
 function getLocalDayStartMs(date: Date): number {
@@ -277,7 +401,8 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
     stage: getInitialStage(cardType),
     lastAction: "init",
     position: null,
-    resumeBlockId: null
+    resumeBlockId: null,
+    readingBreakpoint: null
   }
 }
 
@@ -306,6 +431,7 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
     const rawLastAction = parseString(readProp(block, "ir.lastAction"), null)
     const position = parseOptionalNumber(readProp(block, "ir.position"))
     const resumeBlockId = parseOptionalNumber(readProp(block, "ir.resumeBlockId"))
+    const readingBreakpoint = parseReadingBreakpoint(readProp(block, "ir.breakpoint"))
 
     const priority = normalizePriority(rawPriority)
     const cardType = extractCardType(block)
@@ -328,7 +454,8 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
       stage,
       lastAction,
       position,
-      resumeBlockId
+      resumeBlockId,
+      readingBreakpoint
     }
   } catch (error) {
     console.error("[IR] 读取渐进阅读状态失败:", error)
@@ -352,7 +479,8 @@ export async function saveIRState(blockId: DbId, state: IRState): Promise<void> 
       { name: "ir.stage", value: state.stage, type: 2 },
       { name: "ir.lastAction", value: state.lastAction, type: 2 },
       { name: "ir.position", value: state.position ?? null, type: 3 },
-      { name: "ir.resumeBlockId", value: state.resumeBlockId ?? null, type: 3 }
+      { name: "ir.resumeBlockId", value: state.resumeBlockId ?? null, type: 3 },
+      { name: "ir.breakpoint", value: serializeReadingBreakpoint(state.readingBreakpoint), type: 2 }
     ]
 
     await orca.commands.invokeEditorCommand(
@@ -488,7 +616,8 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
         // 迁移：直接按新规则立刻重算 due（避免旧规则导致的长期高频/排序失真）
         due,
         position: nextPosition,
-        resumeBlockId: state.resumeBlockId
+        resumeBlockId: state.resumeBlockId,
+        readingBreakpoint: state.readingBreakpoint ?? null
       }
       await saveIRState(blockId, normalizedState)
       return normalizedState
@@ -523,7 +652,8 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
       lastAction: "read",
       due: schedule.due,
       position: prev.position,
-      resumeBlockId: prev.resumeBlockId
+      resumeBlockId: prev.resumeBlockId,
+      readingBreakpoint: prev.readingBreakpoint ?? null
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -562,7 +692,8 @@ export async function markAsReadWithPriority(
       lastAction: "priority",
       due: schedule.due,
       position: prev.position,
-      resumeBlockId: prev.resumeBlockId
+      resumeBlockId: prev.resumeBlockId,
+      readingBreakpoint: prev.readingBreakpoint ?? null
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -612,7 +743,8 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
       lastAction: "priority",
       due: schedule.due,
       position: prev.position,
-      resumeBlockId: prev.resumeBlockId
+      resumeBlockId: prev.resumeBlockId,
+      readingBreakpoint: prev.readingBreakpoint ?? null
     }
 
     await saveIRState(blockId, nextState)
@@ -675,6 +807,49 @@ export async function updateResumeBlockId(
   } catch (error) {
     console.error("[IR] 更新阅读进度失败:", error)
     orca.notify("error", "更新阅读进度失败", { title: "渐进阅读" })
+    throw error
+  }
+}
+
+/**
+ * 更新阅读断点：可同时写回 resumeBlockId / 预览上下文 / 关注句 / 文本选择
+ */
+export async function updateReadingBreakpoint(
+  blockId: DbId,
+  patch: {
+    resumeBlockId?: DbId | null
+    previewBlockId?: DbId | null
+    focusText?: string | null
+    selection?: IRReadingBreakpointSelection | null
+  }
+): Promise<IRState> {
+  try {
+    const prev = await loadIRState(blockId)
+    const nextResumeBlockId = patch.resumeBlockId !== undefined ? patch.resumeBlockId : prev.resumeBlockId
+    const baseBreakpoint = prev.readingBreakpoint ?? {
+      previewBlockId: null,
+      focusText: null,
+      selection: null,
+      updatedAt: null
+    }
+    const nextBreakpoint = normalizeReadingBreakpoint({
+      previewBlockId: patch.previewBlockId !== undefined ? patch.previewBlockId : baseBreakpoint.previewBlockId,
+      focusText: patch.focusText !== undefined ? patch.focusText : baseBreakpoint.focusText,
+      selection: patch.selection !== undefined ? patch.selection : baseBreakpoint.selection,
+      updatedAt: new Date()
+    })
+
+    const nextState: IRState = {
+      ...prev,
+      resumeBlockId: nextResumeBlockId ?? null,
+      readingBreakpoint: nextBreakpoint
+    }
+
+    await saveIRState(blockId, nextState)
+    return nextState
+  } catch (error) {
+    console.error("[IR] 更新阅读断点失败:", error)
+    orca.notify("error", "更新阅读断点失败", { title: "渐进阅读" })
     throw error
   }
 }

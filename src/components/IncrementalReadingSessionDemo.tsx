@@ -1,13 +1,18 @@
 /**
  * 渐进阅读会话组件
  */
-import type { DbId } from "../orca.d.ts"
+import type { CursorData, DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
+import type { IRReadingBreakpointSelection } from "../srs/incrementalReadingStorage"
 import { completeIRCard, markAsRead, markAsReadWithPriorityShift, postpone, updatePriority } from "../srs/irSessionActions"
+import { updateReadingBreakpoint } from "../srs/incrementalReadingStorage"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
 
 const { useEffect, useRef, useState } = window.React
 const { Button, Block: OrcaBlock, ConfirmBox } = orca.components
+const BREAKPOINT_SAVE_DELAY_MS = 180
+const RESTORE_ON_RESIZE_THRESHOLD = 40
+const RESTORE_ON_RESIZE_DELAY_MS = 220
 
 type SessionCard = IRCard & {
   isCardMaking?: boolean
@@ -34,6 +39,40 @@ function formatIntervalDays(days: number): string {
   if (!Number.isFinite(days)) return "-"
   const rounded = Math.round(days * 100) / 100
   return Number.isInteger(rounded) ? `${rounded}d` : `${rounded}d`
+}
+
+function normalizeFocusText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (normalized.length === 0) return null
+  if (normalized.length <= 160) return normalized
+  return `${normalized.slice(0, 157)}...`
+}
+
+function findBlockElement(container: HTMLElement, blockId: DbId): HTMLElement | null {
+  const selectors = [
+    `#block-${blockId}`,
+    `[data-block-id="${blockId}"]`,
+    `[data-blockid="${blockId}"]`,
+    `[data-id="${blockId}"]`,
+    `[blockid="${blockId}"]`
+  ]
+
+  for (const selector of selectors) {
+    const el = container.querySelector<HTMLElement>(selector)
+    if (el) return el
+  }
+
+  return null
+}
+
+function buildSelectionFromCursor(cursor: CursorData): IRReadingBreakpointSelection {
+  return {
+    rootBlockId: cursor.rootBlockId,
+    anchor: { ...cursor.anchor },
+    focus: { ...cursor.focus },
+    isForward: cursor.isForward
+  }
 }
 
 function MetaChip({ label, value }: { label: string; value: string }) {
@@ -70,86 +109,234 @@ export default function IncrementalReadingSessionDemo({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [previewBlockId, setPreviewBlockId] = useState<DbId | null>(null)
   const [isWorking, setIsWorking] = useState<boolean>(false)
+  const [restoreVersion, setRestoreVersion] = useState(0)
+  const sessionRootRef = useRef<HTMLDivElement | null>(null)
   const currentCardContainerRef = useRef<HTMLDivElement | null>(null)
+  const previewContainerRef = useRef<HTMLDivElement | null>(null)
   const autoJumpedCardIdRef = useRef<number | null>(null)
+  const restoredCardIdRef = useRef<number | null>(null)
+  const selectionSaveTimerRef = useRef<number | null>(null)
+  const resizeRestoreTimerRef = useRef<number | null>(null)
+  const containerWidthRef = useRef<number | null>(null)
   const buttonStyle = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   const currentCard = queue[currentIndex]
   const isTopicCard = currentCard?.cardType === "topic"
   const isCardMaking = Boolean(!isTopicCard && currentCard?.isCardMaking)
   const shouldShowPreview = Boolean(previewBlockId && currentCard && previewBlockId !== currentCard.id)
+  const focusText = currentCard?.readingBreakpoint?.focusText ?? null
 
   useEffect(() => {
     if (!currentCard) return
     autoJumpedCardIdRef.current = null
-    setPreviewBlockId(null)
+    restoredCardIdRef.current = null
+    const nextPreviewBlockId = currentCard.readingBreakpoint?.previewBlockId
+    setPreviewBlockId(nextPreviewBlockId && nextPreviewBlockId !== currentCard.id ? nextPreviewBlockId : null)
   }, [currentCard?.id])
 
   useEffect(() => {
     if (!currentCard) return
 
-    const resumeBlockId = currentCard.resumeBlockId
-    if (!resumeBlockId || resumeBlockId === currentCard.id) return
-    if (autoJumpedCardIdRef.current === currentCard.id) return
+    const breakpointSelection = currentCard.readingBreakpoint?.selection ?? null
+    const targetRootBlockId = breakpointSelection?.rootBlockId ?? currentCard.id
+    const targetBlockId = breakpointSelection?.focus.blockId ?? currentCard.resumeBlockId
+    if (!targetBlockId) return
+    if (autoJumpedCardIdRef.current === currentCard.id || restoredCardIdRef.current === currentCard.id) return
 
-    const container = currentCardContainerRef.current
+    const container = targetRootBlockId === currentCard.id
+      ? currentCardContainerRef.current
+      : previewContainerRef.current
     if (!container) return
+
+    if (targetRootBlockId !== currentCard.id && previewBlockId !== targetRootBlockId) {
+      return
+    }
 
     let cancelled = false
 
-    const findResumeElement = (): HTMLElement | null => {
-      const selectors = [
-        `#block-${resumeBlockId}`,
-        `[data-block-id="${resumeBlockId}"]`,
-        `[data-blockid="${resumeBlockId}"]`,
-        `[data-id="${resumeBlockId}"]`,
-        `[blockid="${resumeBlockId}"]`
-      ]
-
-      for (const selector of selectors) {
-        const el = container.querySelector<HTMLElement>(selector)
-        if (el) return el
-      }
-
-      return null
-    }
-
-    const tryScroll = (): boolean => {
-      const el = findResumeElement()
+    const tryRestore = async (): Promise<boolean> => {
+      const el = findBlockElement(container, targetBlockId)
       if (!el) return false
       el.scrollIntoView({ behavior: "smooth", block: "center" })
+
+      if (breakpointSelection) {
+        try {
+          await orca.utils.setSelectionFromCursorData({
+            ...breakpointSelection,
+            panelId,
+            rootBlockId: breakpointSelection.rootBlockId
+          })
+        } catch (error) {
+          console.warn("[IR Session] 恢复阅读选区失败:", error)
+        }
+      }
+
       autoJumpedCardIdRef.current = currentCard.id
+      restoredCardIdRef.current = currentCard.id
       return true
     }
 
-    // 等待块内容渲染后再定位（最多重试几次）
     let attempts = 0
     const tick = () => {
       if (cancelled) return
       attempts += 1
-      if (tryScroll() || attempts >= 8) return
-      setTimeout(tick, 250)
+      void tryRestore().then(restored => {
+        if (cancelled || restored || attempts >= 8) return
+        setTimeout(tick, 250)
+      })
     }
 
     setTimeout(tick, 50)
     return () => {
       cancelled = true
     }
-  }, [currentCard?.id, currentCard?.resumeBlockId])
+  }, [currentCard?.id, currentCard?.resumeBlockId, currentCard?.readingBreakpoint, previewBlockId, panelId, restoreVersion])
 
   useEffect(() => {
     setQueue(cards)
     setCurrentIndex(0)
-    setPreviewBlockId(null)
   }, [cards])
 
-  const handleBreadcrumbPreview = (targetId: DbId) => {
-    if (!currentCard || targetId === currentCard.id) {
-      setPreviewBlockId(null)
-      return
+  useEffect(() => () => {
+    if (selectionSaveTimerRef.current !== null) {
+      window.clearTimeout(selectionSaveTimerRef.current)
+      selectionSaveTimerRef.current = null
+    }
+    if (resizeRestoreTimerRef.current !== null) {
+      window.clearTimeout(resizeRestoreTimerRef.current)
+      resizeRestoreTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const root = sessionRootRef.current
+    if (!root) return
+
+    const scheduleRestore = () => {
+      if (resizeRestoreTimerRef.current !== null) {
+        window.clearTimeout(resizeRestoreTimerRef.current)
+      }
+      resizeRestoreTimerRef.current = window.setTimeout(() => {
+        resizeRestoreTimerRef.current = null
+        autoJumpedCardIdRef.current = null
+        restoredCardIdRef.current = null
+        setRestoreVersion((prev: number) => prev + 1)
+      }, RESTORE_ON_RESIZE_DELAY_MS)
     }
 
-    setPreviewBlockId((prev: DbId | null) => prev === targetId ? null : targetId)
+    const handleWidthChange = (width: number) => {
+      const prevWidth = containerWidthRef.current
+      containerWidthRef.current = width
+      if (prevWidth === null) return
+      if (Math.abs(width - prevWidth) < RESTORE_ON_RESIZE_THRESHOLD) return
+      scheduleRestore()
+    }
+
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(entries => {
+        const width = entries[0]?.contentRect.width
+        if (typeof width === "number" && Number.isFinite(width)) {
+          handleWidthChange(width)
+        }
+      })
+      observer.observe(root)
+      return () => {
+        observer.disconnect()
+      }
+    }
+
+    const handleWindowResize = () => {
+      handleWidthChange(root.getBoundingClientRect().width)
+    }
+
+    handleWindowResize()
+    window.addEventListener("resize", handleWindowResize)
+    return () => {
+      window.removeEventListener("resize", handleWindowResize)
+    }
+  }, [currentCard?.id])
+
+  const patchCurrentCardState = (nextState: Partial<SessionCard>) => {
+    if (!currentCard) return
+    setQueue((prev: SessionCard[]) => prev.map((card: SessionCard, idx: number) =>
+      idx === currentIndex ? { ...card, ...nextState } : card
+    ))
+  }
+
+  const persistReadingBreakpoint = async (patch: {
+    resumeBlockId?: DbId | null
+    previewBlockId?: DbId | null
+    focusText?: string | null
+    selection?: IRReadingBreakpointSelection | null
+  }) => {
+    if (!currentCard) return
+    try {
+      const nextState = await updateReadingBreakpoint(currentCard.id, patch)
+      patchCurrentCardState({
+        resumeBlockId: nextState.resumeBlockId,
+        readingBreakpoint: nextState.readingBreakpoint ?? null
+      })
+    } catch (error) {
+      console.error("[IR Session] 保存阅读断点失败:", error)
+    }
+  }
+
+  const captureReadingBreakpoint = () => {
+    if (!currentCard) return
+
+    const selection = window.getSelection()
+    const cursor = orca.utils.getCursorDataFromSelection(selection)
+    if (!cursor || cursor.panelId !== panelId) return
+
+    const validRootIds = [currentCard.id]
+    if (previewBlockId && previewBlockId !== currentCard.id) {
+      validRootIds.push(previewBlockId)
+    }
+    if (!validRootIds.includes(cursor.rootBlockId)) return
+
+    const selectionData = buildSelectionFromCursor(cursor)
+    const nextPreviewBlockId = cursor.rootBlockId === currentCard.id
+      ? (previewBlockId && previewBlockId !== currentCard.id ? previewBlockId : null)
+      : cursor.rootBlockId
+    const nextFocusText = normalizeFocusText(selection?.toString())
+
+    void persistReadingBreakpoint({
+      resumeBlockId: selectionData.focus.blockId,
+      previewBlockId: nextPreviewBlockId,
+      focusText: nextFocusText,
+      selection: selectionData
+    })
+  }
+
+  const scheduleReadingBreakpointCapture = () => {
+    if (selectionSaveTimerRef.current !== null) {
+      window.clearTimeout(selectionSaveTimerRef.current)
+    }
+    selectionSaveTimerRef.current = window.setTimeout(() => {
+      selectionSaveTimerRef.current = null
+      captureReadingBreakpoint()
+    }, BREAKPOINT_SAVE_DELAY_MS)
+  }
+
+  const handleBreadcrumbPreview = (targetId: DbId) => {
+    if (!currentCard) return
+
+    const nextPreviewBlockId = targetId === currentCard.id
+      ? null
+      : (previewBlockId === targetId ? null : targetId)
+
+    setPreviewBlockId(nextPreviewBlockId)
+
+    const selectionRootBlockId = currentCard.readingBreakpoint?.selection?.rootBlockId ?? null
+    const shouldClearPreviewSelection = selectionRootBlockId !== null
+      && selectionRootBlockId !== currentCard.id
+      && selectionRootBlockId !== nextPreviewBlockId
+
+    void persistReadingBreakpoint({
+      previewBlockId: nextPreviewBlockId,
+      selection: shouldClearPreviewSelection ? null : undefined,
+      focusText: shouldClearPreviewSelection ? null : undefined
+    })
   }
 
   const removeCardAtIndex = (index: number) => {
@@ -403,7 +590,7 @@ export default function IncrementalReadingSessionDemo({
       padding: "16px",
       height: "100%",
       overflow: "auto"
-    }}>
+    }} ref={sessionRootRef} onMouseUp={scheduleReadingBreakpointCapture} onKeyUp={scheduleReadingBreakpointCapture}>
       <div style={{
         display: "flex",
         justifyContent: "space-between",
@@ -476,6 +663,19 @@ export default function IncrementalReadingSessionDemo({
             value={`${currentCard.stage} · ${currentCard.lastAction}`}
           />
         </div>
+        {focusText ? (
+          <div style={{
+            fontSize: "12px",
+            color: "var(--orca-color-text-2)",
+            lineHeight: 1.5,
+            padding: "8px 10px",
+            borderRadius: "8px",
+            background: "var(--orca-color-bg-1)",
+            border: "1px dashed var(--orca-color-border-1)"
+          }}>
+            上次关注：{focusText}
+          </div>
+        ) : null}
       </div>
 
       {shouldShowPreview ? (
@@ -496,7 +696,7 @@ export default function IncrementalReadingSessionDemo({
             borderRadius: "8px",
             padding: "12px",
             background: "var(--orca-color-bg-1)"
-          }}>
+          }} ref={previewContainerRef}>
             <OrcaBlock
               panelId={panelId}
               blockId={previewBlockId!}

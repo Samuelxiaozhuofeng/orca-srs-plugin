@@ -156,4 +156,34 @@ describe("loadIRState block cache", () => {
     expect(state.lastAction).toBe("read")
     expect(mockOrca.invokeBackend).toHaveBeenCalledWith("get-block", 1)
   })
+
+  it("should parse reading breakpoint from ir.breakpoint property", async () => {
+    const block: Block = createBlock(1)
+    block.properties = [
+      ...block.properties,
+      {
+        name: "ir.breakpoint",
+        value: JSON.stringify({
+          previewBlockId: 12,
+          focusText: "这是上次关注的句子",
+          selection: {
+            rootBlockId: 12,
+            anchor: { blockId: 15, isInline: true, index: 0, offset: 2 },
+            focus: { blockId: 15, isInline: true, index: 0, offset: 8 },
+            isForward: true
+          },
+          updatedAt: "2026-03-09T10:00:00.000Z"
+        }),
+        type: 2
+      }
+    ]
+    blockMap.set(1, block)
+
+    const state = await loadIRState(1)
+
+    expect(state.readingBreakpoint?.previewBlockId).toBe(12)
+    expect(state.readingBreakpoint?.focusText).toBe("这是上次关注的句子")
+    expect(state.readingBreakpoint?.selection?.rootBlockId).toBe(12)
+    expect(state.readingBreakpoint?.selection?.focus.blockId).toBe(15)
+  })
 })
