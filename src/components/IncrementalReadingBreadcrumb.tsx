@@ -10,6 +10,7 @@ type BreadcrumbProps = {
   panelId: string
   cardType?: "topic" | "extracts"
   maxDepth?: number
+  onItemClick?: (targetId: DbId) => void
 }
 
 type BreadcrumbItem = {
@@ -98,7 +99,8 @@ export default function IncrementalReadingBreadcrumb({
   blockId,
   panelId,
   cardType,
-  maxDepth = 20
+  maxDepth = 20,
+  onItemClick
 }: BreadcrumbProps) {
   const [items, setItems] = useState<BreadcrumbItem[]>([])
 
@@ -128,6 +130,11 @@ export default function IncrementalReadingBreadcrumb({
   }
 
   const handleJump = (targetId: DbId, shiftKey?: boolean) => {
+    if (onItemClick && !shiftKey) {
+      onItemClick(targetId)
+      return
+    }
+
     if (shiftKey) {
       orca.nav.openInLastPanel("block", { blockId: targetId })
     } else {

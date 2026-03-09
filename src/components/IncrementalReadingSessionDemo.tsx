@@ -1,6 +1,7 @@
 /**
  * 渐进阅读会话组件
  */
+import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
 import { completeIRCard, markAsRead, markAsReadWithPriorityShift, postpone, updatePriority } from "../srs/irSessionActions"
 import IncrementalReadingBreadcrumb from "./IncrementalReadingBreadcrumb"
@@ -67,18 +68,21 @@ export default function IncrementalReadingSessionDemo({
 }: IncrementalReadingSessionProps) {
   const [queue, setQueue] = useState<SessionCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [previewBlockId, setPreviewBlockId] = useState<DbId | null>(null)
   const [isWorking, setIsWorking] = useState<boolean>(false)
-  const sessionRootRef = useRef<HTMLDivElement | null>(null)
+  const currentCardContainerRef = useRef<HTMLDivElement | null>(null)
   const autoJumpedCardIdRef = useRef<number | null>(null)
   const buttonStyle = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   const currentCard = queue[currentIndex]
   const isTopicCard = currentCard?.cardType === "topic"
   const isCardMaking = Boolean(!isTopicCard && currentCard?.isCardMaking)
+  const shouldShowPreview = Boolean(previewBlockId && currentCard && previewBlockId !== currentCard.id)
 
   useEffect(() => {
     if (!currentCard) return
     autoJumpedCardIdRef.current = null
+    setPreviewBlockId(null)
   }, [currentCard?.id])
 
   useEffect(() => {
@@ -88,7 +92,7 @@ export default function IncrementalReadingSessionDemo({
     if (!resumeBlockId || resumeBlockId === currentCard.id) return
     if (autoJumpedCardIdRef.current === currentCard.id) return
 
-    const container = sessionRootRef.current
+    const container = currentCardContainerRef.current
     if (!container) return
 
     let cancelled = false
@@ -136,7 +140,17 @@ export default function IncrementalReadingSessionDemo({
   useEffect(() => {
     setQueue(cards)
     setCurrentIndex(0)
+    setPreviewBlockId(null)
   }, [cards])
+
+  const handleBreadcrumbPreview = (targetId: DbId) => {
+    if (!currentCard || targetId === currentCard.id) {
+      setPreviewBlockId(null)
+      return
+    }
+
+    setPreviewBlockId((prev: DbId | null) => prev === targetId ? null : targetId)
+  }
 
   const removeCardAtIndex = (index: number) => {
     setQueue((prev: SessionCard[]) => {
@@ -389,7 +403,7 @@ export default function IncrementalReadingSessionDemo({
       padding: "16px",
       height: "100%",
       overflow: "auto"
-    }} ref={sessionRootRef}>
+    }}>
       <div style={{
         display: "flex",
         justifyContent: "space-between",
@@ -439,7 +453,12 @@ export default function IncrementalReadingSessionDemo({
         borderRadius: "8px",
         background: "var(--orca-color-bg-2)"
       }}>
-        <IncrementalReadingBreadcrumb blockId={currentCard.id} panelId={panelId} cardType={currentCard.cardType} />
+        <IncrementalReadingBreadcrumb
+          blockId={currentCard.id}
+          panelId={panelId}
+          cardType={currentCard.cardType}
+          onItemClick={handleBreadcrumbPreview}
+        />
         <div style={{
           display: "flex",
           gap: "12px",
@@ -458,6 +477,35 @@ export default function IncrementalReadingSessionDemo({
           />
         </div>
       </div>
+
+      {shouldShowPreview ? (
+        <div style={{
+          border: "1px solid var(--orca-color-border-1)",
+          borderRadius: "8px",
+          padding: "12px",
+          background: "var(--orca-color-bg-2)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px"
+        }}>
+          <div style={{ fontSize: "12px", color: "var(--orca-color-text-2)", fontWeight: 600 }}>
+            上下文块
+          </div>
+          <div style={{
+            border: "1px solid var(--orca-color-border-1)",
+            borderRadius: "8px",
+            padding: "12px",
+            background: "var(--orca-color-bg-1)"
+          }}>
+            <OrcaBlock
+              panelId={panelId}
+              blockId={previewBlockId!}
+              blockLevel={0}
+              indentLevel={0}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div style={{
         display: "flex",
@@ -524,7 +572,7 @@ export default function IncrementalReadingSessionDemo({
         borderRadius: "8px",
         padding: "12px",
         background: "var(--orca-color-bg-1)"
-      }}>
+      }} ref={currentCardContainerRef}>
         <OrcaBlock
           panelId={panelId}
           blockId={currentCard.id}
