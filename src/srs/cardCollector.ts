@@ -15,7 +15,7 @@ import {
   ensureClozeSrsState,
   ensureDirectionSrsState
 } from "./storage"
-import { getAllClozeNumbers } from "./clozeUtils"
+import { getAllClozeNumbers, getAllClozeNumbersFromBlockTree, extractClozeContentFromBlockTree } from "./clozeUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
 import { isCardTag } from "./tagUtils"
 
@@ -177,18 +177,50 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
     }
     const deckName = await extractDeckName(block)
 
-    if (cardType === "cloze") {
-      // Cloze 卡片：为每个填空编号生成独立的 ReviewCard
-      const clozeNumbers = getAllClozeNumbers(block.content, pluginName)
+    if (cardType === "cloze" || cardType === "bg") {
+      // Cloze 或 BG 卡片：为每个填空编号生成独立的 ReviewCard
+      let clozeNumbers = getAllClozeNumbers(block.content, pluginName)
+      let allClozeContent: Array<{ number: number; content: string }> = []
+
+      // 检查 block.content 中是否真的包含 cloze fragment
+      const hasClozeFragment = block.content?.some(fragment => {
+        const isClozeFragment = 
+          fragment.t === `${pluginName}.cloze` ||
+          (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+        return isClozeFragment
+      }) || false
+
+      // 只有 BG 卡片才从块树中提取 cloze 内容
+      // cloze 卡片不需要遍历子块树，只使用直接内容
+      if (cardType === "bg") {
+        try {
+          console.log(`[${pluginName}] collectReviewCards: 尝试从块树提取 cloze 编号 #${block.id}`)
+          const treeClozeNumbers = await getAllClozeNumbersFromBlockTree(block.id, pluginName)
+          console.log(`[${pluginName}] collectReviewCards: 从块树找到 cloze 编号: ${JSON.stringify(treeClozeNumbers)}`)
+          if (treeClozeNumbers.length > 0) {
+            clozeNumbers = treeClozeNumbers
+            // 提取从块树中获取的 cloze 内容
+            allClozeContent = await extractClozeContentFromBlockTree(block.id, pluginName)
+            console.log(`[${pluginName}] collectReviewCards: 从块树提取到 cloze 内容: ${JSON.stringify(allClozeContent)}`)
+          }
+        } catch (error) {
+          console.warn(`[${pluginName}] 尝试从块树提取 cloze 编号失败:`, error)
+        }
+      }
 
       // 调试日志
-      console.log(`[${pluginName}] collectReviewCards: 发现 cloze 卡片 #${block.id}`)
+      console.log(`[${pluginName}] collectReviewCards: 发现 ${cardType} 卡片 #${block.id}`)
       console.log(`  - block.content 长度: ${block.content?.length || 0}`)
       console.log(`  - 找到 cloze 编号: ${JSON.stringify(clozeNumbers)}`)
       if (block.content && block.content.length > 0) {
         // 输出所有 fragment 的类型以便调试
         const fragmentTypes = block.content.map((f: any) => f.t)
         console.log(`  - fragment 类型: ${JSON.stringify(fragmentTypes)}`)
+        // 输出完整的 block.content 内容
+        console.log(`  - block.content 内容: ${JSON.stringify(block.content)}`)
+      }
+      if (allClozeContent.length > 0) {
+        console.log(`  - 从块树提取的 cloze 内容: ${JSON.stringify(allClozeContent)}`)
       }
 
       if (clozeNumbers.length === 0) {
@@ -211,7 +243,9 @@ export async function collectReviewCards(pluginName: string = "srs-plugin"): Pro
           deck: deckName,
           tags: extractNonCardTags(block),
           clozeNumber, // 关键：标记当前复习的填空编号
-          content: block.content  // 保存块内容用于渲染填空
+          content: block.content,  // 保存块内容用于渲染填空
+          allClozeContent,  // 保存从块树中提取的 cloze 内容，用于表格 cloze 卡片或 BG 卡片
+          cardType  // 保存卡片类型，用于区分 cloze 和 bg 卡片
         })
       }
     } else if (cardType === "direction") {

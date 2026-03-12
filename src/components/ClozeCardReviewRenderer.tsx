@@ -9,13 +9,13 @@
 // 从全局 window 对象获取 React 与 Valtio（Orca 插件约定）
 const { useState, useMemo, useRef, useEffect } = window.React
 const { useSnapshot } = window.Valtio
-const { Button, ModalOverlay } = orca.components
-
-import type { DbId, ContentFragment } from "../orca.d.ts"
+const { Button, ModalOverlay, BlockBreadcrumb, Block, BlockChildren, BlockShell } = orca.components
+import type { DbId, ContentFragment, Block } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates, formatDueDate } from "../srs/algorithm"
 import { State } from "ts-fsrs"
+import { extractClozeContentFromBlockTree } from "../srs/clozeUtils"
 
 /**
  * 格式化卡片状态为中文
@@ -61,6 +61,8 @@ type ClozeCardReviewRendererProps = {
   panelId?: string
   pluginName: string
   clozeNumber?: number  // 当前复习的填空编号（仅隐藏该编号的填空）
+  allClozeContent?: Array<{ number: number; content: string }>  // 从块树中提取的 cloze 内容，用于表格 cloze 卡片或 BG 卡片
+  cardType?: string  // 卡片类型，用于区分 cloze 和 bg 卡片
 }
 
 /**
@@ -75,8 +77,65 @@ function renderFragments(
   fragments: ContentFragment[] | undefined,
   showAnswers: boolean,
   pluginName: string,
-  currentClozeNumber?: number
+  currentClozeNumber?: number,
+  allClozeContent?: Array<{ number: number; content: string }>,
+  cardType?: string
 ): React.ReactNode[] {
+  // 检查 fragments 中是否包含 Cloze 片段
+  const hasClozeFragments = fragments?.some((fragment: ContentFragment) => 
+    fragment.t === `${pluginName}.cloze` || 
+    (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+  )
+
+  // 如果是 BG 卡片，或者没有 Cloze 片段但有从块树中提取的 Cloze 内容，显示 Cloze 内容
+  // BG 卡片或表格 cloze 卡片时，遍历表格内块对象
+  // 复习时，序号对应挖空文本，按序号隐藏挖空文本
+  if (cardType === "bg" || (!hasClozeFragments && allClozeContent && allClozeContent.length > 0)) {
+    return allClozeContent?.map((item, index) => {
+      const shouldHide = currentClozeNumber
+        ? item.number === currentClozeNumber
+        : true
+
+      if (showAnswers || !shouldHide) {
+        // 显示答案：高亮显示填空内容
+        return (
+          <span
+            key={index}
+            style={{
+              backgroundColor: "var(--orca-color-primary-1)",
+              color: "var(--orca-color-primary-5)",
+              fontWeight: "600",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              borderBottom: "2px solid var(--orca-color-primary-5)",
+              margin: "0 2px"
+            }}
+          >
+            {item.content}
+          </span>
+        )
+      } else {
+        // 隐藏答案：显示 [...]
+        return (
+          <span
+            key={index}
+            style={{
+              color: "var(--orca-color-text-2)",
+              fontWeight: "500",
+              padding: "2px 6px",
+              backgroundColor: "var(--orca-color-bg-2)",
+              borderRadius: "4px",
+              border: "1px dashed var(--orca-color-border-1)",
+              margin: "0 2px"
+            }}
+          >
+            [...]
+          </span>
+        )
+      }
+    }) || [<span key="empty">（空白内容）</span>]
+  }
+
   if (!fragments || fragments.length === 0) {
     return [<span key="empty">（空白内容）</span>]
   }
@@ -158,14 +217,18 @@ export default function ClozeCardReviewRenderer({
   inSidePanel = false,
   panelId,
   pluginName,
-  clozeNumber
+  clozeNumber,
+  allClozeContent: propsAllClozeContent,
+  cardType
 }: ClozeCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(false)
   const [showCardInfo, setShowCardInfo] = useState(false)
+  const [allClozeContent, setAllClozeContent] = useState<{ number: number; content: string }[]>(propsAllClozeContent || [])
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
   const prevCardKeyRef = useRef<string>("")
   const currentCardKey = `${blockId}-${clozeNumber ?? 0}`
+  const blockContainerRef = useRef<HTMLDivElement>(null)
 
   // 当卡片变化时重置状态
   useEffect(() => {
@@ -175,6 +238,182 @@ export default function ClozeCardReviewRenderer({
       prevCardKeyRef.current = currentCardKey
     }
   }, [currentCardKey])
+
+  // 当 propsAllClozeContent 变化时更新状态
+  useEffect(() => {
+    if (propsAllClozeContent) {
+      setAllClozeContent(propsAllClozeContent)
+      console.log(`[${pluginName}] 从 props 接收 Cloze 内容:`, propsAllClozeContent)
+    }
+  }, [propsAllClozeContent, pluginName])
+
+  // 从块树中提取所有 Cloze 内容（仅当 props 中没有提供时且是 BG 卡片）
+  // 只有 BG 卡片才从块树中提取 cloze 内容，cloze 卡片不需要遍历子块树
+  useEffect(() => {
+    // 只有当 props 中没有提供 allClozeContent 且是 BG 卡片时，才从块树中提取
+    if (!propsAllClozeContent && cardType === "bg") {
+      const fetchAllClozeContent = async () => {
+        try {
+          const clozeContent = await extractClozeContentFromBlockTree(blockId, pluginName)
+          setAllClozeContent(clozeContent)
+          console.log(`[${pluginName}] 从块树提取到 Cloze 内容:`, clozeContent)
+        } catch (error) {
+          console.warn(`[${pluginName}] 尝试从块树提取 Cloze 内容失败:`, error)
+        }
+      }
+
+      fetchAllClozeContent()
+    }
+  }, [blockId, pluginName, propsAllClozeContent, cardType])
+
+  // 当组件挂载或更新时，移除 display: none 样式
+  useEffect(() => {
+    if (!blockContainerRef.current) return
+
+    // 强制移除 display: none 样式的函数
+    const removeDisplayNoneStyles = () => {
+      // 移除 .orca-repr-main-none-editable 的 display: none 样式
+      const noneEditableElements = blockContainerRef.current!.querySelectorAll('.orca-repr-main-none-editable')
+      noneEditableElements.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement
+        htmlElement.style.display = ''
+        // 同时移除可能的其他隐藏样式
+        htmlElement.style.visibility = ''
+        htmlElement.style.opacity = ''
+      })
+
+      // 移除 .orca-block-handle 的 display: none 样式
+      const blockHandles = blockContainerRef.current!.querySelectorAll('.orca-block-handle')
+      blockHandles.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement
+        htmlElement.style.display = ''
+        // 同时移除可能的其他隐藏样式
+        htmlElement.style.visibility = ''
+        htmlElement.style.opacity = ''
+      })
+
+      // 移除 .orca-block-folding-handle 的 display: none 样式
+      const foldingHandles = blockContainerRef.current!.querySelectorAll('.orca-block-folding-handle')
+      foldingHandles.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement
+        htmlElement.style.display = ''
+        // 同时移除可能的其他隐藏样式
+        htmlElement.style.visibility = ''
+        htmlElement.style.opacity = ''
+      })
+    }
+
+    // 立即执行一次
+    removeDisplayNoneStyles()
+
+    // 使用 requestAnimationFrame 确保 DOM 渲染完成后再次执行
+    const animationId = requestAnimationFrame(removeDisplayNoneStyles)
+
+    // 使用 setTimeout 确保样式移除代码能够执行
+    const timeoutId = setTimeout(removeDisplayNoneStyles, 100)
+
+    return () => {
+      cancelAnimationFrame(animationId)
+      clearTimeout(timeoutId)
+    }
+  }, [blockId])
+
+  // 当答案显示状态变化时，处理挖空的遮盖
+  useEffect(() => {
+    if (!blockContainerRef.current) return
+
+    console.log(`[${pluginName}] 处理挖空遮盖，showAnswer: ${showAnswer}, clozeNumber: ${clozeNumber}`)
+    console.log(`[${pluginName}] allClozeContent:`, allClozeContent)
+
+    // 使用 setTimeout 确保 DOM 完全渲染
+    const timeoutId = setTimeout(() => {
+      if (!blockContainerRef.current) return
+
+      // 移除之前添加的所有遮罩
+      const existingCovers = blockContainerRef.current.querySelectorAll('.srs-cloze-cover')
+      existingCovers.forEach((cover: Element) => cover.remove())
+
+      // 强制移除 display: none 样式
+      const noneEditableElements = blockContainerRef.current.querySelectorAll('.orca-repr-main-none-editable')
+      noneEditableElements.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement
+        htmlElement.style.display = ''
+      })
+
+      const blockHandles = blockContainerRef.current.querySelectorAll('.orca-block-handle')
+      blockHandles.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement
+        htmlElement.style.display = ''
+      })
+
+      // 直接操作 DOM 元素，避免延迟
+      // 使用更通用的选择器查找挖空元素
+      const clozeElements = blockContainerRef.current.querySelectorAll('[data-cloze-number]')
+      console.log(`[${pluginName}] 找到 ${clozeElements.length} 个挖空元素`)
+
+      if (clozeElements.length > 0) {
+        // 先清除之前可能添加的遮罩
+        const existingCovers = blockContainerRef.current.querySelectorAll('.srs-cloze-cover')
+        existingCovers.forEach((cover: Element) => cover.remove())
+        
+        clozeElements.forEach((element: Element, index: number) => {
+          // 获取挖空元素的序号
+          const elementClozeNumber = parseInt(element.getAttribute('data-cloze-number') || '0')
+          const htmlElement = element as HTMLElement
+          
+          console.log(`[${pluginName}] 处理挖空元素 ${index}: number=${elementClozeNumber}, text=${htmlElement.textContent}`)
+          
+          if (!showAnswer && elementClozeNumber === clozeNumber) {
+            // 答案未显示状态：直接替换挖空文本为 [...]
+            // 保存原始文本，以便显示答案时恢复
+            if (!htmlElement.getAttribute('data-original-text')) {
+              htmlElement.setAttribute('data-original-text', htmlElement.textContent || '')
+            }
+            htmlElement.textContent = '[...]'
+            htmlElement.style.color = 'var(--orca-color-text-2)'
+            htmlElement.style.fontWeight = '500'
+            htmlElement.style.border = '1px dashed var(--orca-color-border-1)'
+            htmlElement.style.borderRadius = '4px'
+            htmlElement.style.padding = '0 4px'
+            htmlElement.style.backgroundColor = 'var(--orca-color-bg-2)'
+            console.log(`[${pluginName}] 隐藏挖空元素 ${index}: ${elementClozeNumber}`)
+          } else {
+            // 答案显示状态或非当前序号的挖空
+            if (showAnswer && elementClozeNumber === clozeNumber) {
+              // 答案显示状态：恢复原始文本并添加蓝色样式
+              const originalText = htmlElement.getAttribute('data-original-text')
+              if (originalText) {
+                htmlElement.textContent = originalText
+                htmlElement.removeAttribute('data-original-text')
+              }
+              htmlElement.style.color = 'var(--orca-color-primary-5)'
+              htmlElement.style.borderBottom = '2px solid var(--orca-color-primary-5)'
+              htmlElement.style.fontWeight = '600'
+              htmlElement.style.border = ''
+              htmlElement.style.borderRadius = ''
+              htmlElement.style.padding = ''
+              htmlElement.style.backgroundColor = ''
+              console.log(`[${pluginName}] 显示答案挖空元素 ${index}: ${elementClozeNumber}`)
+            } else {
+              // 非当前序号的挖空：保持原始样式
+              htmlElement.style.color = '#999'
+              htmlElement.style.borderBottom = '2px solid #4a90e2'
+              htmlElement.style.fontWeight = ''
+              htmlElement.style.border = ''
+              htmlElement.style.borderRadius = ''
+              htmlElement.style.padding = ''
+              htmlElement.style.backgroundColor = ''
+              console.log(`[${pluginName}] 保持挖空元素 ${index}: ${elementClozeNumber}`)
+            }
+          }
+        })
+      }
+    }, 15) // 15ms 延迟，确保 DOM 完全渲染
+
+    return () => clearTimeout(timeoutId)
+  }, [showAnswer, blockId, clozeNumber, allClozeContent, pluginName])
+
+
 
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state)
@@ -232,7 +471,7 @@ export default function ClozeCardReviewRenderer({
     return previewDueDates(fullState)
   }, [srsInfo])
 
-  // 块数据可能只是尚未加载；不要误判为“已删除”
+  // 块数据可能只是尚未加载；不要误判为"已删除"
   if (!block) {
     return (
       <div style={{
@@ -247,24 +486,87 @@ export default function ClozeCardReviewRenderer({
     )
   }
 
-  // 从 block.content 中提取内容片段
+  // 从 block.content 中提取内容片段，并合并从块树中提取的 Cloze 内容
   const contentFragments = useMemo(() => {
-    return block?.content ?? []
-  }, [block?.content])
+    const originalFragments = block?.content ?? []
+    
+    // 检查原始片段中是否已经包含 Cloze 片段
+    const hasClozeFragments = originalFragments.some((fragment: ContentFragment) => 
+      fragment.t === `${pluginName}.cloze` || 
+      (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+    )
+    
+    // 如果已经有 Cloze 片段，直接使用原始片段
+    if (hasClozeFragments) {
+      return originalFragments
+    }
+    
+    // 如果没有 Cloze 片段，使用从块树中提取的内容
+    // 注意：这里需要将 allClozeContent 转换为 ContentFragment 格式
+    // 但由于我们没有完整的文本上下文，这里只是简单地返回原始片段
+    // 实际的渲染逻辑会在下方处理
+    return originalFragments
+  }, [block?.content, pluginName, allClozeContent])
 
   // 渲染题目（隐藏当前填空编号的答案）
   const questionContent = useMemo(() => {
-    return renderFragments(contentFragments, false, pluginName, clozeNumber)
-  }, [contentFragments, pluginName, clozeNumber])
+    return renderFragments(contentFragments, false, pluginName, clozeNumber, allClozeContent, cardType)
+  }, [contentFragments, pluginName, clozeNumber, allClozeContent, cardType])
 
   // 渲染答案（显示所有填空）
   const answerContent = useMemo(() => {
-    return renderFragments(contentFragments, true, pluginName, clozeNumber)
-  }, [contentFragments, pluginName, clozeNumber])
+    return renderFragments(contentFragments, true, pluginName, clozeNumber, allClozeContent, cardType)
+  }, [contentFragments, pluginName, clozeNumber, allClozeContent, cardType])
+
+  // 提取挖空位置信息，用于遮罩层
+  const clozePositions = useMemo(() => {
+    const positions: Array<{start: number; end: number; text: string}> = []
+    let currentPosition = 0
+    
+    if (!contentFragments || contentFragments.length === 0) {
+      // 如果没有内容片段，但有从块树中提取的 Cloze 内容，使用这些内容
+      if (allClozeContent && allClozeContent.length > 0) {
+        for (const item of allClozeContent) {
+          const shouldHide = clozeNumber ? item.number === clozeNumber : true
+          
+          if (shouldHide) {
+            positions.push({
+              start: currentPosition,
+              end: currentPosition + item.content.length,
+              text: item.content
+            })
+          }
+          
+          currentPosition += item.content.length + 4 // 加上空格和分隔符的长度
+        }
+      }
+      return positions
+    }
+    
+    for (const fragment of contentFragments) {
+      if (fragment.t === `${pluginName}.cloze`) {
+        const fragmentClozeNumber = (fragment as any).clozeNumber
+        const shouldHide = clozeNumber ? fragmentClozeNumber === clozeNumber : true
+        
+        if (shouldHide) {
+          positions.push({
+            start: currentPosition,
+            end: currentPosition + (fragment.v?.length || 0),
+            text: fragment.v || ""
+          })
+        }
+        
+        currentPosition += (fragment.v?.length || 0)
+      } else if (fragment.t === "t") {
+        currentPosition += (fragment.v?.length || 0)
+      }
+    }
+    
+    return positions
+  }, [contentFragments, pluginName, clozeNumber, allClozeContent])
 
   const cardContent = (
     <div className="srs-cloze-card-container" style={{
-      backgroundColor: "var(--orca-color-bg-1)",
       borderRadius: "12px",
       padding: "16px",
       width: inSidePanel ? "100%" : "90%",
@@ -418,23 +720,55 @@ export default function ClozeCardReviewRenderer({
         </div>
       )}
 
-      {/* 题目区域 */}
-      <div className="srs-cloze-question" style={{
-        marginBottom: "16px",
-        padding: "16px",
-        backgroundColor: "var(--orca-color-bg-2)",
-        borderRadius: "8px",
-        minHeight: "100px",
-        fontSize: "16px",
-        lineHeight: "1.8",
-        color: "var(--orca-color-text-1)"
-      }}>
-        {showAnswer ? answerContent : questionContent}
+      {/* 面包屑导航 */}
+      {blockId && (
+        <div style={{ 
+          marginBottom: "12px", 
+          fontSize: "12px", 
+          color: "var(--orca-color-text-3)"
+        }}>
+          <BlockBreadcrumb blockId={blockId} />
+        </div>
+      )}
+
+      {/* Block 组件原生显示 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div 
+          className="srs-card-front"
+          style={{
+            marginBottom: "16px",
+            padding: "20px",
+            backgroundColor: "var(--orca-color-bg-2)",
+            borderRadius: "8px",
+            minHeight: "80px"
+          }}
+        >
+          <div 
+            ref={blockContainerRef}
+            className="srs-cloze-question" 
+            style={{
+              position: "relative"
+            }}
+          >
+            {/* 恢复使用 Block 组件，确保内容能够正常显示 */}
+            <Block
+              blockId={blockId}
+              panelId={panelId || "srs-review-panel"}
+              blockLevel={0}
+              indentLevel={0}
+              renderingMode="normal"
+              style={{
+                border: "1px solid var(--orca-color-border-1)",
+                borderRadius: "8px"
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* 显示答案按钮 / 评分按钮 */}
       {!showAnswer ? (
-        <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "12px" }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginTop: "20px" }}>
           {/* 跳过按钮 - 在答案未显示时也可用 */}
           {onSkip && (
             <Button
@@ -466,7 +800,7 @@ export default function ClozeCardReviewRenderer({
             display: "grid",
             gridTemplateColumns: onSkip ? "repeat(5, 1fr)" : "repeat(4, 1fr)",
             gap: "8px",
-            marginTop: "16px"
+            marginTop: "20px"
           }}>
             {/* 跳过按钮 */}
             {onSkip && (

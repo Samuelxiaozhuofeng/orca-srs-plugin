@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SRS 卡片组件
  *
  * 题目与答案区域直接嵌入 Orca Block，用户可以像在正文中一样编辑，
@@ -106,12 +106,48 @@ function QuestionBlock({ blockId, panelId, fallback }: QuestionBlockProps) {
       });
     };
 
+    // 移除 display: none 样式的函数
+    const removeDisplayNoneStyles = () => {
+      // 移除 .orca-repr-main-none-editable 的 display: none 样式
+      const noneEditableElements = container.querySelectorAll('.orca-repr-main-none-editable');
+      noneEditableElements.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement;
+        htmlElement.style.display = '';
+        // 同时移除可能的其他隐藏样式
+        htmlElement.style.visibility = '';
+        htmlElement.style.opacity = '';
+      });
+
+      // 移除 .orca-block-handle 的 display: none 样式
+      const blockHandles = container.querySelectorAll('.orca-block-handle');
+      blockHandles.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement;
+        htmlElement.style.display = '';
+        // 同时移除可能的其他隐藏样式
+        htmlElement.style.visibility = '';
+        htmlElement.style.opacity = '';
+      });
+
+      // 移除 .orca-block-folding-handle 的 display: none 样式
+      const foldingHandles = container.querySelectorAll('.orca-block-folding-handle');
+      foldingHandles.forEach((element: Element) => {
+        const htmlElement = element as HTMLElement;
+        htmlElement.style.display = '';
+        // 同时移除可能的其他隐藏样式
+        htmlElement.style.visibility = '';
+        htmlElement.style.opacity = '';
+      });
+    };
+
     // 初始移除
     removeChildrenContainers();
+    // 初始移除 display: none 样式
+    removeDisplayNoneStyles();
 
     const observer = new MutationObserver((mutations) => {
       // 只在有新节点添加时检查是否需要移除子块容器
       let needsCheck = false;
+      let needsStyleCheck = false;
       for (const mutation of mutations) {
         if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
           for (const node of mutation.addedNodes) {
@@ -126,16 +162,30 @@ function QuestionBlock({ blockId, panelId, fallback }: QuestionBlockProps) {
                 )
               ) {
                 needsCheck = true;
-                break;
               }
+              // 检查是否需要移除 display: none 样式
+              if (
+                node.classList.contains("orca-repr-main-none-editable") ||
+                node.classList.contains("orca-block-handle") ||
+                node.classList.contains("orca-block-folding-handle") ||
+                node.querySelector(
+                  '.orca-repr-main-none-editable, .orca-block-handle, .orca-block-folding-handle'
+                )
+              ) {
+                needsStyleCheck = true;
+              }
+              if (needsCheck && needsStyleCheck) break;
             }
           }
         }
-        if (needsCheck) break;
+        if (needsCheck && needsStyleCheck) break;
       }
 
       if (needsCheck) {
         removeChildrenContainers();
+      }
+      if (needsStyleCheck) {
+        removeDisplayNoneStyles();
       }
     });
 
@@ -146,8 +196,16 @@ function QuestionBlock({ blockId, panelId, fallback }: QuestionBlockProps) {
       characterData: false,
     });
 
+    // 使用 requestAnimationFrame 确保 DOM 渲染完成后再次执行
+    const animationId = requestAnimationFrame(removeDisplayNoneStyles);
+
+    // 使用 setTimeout 确保样式移除代码能够执行
+    const timeoutId = setTimeout(removeDisplayNoneStyles, 100);
+
     return () => {
       observer.disconnect();
+      cancelAnimationFrame(animationId);
+      clearTimeout(timeoutId);
     };
   }, [blockId]);
 
@@ -169,7 +227,6 @@ function QuestionBlock({ blockId, panelId, fallback }: QuestionBlockProps) {
 
   return (
     <>
-      <BlockBreadcrumb key={blockId} blockId={blockId} />
       <div
         ref={containerRef}
         className="srs-question-block"
@@ -490,7 +547,7 @@ export default function SrsCardDemo({
 
   // 确定 reprType
   const reprType =
-    inferredCardType === "cloze"
+    inferredCardType === "cloze" || inferredCardType === "bg"
       ? "srs.cloze-card"
       : inferredCardType === "direction"
       ? "srs.direction-card"
@@ -611,6 +668,7 @@ export default function SrsCardDemo({
           panelId={panelId}
           pluginName={pluginName}
           clozeNumber={clozeNumber} // 传递填空编号
+          cardType={inferredCardType} // 传递卡片类型
         />
       </SrsErrorBoundary>
     );
@@ -887,6 +945,17 @@ export default function SrsCardDemo({
         </div>
       )}
 
+      {/* 面包屑导航 */}
+      {blockId && (
+        <div style={{ 
+          marginBottom: "12px", 
+          fontSize: "12px", 
+          color: "var(--orca-color-text-3)"
+        }}>
+          <BlockBreadcrumb blockId={blockId} />
+        </div>
+      )}
+
       {/* 摘录卡：只显示内容区域，不显示题目 */}
       {!isExcerptCard && (
         <div
@@ -920,9 +989,6 @@ export default function SrsCardDemo({
               minHeight: "80px",
             }}
           >
-            {/* 摘录卡片也显示面包屑导航 */}
-            {blockId && <BlockBreadcrumb key={blockId} blockId={blockId} />}
-            
             <div contentEditable={false} style={{
               fontSize: "18px",
               fontWeight: "600",

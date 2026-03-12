@@ -58,10 +58,25 @@ export function registerUIComponents(pluginName: string): void {
 
   // ============ 工具栏按钮 ============
   
+  // 创建同序挖空按钮
+  orca.toolbar.registerToolbarButton(`${pluginName}.clozeSameNumberButton`, {
+    icon: "ti ti-code-dots",
+    tooltip: "创建同序 Cloze 填空",
+    command: `${pluginName}.createClozeSameNumber`
+  })
+  
+  // 创建异序挖空按钮
   orca.toolbar.registerToolbarButton(`${pluginName}.clozeButton`, {
-    icon: "ti ti-braces",
+    icon: "ti ti-code-plus",
     tooltip: "创建 Cloze 填空",
     command: `${pluginName}.createCloze`
+  })
+  
+  // 清除挖空格式按钮
+  orca.toolbar.registerToolbarButton(`${pluginName}.clearClozeButton`, {
+    icon: "ti ti-eraser",
+    tooltip: "清除挖空格式",
+    command: `${pluginName}.clearClozeFormat`
   })
 
   // ============ 斜杠命令 ============
@@ -144,6 +159,8 @@ export function unregisterUIComponents(pluginName: string): void {
   
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.clearClozeButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeSameNumberButton`)
   
   // 斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)

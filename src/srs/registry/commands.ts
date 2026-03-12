@@ -7,7 +7,7 @@
 import type { Block } from "../../orca.d.ts"
 import { BlockWithRepr } from "../blockUtils"
 import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
-import { createCloze } from "../clozeUtils"
+import { createClozeSameNumber, createCloze, clearClozeFormat } from "../clozeUtils"
 import { insertDirection } from "../directionUtils"
 import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
@@ -89,6 +89,53 @@ export function registerCommands(
     },
     {
       label: "SRS: 创建 Cloze 填空",
+      hasArgs: false
+    }
+  )
+
+  // 清除挖空格式命令
+  orca.commands.registerEditorCommand(
+    `${pluginName}.clearClozeFormat`,
+    async (editor, ...args) => {
+      const [panelId, rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置")
+        return null
+      }
+      const result = await clearClozeFormat(cursor, _pluginName)
+      return result ? { ret: result, undoArgs: result } : null
+    },
+    async undoArgs => {
+      // 撤销操作由框架自动处理，这里只记录日志
+      if (!undoArgs || !undoArgs.blockId) return
+      console.log(`[${_pluginName}] 清除挖空格式撤销：块 #${undoArgs.blockId}`)
+    },
+    {
+      label: "SRS: 清除挖空格式",
+      hasArgs: false
+    }
+  )
+
+  // 创建同序挖空命令
+  orca.commands.registerEditorCommand(
+    `${pluginName}.createClozeSameNumber`,
+    async (editor, ...args) => {
+      const [panelId, rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置")
+        return null
+      }
+      const result = await createClozeSameNumber(cursor, _pluginName)
+      return result ? { ret: result, undoArgs: result } : null
+    },
+    async undoArgs => {
+      // 由于使用虎鲸笔记原生命令（deleteSelection + insertFragments），
+      // 撤销操作由框架自动处理，这里只记录日志
+      if (!undoArgs || !undoArgs.blockId) return
+      console.log(`[${_pluginName}] 同序 Cloze 撤销：块 #${undoArgs.blockId}，编号 c${undoArgs.clozeNumber}`)
+    },
+    {
+      label: "SRS: 创建同序 Cloze 填空",
       hasArgs: false
     }
   )
@@ -478,6 +525,8 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.clearClozeFormat`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.createClozeSameNumber`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createTopicCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createExtract`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)

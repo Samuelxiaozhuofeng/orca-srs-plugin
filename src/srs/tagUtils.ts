@@ -52,3 +52,15 @@ export function isCorrectTag(alias: string | undefined): boolean {
 export function isOrderedTag(alias: string | undefined): boolean {
   return alias?.toLowerCase() === "ordered"
 }
+
+/**
+ * 判断引用别名是否为 deck 标签（大小写不敏感）
+ * 
+ * 支持匹配 #deck、#Deck、#DECK 等各种大小写变体
+ * 
+ * @param alias - 引用的别名（标签名称）
+ * @returns 是否为 deck 标签
+ */
+export function isDeckTag(alias: string | undefined): boolean {
+  return alias?.toLowerCase() === "deck"
+}

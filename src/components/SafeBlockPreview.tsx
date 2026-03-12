@@ -11,9 +11,10 @@ const { Block } = orca.components
 type SafeBlockPreviewProps = {
   blockId: DbId
   panelId: string
+  cardType?: string
 }
 
-export default function SafeBlockPreview({ blockId, panelId }: SafeBlockPreviewProps) {
+export default function SafeBlockPreview({ blockId, panelId, cardType }: SafeBlockPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   
   // 为每个预览生成唯一的虚拟 panelId，避免与真实 panel 冲突
@@ -32,11 +33,9 @@ export default function SafeBlockPreview({ blockId, panelId }: SafeBlockPreviewP
     
     const style = document.createElement('style')
     style.id = styleId
-    style.textContent = `
-      [data-block-preview="${uniqueId}"] .orca-block-children,
-      [data-block-preview="${uniqueId}"] .orca-repr-children {
-        display: none !important;
-      }
+    
+    // 对于 bg 卡片，不隐藏任何内容
+    let styleContent = `
       [data-block-preview="${uniqueId}"] .orca-block-handle,
       [data-block-preview="${uniqueId}"] .orca-block-folding-handle,
       [data-block-preview="${uniqueId}"] .orca-block-drag-handle,
@@ -56,6 +55,19 @@ export default function SafeBlockPreview({ blockId, panelId }: SafeBlockPreviewP
         padding: 0 !important;
       }
     `
+    
+    // 非 bg 卡片隐藏子块
+    if (cardType !== "bg") {
+      styleContent = `
+        [data-block-preview="${uniqueId}"] .orca-block-children,
+        [data-block-preview="${uniqueId}"] .orca-repr-children {
+          display: none !important;
+        }
+        ${styleContent}
+      `
+    }
+    
+    style.textContent = styleContent
     document.head.appendChild(style)
 
     return () => {
@@ -64,7 +76,7 @@ export default function SafeBlockPreview({ blockId, panelId }: SafeBlockPreviewP
         document.head.removeChild(existingStyle)
       }
     }
-  }, [blockId])
+  }, [blockId, cardType])
 
   // 添加安全检查
   if (!blockId) {
