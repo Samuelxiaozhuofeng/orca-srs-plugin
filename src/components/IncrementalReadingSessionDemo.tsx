@@ -41,14 +41,6 @@ function formatIntervalDays(days: number): string {
   return Number.isInteger(rounded) ? `${rounded}d` : `${rounded}d`
 }
 
-function normalizeFocusText(value: string | null | undefined): string | null {
-  if (typeof value !== "string") return null
-  const normalized = value.replace(/\s+/g, " ").trim()
-  if (normalized.length === 0) return null
-  if (normalized.length <= 160) return normalized
-  return `${normalized.slice(0, 157)}...`
-}
-
 function findBlockElement(container: HTMLElement, blockId: DbId): HTMLElement | null {
   const selectors = [
     `#block-${blockId}`,
@@ -124,7 +116,6 @@ export default function IncrementalReadingSessionDemo({
   const isTopicCard = currentCard?.cardType === "topic"
   const isCardMaking = Boolean(!isTopicCard && currentCard?.isCardMaking)
   const shouldShowPreview = Boolean(previewBlockId && currentCard && previewBlockId !== currentCard.id)
-  const focusText = currentCard?.readingBreakpoint?.focusText ?? null
 
   useEffect(() => {
     if (!currentCard) return
@@ -266,7 +257,6 @@ export default function IncrementalReadingSessionDemo({
   const persistReadingBreakpoint = async (patch: {
     resumeBlockId?: DbId | null
     previewBlockId?: DbId | null
-    focusText?: string | null
     selection?: IRReadingBreakpointSelection | null
   }) => {
     if (!currentCard) return
@@ -298,12 +288,10 @@ export default function IncrementalReadingSessionDemo({
     const nextPreviewBlockId = cursor.rootBlockId === currentCard.id
       ? (previewBlockId && previewBlockId !== currentCard.id ? previewBlockId : null)
       : cursor.rootBlockId
-    const nextFocusText = normalizeFocusText(selection?.toString())
 
     void persistReadingBreakpoint({
       resumeBlockId: selectionData.focus.blockId,
       previewBlockId: nextPreviewBlockId,
-      focusText: nextFocusText,
       selection: selectionData
     })
   }
@@ -334,8 +322,7 @@ export default function IncrementalReadingSessionDemo({
 
     void persistReadingBreakpoint({
       previewBlockId: nextPreviewBlockId,
-      selection: shouldClearPreviewSelection ? null : undefined,
-      focusText: shouldClearPreviewSelection ? null : undefined
+      selection: shouldClearPreviewSelection ? null : undefined
     })
   }
 
@@ -663,19 +650,6 @@ export default function IncrementalReadingSessionDemo({
             value={`${currentCard.stage} · ${currentCard.lastAction}`}
           />
         </div>
-        {focusText ? (
-          <div style={{
-            fontSize: "12px",
-            color: "var(--orca-color-text-2)",
-            lineHeight: 1.5,
-            padding: "8px 10px",
-            borderRadius: "8px",
-            background: "var(--orca-color-bg-1)",
-            border: "1px dashed var(--orca-color-border-1)"
-          }}>
-            上次关注：{focusText}
-          </div>
-        ) : null}
       </div>
 
       {shouldShowPreview ? (

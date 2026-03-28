@@ -51,7 +51,6 @@ export type IRReadingBreakpointSelection = {
 
 export type IRReadingBreakpoint = {
   previewBlockId: DbId | null
-  focusText: string | null
   selection: IRReadingBreakpointSelection | null
   updatedAt: Date | null
 }
@@ -159,14 +158,6 @@ const parseDate = (value: any, fallback: Date | null): Date | null => {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed
 }
 
-const normalizeFocusText = (value: any): string | null => {
-  if (typeof value !== "string") return null
-  const normalized = value.replace(/\s+/g, " ").trim()
-  if (normalized.length === 0) return null
-  if (normalized.length <= 200) return normalized
-  return `${normalized.slice(0, 197)}...`
-}
-
 const normalizeCursorNode = (value: any): CursorNodeData | null => {
   if (!value || typeof value !== "object") return null
 
@@ -217,17 +208,15 @@ const normalizeReadingBreakpoint = (
   if (!value) return null
 
   const previewBlockId = parseOptionalNumber(value.previewBlockId)
-  const focusText = normalizeFocusText(value.focusText)
   const selection = normalizeReadingBreakpointSelection(value.selection)
   const updatedAt = parseDate(value.updatedAt, null)
 
-  if (previewBlockId === null && !focusText && !selection) {
+  if (previewBlockId === null && !selection) {
     return null
   }
 
   return {
     previewBlockId,
-    focusText,
     selection,
     updatedAt
   }
@@ -241,7 +230,6 @@ const parseReadingBreakpoint = (value: any): IRReadingBreakpoint | null => {
     const parsed = JSON.parse(raw)
     return normalizeReadingBreakpoint({
       previewBlockId: parsed?.previewBlockId ?? null,
-      focusText: parsed?.focusText ?? null,
       selection: parsed?.selection ?? null,
       updatedAt: parseDate(parsed?.updatedAt, null)
     })
@@ -259,7 +247,6 @@ const serializeReadingBreakpoint = (
 
   return JSON.stringify({
     previewBlockId: normalized.previewBlockId,
-    focusText: normalized.focusText,
     selection: normalized.selection,
     updatedAt: normalized.updatedAt?.toISOString() ?? null
   })
@@ -812,14 +799,13 @@ export async function updateResumeBlockId(
 }
 
 /**
- * 更新阅读断点：可同时写回 resumeBlockId / 预览上下文 / 关注句 / 文本选择
+ * 更新阅读断点：可同时写回 resumeBlockId / 预览上下文 / 文本选择
  */
 export async function updateReadingBreakpoint(
   blockId: DbId,
   patch: {
     resumeBlockId?: DbId | null
     previewBlockId?: DbId | null
-    focusText?: string | null
     selection?: IRReadingBreakpointSelection | null
   }
 ): Promise<IRState> {
@@ -828,13 +814,11 @@ export async function updateReadingBreakpoint(
     const nextResumeBlockId = patch.resumeBlockId !== undefined ? patch.resumeBlockId : prev.resumeBlockId
     const baseBreakpoint = prev.readingBreakpoint ?? {
       previewBlockId: null,
-      focusText: null,
       selection: null,
       updatedAt: null
     }
     const nextBreakpoint = normalizeReadingBreakpoint({
       previewBlockId: patch.previewBlockId !== undefined ? patch.previewBlockId : baseBreakpoint.previewBlockId,
-      focusText: patch.focusText !== undefined ? patch.focusText : baseBreakpoint.focusText,
       selection: patch.selection !== undefined ? patch.selection : baseBreakpoint.selection,
       updatedAt: new Date()
     })

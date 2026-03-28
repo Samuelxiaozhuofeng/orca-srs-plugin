@@ -165,7 +165,6 @@ describe("loadIRState block cache", () => {
         name: "ir.breakpoint",
         value: JSON.stringify({
           previewBlockId: 12,
-          focusText: "这是上次关注的句子",
           selection: {
             rootBlockId: 12,
             anchor: { blockId: 15, isInline: true, index: 0, offset: 2 },
@@ -182,7 +181,6 @@ describe("loadIRState block cache", () => {
     const state = await loadIRState(1)
 
     expect(state.readingBreakpoint?.previewBlockId).toBe(12)
-    expect(state.readingBreakpoint?.focusText).toBe("这是上次关注的句子")
     expect(state.readingBreakpoint?.selection?.rootBlockId).toBe(12)
     expect(state.readingBreakpoint?.selection?.focus.blockId).toBe(15)
   })
