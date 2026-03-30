@@ -69,7 +69,10 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
       // 确保 #card 标签属性已初始化（与其它入口保持一致）
       await ensureCardTagProperties(pluginName)
 
-      const result = await setupBookIR(snap.chapterIds, priority, totalDays)
+      const result = await setupBookIR(snap.chapterIds, priority, totalDays, {
+        sourceBookId: snap.bookBlockId,
+        sourceBookTitle: snap.bookTitle
+      })
       const ok = result.success.length
       const bad = result.failed.length
 

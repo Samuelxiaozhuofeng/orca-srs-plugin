@@ -16,7 +16,11 @@ function makeCard(partial: Partial<IRCard> & Pick<IRCard, "id" | "cardType">): I
     lastRead: null,
     readCount: 0,
     isNew: true,
-    resumeBlockId: null
+    resumeBlockId: null,
+    sourceBookId: null,
+    sourceBookTitle: null,
+    batchId: null,
+    batchCreatedAt: null
   }
   return { ...base, ...partial }
 }

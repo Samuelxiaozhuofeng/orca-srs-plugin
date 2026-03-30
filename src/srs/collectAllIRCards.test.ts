@@ -85,4 +85,48 @@ describe("collectAllIRCardsFromBlocks", () => {
     expect(results.every(card => card.isNew === false)).toBe(true)
     expect(vi.mocked(ensureIRState)).toHaveBeenCalledTimes(2)
   })
+
+  it("should include book batch metadata when properties exist", async () => {
+    const now = new Date("2026-01-19T00:00:00Z")
+    const block = createBlock(10, "topic")
+    block.properties = [
+      { name: "ir.sourceBookId", value: 99, type: 3 },
+      { name: "ir.sourceBookTitle", value: "深入 TypeScript", type: 2 },
+      { name: "ir.batchId", value: "book-abc123", type: 2 },
+      { name: "ir.batchCreatedAt", value: "2026-01-18T10:00:00.000Z", type: 5 }
+    ]
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "topic.preview",
+      lastAction: "init",
+      position: 1,
+      resumeBlockId: null
+    })
+
+    vi.mocked(loadIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "topic.preview",
+      lastAction: "init",
+      position: 1,
+      resumeBlockId: null
+    })
+
+    const [result] = await collectAllIRCardsFromBlocks([block])
+
+    expect(result.sourceBookId).toBe(99)
+    expect(result.sourceBookTitle).toBe("深入 TypeScript")
+    expect(result.batchId).toBe("book-abc123")
+    expect(result.batchCreatedAt?.toISOString()).toBe("2026-01-18T10:00:00.000Z")
+  })
 })

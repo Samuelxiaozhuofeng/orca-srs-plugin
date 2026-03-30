@@ -35,6 +35,10 @@ export type IRCard = {
   isNew: boolean
   resumeBlockId: DbId | null
   readingBreakpoint?: IRReadingBreakpoint | null
+  sourceBookId: DbId | null
+  sourceBookTitle: string | null
+  batchId: string | null
+  batchCreatedAt: Date | null
 }
 
 export type IRQueueOptions = {
@@ -48,6 +52,44 @@ export type IRQueueOptions = {
  */
 function getDayStart(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function readBlockProperty(block: Block, name: string): unknown {
+  const rawValue = block.properties?.find(prop => prop.name === name)?.value
+  if (Array.isArray(rawValue)) {
+    return rawValue.length > 0 ? rawValue[0] : null
+  }
+  return rawValue
+}
+
+function parseOptionalNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const next = Number(value)
+    if (Number.isFinite(next)) return next
+  }
+  return null
+}
+
+function parseOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function parseOptionalDate(value: unknown): Date | null {
+  if (!value) return null
+  const next = new Date(value as string | number | Date)
+  return Number.isNaN(next.getTime()) ? null : next
+}
+
+function readIRSourceMeta(block: Block) {
+  return {
+    sourceBookId: parseOptionalNumber(readBlockProperty(block, "ir.sourceBookId")),
+    sourceBookTitle: parseOptionalString(readBlockProperty(block, "ir.sourceBookTitle")),
+    batchId: parseOptionalString(readBlockProperty(block, "ir.batchId")),
+    batchCreatedAt: parseOptionalDate(readBlockProperty(block, "ir.batchCreatedAt"))
+  }
 }
 
 /**
@@ -111,6 +153,7 @@ export async function collectIRCardsFromBlocks(
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
       const dueDayStartTime = getDayStart(state.due).getTime()
+      const sourceMeta = readIRSourceMeta(block)
 
       // 按“天”边界判断是否到期（包括新卡），确保排期生效。
       if (dueDayStartTime <= todayStartTime) {
@@ -128,7 +171,8 @@ export async function collectIRCardsFromBlocks(
           readCount: state.readCount,
           isNew,
           resumeBlockId: state.resumeBlockId,
-          readingBreakpoint: state.readingBreakpoint ?? null
+          readingBreakpoint: state.readingBreakpoint ?? null,
+          ...sourceMeta
         })
       }
     } catch (error) {
@@ -156,6 +200,7 @@ export async function collectAllIRCardsFromBlocks(
       await ensureIRState(block.id)
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
+      const sourceMeta = readIRSourceMeta(block)
 
       results.push({
         id: block.id,
@@ -171,7 +216,8 @@ export async function collectAllIRCardsFromBlocks(
         readCount: state.readCount,
         isNew,
         resumeBlockId: state.resumeBlockId,
-        readingBreakpoint: state.readingBreakpoint ?? null
+        readingBreakpoint: state.readingBreakpoint ?? null,
+        ...sourceMeta
       })
     } catch (error) {
       console.error(`[${pluginName}] collectAllIRCardsFromBlocks: 处理块 #${block.id} 失败:`, error)

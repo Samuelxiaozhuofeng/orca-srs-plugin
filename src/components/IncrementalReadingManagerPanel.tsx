@@ -2,6 +2,7 @@ import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
 import { buildIRQueue, collectAllIRCards, deferIROverflow } from "../srs/incrementalReadingCollector"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../srs/incrementalReadingAutoMark"
+import { completeIRCard } from "../srs/irSessionActions"
 import { setNextIRSessionFocusCardId } from "../srs/incrementalReadingSessionManager"
 import { advanceDueToToday } from "../srs/incrementalReadingStorage"
 import {
@@ -475,6 +476,8 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
     enableOverflowDefer: true
   })
   const [isDeferringOverflow, setIsDeferringOverflow] = useState(false)
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<DbId>>(new Set())
+  const [isBatchRemoving, setIsBatchRemoving] = useState(false)
   const advancingRef = useRef<Set<DbId>>(new Set())
   const [advancingIds, setAdvancingIds] = useState<Record<string, boolean>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<IRDateGroupKey, boolean>>(() => ({
@@ -527,6 +530,18 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
   useEffect(() => {
     void loadCards()
   }, [loadCards])
+
+  useEffect(() => {
+    setSelectedCardIds((prev: Set<DbId>) => {
+      const availableIds = new Set(cards.map((card: IRCard) => card.id))
+      const next = new Set(Array.from(prev).filter((id: DbId) => availableIds.has(id)))
+      if (next.size !== prev.size) return next
+      for (const id of prev) {
+        if (!next.has(id)) return next
+      }
+      return prev
+    })
+  }, [cards])
 
   const handleCardClick = (cardId: DbId) => {
     orca.nav.openInLastPanel("block", { blockId: cardId })
@@ -601,6 +616,95 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
       setIsDeferringOverflow(false)
     }
   }
+
+  const selectedCards = useMemo(
+    () => cards.filter((card: IRCard) => selectedCardIds.has(card.id)),
+    [cards, selectedCardIds]
+  )
+
+  const candidateBatchId = useMemo(() => {
+    const batchIds = Array.from(new Set(
+      selectedCards
+        .map((card: IRCard) => card.batchId)
+        .filter((batchId: string | null): batchId is string => Boolean(batchId))
+    ))
+    return batchIds.length === 1 ? batchIds[0] : null
+  }, [selectedCards])
+
+  const toggleCardSelection = useCallback((cardId: DbId) => {
+    setSelectedCardIds((prev: Set<DbId>) => {
+      const next = new Set(prev)
+      if (next.has(cardId)) {
+        next.delete(cardId)
+      } else {
+        next.add(cardId)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleGroupSelection = useCallback((cardIds: DbId[]) => {
+    setSelectedCardIds((prev: Set<DbId>) => {
+      const next = new Set(prev)
+      const shouldSelectAll = cardIds.some((id: DbId) => !next.has(id))
+      if (shouldSelectAll) {
+        cardIds.forEach((id: DbId) => next.add(id))
+      } else {
+        cardIds.forEach((id: DbId) => next.delete(id))
+      }
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedCardIds(new Set())
+  }, [])
+
+  const handleSelectBatch = useCallback((batchId: string) => {
+    const batchCardIds = cards
+      .filter((card: IRCard) => card.batchId === batchId)
+      .map((card: IRCard) => card.id)
+    if (batchCardIds.length === 0) {
+      orca.notify("info", "当前批次没有可选卡片", { title: "渐进阅读" })
+      return
+    }
+    setSelectedCardIds(new Set(batchCardIds))
+    orca.notify("success", `已选中同批次 ${batchCardIds.length} 张`, { title: "渐进阅读" })
+  }, [cards])
+
+  const handleBatchRemove = useCallback(async () => {
+    if (selectedCards.length === 0 || isBatchRemoving) return
+    setIsBatchRemoving(true)
+    try {
+      const results = await Promise.allSettled(
+        selectedCards.map((card: IRCard) => completeIRCard(card.id))
+      )
+      const successCount = results.filter(
+        (result: PromiseSettledResult<void>) => result.status === "fulfilled"
+      ).length
+      const failedCount = results.length - successCount
+      await loadCards()
+
+      if (failedCount > 0) {
+        orca.notify(
+          "warn",
+          `已移出 ${successCount} 张，失败 ${failedCount} 张`,
+          { title: "渐进阅读" }
+        )
+      } else {
+        orca.notify(
+          "success",
+          `已将 ${successCount} 张卡片移出渐进阅读`,
+          { title: "渐进阅读" }
+        )
+      }
+    } catch (error) {
+      console.error("[IR Manager] 批量移出渐进阅读失败:", error)
+      orca.notify("error", "批量移出渐进阅读失败", { title: "渐进阅读" })
+    } finally {
+      setIsBatchRemoving(false)
+    }
+  }, [isBatchRemoving, loadCards, selectedCards])
 
   const header = useMemo(() => (
     <div style={{
@@ -705,6 +809,58 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
     ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         {overflowActionCard}
+        {selectedCards.length > 0 ? (
+          <div style={{
+            border: "1px solid var(--orca-color-primary-4)",
+            backgroundColor: "var(--orca-color-primary-1)",
+            borderRadius: "12px",
+            padding: "14px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            flexWrap: "wrap"
+          }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700 }}>
+                已选 {selectedCards.length} 张卡片
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--orca-color-text-2)" }}>
+                批量移出会保留原块内容，只移除 #card 和 srs.* / ir.*。
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {candidateBatchId ? (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSelectBatch(candidateBatchId)}
+                >
+                  选中同批次
+                </Button>
+              ) : null}
+              <Button variant="plain" onClick={clearSelection}>
+                清空选择
+              </Button>
+              <ConfirmBox
+                text={`确认将已选的 ${selectedCards.length} 张卡片移出渐进阅读吗？这会保留原始块内容，但会移除 #card 及 srs.* / ir.*。`}
+                onConfirm={async (_e, close) => {
+                  await handleBatchRemove()
+                  close()
+                }}
+              >
+                {(open) => (
+                  <Button
+                    variant="solid"
+                    onClick={open}
+                    style={isBatchRemoving ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+                  >
+                    {isBatchRemoving ? "处理中..." : "批量移出渐进阅读"}
+                  </Button>
+                )}
+              </ConfirmBox>
+            </div>
+          </div>
+        ) : null}
         <IRStatistics cards={cards} />
         <IRCardList
           cards={cards}
@@ -713,6 +869,9 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
           onToggleGroup={handleToggleGroup}
           onAdvanceLearn={handleAdvanceLearn}
           advancingIds={advancingIds}
+          selectedCardIds={selectedCardIds}
+          onToggleCardSelection={toggleCardSelection}
+          onToggleGroupSelection={toggleGroupSelection}
         />
       </div>
     )

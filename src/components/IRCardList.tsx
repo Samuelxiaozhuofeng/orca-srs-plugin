@@ -19,6 +19,9 @@ type IRCardListProps = {
   onToggleGroup: (groupKey: IRDateGroupKey) => void
   onAdvanceLearn?: (cardId: DbId) => void
   advancingIds?: Record<string, boolean>
+  selectedCardIds: Set<DbId>
+  onToggleCardSelection: (cardId: DbId) => void
+  onToggleGroupSelection: (cardIds: DbId[]) => void
 }
 
 type GroupStyle = {
@@ -78,6 +81,11 @@ function formatIntervalDays(days: number): string {
   return Number.isInteger(rounded) ? `${rounded}d` : `${rounded}d`
 }
 
+function formatBatchDate(date: Date | null): string {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "-"
+  return `${date.getMonth() + 1}-${date.getDate()}`
+}
+
 function getBlockTitle(blockId: DbId, titleMap: Record<string, string>): string {
   const fromState = orca.state.blocks?.[blockId] as Block | undefined
   if (fromState?.text) return fromState.text
@@ -95,7 +103,10 @@ export default function IRCardList({
   onCardClick,
   onToggleGroup,
   onAdvanceLearn,
-  advancingIds
+  advancingIds,
+  selectedCardIds,
+  onToggleCardSelection,
+  onToggleGroupSelection
 }: IRCardListProps) {
   const [blockTitles, setBlockTitles] = useState<Record<string, string>>({})
   const [groupDisplayCounts, setGroupDisplayCounts] = useState<Record<IRDateGroupKey, number>>({} as Record<IRDateGroupKey, number>)
@@ -180,6 +191,9 @@ export default function IRCardList({
       {groups.map((group: IRCardGroup) => {
         const style = groupStyles[group.key]
         const isExpanded = expandedGroups[group.key]
+        const groupCardIds = group.cards.map((card: IRCard) => card.id)
+        const selectedCount = groupCardIds.filter((id: DbId) => selectedCardIds.has(id)).length
+        const isGroupFullySelected = groupCardIds.length > 0 && selectedCount === groupCardIds.length
         const canAdvanceLearnGroup = (
           group.key === "明天" ||
           group.key === "未来7天" ||
@@ -217,6 +231,13 @@ export default function IRCardList({
                 <span style={{ fontSize: "12px", color: "var(--orca-color-text-3)" }}>
                   {group.cards.length} 张
                 </span>
+                <Button
+                  variant="plain"
+                  onClick={() => onToggleGroupSelection(groupCardIds)}
+                  style={{ padding: "2px 8px", fontSize: "12px" }}
+                >
+                  {isGroupFullySelected ? "取消本组" : `全选本组${selectedCount > 0 ? `（${selectedCount}）` : ""}`}
+                </Button>
               </div>
               <Button
                 variant="plain"
@@ -239,6 +260,7 @@ export default function IRCardList({
                     const title = truncateText(getBlockTitle(card.id, blockTitles), 50)
                     const canAdvanceLearn = Boolean(onAdvanceLearn && canAdvanceLearnGroup)
                     const isAdvancing = Boolean(advancingIds?.[String(card.id)])
+                    const isSelected = selectedCardIds.has(card.id)
 
                     return (
                       <div
@@ -257,6 +279,16 @@ export default function IRCardList({
                         }}
                         title="点击在侧面板打开"
                       >
+                        <label
+                          style={{ display: "flex", alignItems: "center", paddingTop: "2px" }}
+                          onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => onToggleCardSelection(card.id)}
+                          />
+                        </label>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
@@ -280,6 +312,8 @@ export default function IRCardList({
                             <span>已读：{card.readCount}</span>
                             <span>调度：Prio {card.priority} · {formatIntervalDays(card.intervalDays)} · 推后{card.postponeCount}</span>
                             <span>状态：{card.stage} · {card.lastAction}</span>
+                            {card.sourceBookTitle ? <span>来源：{truncateText(card.sourceBookTitle, 24)}</span> : null}
+                            {card.batchId ? <span>批次：{formatBatchDate(card.batchCreatedAt)}</span> : null}
                           </div>
                         </div>
                         {canAdvanceLearn ? (

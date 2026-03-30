@@ -132,18 +132,28 @@ export function calculateChapterDueDates(chapterCount: number, totalDays: number
   return dates
 }
 
+type SetupBookIROptions = {
+  sourceBookId?: DbId | null
+  sourceBookTitle?: string | null
+}
+
+function createIRBatchId(): string {
+  return `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 /**
  * 批量为章节块初始化渐进阅读
  *
  * 规则：
  * - 没有 #card 时：插入 #card(type=topic)
  * - 已有 #card 时：至少更新 type=topic；priority 仅在缺失时补齐（避免覆盖用户已选）
- * - 写入 ir.*：priority/lastRead/readCount/due
+ * - 写入 ir.*：priority/lastRead/readCount/due/sourceBook/batch 元数据
  */
 export async function setupBookIR(
   chapterIds: DbId[],
   priority: number,
-  totalDays: number
+  totalDays: number,
+  options: SetupBookIROptions = {}
 ): Promise<{ success: DbId[]; failed: DbId[] }> {
   if (!Array.isArray(chapterIds) || chapterIds.length === 0) {
     return { success: [], failed: [] }
@@ -155,6 +165,12 @@ export async function setupBookIR(
   )
   const baseIntervalDays = getTopicBaseIntervalDays(numericPriority)
   const positionBase = Date.now()
+  const batchId = createIRBatchId()
+  const batchCreatedAt = new Date()
+  const sourceBookId = typeof options.sourceBookId === "number" ? options.sourceBookId : null
+  const sourceBookTitle = typeof options.sourceBookTitle === "string"
+    ? (options.sourceBookTitle.trim() || null)
+    : null
 
   const success: DbId[] = []
   const failed: DbId[] = []
@@ -216,7 +232,11 @@ export async function setupBookIR(
           { name: "ir.lastAction", value: "init", type: 2 },
           // 维持章节顺序（越小越靠前），并尽量追加到现有 Topic 队列尾部
           { name: "ir.position", value: positionBase + i, type: 3 },
-          { name: "ir.resumeBlockId", value: null, type: 3 }
+          { name: "ir.resumeBlockId", value: null, type: 3 },
+          { name: "ir.sourceBookId", value: sourceBookId, type: 3 },
+          { name: "ir.sourceBookTitle", value: sourceBookTitle, type: 2 },
+          { name: "ir.batchId", value: batchId, type: 2 },
+          { name: "ir.batchCreatedAt", value: batchCreatedAt, type: 5 }
         ]
       )
       invalidateIrBlockCache(blockId)
