@@ -18,7 +18,7 @@ export type Grade = "again" | "hard" | "good" | "easy"
  * - extracts: 渐进阅读摘录卡片
  * - topic: 渐进阅读主题卡片
  */
-export type CardType = "basic" | "cloze" | "direction" | "list" | "excerpt" | "choice" | "extracts" | "topic"
+export type CardType = "basic" | "cloze" | "bg" | "direction" | "list" | "excerpt" | "choice" | "extracts" | "topic"
 
 // ============================================
 // 选择题卡片相关类型 (Choice Card)
@@ -97,6 +97,8 @@ export type ReviewCard = {
   listItemIds?: DbId[]  // 列表条目子块 ID 列表（基于当前 children 顺序）
   isAuxiliaryPreview?: boolean  // 是否为辅助预览（不计入统计、不更新 SRS）
   content?: ContentFragment[]  // 块内容（仅 cloze 卡片使用，用于渲染填空）
+  allClozeContent?: Array<{ number: number; content: string }>  // 从块树中提取的 cloze 内容，用于表格 cloze 卡片
+  cardType?: string  // 卡片类型，用于区分 cloze 和 bg 卡片
   tags?: TagInfo[]  // 额外标签（排除 #card）
 }
 

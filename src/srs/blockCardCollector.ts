@@ -16,7 +16,7 @@ import {
   ensureClozeSrsState,
   ensureDirectionSrsState
 } from "./storage"
-import { getAllClozeNumbers } from "./clozeUtils"
+import { getAllClozeNumbers, getAllClozeNumbersFromBlockTree, extractClozeContentFromBlockTree } from "./clozeUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
 import { isCardTag } from "./tagUtils"
 
@@ -225,9 +225,34 @@ export async function convertBlockToReviewCards(
   const todayMidnight = getTodayMidnight()
   const tomorrowMidnight = getTomorrowMidnight()
 
-  if (cardType === "cloze") {
-    // Cloze 卡片：为每个填空编号生成独立的 ReviewCard
-    const clozeNumbers = getAllClozeNumbers(block.content, pluginName)
+  if (cardType === "cloze" || cardType === "bg") {
+    // Cloze 或 BG 卡片：为每个填空编号生成独立的 ReviewCard
+    let clozeNumbers = getAllClozeNumbers(block.content, pluginName)
+    let allClozeContent: Array<{ number: number; content: string }> = []
+
+    // 检查 block.content 中是否真的包含 cloze fragment
+    const hasClozeFragment = block.content?.some(fragment => {
+      const isClozeFragment = 
+        fragment.t === `${pluginName}.cloze` ||
+        (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+      return isClozeFragment
+    }) || false
+
+    // 只有 BG 卡片才从块树中提取 cloze 内容
+    // cloze 卡片不需要遍历子块树，只使用直接内容
+    if (cardType === "bg") {
+      try {
+        const treeClozeNumbers = await getAllClozeNumbersFromBlockTree(block.id, pluginName)
+        if (treeClozeNumbers.length > 0) {
+          clozeNumbers = treeClozeNumbers
+          // 提取从块树中获取的 cloze 内容
+          allClozeContent = await extractClozeContentFromBlockTree(block.id, pluginName)
+          console.log(`[${pluginName}] convertBlockToReviewCards: 从块树提取到 cloze 内容: ${JSON.stringify(allClozeContent)}`)
+        }
+      } catch (error) {
+        console.warn(`[${pluginName}] 尝试从块树提取 cloze 编号失败:`, error)
+      }
+    }
 
     if (clozeNumbers.length === 0) {
       return cards
@@ -248,7 +273,9 @@ export async function convertBlockToReviewCards(
         deck: deckName,
         tags: extractNonCardTags(block),
         clozeNumber,
-        content: block.content
+        content: block.content,
+        allClozeContent,  // 保存从块树中提取的 cloze 内容，用于表格 cloze 卡片或 BG 卡片
+        cardType  // 保存卡片类型，用于区分 cloze 和 bg 卡片
       })
     }
   } else if (cardType === "direction") {

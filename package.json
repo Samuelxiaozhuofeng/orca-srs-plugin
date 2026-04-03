@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "cross-env NODE_ENV=production tsc && vite build",
+    "build:watch": "cross-env NODE_ENV=production tsc && vite build --watch",
     "test": "vitest run",
     "preview": "vite preview"
   },

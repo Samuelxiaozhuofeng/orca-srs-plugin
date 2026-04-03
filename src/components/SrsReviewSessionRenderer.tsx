@@ -94,7 +94,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
         const allCards = await collectReviewCards(currentPluginName)
         const deckFilter = typeof getReviewDeckFilter === "function" ? getReviewDeckFilter() : null
         const filteredCards = deckFilter
-          ? allCards.filter(card => card.deck === deckFilter)
+          ? allCards.filter(card => card.deck === deckFilter || card.deck.startsWith(`${deckFilter}::`))
           : allCards
         // 使用带子卡片展开的队列构建函数
         const queue = await buildReviewQueueWithChildren(filteredCards, currentPluginName)

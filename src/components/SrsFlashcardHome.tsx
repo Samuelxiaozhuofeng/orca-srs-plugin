@@ -16,8 +16,10 @@ import { SRS_EVENTS } from "../srs/srsEvents"
 import StatisticsView from "./StatisticsView"
 import DifficultCardsView from "./DifficultCardsView"
 import FlashcardDashboard from "./FlashcardDashboard"
+import { parseDeckHierarchy } from "../srs/deckUtils"
 
-const { useState, useEffect, useCallback, useMemo, useRef } = window.React
+const React = window.React
+const { useState, useEffect, useCallback, useMemo, useRef, Fragment } = React
 const { Button } = orca.components
 
 // ========================================
@@ -408,7 +410,7 @@ function CardListItem({ card, panelId, onCardClick, onCardReset, onCardDelete }:
 
       {/* 卡片内容预览 */}
       <div style={{ minHeight: "24px" }}>
-        <SafeBlockPreview blockId={card.id} panelId={panelId} />
+        <SafeBlockPreview blockId={card.id} panelId={panelId} cardType={card.cardType} />
       </div>
 
       {/* 卡片状态和操作 */}
@@ -525,12 +527,19 @@ type DeckRowProps = {
   onViewDeck: (deckName: string) => void
   onReviewDeck: (deckName: string) => void
   onNoteChange: (deckName: string, note: string) => void
+  onToggleCollapse: (deckName: string) => void
+  collapsedDecks: Set<string>
+  isChildDeck: (deckName: string) => boolean
+  getDeckLevel: (deckName: string) => number
 }
 
-function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck, onNoteChange }: DeckRowProps) {
+function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck, onNoteChange, onToggleCollapse, collapsedDecks, isChildDeck, getDeckLevel }: DeckRowProps) {
   const [isEditingNote, setIsEditingNote] = useState(false)
   const [noteText, setNoteText] = useState(deck.note || "")
   const dueCount = deck.overdueCount + deck.todayCount
+  const level = getDeckLevel(deck.name)
+  const hasChildren = isChildDeck(deck.name)
+  const isCollapsed = collapsedDecks.has(deck.name)
   
   const handleClick = () => {
     onViewDeck(deck.name)
@@ -571,6 +580,13 @@ function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck,
     setNoteText(e.target.value)
   }
 
+  const handleToggleCollapse = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (hasChildren) {
+      onToggleCollapse(deck.name)
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <div
@@ -591,6 +607,34 @@ function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck,
           e.currentTarget.style.backgroundColor = "var(--orca-color-bg-1)"
         }}
       >
+        {/* 层级缩进和折叠/展开按钮 */}
+        <div style={{ display: "flex", alignItems: "center", marginRight: "8px" }}>
+          {/* 修复多级层级缩进显示 */}
+          <div style={{ display: "flex", alignItems: "center" }}>
+            {Array.from({ length: level }).map((_, index) => (
+              <div key={index} style={{ width: "16px" }} />
+            ))}
+          </div>
+          {hasChildren && (
+            <Button
+              variant="plain"
+              onClick={handleToggleCollapse}
+              style={{
+                padding: "2px",
+                minWidth: "auto",
+                fontSize: "12px",
+                marginRight: "4px"
+              }}
+              title={isCollapsed ? "展开" : "折叠"}
+            >
+              <i className={isCollapsed ? "ti ti-chevron-right" : "ti ti-chevron-down"} />
+            </Button>
+          )}
+          {!hasChildren && (
+            <div style={{ width: "16px", marginRight: "4px" }} />
+          )}
+        </div>
+        
         {/* 牌组名称 */}
         <div style={{
           flex: 1,
@@ -599,7 +643,13 @@ function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck,
           fontWeight: 500
         }}>
           <div>
-            <HighlightText text={deck.name} query={searchQuery} />
+            {/* 只显示当前层级的名称 */}
+            {(() => {
+              const parts = deck.name.split('::');
+              // 只显示最后一部分，即当前层级的名称
+              const currentLevelName = parts[parts.length - 1];
+              return <HighlightText text={currentLevelName} query={searchQuery} />;
+            })()}
           </div>
           {deck.note && !isEditingNote && (
             <div 
@@ -682,7 +732,8 @@ function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck,
           padding: "8px 12px",
           backgroundColor: "var(--orca-color-bg-2)",
           borderRadius: "6px",
-          marginTop: "4px"
+          marginTop: "4px",
+          marginLeft: `${level * 16 + 24}px`
         }}>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <input
@@ -755,6 +806,7 @@ function DeckListView({
   onShowDifficultCards
 }: DeckListViewProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [collapsedDecks, setCollapsedDecks] = useState<Set<string>>(new Set())
   const searchInputRef = useRef<HTMLInputElement>(null)
   const hasDueCards = todayStats.pendingCount > 0 || todayStats.newCount > 0
   
@@ -762,6 +814,50 @@ function DeckListView({
   const DECK_PAGE_SIZE = 15
   const [displayCount, setDisplayCount] = useState(DECK_PAGE_SIZE)
   const loaderRef = useRef<HTMLDivElement>(null)
+
+  // 检查牌组是否有子牌组
+  const isChildDeck = useCallback((deckName: string) => {
+    return deckStats.decks.some(deck => {
+      const parentName = deck.name.split('::').slice(0, -1).join('::')
+      return parentName === deckName
+    })
+  }, [deckStats.decks])
+
+  // 获取牌组的层级深度
+  const getDeckLevel = useCallback((deckName: string) => {
+    const parts = parseDeckHierarchy(deckName)
+    console.log(`Deck ${deckName} hierarchy: ${parts}, level: ${parts.length - 1}`)
+    return parts.length - 1
+  }, [parseDeckHierarchy])
+
+  // 切换牌组的折叠状态
+  const handleToggleCollapse = useCallback((deckName: string) => {
+    setCollapsedDecks((prev: Set<string>) => {
+      const newSet = new Set(prev)
+      if (newSet.has(deckName)) {
+        newSet.delete(deckName)
+      } else {
+        newSet.add(deckName)
+      }
+      return newSet
+    })
+  }, [])
+
+  // 检查牌组是否应该显示（如果父牌组折叠，则子牌组不显示）
+  const shouldShowDeck = useCallback((deckName: string) => {
+    const hierarchy = parseDeckHierarchy(deckName)
+    console.log(`Checking if deck ${deckName} should show, hierarchy: ${hierarchy}`)
+    for (let i = 1; i < hierarchy.length; i++) {
+      const parentName = hierarchy.slice(0, i).join('::')
+      console.log(`Checking parent ${parentName}, collapsed: ${collapsedDecks.has(parentName)}`)
+      if (collapsedDecks.has(parentName)) {
+        console.log(`Deck ${deckName} should not show because parent ${parentName} is collapsed`)
+        return false
+      }
+    }
+    console.log(`Deck ${deckName} should show`)
+    return true
+  }, [collapsedDecks, parseDeckHierarchy])
 
   // 搜索过滤逻辑
   const filteredDecks = useMemo(() => {
@@ -779,6 +875,11 @@ function DeckListView({
     })
   }, [deckStats.decks, searchQuery])
 
+  // 过滤显示的牌组（考虑折叠状态）
+  const visibleDecks = useMemo(() => {
+    return filteredDecks.filter((deck: DeckInfo) => shouldShowDeck(deck.name))
+  }, [filteredDecks, shouldShowDeck])
+
   // 当搜索条件变化时，重置显示数量
   useEffect(() => {
     setDisplayCount(DECK_PAGE_SIZE)
@@ -791,8 +892,8 @@ function DeckListView({
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && displayCount < filteredDecks.length) {
-          setDisplayCount((prev: number) => Math.min(prev + DECK_PAGE_SIZE, filteredDecks.length))
+        if (entries[0].isIntersecting && displayCount < visibleDecks.length) {
+          setDisplayCount((prev: number) => Math.min(prev + DECK_PAGE_SIZE, visibleDecks.length))
         }
       },
       { threshold: 0.1 }
@@ -800,19 +901,17 @@ function DeckListView({
 
     observer.observe(loader)
     return () => observer.disconnect()
-  }, [displayCount, filteredDecks.length])
+  }, [displayCount, visibleDecks.length])
 
   // 当前显示的牌组
-  const displayedDecks = filteredDecks.slice(0, displayCount)
-  const hasMore = displayCount < filteredDecks.length
+  const displayedDecks = visibleDecks.slice(0, displayCount)
+  const hasMore = displayCount < visibleDecks.length
 
   // 清空搜索
   const handleClearSearch = () => {
     setSearchQuery("")
     searchInputRef.current?.focus()
   }
-
-  // 移除全局键盘快捷键支持，避免与浏览器默认功能冲突
 
   // 计算搜索结果统计
   const searchStats = useMemo(() => {
@@ -1043,6 +1142,10 @@ function DeckListView({
                   onViewDeck={onViewDeck}
                   onReviewDeck={onReviewDeck}
                   onNoteChange={onNoteChange}
+                  onToggleCollapse={handleToggleCollapse}
+                  collapsedDecks={collapsedDecks}
+                  isChildDeck={isChildDeck}
+                  getDeckLevel={getDeckLevel}
                 />
               ))}
               
@@ -1057,9 +1160,9 @@ function DeckListView({
                 }}
               >
                 {hasMore ? (
-                  <span>加载更多... ({displayCount}/{filteredDecks.length})</span>
-                ) : filteredDecks.length > DECK_PAGE_SIZE ? (
-                  <span style={{ opacity: 0.6 }}>已加载全部 {filteredDecks.length} 个卡组</span>
+                  <span>加载更多... ({displayCount}/{visibleDecks.length})</span>
+                ) : visibleDecks.length > DECK_PAGE_SIZE ? (
+                  <span style={{ opacity: 0.6 }}>已加载全部 {visibleDecks.length} 个卡组</span>
                 ) : null}
               </div>
             </>
@@ -1504,10 +1607,13 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [pluginName])
 
-  // 筛选当前牌组的卡片
+  // 筛选当前牌组的卡片（包括子牌组）
   const deckCards = useMemo(() => {
     if (!selectedDeck) return []
-    return allCards.filter((card: ReviewCard) => card.deck === selectedDeck)
+    return allCards.filter((card: ReviewCard) => {
+      // 匹配完全相同的牌组名称，或者以选中牌组名称开头且后面跟着 :: 的子牌组
+      return card.deck === selectedDeck || card.deck.startsWith(`${selectedDeck}::`)
+    })
   }, [allCards, selectedDeck])
 
   const filteredCards = useMemo(() => {
