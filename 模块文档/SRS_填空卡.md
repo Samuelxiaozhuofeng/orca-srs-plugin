@@ -244,6 +244,7 @@ const newBlockText =
 2. ✅ **复习界面渲染** - 已完成（阶段 2）
 
    - 创建了 `ClozeCardReviewRenderer` 组件 (`src/components/ClozeCardReviewRenderer.tsx`)
+   - 内容区通过 `ClozeReviewBlockContent` 复用 Orca 原生 `Block` 渲染，保留 page 引用、行内代码、加粗等富文本显示
    - 题目状态：将填空部分替换为 `[...]`（灰色虚线边框）
    - 答案状态：显示完整内容，高亮填空部分（蓝色背景 + 深蓝色文字）
    - 支持多个填空同时显示/隐藏
@@ -271,12 +272,10 @@ const newBlockText =
 1. **`ClozeCardReviewRenderer` 组件**
 
    - 接收 `blockId` 和 `pluginName` 参数
-   - 从 `block.content` 读取 ContentFragment 数组
-   - 使用 `renderFragments()` 函数渲染内容：
-     - 普通文本片段（`t: "t"`）：直接显示
-     - Cloze 片段（`t: "pluginName.cloze"`）：
-       - 隐藏时：显示 `[...]`（灰色虚线边框）
-       - 显示时：高亮显示（蓝色背景 + 下划线）
+   - 使用 `ClozeReviewBlockContent` 渲染原始 Orca 块内容，避免手写 ContentFragment 解析导致富文本丢失
+   - 通过 `.srs-cloze-inline[data-cloze-number]` 控制当前填空：
+     - 隐藏时：显示 `[...]`（灰色虚线边框）
+     - 显示时：高亮显示（蓝色背景 + 下划线）
 
 2. **`SrsCardDemo` 组件改进**
 
@@ -308,7 +307,7 @@ const newBlockText =
 
 - 在 `cardCollector.ts` 中为每个 cloze 编号生成独立的 `ReviewCard`
 - 复习时只显示当前 `clozeNumber` 对应的 `[...]`，其他填空显示答案
-- 在 `ClozeCardReviewRenderer.tsx` 中通过 `renderFragments()` 实现条件渲染
+- 在 `ClozeReviewBlockContent.tsx` 中通过原生块渲染 + cloze inline 选择器实现条件显示
 - 使用 `updateClozeSrsState()` 独立更新每个填空的 SRS 状态
 
 ---

@@ -11,11 +11,12 @@ const { useState, useMemo, useRef, useEffect } = window.React
 const { useSnapshot } = window.Valtio
 const { Button, ModalOverlay } = orca.components
 
-import type { DbId, ContentFragment } from "../orca.d.ts"
+import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates, formatDueDate } from "../srs/algorithm"
 import { State } from "ts-fsrs"
+import ClozeReviewBlockContent from "./ClozeReviewBlockContent"
 
 /**
  * 格式化卡片状态为中文
@@ -63,86 +64,6 @@ type ClozeCardReviewRendererProps = {
   clozeNumber?: number  // 当前复习的填空编号（仅隐藏该编号的填空）
 }
 
-/**
- * 渲染 ContentFragment 数组为可视化内容
- *
- * @param fragments - 内容片段数组
- * @param showAnswers - 是否显示答案（true = 显示答案，false = 显示 [...]）
- * @param pluginName - 插件名称（用于识别 cloze fragment）
- * @param currentClozeNumber - 当前复习的填空编号（仅隐藏该编号的填空，其他填空显示答案）
- */
-function renderFragments(
-  fragments: ContentFragment[] | undefined,
-  showAnswers: boolean,
-  pluginName: string,
-  currentClozeNumber?: number
-): React.ReactNode[] {
-  if (!fragments || fragments.length === 0) {
-    return [<span key="empty">（空白内容）</span>]
-  }
-
-  return fragments.map((fragment, index) => {
-    // 普通文本片段
-    if (fragment.t === "t") {
-      return <span key={index}>{fragment.v}</span>
-    }
-
-    // Cloze 片段
-    if (fragment.t === `${pluginName}.cloze`) {
-      const fragmentClozeNumber = (fragment as any).clozeNumber
-
-      // 判断是否应该隐藏此填空
-      // 如果 currentClozeNumber 存在，只隐藏该编号的填空；否则隐藏所有填空
-      const shouldHide = currentClozeNumber
-        ? fragmentClozeNumber === currentClozeNumber
-        : true
-
-      if (showAnswers || !shouldHide) {
-        // 显示答案：高亮显示填空内容
-        return (
-          <span
-            key={index}
-            style={{
-              backgroundColor: "var(--orca-color-primary-1)",
-              color: "var(--orca-color-primary-5)",
-              fontWeight: "600",
-              padding: "2px 6px",
-              borderRadius: "4px",
-              borderBottom: "2px solid var(--orca-color-primary-5)"
-            }}
-          >
-            {fragment.v}
-          </span>
-        )
-      } else {
-        // 隐藏答案：显示 [...]
-        return (
-          <span
-            key={index}
-            style={{
-              color: "var(--orca-color-text-2)",
-              fontWeight: "500",
-              padding: "2px 6px",
-              backgroundColor: "var(--orca-color-bg-2)",
-              borderRadius: "4px",
-              border: "1px dashed var(--orca-color-border-1)"
-            }}
-          >
-            [...]
-          </span>
-        )
-      }
-    }
-
-    // 其他类型的 fragment（暂时显示原始内容）
-    return (
-      <span key={index} style={{ color: "var(--orca-color-text-2)" }}>
-        {fragment.v}
-      </span>
-    )
-  })
-}
-
 export default function ClozeCardReviewRenderer({
   blockId,
   onGrade,
@@ -157,7 +78,6 @@ export default function ClozeCardReviewRenderer({
   onJumpToCard,
   inSidePanel = false,
   panelId,
-  pluginName,
   clozeNumber
 }: ClozeCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(false)
@@ -246,21 +166,6 @@ export default function ClozeCardReviewRenderer({
       </div>
     )
   }
-
-  // 从 block.content 中提取内容片段
-  const contentFragments = useMemo(() => {
-    return block?.content ?? []
-  }, [block?.content])
-
-  // 渲染题目（隐藏当前填空编号的答案）
-  const questionContent = useMemo(() => {
-    return renderFragments(contentFragments, false, pluginName, clozeNumber)
-  }, [contentFragments, pluginName, clozeNumber])
-
-  // 渲染答案（显示所有填空）
-  const answerContent = useMemo(() => {
-    return renderFragments(contentFragments, true, pluginName, clozeNumber)
-  }, [contentFragments, pluginName, clozeNumber])
 
   const cardContent = (
     <div className="srs-cloze-card-container" style={{
@@ -429,7 +334,13 @@ export default function ClozeCardReviewRenderer({
         lineHeight: "1.8",
         color: "var(--orca-color-text-1)"
       }}>
-        {showAnswer ? answerContent : questionContent}
+        <ClozeReviewBlockContent
+          blockId={blockId}
+          panelId={panelId}
+          showAnswer={showAnswer}
+          clozeNumber={clozeNumber}
+          fallback={block.text || "（空白内容）"}
+        />
       </div>
 
       {/* 显示答案按钮 / 评分按钮 */}
