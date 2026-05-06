@@ -11,12 +11,57 @@ type ClozeReviewBlockContentProps = {
   fallback: React.ReactNode
 }
 
-const CHILDREN_SELECTOR = `
-  .orca-block-children,
-  .orca-repr-children,
-  [data-role='children'],
-  [data-testid='children']
+const ROOT_BLOCK_SELECTOR = ":scope > .orca-block"
+const ROOT_CLOZE_SELECTOR = `
+  .srs-cloze-review-block > .orca-block > .orca-repr > .orca-repr-main .srs-cloze-inline
 `
+const ROOT_CHILDREN_SELECTOR = `
+  :scope > .orca-block-children,
+  :scope > .orca-repr-children,
+  :scope > .orca-repr > .orca-block-children,
+  :scope > .orca-repr > .orca-repr-children,
+  :scope > .orca-repr [data-role='children'],
+  :scope > .orca-repr [data-testid='children']
+`
+const ROOT_COLLAPSE_SELECTOR = `
+  :scope > .orca-repr > .orca-repr-collapse,
+  :scope > .orca-repr [data-role='collapse'],
+  :scope > .orca-repr [data-testid='collapse']
+`
+
+function getCollapsedState(el: Element): boolean | null {
+  const ariaExpanded = el.getAttribute("aria-expanded")
+  if (ariaExpanded === "false") return true
+  if (ariaExpanded === "true") return false
+
+  const dataState = el.getAttribute("data-state")
+  if (dataState === "closed") return true
+  if (dataState === "open") return false
+
+  const dataCollapsed = el.getAttribute("data-collapsed")
+  if (dataCollapsed === "true") return true
+  if (dataCollapsed === "false") return false
+
+  if (
+    el.classList.contains("collapsed") ||
+    el.classList.contains("is-collapsed")
+  ) {
+    return true
+  }
+
+  return null
+}
+
+function showChildrenContainer(node: HTMLElement) {
+  node.style.display = ""
+  node.style.visibility = ""
+  node.hidden = false
+}
+
+function hideChildrenContainer(node: HTMLElement) {
+  node.style.display = "none"
+  node.hidden = true
+}
 
 /**
  * Renders the original Orca block inside the Cloze review card so host inline
@@ -35,21 +80,32 @@ export default function ClozeReviewBlockContent({
     const container = containerRef.current
     if (!container || !panelId) return
 
-    const removeChildrenContainers = () => {
-      const childrenNodes = container.querySelectorAll<HTMLElement>(CHILDREN_SELECTOR)
-      childrenNodes.forEach((node: HTMLElement) => {
-        node.remove()
-      })
+    const syncRootChildrenVisibility = () => {
+      const rootBlock = container.querySelector<HTMLElement>(ROOT_BLOCK_SELECTOR)
+      if (!rootBlock) return
+
+      const childrenNodes = rootBlock.querySelectorAll<HTMLElement>(ROOT_CHILDREN_SELECTOR)
+      if (childrenNodes.length > 0) {
+        childrenNodes.forEach(showAnswer ? showChildrenContainer : hideChildrenContainer)
+        return
+      }
+
+      if (!showAnswer) return
+
+      const collapseEl = rootBlock.querySelector<HTMLElement>(ROOT_COLLAPSE_SELECTOR)
+      if (collapseEl && getCollapsedState(collapseEl) !== false) {
+        collapseEl.click()
+      }
     }
 
-    removeChildrenContainers()
+    syncRootChildrenVisibility()
 
     const observer = new MutationObserver((mutations) => {
       const shouldCheck = mutations.some((mutation) => (
         mutation.type === "childList" && mutation.addedNodes.length > 0
       ))
       if (shouldCheck) {
-        removeChildrenContainers()
+        syncRootChildrenVisibility()
       }
     })
 
@@ -63,13 +119,13 @@ export default function ClozeReviewBlockContent({
     return () => {
       observer.disconnect()
     }
-  }, [panelId, blockId])
+  }, [panelId, blockId, showAnswer])
 
   const clozeSelector = useMemo(() => {
     if (typeof clozeNumber === "number") {
-      return `.srs-cloze-review-block[data-show-answer="false"] .srs-cloze-inline[data-cloze-number="${clozeNumber}"]`
+      return `.srs-cloze-review-block[data-show-answer="false"] > .orca-block > .orca-repr > .orca-repr-main .srs-cloze-inline[data-cloze-number="${clozeNumber}"]`
     }
-    return `.srs-cloze-review-block[data-show-answer="false"] .srs-cloze-inline`
+    return `.srs-cloze-review-block[data-show-answer="false"] > .orca-block > .orca-repr > .orca-repr-main .srs-cloze-inline`
   }, [clozeNumber])
 
   if (!panelId) {
@@ -99,7 +155,7 @@ export default function ClozeReviewBlockContent({
           max-width: 100%;
         }
 
-        .srs-cloze-review-block .srs-cloze-inline {
+        ${ROOT_CLOZE_SELECTOR} {
           background-color: var(--orca-color-primary-1) !important;
           color: var(--orca-color-primary-5) !important;
           font-weight: 600 !important;

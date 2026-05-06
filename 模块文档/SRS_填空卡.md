@@ -245,6 +245,7 @@ const newBlockText =
 
    - 创建了 `ClozeCardReviewRenderer` 组件 (`src/components/ClozeCardReviewRenderer.tsx`)
    - 内容区通过 `ClozeReviewBlockContent` 复用 Orca 原生 `Block` 渲染，保留 page 引用、行内代码、加粗等富文本显示
+   - 当填空卡所在块存在子块时，题目阶段隐藏子块，点击“显示答案”后展示子块内容，并在根块折叠时尝试展开 children 容器
    - 题目状态：将填空部分替换为 `[...]`（灰色虚线边框）
    - 答案状态：显示完整内容，高亮填空部分（蓝色背景 + 深蓝色文字）
    - 支持多个填空同时显示/隐藏
@@ -273,6 +274,7 @@ const newBlockText =
 
    - 接收 `blockId` 和 `pluginName` 参数
    - 使用 `ClozeReviewBlockContent` 渲染原始 Orca 块内容，避免手写 ContentFragment 解析导致富文本丢失
+   - 题目阶段隐藏根块 children，答案阶段保留并展开根块 children，用于显示填空卡所在块下的上下文子块
    - 通过 `.srs-cloze-inline[data-cloze-number]` 控制当前填空：
      - 隐藏时：显示 `[...]`（灰色虚线边框）
      - 显示时：高亮显示（蓝色背景 + 下划线）
