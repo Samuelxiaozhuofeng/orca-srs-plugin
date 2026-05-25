@@ -15,6 +15,7 @@ export type RecentDeckPreference = {
 let unsubscribeRecentDeckWatcher: (() => void) | null = null
 let saveInProgress = false
 let setRefDataAfterHook: ((commandId: string, ...args: unknown[]) => void) | null = null
+let deleteRefDataAfterHook: ((commandId: string, ...args: unknown[]) => void) | null = null
 
 function normalizeDbId(value: unknown): DbId | null {
   if (typeof value === "number" && Number.isFinite(value)) return value as DbId
@@ -27,6 +28,15 @@ function normalizeDbId(value: unknown): DbId | null {
 
 function getCardRef(block: Block | undefined): BlockRef | undefined {
   return block?.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
+}
+
+function findRefById(refId: DbId): BlockRef | null {
+  for (const block of Object.values(orca.state.blocks || {})) {
+    const ref = block?.refs?.find(item => item.id === refId)
+    if (ref) return ref
+  }
+
+  return null
 }
 
 function findDeckDataChange(args: unknown[]): { name: string; value: unknown } | null {
@@ -193,6 +203,22 @@ export function startRecentDeckWatcher(pluginName: string): void {
 
   orca.commands.registerAfterCommand("core.editor.setRefData", setRefDataAfterHook)
 
+  deleteRefDataAfterHook = (_commandId: string, ...args: unknown[]) => {
+    const refId = normalizeDbId(args[0])
+    const names = args.find((arg): arg is string[] => Array.isArray(arg) && arg.every(item => typeof item === "string"))
+
+    if (!refId || !names?.includes(DECK_PROPERTY_NAME)) return
+
+    const ref = findRefById(refId)
+    if (!ref || ref.type !== 2 || !isCardTag(ref.alias)) return
+
+    clearRecentDeckPreference(pluginName).catch(error => {
+      console.error(`[${pluginName}] 重置牌组后清除最近牌组失败:`, error)
+    })
+  }
+
+  orca.commands.registerAfterCommand("core.editor.deleteRefData", deleteRefDataAfterHook)
+
   unsubscribeRecentDeckWatcher = (window as any).Valtio.subscribe(orca.state.blocks, (ops?: any) => {
     if (timeoutId) clearTimeout(timeoutId)
 
@@ -229,6 +255,11 @@ export function stopRecentDeckWatcher(): void {
   if (setRefDataAfterHook) {
     orca.commands.unregisterAfterCommand("core.editor.setRefData", setRefDataAfterHook)
     setRefDataAfterHook = null
+  }
+
+  if (deleteRefDataAfterHook) {
+    orca.commands.unregisterAfterCommand("core.editor.deleteRefData", deleteRefDataAfterHook)
+    deleteRefDataAfterHook = null
   }
 
   if (!unsubscribeRecentDeckWatcher) return
