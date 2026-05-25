@@ -16,6 +16,9 @@ const mockOrca = {
   commands: {
     invokeEditorCommand: vi.fn(),
   },
+  plugins: {
+    getData: vi.fn(async () => null),
+  },
   notify: vi.fn(),
 }
 

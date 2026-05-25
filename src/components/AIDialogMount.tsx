@@ -12,6 +12,7 @@ import { generateBasicCards, generateClozeCards, type BasicCardData, type ClozeC
 import { ensureCardSrsState, writeInitialClozeSrsState } from "../srs/storage"
 import { ensureCardTagProperties } from "../srs/tagPropertyInit"
 import { getMaxClozeNumberFromContent } from "../srs/clozeUtils"
+import { buildCardTagData } from "../srs/cardTagDataBuilder"
 import type { ContentFragment } from "../orca.d.ts"
 
 const { React, Valtio } = window
@@ -170,11 +171,7 @@ async function insertBasicCard(
     null,
     questionBlockId,
     "card",
-    [
-      { name: "type", value: "basic" },
-      { name: "牌组", value: [] },
-      { name: "status", value: "" }
-    ]
+    await buildCardTagData(pluginName, questionBlockId, "basic")
   )
 
   await ensureCardSrsState(questionBlockId)
@@ -247,11 +244,7 @@ async function insertClozeCard(
     null,
     blockId,
     "card",
-    [
-      { name: "type", value: "cloze" },
-      { name: "牌组", value: [] },
-      { name: "status", value: "" }
-    ]
+    await buildCardTagData(pluginName, blockId, "cloze")
   )
 
   await writeInitialClozeSrsState(blockId, newClozeNumber, 0)

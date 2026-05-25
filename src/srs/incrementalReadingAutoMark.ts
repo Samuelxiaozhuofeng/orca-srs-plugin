@@ -14,6 +14,7 @@ import { extractCardType } from "./deckUtils"
 import { DEFAULT_IR_PRIORITY } from "./incrementalReadingScheduler"
 import { loadIRState, updatePriority } from "./incrementalReadingStorage"
 import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 /**
  * 判断块是否为渐进阅读 Topic
@@ -103,11 +104,7 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
       null,
       blockId,
       "card",
-      [
-        { name: "type", value: "extracts" },
-        { name: "牌组", value: [] },
-        { name: "status", value: "" }
-      ]
+      await buildCardTagData(pluginName, blockId, "extracts")
     )
 
     // 设置 _repr

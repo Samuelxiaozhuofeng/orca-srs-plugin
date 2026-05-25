@@ -9,6 +9,7 @@ import { generateCardFromAI } from "./aiService"
 import { ensureCardSrsState } from "../storage"
 import { BlockWithRepr } from "../blockUtils"
 import { ensureCardTagProperties } from "../tagPropertyInit"
+import { buildCardTagData } from "../cardTagDataBuilder"
 
 /**
  * AI 卡片创建结果
@@ -140,11 +141,7 @@ export async function makeAICardFromBlock(
       cursor,
       childBlockId,
       "card",
-      [
-        { name: "type", value: "basic" },
-        { name: "牌组", value: [] },  // 空数组表示未设置牌组
-        { name: "status", value: "" }  // 空字符串表示正常状态
-      ]
+      await buildCardTagData(pluginName, childBlockId, "basic")
     )
     
     console.log(`[${pluginName}] #card 标签添加成功`)

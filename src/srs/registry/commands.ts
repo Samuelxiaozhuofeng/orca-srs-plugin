@@ -23,6 +23,7 @@ import {
   INCREMENTAL_READING_SETTINGS_KEYS
 } from "../settings/incrementalReadingSettingsSchema"
 import { isCardTag } from "../tagUtils"
+import { clearRecentDeckPreference } from "../recentDeckManager"
 
 export function registerCommands(
   pluginName: string
@@ -395,6 +396,20 @@ export function registerCommands(
     "SRS: 切换渐进阅读自动标签"
   )
 
+  orca.commands.registerCommand(
+    `${pluginName}.clearRecentDeckPreference`,
+    async () => {
+      try {
+        await clearRecentDeckPreference(_pluginName)
+        orca.notify("success", "后续新卡将回到 Default 牌组", { title: "SRS 默认牌组" })
+      } catch (error) {
+        console.error(`[${_pluginName}] 清除最近默认牌组失败:`, error)
+        orca.notify("error", `清除最近默认牌组失败: ${error}`, { title: "SRS 默认牌组" })
+      }
+    },
+    "SRS: 清除最近默认牌组"
+  )
+
   // 渐进阅读：记录当前阅读进度（用于下次自动跳转继续阅读）
   orca.commands.registerEditorCommand(
     `${pluginName}.irRecordProgress`,
@@ -487,4 +502,5 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.startIncrementalReadingSession`)
   orca.commands.unregisterCommand(`${pluginName}.openIRManager`)
   orca.commands.unregisterCommand(`${pluginName}.toggleAutoExtractMark`)
+  orca.commands.unregisterCommand(`${pluginName}.clearRecentDeckPreference`)
 }

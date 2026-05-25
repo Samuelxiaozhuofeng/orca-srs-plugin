@@ -9,6 +9,7 @@ import type { Block, DbId } from "../orca.d.ts"
 import { DEFAULT_IR_PRIORITY, getTopicBaseIntervalDays, normalizePriority } from "./incrementalReadingScheduler"
 import { invalidateIrBlockCache } from "./incrementalReadingStorage"
 import { isCardTag } from "./tagUtils"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -133,6 +134,7 @@ export function calculateChapterDueDates(chapterCount: number, totalDays: number
 }
 
 type SetupBookIROptions = {
+  pluginName?: string
   sourceBookId?: DbId | null
   sourceBookTitle?: string | null
 }
@@ -171,6 +173,7 @@ export async function setupBookIR(
   const sourceBookTitle = typeof options.sourceBookTitle === "string"
     ? (options.sourceBookTitle.trim() || null)
     : null
+  const pluginName = options.pluginName || "orca-srs"
 
   const success: DbId[] = []
   const failed: DbId[] = []
@@ -197,11 +200,7 @@ export async function setupBookIR(
           null,
           blockId,
           "card",
-          [
-            { name: "type", value: "topic" },
-            { name: "牌组", value: [] },
-            { name: "status", value: "" }
-          ]
+          await buildCardTagData(pluginName, blockId, "topic")
         )
       } else {
         // 更新既有 #card：type=topic

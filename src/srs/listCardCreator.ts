@@ -11,6 +11,7 @@ import type { Block, CursorData, DbId } from "../orca.d.ts"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { writeInitialSrsState } from "./storage"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 function getTodayMidnight(): Date {
   const today = new Date()
@@ -63,11 +64,7 @@ export async function createListCardFromBlock(
         cursor,
         blockId,
         "card",
-        [
-          { name: "type", value: "list" },
-          { name: "牌组", value: [] },
-          { name: "status", value: "" }
-        ]
+        await buildCardTagData(pluginName, blockId, "list")
       )
       await ensureCardTagProperties(pluginName)
     } else {

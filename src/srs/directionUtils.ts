@@ -12,6 +12,7 @@ import type { BlockWithRepr } from "./blockUtils"
 import { writeInitialDirectionSrsState } from "./storage"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 /**
  * 方向类型
@@ -122,11 +123,7 @@ export async function insertDirection(
         cursor,
         blockId,
         "card",
-        [
-          { name: "type", value: "direction" },
-          { name: "牌组", value: [] },  // 空数组表示未设置牌组
-          { name: "status", value: "" }  // 空字符串表示正常状态
-        ]
+        await buildCardTagData(pluginName, blockId, "direction")
       )
       
       // 确保 #card 标签块有属性定义（首次使用时自动初始化）

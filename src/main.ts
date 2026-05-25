@@ -33,6 +33,7 @@ import { getOrCreateFlashcardHomeBlock } from "./srs/flashcardHomeManager"
 import { cleanupDeletedCards } from "./srs/deletedCardCleanup"
 import { getOrCreateIncrementalReadingSessionBlock } from "./srs/incrementalReadingSessionManager"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "./srs/incrementalReadingAutoMark"
+import { startRecentDeckWatcher, stopRecentDeckWatcher } from "./srs/recentDeckManager"
 import {
   cleanupIncrementalReadingManagerBlock,
   openIRManager as openIRManagerPanel
@@ -71,6 +72,7 @@ export async function load(_name: string) {
   registerRenderers(pluginName)
   registerConverters(pluginName)
   registerContextMenu(pluginName)
+  startRecentDeckWatcher(pluginName)
 
   console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器、右键菜单已注册`)
 
@@ -101,6 +103,7 @@ export async function load(_name: string) {
  * 在插件禁用或 Orca 关闭时被调用
  */
 export async function unload() {
+  stopRecentDeckWatcher()
   stopAutoMarkExtract(pluginName)
   unregisterCommands(pluginName)
   unregisterUIComponents(pluginName)

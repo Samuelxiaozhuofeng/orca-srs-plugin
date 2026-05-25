@@ -11,6 +11,7 @@ import type { Block, CursorData, DbId } from "../orca.d.ts"
 import { ensureIRState } from "./incrementalReadingStorage"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 export async function createTopicCard(
   cursor: CursorData,
@@ -38,11 +39,7 @@ export async function createTopicCard(
         cursor,
         blockId,
         "card",
-        [
-          { name: "type", value: "topic" },
-          { name: "牌组", value: [] },
-          { name: "status", value: "" }
-        ]
+        await buildCardTagData(pluginName, blockId, "topic")
       )
       await ensureCardTagProperties(pluginName)
     } else {

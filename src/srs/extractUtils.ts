@@ -14,6 +14,7 @@ import { ensureIRState, loadIRState, updatePriority } from "./incrementalReading
 import { DEFAULT_IR_PRIORITY, normalizePriority } from "./incrementalReadingScheduler"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 const findNearestTopic = (block: Block): Block | null => {
   let current: Block | undefined = block
@@ -156,11 +157,7 @@ export async function createExtract(
         cursor,
         extractBlockId,
         "card",
-        [
-          { name: "type", value: "extracts" },
-          { name: "牌组", value: [] },
-          { name: "status", value: "" }
-        ]
+        await buildCardTagData(pluginName, extractBlockId, "extracts")
       )
       await ensureCardTagProperties(pluginName)
     } else {

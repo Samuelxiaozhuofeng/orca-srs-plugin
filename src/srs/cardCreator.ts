@@ -11,6 +11,7 @@ import { ensureCardSrsState, writeInitialSrsState } from "./storage"
 import { cleanupSrsProperties } from "./tagCleanup"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 /**
  * 扫描所有带 #card 标签的块，并将它们转换为 SRS 卡片
@@ -213,11 +214,7 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
         cursor,
         blockId,
         "card",
-        [
-          { name: "type", value: "basic" },
-          { name: "牌组", value: [] },  // 空数组表示未设置牌组
-          { name: "status", value: "" }  // 空字符串表示正常状态
-        ]
+        await buildCardTagData(pluginName, blockId, "basic")
       )
       
       // 确保 #card 标签块有属性定义（首次使用时自动初始化）

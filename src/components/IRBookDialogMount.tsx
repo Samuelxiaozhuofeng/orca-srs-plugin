@@ -70,6 +70,7 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
       await ensureCardTagProperties(pluginName)
 
       const result = await setupBookIR(snap.chapterIds, priority, totalDays, {
+        pluginName,
         sourceBookId: snap.bookBlockId,
         sourceBookTitle: snap.bookTitle
       })

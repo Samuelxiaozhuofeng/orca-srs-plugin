@@ -12,6 +12,7 @@ import { BlockWithRepr } from "./blockUtils"
 import { writeInitialClozeSrsState } from "./storage"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
+import { buildCardTagData } from "./cardTagDataBuilder"
 
 /**
  * 从 ContentFragment 数组中提取当前最大的 cloze 编号
@@ -273,11 +274,7 @@ export async function createCloze(
           null,
           blockId,
           "card",
-          [
-            { name: "type", value: "cloze" },
-            { name: "牌组", value: [] },  // 空数组表示未设置牌组
-            { name: "status", value: "" }  // 空字符串表示正常状态
-          ]
+          await buildCardTagData(pluginName, blockId, "cloze")
         )
         console.log(`[${pluginName}] 已添加 #card 标签并设置 type=cloze`)
         

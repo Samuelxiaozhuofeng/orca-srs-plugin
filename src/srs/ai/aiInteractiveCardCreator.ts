@@ -6,6 +6,7 @@ import { generateBasicCards, generateClozeCards, type BasicCardData, type ClozeC
 import { ensureCardSrsState, writeInitialClozeSrsState } from "../storage"
 import { ensureCardTagProperties } from "../tagPropertyInit"
 import { getMaxClozeNumberFromContent } from "../clozeUtils"
+import { buildCardTagData } from "../cardTagDataBuilder"
 
 let dialogContainer: HTMLDivElement | null = null
 let dialogRoot: any = null
@@ -246,11 +247,7 @@ async function insertBasicCard(
     null,
     questionBlockId,
     "card",
-    [
-      { name: "type", value: "basic" },
-      { name: "牌组", value: [] },
-      { name: "status", value: "" }
-    ]
+    await buildCardTagData(pluginName, questionBlockId, "basic")
   )
   
   await ensureCardSrsState(questionBlockId)
@@ -323,11 +320,7 @@ async function insertClozeCard(
     null,
     blockId,
     "card",
-    [
-      { name: "type", value: "cloze" },
-      { name: "牌组", value: [] },
-      { name: "status", value: "" }
-    ]
+    await buildCardTagData(pluginName, blockId, "cloze")
   )
   
   await writeInitialClozeSrsState(blockId, newClozeNumber, 0)
