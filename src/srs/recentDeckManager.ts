@@ -29,6 +29,25 @@ function getCardRef(block: Block | undefined): BlockRef | undefined {
   return block?.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
 }
 
+function findDeckDataChange(args: unknown[]): { name: string; value: unknown } | null {
+  for (const arg of args) {
+    if (!Array.isArray(arg)) continue
+
+    const deckData = arg.find((item): item is { name: string; value: unknown } => {
+      if (!item || typeof item !== "object") return false
+      return (item as { name?: unknown }).name === DECK_PROPERTY_NAME
+    })
+
+    if (deckData) return deckData
+  }
+
+  return null
+}
+
+function isEmptyDeckValue(value: unknown): boolean {
+  return value === undefined || value === null || (Array.isArray(value) && value.length === 0)
+}
+
 async function getBlockText(blockId: DbId): Promise<string | null> {
   const stateBlock = orca.state.blocks?.[blockId] as Block | undefined
   const stateText = stateBlock?.text?.trim()
@@ -154,6 +173,16 @@ export function startRecentDeckWatcher(pluginName: string): void {
     })
 
     if (!ref || ref.type !== 2 || !isCardTag(ref.alias)) return
+
+    const deckDataChange = findDeckDataChange(args)
+    if (!deckDataChange) return
+
+    if (isEmptyDeckValue(deckDataChange.value)) {
+      clearRecentDeckPreference(pluginName).catch(error => {
+        console.error(`[${pluginName}] 清除最近牌组失败:`, error)
+      })
+      return
+    }
 
     setTimeout(() => {
       inspectAndSaveDeck(pluginName, ref.from).catch(error => {
