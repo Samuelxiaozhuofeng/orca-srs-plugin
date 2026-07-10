@@ -15,6 +15,7 @@ import { DEFAULT_IR_PRIORITY } from "./incrementalReadingScheduler"
 import { loadIRState, updatePriority } from "./incrementalReadingStorage"
 import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
 import { buildCardTagData } from "./cardTagDataBuilder"
+import { upsertIRIndexId } from "./incremental-reading/irIndex"
 
 /**
  * 判断块是否为渐进阅读 Topic
@@ -78,6 +79,7 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
 
   // 检查是否已经是Extract
   if (isAlreadyExtract(block)) {
+    upsertIRIndexId(pluginName, blockId, "extracts")
     processedBlocks.add(blockId)
     return
   }
@@ -133,6 +135,7 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
     await ensureIRState(blockId)
     await updatePriority(blockId, inheritedPriority)
     invalidateIrBlockCache(blockId)
+    upsertIRIndexId(pluginName, blockId, "extracts")
 
     processedBlocks.add(blockId)
     console.log(`[${pluginName}] 自动标记完成: 块 ${blockId}`)

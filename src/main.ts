@@ -74,6 +74,13 @@ export async function load(_name: string) {
   registerContextMenu(pluginName)
   startRecentDeckWatcher(pluginName)
 
+  try {
+    const { registerIRDefaultShortcuts } = await import("./srs/incremental-reading/irShortcutsRegistry")
+    await registerIRDefaultShortcuts(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 注册渐进阅读默认快捷键失败:`, error)
+  }
+
   console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器、右键菜单已注册`)
 
   // 根据设置决定是否启动渐进阅读自动标记

@@ -10,6 +10,7 @@ import { DEFAULT_IR_PRIORITY, getTopicBaseIntervalDays, normalizePriority } from
 import { invalidateIrBlockCache } from "./incrementalReadingStorage"
 import { isCardTag } from "./tagUtils"
 import { buildCardTagData } from "./cardTagDataBuilder"
+import { upsertIRIndexId } from "./incremental-reading/irIndex"
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -239,6 +240,7 @@ export async function setupBookIR(
         ]
       )
       invalidateIrBlockCache(blockId)
+      upsertIRIndexId(pluginName, blockId, "topic")
 
       success.push(blockId)
     } catch (error) {

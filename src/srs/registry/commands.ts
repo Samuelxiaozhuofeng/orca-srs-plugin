@@ -7,7 +7,7 @@
 import type { Block } from "../../orca.d.ts"
 import { BlockWithRepr } from "../blockUtils"
 import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
-import { createCloze } from "../clozeUtils"
+import { createClozeFromEditorCommand } from "../incremental-reading/irClozeCommandService"
 import { insertDirection } from "../directionUtils"
 import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
@@ -74,13 +74,32 @@ export function registerCommands(
   orca.commands.registerEditorCommand(
     `${pluginName}.createCloze`,
     async (editor, ...args) => {
-      const [panelId, rootBlockId, cursor] = editor
+      const [panelId, _rootBlockId, cursor] = editor
       if (!cursor) {
         orca.notify("error", "无法获取光标位置")
         return null
       }
-      const result = await createCloze(cursor, _pluginName)
-      return result ? { ret: result, undoArgs: result } : null
+
+      // 会话内必须由 Shell 先 flush 断点，再执行原子转化。
+      const event = new CustomEvent("orca-srs:ir-session-action", {
+        detail: {
+          action: "itemize",
+          panelId: panelId || cursor.panelId || orca.state.activePanel
+        },
+        cancelable: true
+      })
+      if (!window.dispatchEvent(event)) return null
+
+      try {
+        const result = await createClozeFromEditorCommand(cursor, _pluginName)
+        return result ? { ret: result, undoArgs: result } : null
+      } catch (error) {
+        console.error(`[${_pluginName}] Extract 制卡失败:`, error)
+        orca.notify("error", error instanceof Error ? error.message : String(error), {
+          title: "渐进阅读"
+        })
+        return null
+      }
     },
     async undoArgs => {
       // 由于使用虎鲸笔记原生命令（deleteSelection + insertFragments），
@@ -410,6 +429,41 @@ export function registerCommands(
     "SRS: 清除最近默认牌组"
   )
 
+  // 渐进阅读会话动作：可选手动绑定到非 Enter 键；广播必须带 panelId，默认不全局 assign Enter
+  orca.commands.registerCommand(
+    `${pluginName}.irSessionNext`,
+    () => {
+      const panelId = orca.state.activePanel
+      if (!panelId) return
+      window.dispatchEvent(new CustomEvent("orca-srs:ir-session-action", {
+        detail: { action: "next", panelId }
+      }))
+    },
+    "IR: 下一篇"
+  )
+  orca.commands.registerCommand(
+    `${pluginName}.irSessionPostpone`,
+    () => {
+      const panelId = orca.state.activePanel
+      if (!panelId) return
+      window.dispatchEvent(new CustomEvent("orca-srs:ir-session-action", {
+        detail: { action: "postpone", panelId }
+      }))
+    },
+    "IR: 推后"
+  )
+  orca.commands.registerCommand(
+    `${pluginName}.irSessionPriority`,
+    () => {
+      const panelId = orca.state.activePanel
+      if (!panelId) return
+      window.dispatchEvent(new CustomEvent("orca-srs:ir-session-action", {
+        detail: { action: "priority", panelId }
+      }))
+    },
+    "IR: 调整重要性"
+  )
+
   // 渐进阅读：记录当前阅读进度（用于下次自动跳转继续阅读）
   orca.commands.registerEditorCommand(
     `${pluginName}.irRecordProgress`,
@@ -492,6 +546,9 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.interactiveAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.irRecordProgress`)
+  orca.commands.unregisterCommand(`${pluginName}.irSessionNext`)
+  orca.commands.unregisterCommand(`${pluginName}.irSessionPostpone`)
+  orca.commands.unregisterCommand(`${pluginName}.irSessionPriority`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
   

@@ -20,6 +20,7 @@ import {
 } from "../srs/incrementalReadingManagerUtils"
 import IRStatistics from "./IRStatistics"
 import IRCardList from "./IRCardList"
+import IRFunnelDiagnosticsPanel from "./incremental-reading/IRFunnelDiagnosticsPanel"
 
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
@@ -677,7 +678,7 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
     setIsBatchRemoving(true)
     try {
       const results = await Promise.allSettled(
-        selectedCards.map((card: IRCard) => completeIRCard(card.id))
+        selectedCards.map((card: IRCard) => completeIRCard(card.id, pluginName))
       )
       const successCount = results.filter(
         (result: PromiseSettledResult<void>) => result.status === "fulfilled"
@@ -862,6 +863,7 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
           </div>
         ) : null}
         <IRStatistics cards={cards} />
+        <IRFunnelDiagnosticsPanel cards={cards} />
         <IRCardList
           cards={cards}
           expandedGroups={expandedGroups}

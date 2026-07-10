@@ -1,10 +1,21 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "../srs/incrementalReadingCollector"
 import { popNextIRSessionFocusCardId } from "../srs/incrementalReadingSessionManager"
+import {
+  applyAutoPostpone,
+  formatAutoPostponeSummary,
+  undoAutoPostponeBatch
+} from "../srs/incremental-reading/irOverloadService"
+import {
+  DEFAULT_QUEUE_POLICY,
+  selectQueueWithPolicy
+} from "../srs/incremental-reading/irQueuePolicy"
+import { buildCollectError, buildCollectOk } from "../srs/incremental-reading/irCollectResult"
+import type { IRCollectResult } from "../srs/incremental-reading/irTypes"
 import IncrementalReadingSessionDemo from "./IncrementalReadingSessionDemo"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
-const { useEffect, useState } = window.React
+const { useEffect, useRef, useState } = window.React
 const { BlockShell, Button } = orca.components
 
 type RendererProps = {
@@ -16,6 +27,10 @@ type RendererProps = {
   mirrorId?: DbId
   initiallyCollapsed?: boolean
   renderingMode?: "normal" | "simple" | "simple-children"
+}
+
+type SessionLaunchOptions = {
+  timeBudgetMinutes: number
 }
 
 export default function IncrementalReadingSessionRenderer(props: RendererProps) {
@@ -32,81 +47,100 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
 
   const [cards, setCards] = useState<IRCard[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [collectResult, setCollectResult] = useState<IRCollectResult | null>(null)
   const [pluginName, setPluginName] = useState("orca-srs")
-  const [queueInfo, setQueueInfo] = useState<{
-    dailyLimit: number
-    totalDueCount: number
-    overflowCount: number
-    enableOverflowDefer: boolean
-  }>({
-    dailyLimit: 0,
-    totalDueCount: 0,
-    overflowCount: 0,
-    enableOverflowDefer: true
-  })
+  const [timeBudgetMinutes, setTimeBudgetMinutes] = useState(20)
+  const [autoPostponeLabel, setAutoPostponeLabel] = useState<string | null>(null)
+  const [sessionReady, setSessionReady] = useState(false)
+  const autoBatchIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    void loadReadingQueue()
+    // 仅预加载插件名；真正队列在用户选择时间盒后加载
+    void (async () => {
+      try {
+        const { getPluginName } = await import("../main")
+        const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
+        setPluginName(currentPluginName)
+      } catch {
+        setPluginName("orca-srs")
+      } finally {
+        setIsLoading(false)
+      }
+    })()
   }, [blockId])
 
-  useEffect(() => {
-    const handleFocus = (event: Event) => {
-      const custom = event as CustomEvent | undefined
-      const detail = custom?.detail as { pluginName?: string } | undefined
-      if (detail?.pluginName && detail.pluginName !== pluginName) return
-      void loadReadingQueue()
-    }
-
-    window.addEventListener("orca-srs:ir-session-focus", handleFocus as EventListener)
-    return () => {
-      window.removeEventListener("orca-srs:ir-session-focus", handleFocus as EventListener)
-    }
-  }, [pluginName, blockId])
-
-  const loadReadingQueue = async () => {
+  const loadReadingQueue = async (options: SessionLaunchOptions) => {
     setIsLoading(true)
-    setErrorMessage(null)
+    setCollectResult(null)
+    const started = Date.now()
 
     try {
       const { getPluginName } = await import("../main")
       const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
       setPluginName(currentPluginName)
 
-      const { collectIRCards, buildIRQueue } = await import("../srs/incrementalReadingCollector")
+      const {
+        collectIRCards,
+        collectIRCardsDetailed
+      } = await import("../srs/incrementalReadingCollector")
       const { getIncrementalReadingSettings } = await import("../srs/settings/incrementalReadingSettingsSchema")
-      const dueCards = await collectIRCards(currentPluginName)
-      const settings = getIncrementalReadingSettings(currentPluginName)
-      const queue = await buildIRQueue(dueCards, {
-        topicQuotaPercent: settings.topicQuotaPercent,
-        dailyLimit: settings.dailyLimit
-      })
-      const focusCardId = await popNextIRSessionFocusCardId(currentPluginName)
-      const focusedQueue = (() => {
-        if (!focusCardId) return queue
-        const focusCard = dueCards.find(card => card.id === focusCardId)
-        if (!focusCard) return queue
-        const withoutFocus = queue.filter(card => card.id !== focusCardId)
-        const next = [focusCard, ...withoutFocus]
 
-        // 保证 focusCard 一定在队列中：若启用 dailyLimit，则挤掉队尾
-        const dailyLimit = settings.dailyLimit
-        if (typeof dailyLimit === "number" && dailyLimit > 0 && next.length > dailyLimit) {
-          return next.slice(0, dailyLimit)
+      const detailed = typeof collectIRCardsDetailed === "function"
+        ? await collectIRCardsDetailed(currentPluginName)
+        : { cards: await collectIRCards(currentPluginName), failedCount: 0 }
+
+      const result = buildCollectOk(detailed.cards, detailed.failedCount)
+      setCollectResult(result)
+
+      if (result.status === "error") {
+        setCards([])
+        return
+      }
+
+      const settings = getIncrementalReadingSettings(currentPluginName)
+      const seed = new Date().toISOString().slice(0, 10)
+      const policyQueue = selectQueueWithPolicy(result.cards, {
+        ...DEFAULT_QUEUE_POLICY,
+        timeBudgetMinutes: options.timeBudgetMinutes,
+        dailyLimit: settings.dailyLimit,
+        seed
+      })
+
+      // 自动推后：仅旧积压且不在保护队列
+      const auto = await applyAutoPostpone(result.cards, {
+        protectedIds: policyQueue.protectedIds,
+        createBatchId: () => `session-${Date.now()}`
+      })
+      if (auto.batch && auto.deferredCount > 0) {
+        autoBatchIdRef.current = auto.batch.batchId
+        setAutoPostponeLabel(formatAutoPostponeSummary(auto.deferredCount))
+      } else {
+        autoBatchIdRef.current = null
+        setAutoPostponeLabel(null)
+      }
+
+      const focusCardId = await popNextIRSessionFocusCardId(currentPluginName)
+      let focusedQueue = policyQueue.queue
+      if (focusCardId) {
+        const focusCard = result.cards.find(card => card.id === focusCardId)
+        if (focusCard) {
+          const without = focusedQueue.filter(c => c.id !== focusCardId)
+          focusedQueue = [focusCard, ...without]
+          if (settings.dailyLimit > 0 && focusedQueue.length > settings.dailyLimit) {
+            focusedQueue = focusedQueue.slice(0, settings.dailyLimit)
+          }
         }
-        return next
-      })()
+      }
 
       setCards(focusedQueue)
-      setQueueInfo({
-        dailyLimit: settings.dailyLimit,
-        totalDueCount: dueCards.length,
-        overflowCount: settings.dailyLimit > 0 ? Math.max(0, dueCards.length - queue.length) : 0,
-        enableOverflowDefer: settings.enableAutoDefer
-      })
+      setTimeBudgetMinutes(options.timeBudgetMinutes)
+      setSessionReady(true)
+      console.log(`[IR Session] queue loaded in ${Date.now() - started}ms, n=${focusedQueue.length}`)
     } catch (error) {
       console.error("[IR Session Renderer] 加载阅读队列失败:", error)
-      setErrorMessage(error instanceof Error ? error.message : `${error}`)
+      const errResult = buildCollectError(error)
+      setCollectResult(errResult)
+      setCards([])
       orca.notify("error", "加载渐进阅读队列失败", { title: "渐进阅读" })
     } finally {
       setIsLoading(false)
@@ -117,25 +151,21 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
     orca.nav.close(panelId)
   }
 
-  const handleDeferOverflow = async (): Promise<number> => {
+  const handleUndoAutoPostpone = async () => {
+    const batchId = autoBatchIdRef.current
+    if (!batchId) return
     try {
-      const currentPluginName = pluginName
-      const { collectIRCards, buildIRQueue, deferIROverflow } = await import("../srs/incrementalReadingCollector")
-      const { getIncrementalReadingSettings } = await import("../srs/settings/incrementalReadingSettingsSchema")
-
-      const dueCards = await collectIRCards(currentPluginName)
-      const settings = getIncrementalReadingSettings(currentPluginName)
-      const queue = await buildIRQueue(dueCards, {
-        topicQuotaPercent: settings.topicQuotaPercent,
-        dailyLimit: settings.dailyLimit
-      })
-
-      const { deferredCount } = await deferIROverflow(dueCards, queue, { now: new Date() })
-      await loadReadingQueue()
-      return deferredCount
+      const result = await undoAutoPostponeBatch(batchId)
+      if (result.restored > 0) {
+        orca.notify("success", `已撤销自动顺延 ${result.restored} 条`, { title: "渐进阅读" })
+        setAutoPostponeLabel(null)
+        autoBatchIdRef.current = null
+      } else {
+        orca.notify("info", "没有可撤销的自动顺延（可能已被手动修改）", { title: "渐进阅读" })
+      }
     } catch (error) {
-      console.error("[IR Session Renderer] 溢出推后失败:", error)
-      throw error
+      console.error("[IR Session] 撤销自动推后失败:", error)
+      orca.notify("error", "撤销自动推后失败", { title: "渐进阅读" })
     }
   }
 
@@ -155,37 +185,47 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
       )
     }
 
-    if (errorMessage) {
+    if (!sessionReady) {
       return (
         <div style={{
           display: "flex",
           flexDirection: "column",
-          gap: "12px",
-          padding: "24px",
-          height: "100%",
-          justifyContent: "center",
+          gap: 16,
+          padding: 24,
           alignItems: "center",
-          textAlign: "center"
+          justifyContent: "center",
+          height: "100%"
         }}>
-          <div style={{ color: "var(--orca-color-danger-5)" }}>加载失败：{errorMessage}</div>
-          <Button variant="solid" onClick={loadReadingQueue}>
-            重试
-          </Button>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>开始渐进阅读</div>
+          <div style={{ fontSize: 13, color: "var(--orca-color-text-3)" }}>选择本次时间盒</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[10, 20, 30].map(mins => (
+              <Button
+                key={mins}
+                variant={mins === 20 ? "solid" : "outline"}
+                onClick={() => void loadReadingQueue({ timeBudgetMinutes: mins })}
+              >
+                {mins} 分钟
+              </Button>
+            ))}
+          </div>
         </div>
       )
     }
 
+    const loadFailed = collectResult?.status === "error"
     return (
       <SrsErrorBoundary componentName="渐进阅读会话" errorTitle="渐进阅读会话加载出错">
         <IncrementalReadingSessionDemo
           cards={cards}
           panelId={panelId}
           pluginName={pluginName}
-          dailyLimit={queueInfo.dailyLimit}
-          totalDueCount={queueInfo.totalDueCount}
-          overflowCount={queueInfo.overflowCount}
-          enableOverflowDefer={queueInfo.enableOverflowDefer}
-          onDeferOverflow={handleDeferOverflow}
+          timeBudgetMinutes={timeBudgetMinutes}
+          loadFailed={loadFailed}
+          loadErrorMessage={collectResult?.errorMessage ?? null}
+          onRetryLoad={() => void loadReadingQueue({ timeBudgetMinutes })}
+          autoPostponeLabel={autoPostponeLabel}
+          onUndoAutoPostpone={handleUndoAutoPostpone}
           onClose={handleClose}
         />
       </SrsErrorBoundary>

@@ -94,18 +94,25 @@ function readIRSourceMeta(block: Block) {
 
 /**
  * 收集所有带 #card 标签的块（只用于渐进阅读过滤）
+ *
+ * 查询失败会抛错，不得静默返回 [] 伪装成“没有卡片”。
+ * 仅当后端成功返回空结果时才返回空数组。
  */
 async function collectTaggedBlocks(pluginName: string): Promise<Block[]> {
   const possibleTags = ["card", "Card"]
   let tagged: Block[] = []
+  let querySucceeded = false
+  const errors: unknown[] = []
 
   for (const tag of possibleTags) {
     try {
       const result = await orca.invokeBackend("get-blocks-with-tags", [tag]) as Block[] | undefined
+      querySucceeded = true
       if (result && result.length > 0) {
         tagged = [...tagged, ...result]
       }
     } catch (error) {
+      errors.push(error)
       console.log(`[${pluginName}] collectTaggedBlocks: 查询标签 "${tag}" 失败:`, error)
     }
   }
@@ -120,67 +127,205 @@ async function collectTaggedBlocks(pluginName: string): Promise<Block[]> {
     console.log(`[${pluginName}] collectTaggedBlocks: 直接查询无结果，使用备用方案`)
     try {
       const allBlocks = await orca.invokeBackend("get-all-blocks") as Block[] || []
+      querySucceeded = true
       tagged = allBlocks.filter(block => {
         if (!block.refs || block.refs.length === 0) return false
         return block.refs.some(ref => ref.type === 2 && isCardTag(ref.alias))
       })
       console.log(`[${pluginName}] collectTaggedBlocks: 手动过滤找到 ${tagged.length} 个带 #card 标签的块`)
     } catch (error) {
+      errors.push(error)
       console.error(`[${pluginName}] collectTaggedBlocks 备用方案失败:`, error)
-      tagged = []
+      if (!querySucceeded) {
+        throw error instanceof Error
+          ? error
+          : new Error(`渐进阅读标签查询失败: ${String(error)}`)
+      }
     }
+  }
+
+  if (!querySucceeded && tagged.length === 0 && errors.length > 0) {
+    const first = errors[0]
+    throw first instanceof Error ? first : new Error(String(first))
   }
 
   return tagged
 }
 
 /**
+ * 优先用 IR 索引缩小候选，失败则全量标签扫描并重建索引
+ */
+async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
+  try {
+    const {
+      isIRIndexFresh,
+      loadIRIndex,
+      rebuildIRIndexFromCards
+    } = await import("./incremental-reading/irIndex")
+    const index = loadIRIndex(pluginName)
+    if (
+      index
+      && isIRIndexFresh(index)
+      && (index.topicIds.length > 0 || index.extractIds.length > 0)
+    ) {
+      const ids = [...index.topicIds, ...index.extractIds]
+      const blocks: Block[] = []
+      let missing = 0
+      for (const id of ids) {
+        try {
+          const block = await orca.invokeBackend("get-block", id) as Block | undefined
+          if (block) blocks.push(block)
+          else missing += 1
+        } catch {
+          missing += 1
+        }
+      }
+      // 索引大量失效时回退全量
+      if (missing > ids.length * 0.3) {
+        const full = await collectTaggedBlocks(pluginName)
+        rebuildIRIndexFromCards(
+          pluginName,
+          full
+            .map(b => {
+              const t = extractCardType(b)
+              if (t !== "topic" && t !== "extracts") return null
+              return { id: b.id, cardType: t as "topic" | "extracts" }
+            })
+            .filter((x): x is { id: DbId; cardType: "topic" | "extracts" } => x != null)
+        )
+        return full
+      }
+      return blocks
+    }
+  } catch (error) {
+    console.warn(`[${pluginName}] IR 索引路径失败，回退全量收集:`, error)
+  }
+
+  const full = await collectTaggedBlocks(pluginName)
+  try {
+    const { rebuildIRIndexFromCards } = await import("./incremental-reading/irIndex")
+    rebuildIRIndexFromCards(
+      pluginName,
+      full
+        .map(b => {
+          const t = extractCardType(b)
+          if (t !== "topic" && t !== "extracts") return null
+          return { id: b.id, cardType: t as "topic" | "extracts" }
+        })
+        .filter((x): x is { id: DbId; cardType: "topic" | "extracts" } => x != null)
+    )
+  } catch {
+    // 索引写入失败不影响收集
+  }
+  return full
+}
+
+/**
  * 基于给定块列表收集渐进阅读卡片（便于测试）
  */
+export type CollectIRCardsFromBlocksResult = {
+  cards: IRCard[]
+  failedCount: number
+}
+
 export async function collectIRCardsFromBlocks(
   blocks: Block[],
   pluginName: string = "srs-plugin"
 ): Promise<IRCard[]> {
+  const { cards } = await collectIRCardsFromBlocksDetailed(blocks, pluginName)
+  return cards
+}
+
+const COLLECT_CONCURRENCY = 8
+
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  async function run(): Promise<void> {
+    while (nextIndex < items.length) {
+      const current = nextIndex
+      nextIndex += 1
+      results[current] = await worker(items[current])
+    }
+  }
+
+  const runners = Array.from(
+    { length: Math.min(concurrency, Math.max(1, items.length)) },
+    () => run()
+  )
+  await Promise.all(runners)
+  return results
+}
+
+/**
+ * 收集到期卡片并报告失败计数（部分失败不等于空队列）
+ * 使用有限并发，避免顺序 N+1 阻塞首屏。
+ */
+export async function collectIRCardsFromBlocksDetailed(
+  blocks: Block[],
+  pluginName: string = "srs-plugin"
+): Promise<CollectIRCardsFromBlocksResult> {
   const todayStartTime = getDayStart(new Date()).getTime()
-  const results: IRCard[] = []
-
-  for (const block of blocks) {
+  const candidates = blocks.filter(block => {
     const cardType = extractCardType(block)
-    if (cardType !== "topic" && cardType !== "extracts") continue
+    return cardType === "topic" || cardType === "extracts"
+  })
 
+  let failedCount = 0
+  const mapped = await mapPool(candidates, COLLECT_CONCURRENCY, async (block) => {
     try {
-      await ensureIRState(block.id)
+      // 惰性迁移：属性明显缺失时 ensure，但始终以 load 结果为准（避免 ensure 默认值覆盖真实 due）
+      const props = block.properties ?? []
+      const missingCore = !props.some(p => p.name === "ir.priority") || !props.some(p => p.name === "ir.due")
+      if (missingCore) {
+        try {
+          await ensureIRState(block.id)
+        } catch (error) {
+          console.warn(`[${pluginName}] ensureIRState 跳过 #${block.id}:`, error)
+        }
+      }
+
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
       const dueDayStartTime = getDayStart(state.due).getTime()
       const sourceMeta = readIRSourceMeta(block)
+      if (dueDayStartTime > todayStartTime) return null
 
-      // 按“天”边界判断是否到期（包括新卡），确保排期生效。
-      if (dueDayStartTime <= todayStartTime) {
-        results.push({
-          id: block.id,
-          cardType,
-          priority: state.priority,
-          position: state.position,
-          due: state.due,
-          intervalDays: state.intervalDays,
-          postponeCount: state.postponeCount,
-          stage: state.stage,
-          lastAction: state.lastAction,
-          lastRead: state.lastRead,
-          readCount: state.readCount,
-          isNew,
-          resumeBlockId: state.resumeBlockId,
-          readingBreakpoint: state.readingBreakpoint ?? null,
-          ...sourceMeta
-        })
-      }
+      const cardType = extractCardType(block) as IRCardType
+      return {
+        id: block.id,
+        cardType,
+        priority: state.priority,
+        position: state.position,
+        due: state.due,
+        intervalDays: state.intervalDays,
+        postponeCount: state.postponeCount,
+        stage: state.stage,
+        lastAction: state.lastAction,
+        lastRead: state.lastRead,
+        readCount: state.readCount,
+        isNew,
+        resumeBlockId: state.resumeBlockId,
+        readingBreakpoint: state.readingBreakpoint ?? null,
+        ...sourceMeta
+      } satisfies IRCard
     } catch (error) {
+      failedCount += 1
       console.error(`[${pluginName}] collectIRCardsFromBlocks: 处理块 #${block.id} 失败:`, error)
+      return null
     }
-  }
+  })
 
-  return results
+  const cards: IRCard[] = []
+  for (const item of mapped) {
+    if (item) cards.push(item)
+  }
+  return { cards, failedCount }
 }
 
 /**
@@ -229,29 +374,43 @@ export async function collectAllIRCardsFromBlocks(
 
 /**
  * 收集到期的 Topic/Extract 卡片
+ *
+ * 失败时抛出错误，不得用空数组伪装成“暂无到期内容”。
  */
 export async function collectIRCards(pluginName: string = "srs-plugin"): Promise<IRCard[]> {
+  const detailed = await collectIRCardsDetailed(pluginName)
+  return detailed.cards
+}
+
+/**
+ * 收集到期卡片（含失败计数），支持有限并发读取以降低首屏阻塞。
+ */
+export async function collectIRCardsDetailed(
+  pluginName: string = "srs-plugin"
+): Promise<CollectIRCardsFromBlocksResult> {
   try {
-    const taggedBlocks = await collectTaggedBlocks(pluginName)
-    return await collectIRCardsFromBlocks(taggedBlocks, pluginName)
+    const taggedBlocks = await collectCandidateBlocks(pluginName)
+    return await collectIRCardsFromBlocksDetailed(taggedBlocks, pluginName)
   } catch (error) {
     console.error(`[${pluginName}] collectIRCards 失败:`, error)
     orca.notify("error", "渐进阅读卡片收集失败", { title: "渐进阅读" })
-    return []
+    throw error instanceof Error ? error : new Error(String(error))
   }
 }
 
 /**
  * 收集所有 Topic/Extract 卡片（不限到期状态）
+ *
+ * 失败时抛出错误，不得用空数组伪装成空库。
  */
 export async function collectAllIRCards(pluginName: string = "srs-plugin"): Promise<IRCard[]> {
   try {
-    const taggedBlocks = await collectTaggedBlocks(pluginName)
+    const taggedBlocks = await collectCandidateBlocks(pluginName)
     return await collectAllIRCardsFromBlocks(taggedBlocks, pluginName)
   } catch (error) {
     console.error(`[${pluginName}] collectAllIRCards 失败:`, error)
     orca.notify("error", "渐进阅读卡片收集失败", { title: "渐进阅读" })
-    return []
+    throw error instanceof Error ? error : new Error(String(error))
   }
 }
 
@@ -362,7 +521,8 @@ async function deferOverflowCards(
       lastAction: "autoPostpone",
       position: nextPosition,
       resumeBlockId: card.resumeBlockId,
-      readingBreakpoint: card.readingBreakpoint ?? null
+      readingBreakpoint: card.readingBreakpoint ?? null,
+      autoPostponeBatchId: null
     }))
   })
 
@@ -381,7 +541,8 @@ async function deferOverflowCards(
       lastAction: "autoPostpone",
       position: card.position,
       resumeBlockId: card.resumeBlockId,
-      readingBreakpoint: card.readingBreakpoint ?? null
+      readingBreakpoint: card.readingBreakpoint ?? null,
+      autoPostponeBatchId: null
     }))
   })
 

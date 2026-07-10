@@ -233,11 +233,6 @@ export async function createCloze(
   const maxClozeNumber = getMaxClozeNumberFromContent(block.content, pluginName)
   const nextClozeNumber = maxClozeNumber + 1
 
-  // 【关键】先检查是否有 #card 标签
-  const hasCardTagBefore = !!block.refs?.some(
-    ref => ref.type === 2 && isCardTag(ref.alias)
-  )
-
   try {
     // 构建新的 content 数组
     const newContent = buildNewContent(
@@ -268,71 +263,60 @@ export async function createCloze(
     )
 
     if (!hasCardTagAfter) {
-      try {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.insertTag",
-          null,
-          blockId,
-          "card",
-          await buildCardTagData(pluginName, blockId, "cloze")
-        )
-        console.log(`[${pluginName}] 已添加 #card 标签并设置 type=cloze`)
-        
-        // 确保 #card 标签块有属性定义（首次使用时自动初始化）
-        await ensureCardTagProperties(pluginName)
-      } catch (error) {
-        console.error(`[${pluginName}] 添加 #card 标签失败:`, error)
+      await orca.commands.invokeEditorCommand(
+        "core.editor.insertTag",
+        null,
+        blockId,
+        "card",
+        await buildCardTagData(pluginName, blockId, "cloze")
+      )
+      console.log(`[${pluginName}] 已添加 #card 标签并设置 type=cloze`)
+
+      // 确保 #card 标签块有属性定义（首次使用时自动初始化）
+      await ensureCardTagProperties(pluginName)
+    } else {
+      const cardRef = currentBlock.refs?.find(
+        ref => ref.type === 2 && isCardTag(ref.alias)
+      )
+      if (!cardRef) {
+        throw new Error("已有 #card 标签但无法读取其引用数据")
       }
-    } else if (!hasCardTagBefore) {
-      try {
-        const cardRef = currentBlock.refs?.find(
-          ref => ref.type === 2 && isCardTag(ref.alias)
-        )
-        if (cardRef) {
-          await orca.commands.invokeEditorCommand(
-            "core.editor.setRefData",
-            null,
-            cardRef,
-            [{ name: "type", value: "cloze" }]
-          )
-          console.log(`[${pluginName}] 已更新 #card 标签的 type=cloze`)
-        }
-      } catch (error) {
-        console.error(`[${pluginName}] 更新 #card 标签属性失败:`, error)
-      }
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setRefData",
+        null,
+        cardRef,
+        [{ name: "type", value: "cloze" }]
+      )
+      console.log(`[${pluginName}] 已更新 #card 标签的 type=cloze`)
     }
 
     // 自动加入复习队列
-    try {
-      const finalBlock = orca.state.blocks[blockId] as BlockWithRepr
+    const finalBlock = orca.state.blocks[blockId] as BlockWithRepr
 
-      // 设置 _repr
-      finalBlock._repr = {
-        type: "srs.cloze-card",
-        front: block.text || "",
-        back: "（填空卡）",
-        cardType: "cloze"
-      }
+    // 设置 _repr
+    finalBlock._repr = {
+      type: "srs.cloze-card",
+      front: block.text || "",
+      back: "（填空卡）",
+      cardType: "cloze"
+    }
 
-      // 获取块中所有的 cloze 编号
-      const clozeNumbers = getAllClozeNumbers(finalBlock.content, pluginName)
+    // 获取块中所有的 cloze 编号
+    const clozeNumbers = getAllClozeNumbers(finalBlock.content, pluginName)
 
-      // 设置 srs.isCard 属性
-      await orca.commands.invokeEditorCommand(
-        "core.editor.setProperties",
-        null,
-        [blockId],
-        [{ name: "srs.isCard", value: true, type: 4 }]
-      )
+    // 设置 srs.isCard 属性
+    await orca.commands.invokeEditorCommand(
+      "core.editor.setProperties",
+      null,
+      [blockId],
+      [{ name: "srs.isCard", value: true, type: 4 }]
+    )
 
-      // 为每个填空设置分天的初始 SRS 状态
-      for (let i = 0; i < clozeNumbers.length; i++) {
-        const clozeNumber = clozeNumbers[i]
-        const daysOffset = clozeNumber - 1
-        await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
-      }
-    } catch (error) {
-      console.error(`[${pluginName}] 自动加入复习队列失败:`, error)
+    // 为每个填空设置分天的初始 SRS 状态
+    for (let i = 0; i < clozeNumbers.length; i++) {
+      const clozeNumber = clozeNumbers[i]
+      const daysOffset = clozeNumber - 1
+      await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
     }
 
     // 显示成功通知

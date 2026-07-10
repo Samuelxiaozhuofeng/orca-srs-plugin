@@ -69,48 +69,109 @@ export async function createExtract(
     return null
   }
 
-  // 检查是否在同一块内选择
-  if (cursor.anchor.blockId !== cursor.focus.blockId) {
-    orca.notify("warn", "请在同一块内选择文本")
-    return null
-  }
-
-  // 检查是否有选中内容
-  if (cursor.anchor.offset === cursor.focus.offset && cursor.anchor.index === cursor.focus.index) {
-    orca.notify("warn", "请先选择要摘录的文本")
-    return null
-  }
-
-  // 检查是否在同一个 fragment 内（目前只支持单 fragment 选区）
-  if (cursor.anchor.index !== cursor.focus.index) {
-    orca.notify("warn", "请在同一段文本内选择（不支持跨样式选区）")
-    return null
-  }
-
   // 确保有 content 数组
   if (!block.content || block.content.length === 0) {
     orca.notify("warn", "块内容为空")
     return null
   }
 
-  // 获取选区对应的 fragment
-  const fragmentIndex = cursor.anchor.index
-  const fragment = block.content[fragmentIndex] as ContentFragment | undefined
-
-  if (!fragment || !fragment.v) {
-    orca.notify("warn", "无法获取选中的文本片段")
+  const { planExtractSelection, extractTextFromFragments } = await import("./incremental-reading/irRichExtract")
+  const plan = planExtractSelection(cursor)
+  if (!plan) {
+    orca.notify("warn", "请先选择要摘录的文本")
     return null
   }
 
-  // 计算选区在 fragment 内的位置
-  const startOffset = Math.min(cursor.anchor.offset, cursor.focus.offset)
-  const endOffset = Math.max(cursor.anchor.offset, cursor.focus.offset)
-  const selectedText = fragment.v.substring(startOffset, endOffset)
+  if (plan.mode === "cross_block") {
+    const {
+      buildCrossBlockSegments,
+      extractTextFromCrossBlockSegments,
+      resolveSiblingBlockChain
+    } = await import("./incremental-reading/irRichExtract")
 
+    const startBlock = orca.state.blocks?.[plan.startBlockId] as Block | undefined
+    const endBlock = orca.state.blocks?.[plan.endBlockId] as Block | undefined
+    if (!startBlock || !endBlock) {
+      orca.notify("warn", "跨块选区的块不存在")
+      return null
+    }
+
+    const parentId = startBlock.parent
+    if (!parentId || endBlock.parent !== parentId) {
+      orca.notify("warn", "跨块摘录目前仅支持同一父块下的相邻兄弟块")
+      return null
+    }
+
+    const parent = orca.state.blocks?.[parentId] as Block | undefined
+    const siblings = (parent?.children ?? []) as DbId[]
+    const chainIds = resolveSiblingBlockChain(plan.startBlockId, plan.endBlockId, siblings)
+    if (!chainIds || chainIds.length === 0) {
+      orca.notify("warn", "无法解析跨块选区路径")
+      return null
+    }
+
+    // 保证按选区方向排列
+    const orderedIds = plan.isForward ? chainIds : [...chainIds].reverse()
+    // plan 已归一化为 start→end 的阅读方向，chain 使用 siblings 升序后与 plan 对齐
+    const forwardIds = siblings.indexOf(plan.startBlockId) <= siblings.indexOf(plan.endBlockId)
+      ? chainIds
+      : [...chainIds].reverse()
+
+    const chain = forwardIds.map(id => {
+      const b = orca.state.blocks?.[id] as Block | undefined
+      return {
+        id,
+        content: (b?.content ?? []) as ContentFragment[]
+      }
+    })
+
+    const segments = buildCrossBlockSegments(plan, chain)
+    const selectedTextCross = extractTextFromCrossBlockSegments(segments).trim()
+    if (!selectedTextCross) {
+      orca.notify("warn", "跨块选区为空")
+      return null
+    }
+
+    // 摘录挂到选区起点块下，保持来源就近
+    const attachBlock = orca.state.blocks?.[plan.startBlockId] as Block | undefined
+    if (!attachBlock) {
+      orca.notify("error", "无法定位摘录挂载块")
+      return null
+    }
+
+    void orderedIds
+    return await createExtractFromText({
+      cursor,
+      pluginName,
+      block: attachBlock,
+      blockId: plan.startBlockId,
+      selectedText: selectedTextCross
+    })
+  }
+
+  const selectedText = extractTextFromFragments(block.content as ContentFragment[], plan)
   if (!selectedText || selectedText.trim() === "") {
     orca.notify("warn", "请先选择要摘录的文本")
     return null
   }
+
+  return await createExtractFromText({
+    cursor,
+    pluginName,
+    block,
+    blockId,
+    selectedText
+  })
+}
+
+async function createExtractFromText(args: {
+  cursor: CursorData
+  pluginName: string
+  block: Block
+  blockId: DbId
+  selectedText: string
+}): Promise<{ blockId: DbId; extractBlockId: DbId } | null> {
+  const { cursor, pluginName, block, blockId, selectedText } = args
 
   try {
     await orca.commands.invokeEditorCommand(
@@ -146,6 +207,7 @@ export async function createExtract(
 
   // 2) 为摘录块添加/更新 #card 标签属性
   const inheritedPriority = await resolveInheritedPriority(block)
+  const topic = findNearestTopic(block)
 
   try {
     const extractBlock = orca.state.blocks?.[extractBlockId] as Block | undefined
@@ -177,11 +239,24 @@ export async function createExtract(
     return null
   }
 
-  // 3) 初始化渐进阅读状态（ir.*）
+  // 3) 初始化渐进阅读状态（ir.*）并写入来源 Topic
   try {
     await ensureIRState(extractBlockId)
-    // Extract 继承父 Topic 的 ir.priority（单一真相）
     await updatePriority(extractBlockId, inheritedPriority)
+    if (topic) {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setProperties",
+        null,
+        [extractBlockId],
+        [{ name: "ir.sourceTopicId", value: topic.id, type: 3 }]
+      )
+    }
+    try {
+      const { upsertIRIndexId } = await import("./incremental-reading/irIndex")
+      upsertIRIndexId(pluginName, extractBlockId, "extracts")
+    } catch {
+      // 索引失败不影响主流程
+    }
   } catch (error) {
     console.error(`[${pluginName}] 初始化渐进阅读状态失败:`, error)
     orca.notify("error", `初始化渐进阅读状态失败: ${error}`, { title: "渐进阅读" })

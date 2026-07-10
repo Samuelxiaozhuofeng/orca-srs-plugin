@@ -41,6 +41,10 @@ export type IRLastAction =
   | "postpone"
   | "autoPostpone"
   | "complete"
+  | "extract"
+  | "refine"
+  | "itemize"
+  | "next"
 
 export type IRReadingBreakpointSelection = {
   rootBlockId: DbId
@@ -74,6 +78,10 @@ export type IRState = {
    * 阅读断点：用于恢复上次阅读现场
    */
   readingBreakpoint?: IRReadingBreakpoint | null
+  /**
+   * 自动推后批次 ID（用于撤销；null 表示不属于任何自动推后批次）
+   */
+  autoPostponeBatchId?: string | null
 }
 
 const DEFAULT_PRIORITY = DEFAULT_IR_PRIORITY
@@ -389,7 +397,8 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
     lastAction: "init",
     position: null,
     resumeBlockId: null,
-    readingBreakpoint: null
+    readingBreakpoint: null,
+    autoPostponeBatchId: null
   }
 }
 
@@ -402,11 +411,12 @@ const buildDefaultState = (priority: number, lastRead: Date | null): IRState => 
  */
 export async function loadIRState(blockId: DbId): Promise<IRState> {
   const now = new Date()
-  const initial = buildDefaultState(DEFAULT_PRIORITY, null)
 
   try {
     const block = await getBlockCached(blockId)
-    if (!block) return initial
+    if (!block) {
+      throw new Error(`读取渐进阅读状态失败：块 #${blockId} 不存在`)
+    }
 
     const rawPriority = parseNumber(readProp(block, "ir.priority"), DEFAULT_PRIORITY)
     const lastRead = parseDate(readProp(block, "ir.lastRead"), null)
@@ -419,6 +429,7 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
     const position = parseOptionalNumber(readProp(block, "ir.position"))
     const resumeBlockId = parseOptionalNumber(readProp(block, "ir.resumeBlockId"))
     const readingBreakpoint = parseReadingBreakpoint(readProp(block, "ir.breakpoint"))
+    const autoPostponeBatchId = parseString(readProp(block, "ir.autoPostponeBatchId"), null)
 
     const priority = normalizePriority(rawPriority)
     const cardType = extractCardType(block)
@@ -442,12 +453,14 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
       lastAction,
       position,
       resumeBlockId,
-      readingBreakpoint
+      readingBreakpoint,
+      autoPostponeBatchId
     }
   } catch (error) {
     console.error("[IR] 读取渐进阅读状态失败:", error)
     orca.notify("error", "读取渐进阅读状态失败", { title: "渐进阅读" })
-    return initial
+    // 不得用默认状态伪装成功，否则收集器会把失败当成“无到期”
+    throw error instanceof Error ? error : new Error(String(error))
   }
 }
 
@@ -467,7 +480,8 @@ export async function saveIRState(blockId: DbId, state: IRState): Promise<void> 
       { name: "ir.lastAction", value: state.lastAction, type: 2 },
       { name: "ir.position", value: state.position ?? null, type: 3 },
       { name: "ir.resumeBlockId", value: state.resumeBlockId ?? null, type: 3 },
-      { name: "ir.breakpoint", value: serializeReadingBreakpoint(state.readingBreakpoint), type: 2 }
+      { name: "ir.breakpoint", value: serializeReadingBreakpoint(state.readingBreakpoint), type: 2 },
+      { name: "ir.autoPostponeBatchId", value: state.autoPostponeBatchId ?? null, type: 2 }
     ]
 
     await orca.commands.invokeEditorCommand(
@@ -511,6 +525,47 @@ export async function deleteIRState(blockId: DbId): Promise<void> {
   } catch (error) {
     console.error("[IR] 删除渐进阅读状态失败:", error)
     orca.notify("error", "删除渐进阅读状态失败", { title: "渐进阅读" })
+    throw error
+  }
+}
+
+const IR_SCHEDULING_PROPERTY_NAMES = new Set([
+  "ir.priority",
+  "ir.lastRead",
+  "ir.readCount",
+  "ir.due",
+  "ir.intervalDays",
+  "ir.postponeCount",
+  "ir.stage",
+  "ir.lastAction",
+  "ir.position",
+  "ir.resumeBlockId",
+  "ir.breakpoint",
+  "ir.autoPostponeBatchId"
+])
+
+/**
+ * 结束块的渐进阅读调度身份，同时保留 ir.source* 等来源追溯字段。
+ */
+export async function deleteIRSchedulingState(blockId: DbId): Promise<void> {
+  try {
+    const block = await getBlockCached(blockId)
+    const propertyNames = block?.properties
+      ?.filter(prop => IR_SCHEDULING_PROPERTY_NAMES.has(prop.name))
+      .map(prop => prop.name) ?? []
+
+    if (propertyNames.length === 0) return
+
+    await orca.commands.invokeEditorCommand(
+      "core.editor.deleteProperties",
+      null,
+      [blockId],
+      propertyNames
+    )
+    invalidateIrBlockCache(blockId)
+  } catch (error) {
+    console.error("[IR] 删除渐进阅读调度状态失败:", error)
+    orca.notify("error", "结束渐进阅读调度失败", { title: "渐进阅读" })
     throw error
   }
 }
@@ -604,7 +659,8 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
         due,
         position: nextPosition,
         resumeBlockId: state.resumeBlockId,
-        readingBreakpoint: state.readingBreakpoint ?? null
+        readingBreakpoint: state.readingBreakpoint ?? null,
+        autoPostponeBatchId: state.autoPostponeBatchId ?? null
       }
       await saveIRState(blockId, normalizedState)
       return normalizedState
@@ -629,18 +685,26 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
     const cardType = block ? extractCardType(block) : "topic"
     const baseIntervalDays = growIntervalDays(cardType, prev.intervalDays)
     const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, { isNew: isNewCard(prev) })
+
+    // 真实动作推进 ir.stage（不阻止用户操作）
+    let nextStage = prev.stage
+    if (cardType === "topic" && prev.stage === "topic.preview") {
+      nextStage = "topic.work"
+    }
+
     const nextState: IRState = {
       priority: prev.priority,
       lastRead: now,
       readCount: prev.readCount + 1,
       intervalDays: schedule.intervalDays,
       postponeCount: prev.postponeCount,
-      stage: prev.stage,
-      lastAction: "read",
+      stage: nextStage,
+      lastAction: "next",
       due: schedule.due,
       position: prev.position,
       resumeBlockId: prev.resumeBlockId,
-      readingBreakpoint: prev.readingBreakpoint ?? null
+      readingBreakpoint: prev.readingBreakpoint ?? null,
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -680,7 +744,8 @@ export async function markAsReadWithPriority(
       due: schedule.due,
       position: prev.position,
       resumeBlockId: prev.resumeBlockId,
-      readingBreakpoint: prev.readingBreakpoint ?? null
+      readingBreakpoint: prev.readingBreakpoint ?? null,
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -692,7 +757,9 @@ export async function markAsReadWithPriority(
 }
 
 /**
- * 更新优先级并重算 due（基于当前时间）
+ * 更新优先级并按比例修正已有间隔（不无条件清空间隔增长成果）
+ *
+ * 新卡（init/migrate）仍按基础间隔 + 分散抖动初始化，避免新 Extract 失去排队延迟。
  */
 export async function updatePriority(blockId: DbId, newPriority: number): Promise<IRState> {
   try {
@@ -701,37 +768,57 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
     const normalizedPriority = normalizePriority(newPriority)
     const block = await getBlockCached(blockId)
     const cardType = block ? extractCardType(block) : "topic"
-    const baseIntervalDays = clampIntervalDays(
-      cardType,
-      computeBaseIntervalDays(block, normalizedPriority)
-    )
-    const shouldApplyQueueDelay = Boolean(
-      block
-        && cardType === "extracts"
-        && isNewCard(prev)
-        && (prev.lastAction === "init" || prev.lastAction === "migrate")
-    )
-    const queueDelayDays = shouldApplyQueueDelay
-      ? await computeNewExtractQueueDelayDays(blockId, block!, baseIntervalDays)
-      : 0
 
-    const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
-      isNew: isNewCard(prev),
-      queueDelayDays
-    })
+    const isFreshInit = isNewCard(prev) && (prev.lastAction === "init" || prev.lastAction === "migrate")
+    if (isFreshInit) {
+      const baseIntervalDays = clampIntervalDays(
+        cardType,
+        computeBaseIntervalDays(block, normalizedPriority)
+      )
+      const shouldApplyQueueDelay = Boolean(block && cardType === "extracts")
+      const queueDelayDays = shouldApplyQueueDelay
+        ? await computeNewExtractQueueDelayDays(blockId, block!, baseIntervalDays)
+        : 0
+      const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
+        isNew: true,
+        queueDelayDays
+      })
+      const nextState: IRState = {
+        priority: normalizedPriority,
+        lastRead: prev.lastRead,
+        readCount: prev.readCount,
+        intervalDays: schedule.intervalDays,
+        postponeCount: prev.postponeCount,
+        stage: prev.stage,
+        lastAction: "priority",
+        due: schedule.due,
+        position: prev.position,
+        resumeBlockId: prev.resumeBlockId,
+        readingBreakpoint: prev.readingBreakpoint ?? null,
+        autoPostponeBatchId: prev.autoPostponeBatchId ?? null
+      }
+      await saveIRState(blockId, nextState)
+      return nextState
+    }
 
+    // 比例修正：保留已增长的间隔，factor 限制在 0.6..1.6
+    const oldP = prev.priority
+    const rawFactor = 1 + (oldP - normalizedPriority) / 200
+    const factor = Math.min(1.6, Math.max(0.6, rawFactor))
+    const nextIntervalDays = clampIntervalDays(cardType, Math.max(1, prev.intervalDays * factor))
     const nextState: IRState = {
       priority: normalizedPriority,
       lastRead: prev.lastRead,
       readCount: prev.readCount,
-      intervalDays: schedule.intervalDays,
+      intervalDays: nextIntervalDays,
       postponeCount: prev.postponeCount,
       stage: prev.stage,
       lastAction: "priority",
-      due: schedule.due,
+      due: computeDueFromIntervalDays(now, nextIntervalDays),
       position: prev.position,
       resumeBlockId: prev.resumeBlockId,
-      readingBreakpoint: prev.readingBreakpoint ?? null
+      readingBreakpoint: prev.readingBreakpoint ?? null,
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
     }
 
     await saveIRState(blockId, nextState)
@@ -826,7 +913,8 @@ export async function updateReadingBreakpoint(
     const nextState: IRState = {
       ...prev,
       resumeBlockId: nextResumeBlockId ?? null,
-      readingBreakpoint: nextBreakpoint
+      readingBreakpoint: nextBreakpoint,
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
     }
 
     await saveIRState(blockId, nextState)
@@ -841,9 +929,12 @@ export async function updateReadingBreakpoint(
 /**
  * 推后（Postpone）：写回 due/intervalDays/postponeCount/lastAction
  *
- * 天数按数值优先级自动决定（高优先级推后更短，低优先级推后更长）
+ * @param days 可选指定天数；未提供时按优先级自动决定
  */
-export async function postpone(blockId: DbId): Promise<{ state: IRState; days: number }> {
+export async function postpone(
+  blockId: DbId,
+  days?: number
+): Promise<{ state: IRState; days: number }> {
   try {
     const prev = await loadIRState(blockId)
     const now = new Date()
@@ -851,24 +942,35 @@ export async function postpone(blockId: DbId): Promise<{ state: IRState; days: n
     const cardType = block ? extractCardType(block) : "topic"
 
     const irCardType = cardType === "extracts" ? "extracts" : "topic"
-    const days = getPostponeDays(irCardType, prev.priority)
-    const nextIntervalDays = clampIntervalDays(cardType, days)
+    const resolvedDays = typeof days === "number" && Number.isFinite(days) && days > 0
+      ? days
+      : getPostponeDays(irCardType, prev.priority)
+    const nextIntervalDays = clampIntervalDays(cardType, resolvedDays)
 
     const nextState: IRState = {
       ...prev,
       intervalDays: nextIntervalDays,
       postponeCount: prev.postponeCount + 1,
       lastAction: "postpone",
-      due: computeDueFromIntervalDays(now, nextIntervalDays)
+      due: computeDueFromIntervalDays(now, nextIntervalDays),
+      // 用户手动推后不属于自动批次
+      autoPostponeBatchId: null
     }
 
     await saveIRState(blockId, nextState)
-    return { state: nextState, days }
+    return { state: nextState, days: nextIntervalDays }
   } catch (error) {
     console.error("[IR] 推后失败:", error)
     orca.notify("error", "推后失败", { title: "渐进阅读" })
     throw error
   }
+}
+
+/** 推后三档 → 固定天数（会话菜单） */
+export function postponeDaysForChoice(choice: "soon" | "week" | "later"): number {
+  if (choice === "soon") return 1.5
+  if (choice === "week") return 4
+  return 10
 }
 
 /**

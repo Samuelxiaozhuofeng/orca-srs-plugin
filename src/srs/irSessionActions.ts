@@ -10,6 +10,7 @@ import {
   updatePriority as updatePriorityInternal
 } from "./incrementalReadingStorage"
 import { deleteCardSrsData } from "./storage"
+import { removeIRIndexId } from "./incremental-reading/irIndex"
 
 export { markAsRead, markAsReadWithPriority }
 export { postpone }
@@ -27,7 +28,10 @@ const shiftPriority = (current: number, direction: "forward" | "back"): number =
 /**
  * 完成渐进阅读：移除 #card 标签并清理 SRS/IR 状态
  */
-export async function completeIRCard(blockId: DbId): Promise<void> {
+export async function completeIRCard(
+  blockId: DbId,
+  pluginName = "orca-srs"
+): Promise<void> {
   try {
     await deleteCardSrsData(blockId)
     await deleteIRState(blockId)
@@ -37,6 +41,7 @@ export async function completeIRCard(blockId: DbId): Promise<void> {
       blockId,
       "card"
     )
+    removeIRIndexId(pluginName, blockId)
   } catch (error) {
     console.error("[IR] 读完处理失败:", error)
     orca.notify("error", "读完处理失败", { title: "渐进阅读" })

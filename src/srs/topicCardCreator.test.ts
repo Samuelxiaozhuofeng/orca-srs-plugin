@@ -38,9 +38,14 @@ vi.mock("./incrementalReadingStorage", () => ({
   })),
 }))
 
+vi.mock("./incremental-reading/irIndex", () => ({
+  upsertIRIndexId: vi.fn(),
+}))
+
 import { createTopicCard } from "./topicCardCreator"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { ensureIRState } from "./incrementalReadingStorage"
+import { upsertIRIndexId } from "./incremental-reading/irIndex"
 
 function makeBlock(partial: Partial<Block> & { id: DbId }): Block {
   return {
@@ -85,6 +90,7 @@ describe("topicCardCreator", () => {
     )
     expect(ensureCardTagProperties).toHaveBeenCalledWith("orca-srs")
     expect(ensureIRState).toHaveBeenCalledWith(blockId)
+    expect(upsertIRIndexId).toHaveBeenCalledWith("orca-srs", blockId, "topic")
     expect(mockOrca.notify).toHaveBeenCalledWith("success", "已创建 Topic 卡片", { title: "渐进阅读" })
   })
 

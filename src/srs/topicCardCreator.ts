@@ -12,6 +12,7 @@ import { ensureIRState } from "./incrementalReadingStorage"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
 import { buildCardTagData } from "./cardTagDataBuilder"
+import { upsertIRIndexId } from "./incremental-reading/irIndex"
 
 export async function createTopicCard(
   cursor: CursorData,
@@ -61,6 +62,7 @@ export async function createTopicCard(
 
   try {
     await ensureIRState(blockId)
+    upsertIRIndexId(pluginName, blockId, "topic")
   } catch (error) {
     console.error(`[${pluginName}] 初始化渐进阅读状态失败:`, error)
     orca.notify("error", `初始化渐进阅读状态失败: ${error}`, { title: "渐进阅读" })

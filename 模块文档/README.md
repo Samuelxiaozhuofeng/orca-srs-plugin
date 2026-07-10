@@ -60,9 +60,13 @@
    - 列表卡的创建、调度与辅助预览规则
    - 关键文件：`src/srs/listCardCreator.ts`、`src/srs/cardCollector.ts`、`src/components/ListCardReviewRenderer.tsx`
 
+12. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)**
+   - 面向 SuperMemo 风格低压阅读的分阶段优化计划
+   - 覆盖会话交互、断点、快捷键、过载治理、知识漏斗和验收指标
+
 ### 协作与流程
 
-12. **[仓库贡献指南.md](仓库贡献指南.md)** ⭐ 新增
+13. **[仓库贡献指南.md](仓库贡献指南.md)** ⭐ 新增
    - 构建要求与模块文档同步规范
    - 关键文件：`AGENTS.md`、`package.json`
 
