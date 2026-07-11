@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend ownership, hooks, state, accessibility, and verification index"}
+{"file":".trellis/spec/srs/index.md","reason":"SRS architecture, Orca boundary, storage, and test index"}
+{"file":".trellis/spec/srs/storage-and-testing.md","reason":"Persisted state compatibility and explicit Orca mock requirements"}
+{"file":".trellis/tasks/07-11-epub-ir-import/research/current-implementation.md","reason":"Evidence map across source EPUB plugin and current SRS Book IR implementation"}

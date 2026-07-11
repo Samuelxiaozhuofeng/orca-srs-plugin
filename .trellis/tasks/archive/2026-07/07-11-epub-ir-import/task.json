@@ -1,0 +1,32 @@
+{
+  "id": "epub-ir-import",
+  "name": "epub-ir-import",
+  "title": "整合 EPUB 导入并优化渐进阅读建书流程",
+  "description": "Plan the migration of orca-epub into the SRS plugin while preserving plain-note import and adding a reliable progressive-reading handoff.",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "EPUB import, Orca outline persistence, and progressive-reading book initialization",
+  "package": null,
+  "priority": "P2",
+  "creator": "samdagreat",
+  "assignee": "samdagreat",
+  "createdAt": "2026-07-11",
+  "completedAt": "2026-07-11",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/importers/epub/",
+    "src/components/epub-import/",
+    "src/srs/bookIRCreator.ts",
+    "src/srs/registry/contextMenuRegistry.tsx",
+    "/Users/samdagreat/Documents/vibe coding/orca-epub/src/"
+  ],
+  "notes": "Planning-only handoff. No legacy orca-epub book migration is required because the feature has not entered production.",
+  "meta": {}
+}
