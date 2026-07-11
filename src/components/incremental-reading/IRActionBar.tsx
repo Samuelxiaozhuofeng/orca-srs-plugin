@@ -1,5 +1,5 @@
 /**
- * 底部固定动作栏：下一篇、推后、更多（主界面 ≤3 高频动作）
+ * 底部固定动作栏：下一篇、摘录|记住、推后、更多
  */
 
 const { Button } = orca.components
@@ -28,34 +28,33 @@ export default function IRActionBar({
   const style = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   return (
-    <div style={{
-      display: "flex",
-      gap: "8px",
-      flexWrap: "wrap",
-      position: "sticky",
-      bottom: 0,
-      paddingTop: "8px",
-      background: "var(--orca-color-bg-1)",
-      borderTop: "1px solid var(--orca-color-border-1)"
-    }}>
-      <Button variant="solid" onClick={onNext} style={style}>
-        下一篇
-      </Button>
-      {isTopic ? (
-        <Button variant="plain" onClick={onExtract} style={style}>
-          摘录
+    <div className="ir-reading__footer" role="toolbar" aria-label="阅读动作">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Button variant="solid" onClick={onNext} style={style} title="下一篇 Enter">
+          下一篇
         </Button>
-      ) : (
-        <Button variant="plain" onClick={onItemize} style={style}>
-          记住
+        {isTopic ? (
+          <Button variant="plain" onClick={onExtract} style={style} title="摘录 Alt+X">
+            摘录
+          </Button>
+        ) : (
+          <Button variant="plain" onClick={onItemize} style={style} title="记住 Alt+Z">
+            记住
+          </Button>
+        )}
+        <Button variant="plain" onClick={onPostpone} style={style} title="推后 Shift+Enter">
+          推后
         </Button>
-      )}
-      <Button variant="plain" onClick={onPostpone} style={style}>
-        推后
-      </Button>
-      <Button variant="outline" onClick={onMore} style={style}>
-        {moreOpen ? "收起" : "更多"}
-      </Button>
+        <Button
+          variant="outline"
+          onClick={onMore}
+          style={style}
+          aria-expanded={moreOpen}
+          title="更多操作"
+        >
+          {moreOpen ? "收起" : "更多"}
+        </Button>
+      </div>
     </div>
   )
 }

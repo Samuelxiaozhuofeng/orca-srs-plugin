@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { IRCard } from "./incrementalReadingCollector"
-import { calculateIRStats, getIRDateGroup, groupIRCardsByDate } from "./incrementalReadingManagerUtils"
+import { calculateIRStats, getIRDateGroup, groupIRCardsByDate, openIRManager } from "./incrementalReadingManagerUtils"
 
 function createCard(id: number, due: Date, isNew: boolean): IRCard {
   return {
@@ -25,6 +25,10 @@ function createCard(id: number, due: Date, isNew: boolean): IRCard {
 }
 
 describe("incrementalReadingManagerUtils", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    delete (globalThis as any).orca
+  })
   it("should group cards by date with expected order", () => {
     const now = new Date("2026-01-19T14:30:00")
     const cards: IRCard[] = [
@@ -66,5 +70,82 @@ describe("incrementalReadingManagerUtils", () => {
     expect(stats.overdueCount).toBe(1)
     expect(stats.todayCount).toBe(1)
     expect(stats.upcoming7Count).toBe(2)
+  })
+
+  it("should navigate to srs.ir-workspace custom panel when openIRManager is called", async () => {
+    const notifyCalls: any[] = []
+    const goToCalls: any[] = []
+
+    function handleGoTo(view: string, viewArgs: any, panelId: string) {
+      goToCalls.push({ view, viewArgs, panelId })
+    }
+    function handleNotify(level: string, message: string, opts?: any) {
+      notifyCalls.push({ level, message, opts })
+    }
+
+    (globalThis as any).orca = {
+      state: {
+        activePanel: "panel-main",
+        panels: { id: "root", direction: "row", children: [], height: 800 }
+      },
+      nav: {
+        goTo: handleGoTo
+      },
+      notify: handleNotify
+    } as any
+
+    await openIRManager("test-plugin")
+
+    expect(goToCalls).toHaveLength(1)
+    expect(goToCalls[0]).toEqual({
+      view: "srs.ir-workspace",
+      viewArgs: { mode: "library", pluginName: "test-plugin" },
+      panelId: "panel-main"
+    })
+    expect(notifyCalls).toContainEqual({
+      level: "success",
+      message: "渐进阅读管理面板已打开",
+      opts: { title: "渐进阅读" }
+    })
+  })
+
+  it("should switch focus and dispatch library mode when srs.ir-workspace panel already exists", async () => {
+    const switchFocusCalls: string[] = []
+    vi.stubGlobal("window", { dispatchEvent: vi.fn() })
+    vi.stubGlobal("CustomEvent", class {
+      detail: unknown
+      constructor(_type: string, init: { detail: unknown }) {
+        this.detail = init.detail
+      }
+    })
+
+    function handleSwitchFocus(panelId: string) {
+      switchFocusCalls.push(panelId)
+    }
+
+    (globalThis as any).orca = {
+      state: {
+        activePanel: "panel-main",
+        panels: {
+          id: "root",
+          direction: "row",
+          height: 800,
+          children: [{
+            id: "panel-existing",
+            view: "srs.ir-workspace",
+            viewArgs: { mode: "reading", pluginName: "test-plugin" },
+            viewState: {}
+          }]
+        }
+      },
+      nav: {
+        switchFocusTo: handleSwitchFocus
+      },
+      notify: () => {}
+    } as any
+
+    await openIRManager("test-plugin")
+
+    expect(switchFocusCalls).toEqual(["panel-existing"])
   })
 })

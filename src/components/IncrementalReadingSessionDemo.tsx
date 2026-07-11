@@ -1,8 +1,6 @@
 /**
  * 渐进阅读会话组件（兼容入口）
- *
- * 实际 UI 已拆分至 components/incremental-reading/*，
- * 本文件保留导出路径兼容，避免继续膨胀为超大组件。
+ * 统一委托 IRWorkspaceShell / IRSessionShell，避免维护第二套 UI
  */
 
 import type { IRCard } from "../srs/incrementalReadingCollector"

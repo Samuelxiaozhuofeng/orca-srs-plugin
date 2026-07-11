@@ -384,7 +384,7 @@ export function registerCommands(
       const { openIRManager } = await import("../../main")
       await openIRManager()
     },
-    "SRS: 渐进阅读管理面板"
+    "SRS: 渐进阅读（资料库）"
   )
 
   // 渐进阅读自动标签开关

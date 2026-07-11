@@ -1,5 +1,6 @@
 /**
- * 渐进阅读会话外壳：生命周期、布局、快捷键、断点与主动作
+ * 渐进阅读会话外壳：生命周期、快捷键、断点与主动作
+ * 布局：单滚动正文 + 底部固定动作栏；可嵌入统一工作区
  */
 
 import type { CursorData, DbId } from "../../orca.d.ts"
@@ -46,6 +47,12 @@ export type IRSessionShellProps = {
   autoPostponeLabel?: string | null
   onUndoAutoPostpone?: () => void
   onClose?: () => void
+  /** 嵌入工作区时隐藏顶层关闭，改由工作区顶栏处理 */
+  embedded?: boolean
+  onBackToLibrary?: () => void
+  onQueueSnapshot?: (snapshot: { queue: IRCard[]; currentIndex: number }) => void
+  onOpenQueue?: () => void
+  onCloseHandlerChange?: (handler: (() => Promise<void>) | null) => void
 }
 
 export default function IRSessionShell({
@@ -58,7 +65,12 @@ export default function IRSessionShell({
   onRetryLoad,
   autoPostponeLabel = null,
   onUndoAutoPostpone,
-  onClose
+  onClose,
+  embedded = false,
+  onBackToLibrary,
+  onQueueSnapshot,
+  onOpenQueue,
+  onCloseHandlerChange
 }: IRSessionShellProps) {
   const [queue, setQueue] = useState<IRCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -116,11 +128,16 @@ export default function IRSessionShell({
     setQueue(cards)
     setCurrentIndex(0)
     setProgress(createSessionProgress(cards.length))
+    setShowSummary(false)
     if (!startedRef.current && cards.length > 0) {
       startedRef.current = true
       metricsRef.current.record("session.start", cards.length)
     }
   }, [cards])
+
+  useEffect(() => {
+    onQueueSnapshot?.({ queue, currentIndex })
+  }, [queue, currentIndex, onQueueSnapshot])
 
   useEffect(() => {
     if (!currentCard) return
@@ -131,7 +148,17 @@ export default function IRSessionShell({
   useEffect(() => {
     const onSel = () => {
       const sel = window.getSelection()
-      setSelectionActive(Boolean(sel && !sel.isCollapsed && sel.toString().trim()))
+      const container = currentCardContainerRef.current
+      const belongsToCurrentCard = Boolean(
+        container &&
+        sel?.anchorNode &&
+        sel.focusNode &&
+        container.contains(sel.anchorNode) &&
+        container.contains(sel.focusNode)
+      )
+      setSelectionActive(Boolean(
+        belongsToCurrentCard && sel && !sel.isCollapsed && sel.toString().trim()
+      ))
     }
     document.addEventListener("selectionchange", onSel)
     return () => document.removeEventListener("selectionchange", onSel)
@@ -141,7 +168,6 @@ export default function IRSessionShell({
     const onAction = (event: Event) => {
       const detail = (event as CustomEvent).detail as { action?: string; panelId?: string } | undefined
       if (!detail?.action || showSummary || loadFailed) return
-      // 多面板隔离：无 panelId 时忽略（避免全局误触）
       if (detail.panelId !== panelId) return
       if (detail.action === "next") void handleNext()
       if (detail.action === "postpone") setPostponeOpen(true)
@@ -261,7 +287,6 @@ export default function IRSessionShell({
       return
     }
     try {
-      // 转化成功会移除 IR 调度字段，因此必须先把最后断点写完。
       await breakpoint.flush()
       const result = await convertExtractToItem({
         extractId: currentCard.id,
@@ -335,6 +360,12 @@ export default function IRSessionShell({
     finishClose()
   }
 
+  useEffect(() => {
+    if (!onCloseHandlerChange) return
+    onCloseHandlerChange(() => handleClose())
+    return () => onCloseHandlerChange(null)
+  }, [onCloseHandlerChange, handleClose])
+
   useIRShortcuts({
     enabled: !showSummary && !loadFailed,
     panelId,
@@ -361,15 +392,16 @@ export default function IRSessionShell({
 
   if (loadFailed) {
     return (
-      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+      <div className="ir-reading__launch" role="alert">
         <div style={{ color: "var(--orca-color-danger-5)" }}>
           数据读取失败{loadErrorMessage ? `：${loadErrorMessage}` : ""}
         </div>
-        <div style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
-          这不是“暂无到期内容”。
-        </div>
+        <div className="ir-reading__launch-hint">这不是「暂无到期内容」。</div>
         {onRetryLoad ? <Button variant="solid" onClick={onRetryLoad}>重试</Button> : null}
-        {onClose ? <Button variant="plain" onClick={onClose}>关闭</Button> : null}
+        {embedded && onBackToLibrary ? (
+          <Button variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
+        ) : null}
+        {!embedded && onClose ? <Button variant="plain" onClick={onClose}>关闭</Button> : null}
       </div>
     )
   }
@@ -381,11 +413,14 @@ export default function IRSessionShell({
     }
     metricsRef.current.record("session.end", progress.completed)
     return (
-      <IRSessionSummary
-        metrics={metricsRef.current.getSnapshot()}
-        autoPostponeCount={0}
-        onClose={handleClose}
-      />
+      <div className="ir-reading">
+        <IRSessionSummary
+          metrics={metricsRef.current.getSnapshot()}
+          autoPostponeCount={0}
+          onClose={embedded ? onBackToLibrary : () => void handleClose()}
+          closeLabel={embedded ? "返回资料库" : "关闭"}
+        />
+      </div>
     )
   }
 
@@ -394,14 +429,7 @@ export default function IRSessionShell({
   return (
     <div
       ref={sessionRootRef}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        padding: 16,
-        height: "100%",
-        overflow: "auto"
-      }}
+      className="ir-reading"
       onMouseUp={breakpoint.scheduleCapture}
       onKeyUp={breakpoint.scheduleCapture}
     >
@@ -410,18 +438,25 @@ export default function IRSessionShell({
         remainingTimeLabel={timer.formattedRemaining}
         autoPostponeLabel={autoPostponeLabel}
         onUndoAutoPostpone={onUndoAutoPostpone}
-        onClose={handleClose}
+        onClose={embedded ? undefined : () => void handleClose()}
+        onOpenQueue={onOpenQueue}
+        compact={embedded}
       />
 
       {breakpointError ? (
-        <div style={{ color: "var(--orca-color-danger-5)", fontSize: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="ir-reading__banner ir-reading__banner--error" role="alert">
           <span>断点保存失败：{breakpointError}</span>
-          <Button variant="plain" onClick={() => void breakpoint.flush().then(() => setBreakpointError(null)).catch(() => undefined)}>
+          <Button
+            variant="plain"
+            onClick={() => void breakpoint.flush().then(() => setBreakpointError(null)).catch(() => undefined)}
+          >
             重试保存
           </Button>
-          <Button variant="outline" onClick={() => void handleClose(true)}>
-            强制关闭
-          </Button>
+          {embedded ? (
+            <Button variant="outline" onClick={() => void handleClose(true)}>强制结束</Button>
+          ) : (
+            <Button variant="outline" onClick={() => void handleClose(true)}>强制关闭</Button>
+          )}
         </div>
       ) : null}
 
@@ -431,21 +466,24 @@ export default function IRSessionShell({
         isWorking={isWorking}
         onExtract={handleExtract}
         onCloze={handleItemize}
+        containerRef={currentCardContainerRef}
       />
 
-      <IRReadingPane
-        cardId={currentCard.id}
-        panelId={panelId}
-        cardType={currentCard.cardType}
-        previewBlockId={previewBlockId}
-        containerRef={currentCardContainerRef}
-        previewContainerRef={previewContainerRef}
-        onBreadcrumbClick={(id) => {
-          const next = id === currentCard.id ? null : (previewBlockId === id ? null : id)
-          setPreviewBlockId(next)
-        }}
-        sourceLabel={sourceLabel}
-      />
+      <div className="ir-reading__scroll">
+        <IRReadingPane
+          cardId={currentCard.id}
+          panelId={panelId}
+          cardType={currentCard.cardType}
+          previewBlockId={previewBlockId}
+          containerRef={currentCardContainerRef}
+          previewContainerRef={previewContainerRef}
+          onBreadcrumbClick={(id) => {
+            const next = id === currentCard.id ? null : (previewBlockId === id ? null : id)
+            setPreviewBlockId(next)
+          }}
+          sourceLabel={sourceLabel}
+        />
+      </div>
 
       <IRPostponeMenu
         open={postponeOpen}
@@ -455,16 +493,8 @@ export default function IRSessionShell({
       />
 
       {moreOpen ? (
-        <div style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          padding: 8,
-          border: "1px solid var(--orca-color-border-1)",
-          borderRadius: 8,
-          background: "var(--orca-color-bg-2)"
-        }}>
-          <span style={{ fontSize: 12, color: "var(--orca-color-text-3)", alignSelf: "center" }}>
+        <div className="ir-reading__more" style={{ padding: "6px 12px" }}>
+          <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
             重要性（当前 {priorityToTier(currentCard.priority)}）
           </span>
           <Button variant="plain" onClick={() => void handlePriorityTier("low")}>低</Button>
@@ -472,7 +502,7 @@ export default function IRSessionShell({
           <Button variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
           <ConfirmBox
             text="确认归档？将清除 IR 身份并保留正文。"
-            onConfirm={async (_e, close) => {
+            onConfirm={async (_e: unknown, close: () => void) => {
               await handleArchive()
               close()
             }}
@@ -481,6 +511,9 @@ export default function IRSessionShell({
               <Button variant="plain" onClick={open}>归档</Button>
             )}
           </ConfirmBox>
+          {embedded && onBackToLibrary ? (
+            <Button variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
+          ) : null}
         </div>
       ) : null}
 

@@ -1,5 +1,5 @@
 /**
- * 会话标题栏：已完成进度、剩余时间、关闭
+ * 会话状态条：进度、剩余时间、自动顺延
  */
 
 import { formatSessionProgress } from "../../srs/incremental-reading/irSessionProgress"
@@ -13,6 +13,8 @@ type Props = {
   autoPostponeLabel?: string | null
   onUndoAutoPostpone?: () => void
   onClose?: () => void
+  onOpenQueue?: () => void
+  compact?: boolean
 }
 
 export default function IRSessionHeader({
@@ -20,44 +22,46 @@ export default function IRSessionHeader({
   remainingTimeLabel,
   autoPostponeLabel,
   onUndoAutoPostpone,
-  onClose
+  onClose,
+  onOpenQueue,
+  compact = false
 }: Props) {
   return (
-    <div style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: "12px",
-      flexWrap: "wrap"
-    }}>
-      <div style={{ fontSize: "13px", color: "var(--orca-color-text-2)" }}>
+    <div className="ir-reading__banner ir-reading__banner--info">
+      <span>
         已完成 {formatSessionProgress(progress)}
-        <span style={{ marginLeft: "8px", color: "var(--orca-color-text-3)" }}>
+        <span style={{ marginLeft: 8, color: "var(--orca-color-text-3)" }}>
           剩余 {progress.remaining}
         </span>
         {remainingTimeLabel ? (
-          <span style={{ marginLeft: "12px" }}>⏱ {remainingTimeLabel}</span>
+          <span style={{ marginLeft: 12 }}>
+            <i className="ti ti-clock" aria-hidden="true" /> {remainingTimeLabel}
+          </span>
         ) : null}
-      </div>
-      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-        {autoPostponeLabel ? (
-          <>
-            <span style={{ fontSize: "12px", color: "var(--orca-color-text-3)" }}>
-              {autoPostponeLabel}
-            </span>
-            {onUndoAutoPostpone ? (
-              <Button variant="plain" onClick={onUndoAutoPostpone}>
-                撤销
-              </Button>
-            ) : null}
-          </>
-        ) : null}
-        {onClose ? (
-          <Button variant="plain" onClick={onClose}>
-            关闭
-          </Button>
-        ) : null}
-      </div>
+      </span>
+      <span style={{ flex: 1 }} />
+      {autoPostponeLabel ? (
+        <>
+          <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
+            {autoPostponeLabel}
+          </span>
+          {onUndoAutoPostpone ? (
+            <Button variant="plain" onClick={onUndoAutoPostpone}>
+              撤销
+            </Button>
+          ) : null}
+        </>
+      ) : null}
+      {onOpenQueue ? (
+        <Button variant="plain" onClick={onOpenQueue} title="查看队列">
+          队列
+        </Button>
+      ) : null}
+      {!compact && onClose ? (
+        <Button variant="plain" onClick={onClose}>
+          关闭
+        </Button>
+      ) : null}
     </div>
   )
 }

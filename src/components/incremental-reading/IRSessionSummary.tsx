@@ -10,9 +10,15 @@ type Props = {
   metrics: IRSessionMetricsSnapshot
   autoPostponeCount?: number
   onClose?: () => void
+  closeLabel?: string
 }
 
-export default function IRSessionSummary({ metrics, autoPostponeCount = 0, onClose }: Props) {
+export default function IRSessionSummary({
+  metrics,
+  autoPostponeCount = 0,
+  onClose,
+  closeLabel = "关闭"
+}: Props) {
   return (
     <div style={{
       display: "flex",
@@ -33,7 +39,7 @@ export default function IRSessionSummary({ metrics, autoPostponeCount = 0, onClo
         ) : null}
       </div>
       {onClose ? (
-        <Button variant="solid" onClick={onClose}>关闭</Button>
+        <Button variant="solid" onClick={onClose}>{closeLabel}</Button>
       ) : null}
     </div>
   )

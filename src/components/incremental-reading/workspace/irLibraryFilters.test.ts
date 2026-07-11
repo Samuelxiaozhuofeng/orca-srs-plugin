@@ -1,0 +1,174 @@
+import { describe, expect, it } from "vitest"
+import type { IRCard } from "../../../srs/incrementalReadingCollector"
+import {
+  collectIRSourceBookOptions,
+  createDefaultIRLibraryFilters,
+  filterAndSortIRCards,
+  groupSortedIRLibraryCards,
+  hasActiveIRLibraryFilters,
+  summarizeIRLibrary
+} from "./irLibraryFilters"
+
+function createCard(partial: Partial<IRCard> & { id: number }): IRCard {
+  return {
+    id: partial.id,
+    cardType: partial.cardType ?? "extracts",
+    priority: partial.priority ?? 50,
+    position: partial.position ?? null,
+    due: partial.due ?? new Date("2026-01-19T08:00:00"),
+    intervalDays: partial.intervalDays ?? 2,
+    postponeCount: partial.postponeCount ?? 0,
+    stage: partial.stage ?? "extract.raw",
+    lastAction: partial.lastAction ?? "init",
+    lastRead: partial.lastRead ?? null,
+    readCount: partial.readCount ?? 0,
+    isNew: partial.isNew ?? false,
+    resumeBlockId: partial.resumeBlockId ?? null,
+    sourceBookId: partial.sourceBookId ?? null,
+    sourceBookTitle: partial.sourceBookTitle ?? null,
+    batchId: partial.batchId ?? null,
+    batchCreatedAt: partial.batchCreatedAt ?? null
+  }
+}
+
+describe("irLibraryFilters", () => {
+  const now = new Date("2026-01-19T14:30:00")
+
+  const cards: IRCard[] = [
+    createCard({
+      id: 1,
+      cardType: "topic",
+      due: new Date("2026-01-18T08:00:00"),
+      priority: 80,
+      stage: "topic.work",
+      sourceBookId: 10,
+      sourceBookTitle: "Book A",
+      readCount: 3
+    }),
+    createCard({
+      id: 2,
+      cardType: "extracts",
+      due: new Date("2026-01-19T08:00:00"),
+      priority: 20,
+      stage: "extract.raw",
+      sourceBookId: 10,
+      sourceBookTitle: "Book A",
+      readCount: 1
+    }),
+    createCard({
+      id: 3,
+      cardType: "extracts",
+      due: new Date("2026-01-25T08:00:00"),
+      priority: 50,
+      stage: "extract.refined",
+      isNew: true,
+      sourceBookId: 20,
+      sourceBookTitle: "Book B",
+      readCount: 0
+    }),
+    createCard({
+      id: 4,
+      cardType: "topic",
+      due: new Date("2026-02-01T08:00:00"),
+      priority: 50,
+      stage: "topic.preview",
+      readCount: 2
+    })
+  ]
+
+  it("detects active filters", () => {
+    expect(hasActiveIRLibraryFilters(createDefaultIRLibraryFilters())).toBe(false)
+    expect(hasActiveIRLibraryFilters({
+      ...createDefaultIRLibraryFilters(),
+      query: "book"
+    })).toBe(true)
+  })
+
+  it("filters by card type, due status and importance", () => {
+    const filters = {
+      ...createDefaultIRLibraryFilters(),
+      cardType: "topic" as const,
+      dueStatus: "overdue" as const,
+      importance: "high" as const
+    }
+    const result = filterAndSortIRCards(cards, filters, { now })
+    expect(result.map(c => c.id)).toEqual([1])
+  })
+
+  it("filters by source book and stage", () => {
+    const filters = {
+      ...createDefaultIRLibraryFilters(),
+      sourceBook: "20",
+      stage: "extract.refined"
+    }
+    const result = filterAndSortIRCards(cards, filters, { now })
+    expect(result.map(c => c.id)).toEqual([3])
+  })
+
+  it("filters by text query against title map and book", () => {
+    const filters = {
+      ...createDefaultIRLibraryFilters(),
+      query: "intro"
+    }
+    const result = filterAndSortIRCards(cards, filters, {
+      now,
+      titleMap: { "1": "Intro chapter", "2": "Other" }
+    })
+    expect(result.map(c => c.id)).toEqual([1])
+
+    const byBook = filterAndSortIRCards(cards, {
+      ...createDefaultIRLibraryFilters(),
+      query: "book b"
+    }, { now })
+    expect(byBook.map(c => c.id)).toEqual([3])
+  })
+
+  it("sorts by priority descending", () => {
+    const filters = {
+      ...createDefaultIRLibraryFilters(),
+      sortBy: "priority" as const,
+      sortDir: "desc" as const
+    }
+    const result = filterAndSortIRCards(cards, filters, { now })
+    // 优先级 80 → 50/50 → 20；同分时 id 也随 sortDir 降序
+    expect(result.map(c => c.id)).toEqual([1, 4, 3, 2])
+  })
+
+  it("preserves the selected sort order inside date groups", () => {
+    const sameDayCards = [
+      createCard({ id: 10, due: new Date("2026-01-19T08:00:00"), priority: 20 }),
+      createCard({ id: 11, due: new Date("2026-01-19T09:00:00"), priority: 90 })
+    ]
+    const sorted = filterAndSortIRCards(sameDayCards, {
+      ...createDefaultIRLibraryFilters(),
+      sortBy: "priority",
+      sortDir: "desc"
+    }, { now })
+
+    const groups = groupSortedIRLibraryCards(sorted, now)
+    expect(groups[0].cards.map(card => card.id)).toEqual([11, 10])
+  })
+
+  it("collects source book options", () => {
+    const options = collectIRSourceBookOptions(cards)
+    expect(options).toEqual([
+      { id: "10", title: "Book A", count: 2 },
+      { id: "20", title: "Book B", count: 1 }
+    ])
+  })
+
+  it("summarizes library totals", () => {
+    const filtered = filterAndSortIRCards(cards, {
+      ...createDefaultIRLibraryFilters(),
+      cardType: "topic"
+    }, { now })
+    const summary = summarizeIRLibrary(cards, filtered, now)
+    expect(summary.total).toBe(4)
+    expect(summary.filtered).toBe(2)
+    expect(summary.overdue).toBe(1)
+    expect(summary.today).toBe(1)
+    expect(summary.newCount).toBe(1)
+    expect(summary.topics).toBe(2)
+    expect(summary.extracts).toBe(2)
+  })
+})

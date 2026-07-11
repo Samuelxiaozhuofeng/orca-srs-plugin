@@ -1,5 +1,8 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "./incrementalReadingCollector"
+import { IR_WORKSPACE_PANEL_TYPE } from "./registry/panelTypes"
+import { dispatchIRWorkspaceMode } from "../components/incremental-reading/workspace/irWorkspaceLaunch"
+import { findPanelIdByView } from "./registry/panelTreeUtils"
 
 /**
  * 渐进阅读管理面板工具函数
@@ -197,17 +200,19 @@ export async function openIRManager(pluginName: string): Promise<void> {
       return
     }
 
-    const blockId = await getOrCreateIncrementalReadingManagerBlock(pluginName)
-
     const panels = orca.state.panels
-    for (const [panelId, panel] of Object.entries(panels)) {
-      if (panel.viewArgs?.blockId === blockId) {
-        orca.nav.switchFocusTo(panelId)
-        return
-      }
+    const existingPanelId = findPanelIdByView(panels, IR_WORKSPACE_PANEL_TYPE)
+    if (existingPanelId) {
+      dispatchIRWorkspaceMode(existingPanelId, "library")
+      orca.nav.switchFocusTo(existingPanelId)
+      return
     }
 
-    orca.nav.goTo("block", { blockId }, activePanelId)
+    orca.nav.goTo(
+      IR_WORKSPACE_PANEL_TYPE,
+      { mode: "library", pluginName },
+      activePanelId
+    )
     orca.notify("success", "渐进阅读管理面板已打开", { title: "渐进阅读" })
   } catch (error) {
     console.error(`[${pluginName}] 打开渐进阅读管理面板失败:`, error)

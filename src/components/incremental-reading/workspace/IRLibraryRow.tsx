@@ -1,0 +1,95 @@
+/**
+ * 资料库高密度行
+ */
+
+import type { DbId } from "../../../orca.d.ts"
+import type { IRCard } from "../../../srs/incrementalReadingCollector"
+import {
+  formatIRCardTypeLabel,
+  formatIRDueLabel,
+  formatIRImportanceLabel
+} from "./irLibraryFilters"
+
+const { Button } = orca.components
+
+type Props = {
+  card: IRCard
+  title: string
+  selected: boolean
+  canAdvanceLearn: boolean
+  isAdvancing: boolean
+  now: Date
+  onToggleSelect: (cardId: DbId) => void
+  onOpenDetails: (cardId: DbId) => void
+  onStartReading: (cardId: DbId) => void
+  onAdvanceLearn: (cardId: DbId) => void
+}
+
+export default function IRLibraryRow({
+  card,
+  title,
+  selected,
+  canAdvanceLearn,
+  isAdvancing,
+  now,
+  onToggleSelect,
+  onOpenDetails,
+  onStartReading,
+  onAdvanceLearn
+}: Props) {
+  const checkboxId = `ir-card-check-${card.id}`
+  const typeLabel = formatIRCardTypeLabel(card.cardType)
+  const dueLabel = formatIRDueLabel(card, now)
+  const importanceLabel = formatIRImportanceLabel(card.priority)
+  const source = card.sourceBookTitle?.trim() || "—"
+
+  return (
+    <div className={`ir-library-row${selected ? " ir-library-row--selected" : ""}`}>
+      <div className="ir-library-row__check">
+        <input
+          id={checkboxId}
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(card.id)}
+          aria-label={`选择 ${title}`}
+        />
+      </div>
+      <div className="ir-library-row__main">
+        <button
+          type="button"
+          className="ir-library-row__title"
+          onClick={() => onOpenDetails(card.id)}
+          title="查看详情"
+        >
+          {title}
+        </button>
+        <div className="ir-library-row__meta">
+          <span>{typeLabel}</span>
+          <span>到期 {dueLabel}</span>
+          <span>阶段 {card.stage}</span>
+          <span>重要 {importanceLabel}</span>
+          <span>来源 {source}</span>
+        </div>
+      </div>
+      <div className="ir-library-row__actions">
+        <Button
+          variant="outline"
+          onClick={() => onStartReading(card.id)}
+          title={canAdvanceLearn ? "提前到今天并开始阅读" : "以该卡开始阅读"}
+        >
+          {canAdvanceLearn ? "提前阅读" : "开始阅读"}
+        </Button>
+        {canAdvanceLearn ? (
+          <Button
+            variant="plain"
+            onClick={() => onAdvanceLearn(card.id)}
+            style={isAdvancing ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+            title="仅提前到期到今天"
+          >
+            {isAdvancing ? "处理中" : "提前到期"}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
+}

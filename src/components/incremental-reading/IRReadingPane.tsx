@@ -1,10 +1,11 @@
 /**
- * 当前内容、可选上下文预览
+ * 正文优先阅读区：弱化面包屑，上下文可折叠，单一滚动由外层承担
  */
 
 import type { DbId } from "../../orca.d.ts"
 import IncrementalReadingBreadcrumb from "../IncrementalReadingBreadcrumb"
 
+const { useState } = window.React
 const { Block: OrcaBlock } = orca.components
 
 type Props = {
@@ -16,6 +17,8 @@ type Props = {
   previewContainerRef: { current: HTMLDivElement | null }
   onBreadcrumbClick: (id: DbId) => void
   sourceLabel?: string | null
+  /** 外层已提供滚动时，正文不再自建 overflow */
+  nestedScroll?: boolean
 }
 
 export default function IRReadingPane({
@@ -26,51 +29,49 @@ export default function IRReadingPane({
   containerRef,
   previewContainerRef,
   onBreadcrumbClick,
-  sourceLabel
+  sourceLabel,
+  nestedScroll = false
 }: Props) {
   const shouldShowPreview = Boolean(previewBlockId && previewBlockId !== cardId)
+  const [contextOpen, setContextOpen] = useState(true)
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, minHeight: 0 }}>
-      <div style={{
-        padding: "10px 12px",
-        border: "1px solid var(--orca-color-border-1)",
-        borderRadius: "8px",
-        background: "var(--orca-color-bg-2)"
-      }}>
-        <IncrementalReadingBreadcrumb
-          blockId={cardId}
-          panelId={panelId}
-          cardType={cardType}
-          onItemClick={onBreadcrumbClick}
-        />
-        {sourceLabel ? (
-          <div style={{ marginTop: 6, fontSize: 12, color: "var(--orca-color-text-3)" }}>
-            {sourceLabel}
-          </div>
+    <div className="ir-reading__inner">
+      <div className="ir-reading__meta">
+        <div className="ir-reading__meta-line">
+          <IncrementalReadingBreadcrumb
+            blockId={cardId}
+            panelId={panelId}
+            cardType={cardType}
+            onItemClick={onBreadcrumbClick}
+          />
+        </div>
+        {sourceLabel ? <span className="ir-reading__meta-line">{sourceLabel}</span> : null}
+        {shouldShowPreview ? (
+          <button
+            type="button"
+            className="ir-reading__context-toggle"
+            aria-expanded={contextOpen}
+            onClick={() => setContextOpen((v: boolean) => !v)}
+          >
+            {contextOpen ? "收起上下文" : "展开上下文"}
+          </button>
         ) : null}
       </div>
 
-      {shouldShowPreview ? (
-        <div style={{
-          border: "1px solid var(--orca-color-border-1)",
-          borderRadius: "8px",
-          padding: "12px",
-          background: "var(--orca-color-bg-2)"
-        }} ref={previewContainerRef}>
-          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)", marginBottom: 8 }}>上下文</div>
+      {shouldShowPreview && contextOpen ? (
+        <div className="ir-reading__context" ref={previewContainerRef}>
           <OrcaBlock panelId={panelId} blockId={previewBlockId!} blockLevel={0} indentLevel={0} />
         </div>
-      ) : null}
+      ) : (
+        <div ref={previewContainerRef} style={{ display: "none" }} />
+      )}
 
-      <div style={{
-        flex: 1,
-        border: "1px solid var(--orca-color-border-1)",
-        borderRadius: "8px",
-        padding: "12px",
-        background: "var(--orca-color-bg-1)",
-        overflow: "auto"
-      }} ref={containerRef}>
+      <div
+        className="ir-reading__body"
+        ref={containerRef}
+        style={nestedScroll ? { overflow: "auto", flex: 1, minHeight: 0 } : undefined}
+      >
         <OrcaBlock panelId={panelId} blockId={cardId} blockLevel={0} indentLevel={0} />
       </div>
     </div>
