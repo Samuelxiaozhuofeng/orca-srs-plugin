@@ -35,7 +35,7 @@ export default function IncrementalReadingManagerPanel(props: RendererProps) {
   } = props
 
   const [pluginName, setPluginName] = useState("orca-srs")
-  const [initialMode] = useState(() => consumePendingIRWorkspaceMode(panelId, "library"))
+  const [initialMode] = useState(() => consumePendingIRWorkspaceMode(panelId, blockId, "library"))
 
   useEffect(() => {
     void (async () => {

@@ -1,8 +1,5 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRCard } from "./incrementalReadingCollector"
-import { IR_WORKSPACE_PANEL_TYPE } from "./registry/panelTypes"
-import { dispatchIRWorkspaceMode } from "../components/incremental-reading/workspace/irWorkspaceLaunch"
-import { findPanelIdByView } from "./registry/panelTreeUtils"
 
 /**
  * 渐进阅读管理面板工具函数
@@ -189,35 +186,6 @@ export async function cleanupIncrementalReadingManagerBlock(pluginName: string):
   }
 
   await orca.plugins.removeData(pluginName, STORAGE_KEY)
-}
-
-export async function openIRManager(pluginName: string): Promise<void> {
-  try {
-    const activePanelId = orca.state.activePanel
-
-    if (!activePanelId) {
-      orca.notify("warn", "当前没有可用的面板", { title: "渐进阅读" })
-      return
-    }
-
-    const panels = orca.state.panels
-    const existingPanelId = findPanelIdByView(panels, IR_WORKSPACE_PANEL_TYPE)
-    if (existingPanelId) {
-      dispatchIRWorkspaceMode(existingPanelId, "library")
-      orca.nav.switchFocusTo(existingPanelId)
-      return
-    }
-
-    orca.nav.goTo(
-      IR_WORKSPACE_PANEL_TYPE,
-      { mode: "library", pluginName },
-      activePanelId
-    )
-    orca.notify("success", "渐进阅读管理面板已打开", { title: "渐进阅读" })
-  } catch (error) {
-    console.error(`[${pluginName}] 打开渐进阅读管理面板失败:`, error)
-    orca.notify("error", "打开渐进阅读管理面板失败", { title: "渐进阅读" })
-  }
 }
 
 async function resolveBlock(blockId: DbId) {

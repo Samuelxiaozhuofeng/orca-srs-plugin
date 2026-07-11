@@ -1,6 +1,6 @@
 /**
- * 渐进阅读会话渲染器（兼容入口）
- * 实际 UI 统一为 IRWorkspaceShell，默认进入资料库；可切到专注阅读
+ * 渐进阅读原生块面板渲染器
+ * 实际 UI 统一为 IRWorkspaceShell，阅读入口默认进入专注阅读
  */
 
 import type { DbId } from "../orca.d.ts"
@@ -35,7 +35,7 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
   } = props
 
   const [pluginName, setPluginName] = useState("orca-srs")
-  const [initialMode] = useState(() => consumePendingIRWorkspaceMode(panelId, "reading"))
+  const [initialMode] = useState(() => consumePendingIRWorkspaceMode(panelId, blockId, "reading"))
 
   useEffect(() => {
     void (async () => {

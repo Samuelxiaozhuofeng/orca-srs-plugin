@@ -37,13 +37,8 @@ import { startRecentDeckWatcher, stopRecentDeckWatcher } from "./srs/recentDeckM
 import {
   cleanupIncrementalReadingManagerBlock
 } from "./srs/incrementalReadingManagerUtils"
-import {
-  dispatchIRWorkspaceMode
-} from "./components/incremental-reading/workspace/irWorkspaceLaunch"
 import type { IRWorkspaceMode } from "./components/incremental-reading/workspace/irWorkspaceTypes"
-import { registerPanels, unregisterPanels } from "./srs/registry/panels"
-import { IR_WORKSPACE_PANEL_TYPE } from "./srs/registry/panelTypes"
-import { findPanelIdByView } from "./srs/registry/panelTreeUtils"
+import { openIRWorkspace } from "./srs/incremental-reading/irWorkspacePanelLaunch"
 
 // 插件全局状态
 let pluginName: string
@@ -81,7 +76,6 @@ export async function load(_name: string) {
   registerRenderers(pluginName)
   registerConverters(pluginName)
   registerContextMenu(pluginName)
-  registerPanels(pluginName)
   startRecentDeckWatcher(pluginName)
 
   try {
@@ -91,7 +85,7 @@ export async function load(_name: string) {
     console.warn(`[${pluginName}] 注册渐进阅读默认快捷键失败:`, error)
   }
 
-  console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器、右键菜单、自定义 Panel 已注册`)
+  console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器、右键菜单已注册`)
 
   // 根据设置决定是否启动渐进阅读自动标记
   try {
@@ -125,7 +119,6 @@ export async function unload() {
   stopAutoMarkExtract(pluginName)
   unregisterCommands(pluginName)
   unregisterUIComponents(pluginName)
-  unregisterPanels(pluginName)
   unregisterRenderers(pluginName)
   unregisterConverters(pluginName)
   unregisterContextMenu(pluginName)
@@ -249,7 +242,7 @@ export function getPluginName(): string {
 
 /**
  * 启动渐进阅读会话
- * 使用自定义 Panel 打开
+ * 使用原生 block 面板打开 srs.ir-session 虚拟块
  *
  * @param openInCurrentPanel - 是否在当前面板打开
  */
@@ -258,51 +251,11 @@ async function startIncrementalReadingSession(
   workspaceMode: IRWorkspaceMode = "reading"
 ) {
   try {
-    const activePanelId = orca.state.activePanel
-
-    if (!activePanelId) {
-      orca.notify("warn", "当前没有可用的面板", { title: "渐进阅读" })
-      return
-    }
-
-    const panels = orca.state.panels
-    const existingPanelId = findPanelIdByView(panels, IR_WORKSPACE_PANEL_TYPE)
-    if (existingPanelId) {
-      dispatchIRWorkspaceMode(existingPanelId, workspaceMode)
-      orca.nav.switchFocusTo(existingPanelId)
-      return
-    }
-
-    if (openInCurrentPanel) {
-      orca.nav.goTo(
-        IR_WORKSPACE_PANEL_TYPE,
-        { mode: workspaceMode, pluginName },
-        activePanelId
-      )
-      setTimeout(() => dispatchIRWorkspaceMode(activePanelId, workspaceMode), 0)
-      orca.notify("success", "渐进阅读面板已打开", { title: "渐进阅读" })
-      console.log(`[${pluginName}] 渐进阅读已在当前面板启动，面板ID: ${activePanelId}`)
-      return
-    }
-
-    const rightPanelId = orca.nav.addTo(activePanelId, "right", {
-      view: IR_WORKSPACE_PANEL_TYPE,
-      viewArgs: { mode: workspaceMode, pluginName },
-      viewState: {}
+    await openIRWorkspace({
+      pluginName,
+      mode: workspaceMode,
+      openInCurrentPanel
     })
-
-    if (!rightPanelId) {
-      orca.notify("error", "无法创建侧边面板", { title: "渐进阅读" })
-      return
-    }
-
-    setTimeout(() => {
-      dispatchIRWorkspaceMode(rightPanelId, workspaceMode)
-      orca.nav.switchFocusTo(rightPanelId)
-    }, 100)
-
-    orca.notify("success", "渐进阅读面板已在右侧打开", { title: "渐进阅读" })
-    console.log(`[${pluginName}] 渐进阅读已启动，面板ID: ${rightPanelId}`)
   } catch (error) {
     console.error(`[${pluginName}] 启动渐进阅读失败:`, error)
     orca.notify("error", `启动渐进阅读失败: ${error}`, { title: "渐进阅读" })
