@@ -25,3 +25,24 @@ Vitest runs in the Node environment with global test APIs. Use `describe`/`it`, 
 ## Commit & Pull Request Guidelines
 
 Follow the history's conventional prefixes, such as `feat:`, `fix:`, `refactor:`, and `docs:`, followed by a concise imperative summary. Keep commits scoped. Pull requests should explain behavior changes, list verification commands, link relevant issues or OpenSpec changes, and include screenshots for UI changes. Update the matching file in `模块文档/` and its README index whenever behavior or workflows change.
+<!-- TRELLIS:START -->
+# Trellis Instructions
+
+These instructions are for AI assistants working in this project.
+
+This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+
+- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
+- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `.trellis/workspace/` — per-developer journals and session traces
+- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+
+If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+
+If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
+- `.agents/skills/` — reusable Trellis skills
+- `.codex/agents/` — optional custom subagents
+
+Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+
+<!-- TRELLIS:END -->
