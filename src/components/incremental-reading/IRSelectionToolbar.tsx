@@ -78,15 +78,15 @@ export default function IRSelectionToolbar({
       onMouseDown={(event: React.MouseEvent) => event.preventDefault()}
     >
       {isTopic ? (
-        <Button variant="solid" style={style} onClick={onExtract} title="创建摘录">
+        <Button tabIndex={0} variant="solid" style={style} onClick={isWorking ? undefined : onExtract} aria-disabled={isWorking} title="创建摘录">
           摘录 Alt+X
         </Button>
       ) : null}
-      <Button variant="plain" style={style} onClick={onCloze} title="制成 Cloze">
+      <Button tabIndex={0} variant="plain" style={style} onClick={isWorking ? undefined : onCloze} aria-disabled={isWorking} title="制成 Cloze">
         Cloze Alt+Z
       </Button>
       {onQA ? (
-        <Button variant="plain" style={style} onClick={onQA} title="制成问答">
+        <Button tabIndex={0} variant="plain" style={style} onClick={isWorking ? undefined : onQA} aria-disabled={isWorking} title="制成问答">
           Q&A
         </Button>
       ) : null}

@@ -4,6 +4,9 @@ import {
   collectIRSourceBookOptions,
   createDefaultIRLibraryFilters,
   filterAndSortIRCards,
+  formatIRCardTypeLabel,
+  formatIRStageLabel,
+  getIRDueTone,
   groupSortedIRLibraryCards,
   hasActiveIRLibraryFilters,
   summarizeIRLibrary
@@ -170,5 +173,19 @@ describe("irLibraryFilters", () => {
     expect(summary.newCount).toBe(1)
     expect(summary.topics).toBe(2)
     expect(summary.extracts).toBe(2)
+  })
+
+  it("formats internal card metadata for the library UI", () => {
+    expect(formatIRCardTypeLabel("topic")).toBe("主题")
+    expect(formatIRCardTypeLabel("extracts")).toBe("摘录")
+    expect(formatIRStageLabel("topic.preview")).toBe("预览")
+    expect(formatIRStageLabel("custom.stage")).toBe("custom.stage")
+  })
+
+  it("maps due groups to stable visual tones", () => {
+    expect(getIRDueTone(cards[0], now)).toBe("overdue")
+    expect(getIRDueTone(cards[1], now)).toBe("today")
+    expect(getIRDueTone(cards[2], now)).toBe("new")
+    expect(getIRDueTone(cards[3], now)).toBe("upcoming")
   })
 })

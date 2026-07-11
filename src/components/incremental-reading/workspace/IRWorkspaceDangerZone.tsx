@@ -23,6 +23,7 @@ export default function IRWorkspaceDangerZone({ isResetting, onReset }: Props) {
       >
         {(openConfirm) => (
           <Button
+            tabIndex={0}
             variant="outline"
             onClick={openConfirm}
             style={isResetting ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}

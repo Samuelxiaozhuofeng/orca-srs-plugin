@@ -35,9 +35,11 @@ export default function IRQueueHealthBar({
         >
           {(open) => (
             <Button
+              tabIndex={0}
               variant="plain"
-              onClick={open}
-              style={isDeferring ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+              onClick={isDeferring ? undefined : open}
+              aria-disabled={isDeferring}
+              className={isDeferring ? "ir-button--busy" : undefined}
             >
               {isDeferring ? "处理中…" : "推后溢出"}
             </Button>

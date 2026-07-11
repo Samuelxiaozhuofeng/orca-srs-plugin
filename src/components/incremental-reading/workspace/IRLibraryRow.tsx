@@ -7,10 +7,10 @@ import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import {
   formatIRCardTypeLabel,
   formatIRDueLabel,
-  formatIRImportanceLabel
+  formatIRImportanceLabel,
+  formatIRStageLabel,
+  getIRDueTone
 } from "./irLibraryFilters"
-
-const { Button } = orca.components
 
 type Props = {
   card: IRCard
@@ -41,6 +41,9 @@ export default function IRLibraryRow({
   const typeLabel = formatIRCardTypeLabel(card.cardType)
   const dueLabel = formatIRDueLabel(card, now)
   const importanceLabel = formatIRImportanceLabel(card.priority)
+  const importanceTone = importanceLabel === "高" ? "high" : importanceLabel === "中" ? "medium" : "low"
+  const stageLabel = formatIRStageLabel(card.stage)
+  const dueTone = getIRDueTone(card, now)
   const source = card.sourceBookTitle?.trim() || "—"
 
   return (
@@ -64,30 +67,48 @@ export default function IRLibraryRow({
           {title}
         </button>
         <div className="ir-library-row__meta">
-          <span>{typeLabel}</span>
-          <span>到期 {dueLabel}</span>
-          <span>阶段 {card.stage}</span>
-          <span>重要 {importanceLabel}</span>
-          <span>来源 {source}</span>
+          <span className={`ir-tag ir-tag--type ir-tag--type-${card.cardType || "topic"}`}>
+            {typeLabel}
+          </span>
+          <span className={`ir-tag ir-tag--due ir-tag--due-${dueTone}`}>
+            <i className="ti ti-calendar" aria-hidden="true" style={{ fontSize: 11, marginRight: 3 }} />
+            到期: {dueLabel}
+          </span>
+          <span className="ir-tag ir-tag--stage" title={`阶段：${card.stage}`}>
+            {stageLabel}
+          </span>
+          <span className={`ir-tag ir-tag--importance ir-tag--importance-${importanceTone}`}>
+            重要: {importanceLabel}
+          </span>
+          {source !== "—" ? (
+            <span className="ir-tag ir-tag--source" title={source}>
+              <i className="ti ti-book" aria-hidden="true" />
+              {source}
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="ir-library-row__actions">
-        <Button
-          variant="outline"
+        <button
+          type="button"
           onClick={() => onStartReading(card.id)}
           title={canAdvanceLearn ? "提前到今天并开始阅读" : "以该卡开始阅读"}
+          className="ir-action-btn ir-action-btn--read"
         >
-          {canAdvanceLearn ? "提前阅读" : "开始阅读"}
-        </Button>
+          <i className="ti ti-book-read" aria-hidden="true" style={{ marginRight: 4 }} />
+          <span>{canAdvanceLearn ? "提前阅读" : "开始阅读"}</span>
+        </button>
         {canAdvanceLearn ? (
-          <Button
-            variant="plain"
+          <button
+            type="button"
             onClick={() => onAdvanceLearn(card.id)}
-            style={isAdvancing ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+            disabled={isAdvancing}
             title="仅提前到期到今天"
+            className="ir-action-btn ir-action-btn--advance"
           >
-            {isAdvancing ? "处理中" : "提前到期"}
-          </Button>
+            <i className="ti ti-calendar-forward" aria-hidden="true" style={{ marginRight: 4 }} />
+            <span>{isAdvancing ? "处理中" : "提前到期"}</span>
+          </button>
         ) : null}
       </div>
     </div>

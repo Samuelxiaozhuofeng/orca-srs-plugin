@@ -49,6 +49,7 @@ import { findPanelIdByView } from "./srs/registry/panelTreeUtils"
 let pluginName: string
 let reviewDeckFilter: string | null = null
 let reviewHostPanelId: string | null = null
+const PLUGIN_UI_STYLE_ROLE = "orca-srs-ui"
 
 /**
  * 插件加载函数
@@ -56,6 +57,8 @@ let reviewHostPanelId: string | null = null
  */
 export async function load(_name: string) {
   pluginName = _name
+  orca.themes.removeCSSResources(PLUGIN_UI_STYLE_ROLE)
+  orca.themes.injectCSSResource(`${pluginName}/dist/style.css`, PLUGIN_UI_STYLE_ROLE)
 
   // 设置国际化
   setupL10N(orca.state.locale, { "zh-CN": zhCN })
@@ -117,6 +120,7 @@ export async function load(_name: string) {
  * 在插件禁用或 Orca 关闭时被调用
  */
 export async function unload() {
+  orca.themes.removeCSSResources(PLUGIN_UI_STYLE_ROLE)
   stopRecentDeckWatcher()
   stopAutoMarkExtract(pluginName)
   unregisterCommands(pluginName)

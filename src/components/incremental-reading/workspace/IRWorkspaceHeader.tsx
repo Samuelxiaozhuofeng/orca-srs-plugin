@@ -5,19 +5,15 @@
 import type { IRWorkspaceMode } from "./irWorkspaceTypes"
 import IRModeSwitcher from "./IRModeSwitcher"
 
-const { Button } = orca.components
-
 type Props = {
   workspaceId: string
   mode: IRWorkspaceMode
   statusLabel: string
   onModeChange: (mode: IRWorkspaceMode) => void
-  onOpenFilters: () => void
   onOpenSettings: () => void
   onOpenQueue?: () => void
   onRefresh: () => void
   onClose: () => void
-  filtersActive?: boolean
   showQueue?: boolean
 }
 
@@ -26,35 +22,24 @@ export default function IRWorkspaceHeader({
   mode,
   statusLabel,
   onModeChange,
-  onOpenFilters,
   onOpenSettings,
   onOpenQueue,
   onRefresh,
   onClose,
-  filtersActive = false,
   showQueue = false
 }: Props) {
   return (
     <header className="ir-workspace-header">
-      <div className="ir-workspace-header__brand">渐进阅读</div>
+      <div className="ir-workspace-header__brand">
+        <i className="ti ti-book-2 ir-workspace-header__brand-icon" aria-hidden="true" />
+        <span>渐进阅读</span>
+      </div>
       <IRModeSwitcher workspaceId={workspaceId} mode={mode} onChange={onModeChange} />
       <div className="ir-workspace-header__status" aria-live="polite">
         {statusLabel}
       </div>
       <div className="ir-workspace-header__spacer" />
       <div className="ir-workspace-header__actions">
-        {mode === "library" ? (
-          <button
-            type="button"
-            className="ir-icon-btn"
-            title="筛选"
-            aria-label="打开筛选"
-            aria-pressed={filtersActive}
-            onClick={onOpenFilters}
-          >
-            <i className="ti ti-filter" aria-hidden="true" />
-          </button>
-        ) : null}
         {showQueue && onOpenQueue ? (
           <button
             type="button"
@@ -69,7 +54,7 @@ export default function IRWorkspaceHeader({
         <button
           type="button"
           className="ir-icon-btn"
-          title="刷新"
+          title="刷新数据"
           aria-label="刷新"
           onClick={onRefresh}
         >
@@ -78,15 +63,22 @@ export default function IRWorkspaceHeader({
         <button
           type="button"
           className="ir-icon-btn"
-          title="设置"
+          title="面板设置"
           aria-label="打开设置"
           onClick={onOpenSettings}
         >
           <i className="ti ti-settings" aria-hidden="true" />
         </button>
-        <Button variant="plain" onClick={onClose} title="关闭" aria-label="关闭渐进阅读">
-          关闭
-        </Button>
+        <div className="ir-workspace-header__divider" aria-hidden="true" />
+        <button
+          type="button"
+          className="ir-icon-btn ir-close-btn"
+          onClick={onClose}
+          title="关闭渐进阅读面板"
+          aria-label="关闭渐进阅读"
+        >
+          <i className="ti ti-x" aria-hidden="true" />
+        </button>
       </div>
     </header>
   )

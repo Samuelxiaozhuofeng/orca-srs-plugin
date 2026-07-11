@@ -1,7 +1,7 @@
 import type { Block, DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import { getIRDateGroup, type IRDateGroupKey } from "../../../srs/incrementalReadingManagerUtils"
-import { hasActiveIRLibraryFilters, type IRLibraryFilters } from "./irLibraryFilters"
+import type { IRLibraryFilters } from "./irLibraryFilters"
 import type { IRWorkspaceDrawer, IRWorkspaceMode } from "./irWorkspaceTypes"
 import IRDetailsDrawer from "./IRDetailsDrawer"
 import IRLibraryView from "./IRLibraryView"
@@ -145,12 +145,10 @@ export default function IRWorkspaceShell({
         mode={mode}
         statusLabel={statusLabel}
         onModeChange={handleModeChange}
-        onOpenFilters={() => searchInputRef.current?.focus()}
         onOpenSettings={() => setDrawer("settings")}
         onOpenQueue={() => setDrawer("queue")}
         onRefresh={handleRefresh}
         onClose={handleClose}
-        filtersActive={hasActiveIRLibraryFilters(library.filters)}
         showQueue={mode === "reading" && reading.session.ready}
       />
 

@@ -33,11 +33,11 @@ export default function IRBulkActionBar({
       </div>
       <div className="ir-bulk-bar__actions">
         {candidateBatchId ? (
-          <Button variant="outline" onClick={() => onSelectBatch(candidateBatchId)}>
+          <Button tabIndex={0} variant="outline" onClick={() => onSelectBatch(candidateBatchId)}>
             选中同批次
           </Button>
         ) : null}
-        <Button variant="plain" onClick={onClearSelection}>
+        <Button tabIndex={0} variant="plain" onClick={onClearSelection}>
           清空选择
         </Button>
         <ConfirmBox
@@ -49,9 +49,11 @@ export default function IRBulkActionBar({
         >
           {(open) => (
             <Button
+              tabIndex={0}
               variant="solid"
-              onClick={open}
-              style={isBatchRemoving ? { opacity: 0.6, pointerEvents: "none" as const } : undefined}
+              onClick={isBatchRemoving ? undefined : open}
+              aria-disabled={isBatchRemoving}
+              className={isBatchRemoving ? "ir-button--busy" : undefined}
             >
               {isBatchRemoving ? "处理中..." : "批量移出"}
             </Button>

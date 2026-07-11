@@ -397,11 +397,11 @@ export default function IRSessionShell({
           数据读取失败{loadErrorMessage ? `：${loadErrorMessage}` : ""}
         </div>
         <div className="ir-reading__launch-hint">这不是「暂无到期内容」。</div>
-        {onRetryLoad ? <Button variant="solid" onClick={onRetryLoad}>重试</Button> : null}
+        {onRetryLoad ? <Button tabIndex={0} variant="solid" onClick={onRetryLoad}>重试</Button> : null}
         {embedded && onBackToLibrary ? (
-          <Button variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
+          <Button tabIndex={0} variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
         ) : null}
-        {!embedded && onClose ? <Button variant="plain" onClick={onClose}>关闭</Button> : null}
+        {!embedded && onClose ? <Button tabIndex={0} variant="plain" onClick={onClose}>关闭</Button> : null}
       </div>
     )
   }
@@ -447,15 +447,16 @@ export default function IRSessionShell({
         <div className="ir-reading__banner ir-reading__banner--error" role="alert">
           <span>断点保存失败：{breakpointError}</span>
           <Button
+            tabIndex={0}
             variant="plain"
             onClick={() => void breakpoint.flush().then(() => setBreakpointError(null)).catch(() => undefined)}
           >
             重试保存
           </Button>
           {embedded ? (
-            <Button variant="outline" onClick={() => void handleClose(true)}>强制结束</Button>
+            <Button tabIndex={0} variant="outline" onClick={() => void handleClose(true)}>强制结束</Button>
           ) : (
-            <Button variant="outline" onClick={() => void handleClose(true)}>强制关闭</Button>
+            <Button tabIndex={0} variant="outline" onClick={() => void handleClose(true)}>强制关闭</Button>
           )}
         </div>
       ) : null}
@@ -497,9 +498,9 @@ export default function IRSessionShell({
           <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
             重要性（当前 {priorityToTier(currentCard.priority)}）
           </span>
-          <Button variant="plain" onClick={() => void handlePriorityTier("low")}>低</Button>
-          <Button variant="plain" onClick={() => void handlePriorityTier("medium")}>中</Button>
-          <Button variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
+          <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("low")}>低</Button>
+          <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("medium")}>中</Button>
+          <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
           <ConfirmBox
             text="确认归档？将清除 IR 身份并保留正文。"
             onConfirm={async (_e: unknown, close: () => void) => {
@@ -508,11 +509,11 @@ export default function IRSessionShell({
             }}
           >
             {(open) => (
-              <Button variant="plain" onClick={open}>归档</Button>
+              <Button tabIndex={0} variant="plain" onClick={open}>归档</Button>
             )}
           </ConfirmBox>
           {embedded && onBackToLibrary ? (
-            <Button variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
+            <Button tabIndex={0} variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
           ) : null}
         </div>
       ) : null}

@@ -6,8 +6,6 @@ import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import IRSessionShell from "../IRSessionShell"
 
-const { Button } = orca.components
-
 type Props = {
   workspaceId: string
   panelId: string
@@ -75,18 +73,21 @@ export default function IRReadingView({
           <div className="ir-reading__launch-hint">选择本次时间盒，系统将生成有限队列</div>
           <div className="ir-reading__launch-actions">
             {[10, 20, 30].map(mins => (
-              <Button
+              <button
+                type="button"
                 key={mins}
-                variant={mins === 20 ? "solid" : "outline"}
+                className={`ir-timebox-btn${mins === 20 ? " ir-timebox-btn--recommended" : ""}`}
                 onClick={() => onStartSession(mins)}
               >
-                {mins} 分钟
-              </Button>
+                <span>{mins}</span>
+                <small>分钟</small>
+              </button>
             ))}
           </div>
-          <Button variant="plain" onClick={onBackToLibrary}>
+          <button type="button" className="ir-text-btn" onClick={onBackToLibrary}>
+            <i className="ti ti-arrow-left" aria-hidden="true" />
             返回资料库
-          </Button>
+          </button>
         </div>
       </div>
     )

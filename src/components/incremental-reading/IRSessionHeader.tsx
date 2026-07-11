@@ -46,19 +46,19 @@ export default function IRSessionHeader({
             {autoPostponeLabel}
           </span>
           {onUndoAutoPostpone ? (
-            <Button variant="plain" onClick={onUndoAutoPostpone}>
+            <Button tabIndex={0} variant="plain" onClick={onUndoAutoPostpone}>
               撤销
             </Button>
           ) : null}
         </>
       ) : null}
       {onOpenQueue ? (
-        <Button variant="plain" onClick={onOpenQueue} title="查看队列">
+        <Button tabIndex={0} variant="plain" onClick={onOpenQueue} title="查看队列">
           队列
         </Button>
       ) : null}
       {!compact && onClose ? (
-        <Button variant="plain" onClick={onClose}>
+        <Button tabIndex={0} variant="plain" onClick={onClose}>
           关闭
         </Button>
       ) : null}

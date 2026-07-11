@@ -97,17 +97,14 @@ export default function IRLibraryView({
       aria-labelledby={`${workspaceId}-mode-library`}
     >
       <div className="ir-library__summary" aria-live="polite">
-        <span>共 <strong>{summary.total}</strong></span>
-        <span className="ir-library__summary-sep">·</span>
-        <span>显示 <strong>{summary.filtered}</strong></span>
-        <span className="ir-library__summary-sep">·</span>
-        <span>逾期 <strong>{summary.overdue}</strong></span>
-        <span className="ir-library__summary-sep">·</span>
-        <span>今天 <strong>{summary.today}</strong></span>
-        <span className="ir-library__summary-sep">·</span>
-        <span>新卡 <strong>{summary.newCount}</strong></span>
-        <span className="ir-library__summary-sep">·</span>
-        <span>Topic {summary.topics} / Extract {summary.extracts}</span>
+        <div className="ir-library__summary-primary">
+          <span>逾期 <strong className={summary.overdue > 0 ? "ir-count--danger" : ""}>{summary.overdue}</strong></span>
+          <span>今天 <strong>{summary.today}</strong></span>
+          <span>新卡 <strong>{summary.newCount}</strong></span>
+        </div>
+        <div className="ir-library__summary-secondary">
+          主题 {summary.topics} · 摘录 {summary.extracts}
+        </div>
       </div>
 
       <IRQueueHealthBar
@@ -117,6 +114,7 @@ export default function IRLibraryView({
       />
 
       <IRLibraryToolbar
+        workspaceId={workspaceId}
         filters={filters}
         sourceBooks={sourceBooks}
         stages={stages}
@@ -131,7 +129,7 @@ export default function IRLibraryView({
         <div className="ir-library-status ir-library-status--error" role="alert">
           <div>加载失败：{errorMessage}</div>
           <div style={{ marginTop: 12 }}>
-            <Button variant="solid" onClick={onRetry}>重试</Button>
+            <Button tabIndex={0} variant="solid" onClick={onRetry}>重试</Button>
           </div>
         </div>
       ) : (

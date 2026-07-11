@@ -11,7 +11,6 @@ import {
 import IRLibraryRow from "./IRLibraryRow"
 import { groupSortedIRLibraryCards } from "./irLibraryFilters"
 
-const { Button } = orca.components
 const { useMemo } = window.React
 
 const FUTURE_GROUPS: IRDateGroupKey[] = ["明天", "未来7天", "新卡", "7天后"]
@@ -83,11 +82,10 @@ export default function IRLibraryList({
 
         return (
           <section key={group.key} className="ir-library-group">
-            <div className="ir-library-group__header" style={{ display: "flex" }}>
+            <div className="ir-library-group__bar">
               <button
                 type="button"
-                className="ir-library-group__header"
-                style={{ flex: 1, border: "none", background: "transparent", padding: 0 }}
+                className="ir-library-group__toggle"
                 onClick={() => onToggleGroup(group.key)}
                 aria-expanded={isExpanded}
               >
@@ -99,13 +97,14 @@ export default function IRLibraryList({
                 <span className="ir-library-group__meta">{group.cards.length} 张</span>
               </button>
               <div className="ir-library-group__actions">
-                <Button
-                  variant="plain"
+                <button
+                  type="button"
+                  className="ir-group-select-btn"
                   onClick={() => onToggleGroupSelection(groupCardIds)}
                   title={isGroupFullySelected ? "取消本组选择" : "全选本组"}
                 >
                   {isGroupFullySelected ? "取消本组" : `全选${selectedCount > 0 ? `（${selectedCount}）` : ""}`}
-                </Button>
+                </button>
               </div>
             </div>
             {isExpanded ? (
@@ -127,9 +126,9 @@ export default function IRLibraryList({
                 ))}
                 {remaining > 0 ? (
                   <div style={{ padding: "8px 12px" }}>
-                    <Button variant="plain" onClick={() => onLoadMore(group.key)}>
+                    <button type="button" className="ir-load-more-btn" onClick={() => onLoadMore(group.key)}>
                       加载更多（剩余 {remaining} 张）
-                    </Button>
+                    </button>
                   </div>
                 ) : null}
               </div>

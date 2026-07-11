@@ -274,5 +274,25 @@ export function formatIRImportanceLabel(priority: number): string {
 }
 
 export function formatIRCardTypeLabel(cardType: IRCard["cardType"]): string {
-  return cardType === "topic" ? "Topic" : "Extract"
+  return cardType === "topic" ? "主题" : "摘录"
+}
+
+const IR_STAGE_LABELS: Record<string, string> = {
+  "topic.preview": "预览",
+  "topic.work": "阅读",
+  "extract.raw": "待整理",
+  "extract.refined": "已整理",
+  "extract.item_candidate": "待制卡"
+}
+
+export function formatIRStageLabel(stage: string): string {
+  return IR_STAGE_LABELS[stage] ?? stage
+}
+
+export function getIRDueTone(card: IRCard, now: Date = new Date()): string {
+  const group = getIRDateGroup(card, now)
+  if (group === "新卡") return "new"
+  if (group === "已逾期") return "overdue"
+  if (group === "今天") return "today"
+  return "upcoming"
 }

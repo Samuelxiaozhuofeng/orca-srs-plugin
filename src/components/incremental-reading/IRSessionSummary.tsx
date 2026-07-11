@@ -19,28 +19,66 @@ export default function IRSessionSummary({
   onClose,
   closeLabel = "关闭"
 }: Props) {
+  const durationMins = metrics.durationMs != null ? Math.round(metrics.durationMs / 60000) : 0
+
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: "10px",
-      padding: "24px",
-      alignItems: "flex-start",
-      maxWidth: 420
-    }}>
-      <div style={{ fontSize: "16px", fontWeight: 600 }}>会话结束</div>
-      <div style={{ color: "var(--orca-color-text-2)", fontSize: "13px", lineHeight: 1.7 }}>
-        <div>计划 {metrics.plannedCount} 条，完成 {metrics.completedCount} 条</div>
-        <div>Topic {metrics.topicProcessed} · Extract {metrics.extractProcessed}</div>
-        <div>新建 Extract {metrics.extractCreated} · Item {metrics.itemCreated}</div>
-        {autoPostponeCount > 0 ? <div>自动顺延 {autoPostponeCount} 条</div> : null}
-        {metrics.durationMs != null ? (
-          <div>用时 {Math.round(metrics.durationMs / 60000)} 分钟</div>
+    <div className="ir-session-summary">
+      <div className="ir-session-summary__card">
+        <div className="ir-session-summary__header">
+          <div className="ir-session-summary__icon">
+            <i className="ti ti-circle-check" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 className="ir-session-summary__title">专注阅读结束</h3>
+            <p className="ir-session-summary__subtitle">本次渐进阅读会话已顺利完成</p>
+          </div>
+        </div>
+
+        <div className="ir-session-summary__stats">
+          <div className="ir-stat-box">
+            <span className="ir-stat-box__label">进度 (完成 / 计划)</span>
+            <div className="ir-stat-box__value">
+              <strong>{metrics.completedCount}</strong> / {metrics.plannedCount}
+            </div>
+          </div>
+          <div className="ir-stat-box">
+            <span className="ir-stat-box__label">已读卡片</span>
+            <div className="ir-stat-box__value">
+              Topic <strong>{metrics.topicProcessed}</strong> · Extract <strong>{metrics.extractProcessed}</strong>
+            </div>
+          </div>
+          <div className="ir-stat-box">
+            <span className="ir-stat-box__label">新产出</span>
+            <div className="ir-stat-box__value">
+              Extract <strong>{metrics.extractCreated}</strong> · Item <strong>{metrics.itemCreated}</strong>
+            </div>
+          </div>
+          {durationMins > 0 ? (
+            <div className="ir-stat-box">
+              <span className="ir-stat-box__label">投入用时</span>
+              <div className="ir-stat-box__value">
+                <strong>{durationMins}</strong> 分钟
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {autoPostponeCount > 0 ? (
+          <div className="ir-session-summary__hint">
+            <i className="ti ti-info-circle" aria-hidden="true" />
+            自动顺延了 {autoPostponeCount} 条卡片
+          </div>
+        ) : null}
+
+        {onClose ? (
+          <div className="ir-session-summary__actions">
+            <Button tabIndex={0} variant="solid" onClick={onClose} className="ir-summary-close-btn">
+              <i className="ti ti-arrow-left" aria-hidden="true" style={{ marginRight: 6 }} />
+              {closeLabel}
+            </Button>
+          </div>
         ) : null}
       </div>
-      {onClose ? (
-        <Button variant="solid" onClick={onClose}>{closeLabel}</Button>
-      ) : null}
     </div>
   )
 }

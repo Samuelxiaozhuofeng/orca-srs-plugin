@@ -276,12 +276,13 @@ export default function IRWorkspaceSettings({
 
               <div style={{ display: "flex", gap: 8 }}>
                 <Button
+                  tabIndex={0}
                   variant="outline"
                   onClick={() => void saveSettings(schemaDefaults, { notify: true })}
                 >
                   恢复默认
                 </Button>
-                <Button variant="plain" onClick={() => void loadSettings()}>
+                <Button tabIndex={0} variant="plain" onClick={() => void loadSettings()}>
                   重新读取
                 </Button>
               </div>

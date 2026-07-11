@@ -94,10 +94,10 @@ export default function IRDetailsDrawer({
                 <dd>{String(card.id)}</dd>
               </dl>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Button variant="solid" onClick={() => onStartReading(card.id)}>
+                <Button tabIndex={0} variant="solid" onClick={() => onStartReading(card.id)}>
                   开始阅读
                 </Button>
-                <Button variant="outline" onClick={() => onOpenInPanel(card.id)}>
+                <Button tabIndex={0} variant="outline" onClick={() => onOpenInPanel(card.id)}>
                   在面板打开
                 </Button>
               </div>
