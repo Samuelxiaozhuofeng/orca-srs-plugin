@@ -1,4 +1,0 @@
-{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"UI, typecheck, focused tests, error and accessibility review"}
-{"file":".trellis/spec/srs/orca-boundaries.md","reason":"Orca lifecycle, external input, async failure, and cleanup review"}
-{"file":".trellis/spec/srs/storage-and-testing.md","reason":"Persistence, cache, compatibility, and regression-test review"}
-{"file":".trellis/tasks/07-11-epub-ir-import/research/current-implementation.md","reason":"Parity and regression comparison with both existing implementations"}
