@@ -120,6 +120,8 @@ After implementation:
       casting payload fields locally
 - [ ] Checked that derived state points back to the source event identifier
       (`seq`, `id`, `version`) instead of inventing a second cursor
+- [ ] For background or batch host writes, checked that the chosen command does
+      not require a rendered DOM node, active selection, or visible editor panel
 
 ---
 

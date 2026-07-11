@@ -18,6 +18,7 @@ integration under `src/srs/`.
 | [Domain Logic](./domain-logic.md) | Immutable calculations, scheduling, and transitions |
 | [Orca Boundaries](./orca-boundaries.md) | Host APIs, registration, errors, and lifecycle |
 | [Storage And Testing](./storage-and-testing.md) | Persistence contracts, caches, and regression tests |
+| [EPUB / Book IR Contracts](./epub-book-ir-contracts.md) | epub.* and ir.bookPlan versioned contracts |
 
 ## Quality Check
 

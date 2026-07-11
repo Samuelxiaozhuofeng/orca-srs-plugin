@@ -68,9 +68,17 @@
    - 面向 SuperMemo 风格低压阅读的分阶段优化计划
    - 覆盖会话交互、断点、快捷键、过载治理、知识漏斗和验收指标
 
+14. **[EPUB导入.md](EPUB导入.md)** ⭐ 新增
+   - EPUB 解析、普通笔记导入、指纹去重、断点续传与向导入口
+   - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
+
+15. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)** ⭐ 新增
+   - 版本化 `ir.bookPlan`、分散/顺序排期、完成/跳过、整本与章节移出
+   - 关联：`src/srs/book-ir/*`、`src/srs/bookIRCreator.ts`
+
 ### 协作与流程
 
-14. **[仓库贡献指南.md](仓库贡献指南.md)** ⭐ 新增
+16. **[仓库贡献指南.md](仓库贡献指南.md)** ⭐ 新增
    - 构建要求与模块文档同步规范
    - 关键文件：`AGENTS.md`、`package.json`
 
