@@ -4,6 +4,16 @@
 
 The plugin entry point is `src/main.ts`. Keep scheduling, storage, card collection, and other domain logic in `src/srs/`; React UI belongs in `src/components/` or `src/panels/`, reusable behavior in `src/hooks/`, and CSS in `src/styles/`. Translation resources live in `src/translations/`. Place tests beside the code they cover as `*.test.ts` or `*.test.tsx`. Orca API references are under `plugin-docs/`, feature specifications under `openspec/`, and maintained Chinese feature documentation under `模块文档/`. Treat `dist/` and `coverage/` as generated output.
 
+## Orca Note Reference Policy
+     8 +
+     9 +When a task requires information about Orca Note, including its APIs, types, commands, ed
+        itor behavior, backend calls, custom renderers, constants, or plugin lifecycle, consult t
+        he local documentation in `plugin-docs/` before making implementation decisions. Use `plu
+        gin-docs/modules.md` as the index, then open the relevant file under `plugin-docs/documen
+        ts/`, `plugin-docs/types/`, or `plugin-docs/constants/`. Treat these local references and
+         the existing project code as the primary evidence for available interfaces and behavior;
+         do not invent or assume Orca APIs that have not been verified there.
+
 ## Build, Test, and Development Commands
 
 - `npm install`: install the locked dependency set.
