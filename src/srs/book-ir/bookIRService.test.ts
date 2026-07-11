@@ -155,6 +155,33 @@ describe("initializeBookIR", () => {
     expect(plan.selectedChapterIds).toEqual([1, 2, 3])
   })
 
+  it("keeps priority-based intervalDays while spreading chapter due dates", async () => {
+    const result = await initializeBookIR({
+      bookBlockId: 100,
+      bookTitle: "Book",
+      chapterIds: [1, 2, 3],
+      mode: "distributed",
+      priority: 50,
+      totalDays: 10
+    })
+    expect(result.success).toEqual([1, 2, 3])
+
+    const dueDates: Date[] = []
+    for (const id of [1, 2, 3]) {
+      const block = blockMap.get(id)!
+      const intervalProp = block.properties?.find((p) => p.name === "ir.intervalDays")
+      expect(intervalProp?.value).toBe(8)
+
+      const dueProp = block.properties?.find((p) => p.name === "ir.due")
+      expect(dueProp?.value).toBeInstanceOf(Date)
+      dueDates.push(dueProp!.value as Date)
+    }
+
+    expect(new Set(dueDates.map((d) => d.getTime())).size).toBe(3)
+    expect(dueDates[1].getTime()).toBeGreaterThan(dueDates[0].getTime())
+    expect(dueDates[2].getTime()).toBeGreaterThan(dueDates[1].getTime())
+  })
+
   it("sequential only activates first chapter", async () => {
     const result = await initializeBookIR({
       bookBlockId: 100,

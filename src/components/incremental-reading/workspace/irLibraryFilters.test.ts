@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
+import { getIRDateGroup } from "../../../srs/incrementalReadingManagerUtils"
 import {
   collectIRSourceBookOptions,
   createDefaultIRLibraryFilters,
   filterAndSortIRCards,
   formatIRCardTypeLabel,
+  formatIRDueDate,
+  formatIRDueStatus,
   formatIRStageLabel,
   getIRDueTone,
   groupSortedIRLibraryCards,
@@ -187,5 +190,50 @@ describe("irLibraryFilters", () => {
     expect(getIRDueTone(cards[1], now)).toBe("today")
     expect(getIRDueTone(cards[2], now)).toBe("new")
     expect(getIRDueTone(cards[3], now)).toBe("upcoming")
+  })
+
+  describe("due date vs due status formatting", () => {
+    const newCardA = createCard({
+      id: 101,
+      due: new Date("2026-02-10T08:00:00"),
+      isNew: true
+    })
+    const newCardB = createCard({
+      id: 102,
+      due: new Date("2026-03-15T08:00:00"),
+      isNew: true
+    })
+
+    it("formats new cards as concrete dates, not the new-card label", () => {
+      expect(formatIRDueDate(newCardA.due)).toBe("2026/2/10")
+      expect(formatIRDueDate(newCardA.due)).not.toBe("新卡")
+    })
+
+    it("formats different due dates for new cards distinctly", () => {
+      expect(formatIRDueDate(newCardA.due)).not.toBe(formatIRDueDate(newCardB.due))
+      expect(formatIRDueDate(newCardA.due)).toBe("2026/2/10")
+      expect(formatIRDueDate(newCardB.due)).toBe("2026/3/15")
+    })
+
+    it("keeps new cards in the new-card group", () => {
+      expect(getIRDateGroup(newCardA, now)).toBe("新卡")
+      expect(getIRDateGroup(newCardB, now)).toBe("新卡")
+      const groups = groupSortedIRLibraryCards([newCardA, newCardB], now)
+      expect(groups).toHaveLength(1)
+      expect(groups[0].key).toBe("新卡")
+      expect(groups[0].cards.map(card => card.id)).toEqual([101, 102])
+    })
+
+    it("keeps new-card visual tone", () => {
+      expect(getIRDueTone(newCardA, now)).toBe("new")
+      expect(getIRDueTone(newCardB, now)).toBe("new")
+    })
+
+    it("preserves due status labels for today, overdue, and future dates", () => {
+      expect(formatIRDueStatus(cards[0], now)).toBe("已逾期")
+      expect(formatIRDueStatus(cards[1], now)).toBe("今天")
+      expect(formatIRDueStatus(cards[3], now)).toBe("7天后")
+      expect(formatIRDueStatus(newCardA, now)).toBe("新卡")
+    })
   })
 })

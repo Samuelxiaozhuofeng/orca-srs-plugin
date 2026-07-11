@@ -6,7 +6,8 @@ import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import {
   formatIRCardTypeLabel,
-  formatIRDueLabel,
+  formatIRDueDateTime,
+  formatIRDueStatus,
   formatIRImportanceLabel
 } from "./irLibraryFilters"
 import { useIRDialogFocus } from "./useIRDialogFocus"
@@ -70,13 +71,15 @@ export default function IRDetailsDrawer({
               <dl className="ir-details-kv">
                 <dt>类型</dt>
                 <dd>{formatIRCardTypeLabel(card.cardType)}</dd>
+                <dt>排期状态</dt>
+                <dd>{formatIRDueStatus(card)}</dd>
                 <dt>到期</dt>
-                <dd>{formatIRDueLabel(card)}（{formatDate(card.due)}）</dd>
+                <dd>{formatIRDueDateTime(card.due)}</dd>
                 <dt>阶段</dt>
                 <dd>{card.stage}</dd>
                 <dt>重要性</dt>
                 <dd>{formatIRImportanceLabel(card.priority)}（{card.priority}）</dd>
-                <dt>间隔</dt>
+                <dt>调度间隔</dt>
                 <dd>{card.intervalDays} 天</dd>
                 <dt>推后次数</dt>
                 <dd>{card.postponeCount}</dd>

@@ -255,15 +255,22 @@ export function summarizeIRLibrary(
   }
 }
 
-export function formatIRDueLabel(card: IRCard, now: Date = new Date()): string {
-  const group = getIRDateGroup(card, now)
-  if (group === "新卡") return "新卡"
-  if (group === "已逾期") return "已逾期"
-  if (group === "今天") return "今天"
-  if (group === "明天") return "明天"
-  const month = card.due.getMonth() + 1
-  const day = card.due.getDate()
-  return `${month}-${day}`
+export function formatIRDueDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  return `${year}/${month}/${day}`
+}
+
+export function formatIRDueDateTime(date: Date): string {
+  const hours = date.getHours()
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  const seconds = String(date.getSeconds()).padStart(2, "0")
+  return `${formatIRDueDate(date)} ${hours}:${minutes}:${seconds}`
+}
+
+export function formatIRDueStatus(card: IRCard, now: Date = new Date()): string {
+  return getIRDateGroup(card, now)
 }
 
 export function formatIRImportanceLabel(priority: number): string {

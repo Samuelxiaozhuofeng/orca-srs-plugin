@@ -6,7 +6,7 @@ import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import {
   formatIRCardTypeLabel,
-  formatIRDueLabel,
+  formatIRDueDate,
   formatIRImportanceLabel,
   formatIRStageLabel,
   getIRDueTone
@@ -39,7 +39,7 @@ export default function IRLibraryRow({
 }: Props) {
   const checkboxId = `ir-card-check-${card.id}`
   const typeLabel = formatIRCardTypeLabel(card.cardType)
-  const dueLabel = formatIRDueLabel(card, now)
+  const dueDateLabel = formatIRDueDate(card.due)
   const importanceLabel = formatIRImportanceLabel(card.priority)
   const importanceTone = importanceLabel === "高" ? "high" : importanceLabel === "中" ? "medium" : "low"
   const stageLabel = formatIRStageLabel(card.stage)
@@ -72,7 +72,7 @@ export default function IRLibraryRow({
           </span>
           <span className={`ir-tag ir-tag--due ir-tag--due-${dueTone}`}>
             <i className="ti ti-calendar" aria-hidden="true" style={{ fontSize: 11, marginRight: 3 }} />
-            到期: {dueLabel}
+            到期: {dueDateLabel}
           </span>
           <span className="ir-tag ir-tag--stage" title={`阶段：${card.stage}`}>
             {stageLabel}
