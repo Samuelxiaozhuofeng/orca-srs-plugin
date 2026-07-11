@@ -226,6 +226,7 @@ export default function IRWorkspaceShell({
             }}
             onClearSelection={() => library.setSelectedCardIds(new Set())}
             onBatchRemove={library.handleBatchRemove}
+            onRemoveSourceBook={library.handleRemoveSourceBook}
             onDeferOverflow={library.handleDeferOverflow}
           />
         </div>

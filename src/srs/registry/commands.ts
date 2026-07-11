@@ -532,6 +532,113 @@ export function registerCommands(
     }
   )
 
+  // EPUB 导入（普通笔记）
+  orca.commands.registerCommand(
+    `${pluginName}.importEpub`,
+    async () => {
+      const { showEpubImportDialog } = await import("../../components/epub-import/EpubImportDialogMount")
+      showEpubImportDialog(_pluginName)
+    },
+    "导入 EPUB"
+  )
+
+  // 顺序解锁：跳过本章并继续
+  orca.commands.registerCommand(
+    `${pluginName}.skipSequentialChapter`,
+    async () => {
+      try {
+        // Prefer current IR session card via custom event if shell is open
+        const panelId = orca.state.activePanel
+        const notPrevented = window.dispatchEvent(new CustomEvent("orca-srs:ir-session-action", {
+          detail: { action: "skipChapter", panelId },
+          cancelable: true
+        }))
+        // Shell calls preventDefault when it handles skip
+        if (!notPrevented) return
+
+        // Fallback when session shell did not handle the event
+        orca.notify("warn", "请在顺序阅读会话中通过「更多 → 跳过本章并继续」操作", {
+          title: "渐进阅读"
+        })
+      } catch (error) {
+        console.error("[BookIR] skip failed:", error)
+        orca.notify("error", error instanceof Error ? error.message : String(error), {
+          title: "渐进阅读"
+        })
+      }
+    },
+    "IR: 跳过本章并继续"
+  )
+
+  // 整本移出渐进阅读（按稳定 bookBlockId；共享确认摘要）
+  orca.commands.registerCommand(
+    `${pluginName}.removeBookFromIR`,
+    async (bookBlockId?: number) => {
+      const id = typeof bookBlockId === "number" ? bookBlockId : undefined
+      if (typeof id !== "number") {
+        orca.notify("warn", "未指定书籍块（请从书籍右键菜单或资料库来源书入口调用）", {
+          title: "渐进阅读"
+        })
+        return
+      }
+      try {
+        const { confirmAndRemoveBookFromIR } = await import("../book-ir/bookIRRemovalConfirm")
+        const result = await confirmAndRemoveBookFromIR(id, _pluginName)
+        if (result == null) return
+        if (result.kind === "partial") {
+          orca.notify(
+            "warn",
+            `移出成功 ${result.success.length}，失败 ${result.failed.length}（可重试）`,
+            { title: "渐进阅读" }
+          )
+        } else {
+          orca.notify("success", result.message || "已移出", { title: "渐进阅读" })
+        }
+      } catch (error) {
+        console.error("[BookIR] remove book failed:", error)
+        orca.notify("error", error instanceof Error ? error.message : String(error), {
+          title: "渐进阅读"
+        })
+      }
+    },
+    "IR: 将整本书移出渐进阅读"
+  )
+
+  // 跨会话：继续未完成的 EPUB 导入
+  orca.commands.registerCommand(
+    `${pluginName}.resumeEpubImport`,
+    async (bookBlockId?: number) => {
+      const id = typeof bookBlockId === "number" ? bookBlockId : undefined
+      if (typeof id !== "number") {
+        orca.notify("warn", "未指定书籍块", { title: "EPUB 导入" })
+        return
+      }
+      try {
+        orca.notify("info", "正在继续导入…", { title: "EPUB 导入" })
+        const { resumeEpubImport } = await import("../../importers/epub/epubImportService")
+        const result = await resumeEpubImport(id)
+        if (result.status === "complete") {
+          orca.notify(
+            "success",
+            `继续导入完成（${result.importedChapterIds.length} 章）`,
+            { title: "EPUB 导入" }
+          )
+        } else {
+          orca.notify(
+            "warn",
+            `仍有未完成章节：失败 ${result.failedChapters.length}，未开始 ${result.pendingChapters.length}`,
+            { title: "EPUB 导入" }
+          )
+        }
+      } catch (error) {
+        console.error("[epub] resume failed:", error)
+        orca.notify("error", error instanceof Error ? error.message : String(error), {
+          title: "EPUB 导入"
+        })
+      }
+    },
+    "继续导入 EPUB"
+  )
 }
 
 export function unregisterCommands(pluginName: string): void {
@@ -560,4 +667,8 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.openIRManager`)
   orca.commands.unregisterCommand(`${pluginName}.toggleAutoExtractMark`)
   orca.commands.unregisterCommand(`${pluginName}.clearRecentDeckPreference`)
+  orca.commands.unregisterCommand(`${pluginName}.importEpub`)
+  orca.commands.unregisterCommand(`${pluginName}.skipSequentialChapter`)
+  orca.commands.unregisterCommand(`${pluginName}.removeBookFromIR`)
+  orca.commands.unregisterCommand(`${pluginName}.resumeEpubImport`)
 }

@@ -150,6 +150,62 @@ export function registerContextMenu(pluginName: string): void {
   })
   registeredMenuIds.push(bookIRMenuId)
 
+  // 整本移出渐进阅读（书籍页，基于 ir.bookPlan，非 batchId）
+  const removeBookIRMenuId = `${pluginName}.removeBookFromIRMenu`
+  orca.blockMenuCommands.registerBlockMenuCommand(removeBookIRMenuId, {
+    worksOnMultipleBlocks: false,
+    render: (blockId: DbId, _rootBlockId: DbId, close: () => void) => {
+      const block = orca.state.blocks?.[blockId] as Block | undefined
+      if (!block || isQueryBlock(block as BlockWithRepr)) {
+        return null
+      }
+      const hasPlan = block.properties?.some((p) => p.name === "ir.bookPlan")
+      if (!hasPlan) {
+        return null
+      }
+      const MenuText = orca.components.MenuText
+      return (
+        <MenuText
+          preIcon="ti ti-book-off"
+          title="将整本书移出渐进阅读"
+          onClick={() => {
+            close()
+            void orca.commands.invokeCommand(`${pluginName}.removeBookFromIR`, blockId)
+          }}
+        />
+      )
+    }
+  })
+  registeredMenuIds.push(removeBookIRMenuId)
+
+  // 跨会话：继续未完成的 EPUB 导入
+  const resumeEpubMenuId = `${pluginName}.resumeEpubImportMenu`
+  orca.blockMenuCommands.registerBlockMenuCommand(resumeEpubMenuId, {
+    worksOnMultipleBlocks: false,
+    render: (blockId: DbId, _rootBlockId: DbId, close: () => void) => {
+      const block = orca.state.blocks?.[blockId] as Block | undefined
+      if (!block || isQueryBlock(block as BlockWithRepr)) {
+        return null
+      }
+      const status = block.properties?.find((p) => p.name === "epub.importStatus")?.value
+      if (status !== "partial" && status !== "importing") {
+        return null
+      }
+      const MenuText = orca.components.MenuText
+      return (
+        <MenuText
+          preIcon="ti ti-player-play"
+          title="继续导入 EPUB"
+          onClick={() => {
+            close()
+            void orca.commands.invokeCommand(`${pluginName}.resumeEpubImport`, blockId)
+          }}
+        />
+      )
+    }
+  })
+  registeredMenuIds.push(resumeEpubMenuId)
+
   console.log(`[${pluginName}] 右键菜单已注册`)
 }
 
@@ -383,8 +439,8 @@ function ChildrenBlockMenuItem({
 }
 
 /**
- * 渐进阅读书籍菜单项组件
- * 当块包含 inline references 时显示"创建渐进阅读书籍"选项
+ * 渐进阅读书籍菜单项
+ * 优先从 epub.manifest 读取已导入章节（支持重新加入）；否则回退 inline refs。
  */
 function BookIRMenuItem({
   blockId,
@@ -399,21 +455,38 @@ function BookIRMenuItem({
 }) {
   const [chapterCount, setChapterCount] = React.useState<number>(0)
   const [isLoading, setIsLoading] = React.useState(true)
+  const [source, setSource] = React.useState<"manifest" | "refs" | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
 
     async function fetchChapterCount() {
       try {
+        const hasManifest = block.properties?.some((p) => p.name === "epub.manifest")
+        if (hasManifest) {
+          const { getImportedChaptersFromManifest } = await import(
+            "../../importers/epub/epubManifestChapters"
+          )
+          const { chapters } = await getImportedChaptersFromManifest(blockId)
+          if (!cancelled) {
+            setChapterCount(chapters.length)
+            setSource("manifest")
+            setIsLoading(false)
+          }
+          return
+        }
+
         const chapterIds = await getChapterBlockIdsAsync(block)
         if (!cancelled) {
           setChapterCount(chapterIds.length)
+          setSource("refs")
           setIsLoading(false)
         }
       } catch (error) {
         console.error(`[${pluginName}] 获取章节数量失败:`, error)
         if (!cancelled) {
           setChapterCount(0)
+          setSource(null)
           setIsLoading(false)
         }
       }
@@ -424,18 +497,38 @@ function BookIRMenuItem({
     return () => {
       cancelled = true
     }
-  }, [block, pluginName])
+  }, [block, blockId, pluginName])
 
   const handleClick = async () => {
     close()
 
-    const chapterIds = await getChapterBlockIdsAsync(block)
-    if (chapterIds.length === 0) {
-      orca.notify("warn", "该块没有内联引用", { title: "渐进阅读" })
+    const bookTitle = block.text?.trim() || "未命名书籍"
+    let chapterIds: DbId[] = []
+
+    try {
+      if (source === "manifest" || block.properties?.some((p) => p.name === "epub.manifest")) {
+        const { getImportedChaptersFromManifest } = await import(
+          "../../importers/epub/epubManifestChapters"
+        )
+        const { chapters } = await getImportedChaptersFromManifest(blockId)
+        chapterIds = chapters.map((c) => c.blockId)
+      } else {
+        chapterIds = await getChapterBlockIdsAsync(block)
+      }
+    } catch (error) {
+      orca.notify(
+        "error",
+        error instanceof Error ? error.message : "读取章节失败",
+        { title: "渐进阅读" }
+      )
       return
     }
 
-    const bookTitle = block.text?.trim() || "未命名书籍"
+    if (chapterIds.length === 0) {
+      orca.notify("warn", "没有可加入渐进阅读的章节", { title: "渐进阅读" })
+      return
+    }
+
     showIRBookDialog(chapterIds, bookTitle, blockId)
   }
 
@@ -444,11 +537,15 @@ function BookIRMenuItem({
   }
 
   const MenuText = orca.components.MenuText
+  const title =
+    source === "manifest"
+      ? `创建/重新加入渐进阅读 (${chapterCount} 章)`
+      : `创建渐进阅读书籍 (${chapterCount} 章)`
 
   return (
     <MenuText
       preIcon="ti ti-book"
-      title={`创建渐进阅读书籍 (${chapterCount} 章)`}
+      title={title}
       onClick={handleClick}
     />
   )

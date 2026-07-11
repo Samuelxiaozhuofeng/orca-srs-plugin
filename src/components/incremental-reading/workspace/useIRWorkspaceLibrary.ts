@@ -164,24 +164,58 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     if (selectedCards.length === 0 || isBatchRemoving) return
     setIsBatchRemoving(true)
     try {
-      const results = await Promise.allSettled(
-        selectedCards.map((card: IRCard) => completeIRCard(card.id, pluginName))
-      )
-      const successCount = results.filter(
-        (r: PromiseSettledResult<void>) => r.status === "fulfilled"
-      ).length
-      const failedCount = results.length - successCount
-      const succeededIds = new Set(
-        results.flatMap((result: PromiseSettledResult<void>, index: number) => result.status === "fulfilled"
-          ? [selectedCards[index].id]
-          : [])
-      )
+      // Prefer shared book removal service when all selected cards share one source book
+      const bookIds = Array.from(new Set(
+        selectedCards
+          .map((c: IRCard) => c.sourceBookId)
+          .filter((id: DbId | null | undefined): id is DbId => typeof id === "number")
+      ))
+      let successCount = 0
+      let failedCount = 0
+      let succeededIds = new Set<DbId>()
+      let sequentialPaused = false
+
+      if (bookIds.length === 1) {
+        const { removeChaptersFromIR } = await import(
+          "../../../srs/book-ir/bookIRRemovalService"
+        )
+        const bookId = bookIds[0] as DbId
+        const result = await removeChaptersFromIR(
+          bookId,
+          selectedCards.map((c: IRCard) => c.id),
+          { pluginName, pauseSequenceIfActiveRemoved: true }
+        )
+        successCount = result.success.length
+        failedCount = result.failed.length
+        succeededIds = new Set(result.success)
+        sequentialPaused = Boolean(result.sequentialPaused)
+      } else {
+        const results = await Promise.allSettled(
+          selectedCards.map((card: IRCard) => completeIRCard(card.id, pluginName))
+        )
+        successCount = results.filter(
+          (r: PromiseSettledResult<void>) => r.status === "fulfilled"
+        ).length
+        failedCount = results.length - successCount
+        succeededIds = new Set(
+          results.flatMap((result: PromiseSettledResult<void>, index: number) => result.status === "fulfilled"
+            ? [selectedCards[index].id]
+            : [])
+        )
+      }
+
       setSelectedCardIds((prev: Set<DbId>) => new Set(
         Array.from(prev).filter(id => !succeededIds.has(id))
       ))
       await loadLibrary()
       if (failedCount > 0) {
-        orca.notify("warn", `已移出 ${successCount} 张，失败 ${failedCount} 张`, { title: "渐进阅读" })
+        orca.notify("warn", `已移出 ${successCount} 张，失败 ${failedCount} 张（可重试）`, { title: "渐进阅读" })
+      } else if (sequentialPaused) {
+        orca.notify(
+          "success",
+          `已移出 ${successCount} 张；顺序阅读已暂停（未自动解锁下一章）`,
+          { title: "渐进阅读" }
+        )
       } else {
         orca.notify("success", `已将 ${successCount} 张卡片移出渐进阅读`, { title: "渐进阅读" })
       }
@@ -192,6 +226,30 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
       setIsBatchRemoving(false)
     }
   }, [selectedCards, isBatchRemoving, pluginName, loadLibrary])
+
+  /** 资料库按来源书整本移出（稳定 book id，非 batchId；共享确认摘要） */
+  const handleRemoveSourceBook = useCallback(async (bookBlockId: DbId) => {
+    try {
+      const { confirmAndRemoveBookFromIR } = await import(
+        "../../../srs/book-ir/bookIRRemovalConfirm"
+      )
+      const result = await confirmAndRemoveBookFromIR(bookBlockId, pluginName)
+      if (result == null) return
+      await loadLibrary()
+      if (result.kind === "partial") {
+        orca.notify(
+          "warn",
+          `移出成功 ${result.success.length}，失败 ${result.failed.length}`,
+          { title: "渐进阅读" }
+        )
+      } else {
+        orca.notify("success", result.message || "已整本移出", { title: "渐进阅读" })
+      }
+    } catch (error) {
+      console.error("[IR Workspace] 整本移出失败:", error)
+      orca.notify("error", "整本移出失败", { title: "渐进阅读" })
+    }
+  }, [pluginName, loadLibrary])
 
   const loadMoreGroup = useCallback((key: IRDateGroupKey) => {
     setGroupDisplayCounts((prev: Record<string, number>) => ({
@@ -256,6 +314,7 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     detailsCard,
     loadLibrary,
     handleBatchRemove,
+    handleRemoveSourceBook,
     handleDeferOverflow,
     loadMoreGroup,
     clearFilters: () => setFilters(createDefaultIRLibraryFilters())

@@ -51,6 +51,7 @@ type Props = {
   onSelectBatch: (batchId: string) => void
   onClearSelection: () => void
   onBatchRemove: () => Promise<void>
+  onRemoveSourceBook?: (bookBlockId: number) => Promise<void>
   onDeferOverflow: () => Promise<void>
 }
 
@@ -87,6 +88,7 @@ export default function IRLibraryView({
   onSelectBatch,
   onClearSelection,
   onBatchRemove,
+  onRemoveSourceBook,
   onDeferOverflow
 }: Props) {
   return (
@@ -158,6 +160,8 @@ export default function IRLibraryView({
         onSelectBatch={onSelectBatch}
         onClearSelection={onClearSelection}
         onBatchRemove={onBatchRemove}
+        filteredSourceBookId={filters.sourceBook}
+        onRemoveSourceBook={onRemoveSourceBook}
       />
     </div>
   )

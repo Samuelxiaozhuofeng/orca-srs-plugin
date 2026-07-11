@@ -17,7 +17,8 @@ import {
   performArchive,
   performNext,
   performPostpone,
-  performPriorityAdjust
+  performPriorityAdjust,
+  performSkipChapter
 } from "../../srs/incremental-reading/irSessionService"
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import { tierToPriority, priorityToTier } from "../../srs/incremental-reading/irQueuePolicy"
@@ -172,6 +173,10 @@ export default function IRSessionShell({
       if (detail.action === "next") void handleNext()
       if (detail.action === "postpone") setPostponeOpen(true)
       if (detail.action === "priority") setMoreOpen(true)
+      if (detail.action === "skipChapter") {
+        event.preventDefault()
+        void handleSkipChapter()
+      }
       if (detail.action === "itemize") {
         event.preventDefault()
         if (isTopic) {
@@ -320,6 +325,21 @@ export default function IRSessionShell({
     } catch (error) {
       console.error("[IR Session] 归档失败:", error)
       orca.notify("error", "归档失败", { title: "渐进阅读" })
+    }
+  })
+
+  const handleSkipChapter = () => withWork(async () => {
+    if (!currentCard) return
+    try {
+      await breakpoint.flush()
+      await performSkipChapter(currentCard.id, pluginName)
+      metricsRef.current.record("action.archive")
+      removeCurrent()
+    } catch (error) {
+      console.error("[IR Session] 跳过章节失败:", error)
+      orca.notify("error", error instanceof Error ? error.message : "跳过章节失败", {
+        title: "渐进阅读"
+      })
     }
   })
 
@@ -502,16 +522,31 @@ export default function IRSessionShell({
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("medium")}>中</Button>
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
           <ConfirmBox
-            text="确认归档？将清除 IR 身份并保留正文。"
+            text="确认完成本章/归档？将清除 IR 身份并保留正文。若为顺序解锁书籍，将尝试解锁下一章。"
             onConfirm={async (_e: unknown, close: () => void) => {
               await handleArchive()
               close()
             }}
           >
             {(open) => (
-              <Button tabIndex={0} variant="plain" onClick={open}>归档</Button>
+              <Button tabIndex={0} variant="plain" onClick={open}>
+                {currentCard?.sourceBookId != null ? "完成本章" : "归档"}
+              </Button>
             )}
           </ConfirmBox>
+          {currentCard?.sourceBookId != null ? (
+            <ConfirmBox
+              text="确认跳过本章并继续？与「完成」结果不同，但同样会解锁下一章并保留笔记。"
+              onConfirm={async (_e: unknown, close: () => void) => {
+                await handleSkipChapter()
+                close()
+              }}
+            >
+              {(open) => (
+                <Button tabIndex={0} variant="plain" onClick={open}>跳过本章并继续</Button>
+              )}
+            </ConfirmBox>
+          ) : null}
           {embedded && onBackToLibrary ? (
             <Button tabIndex={0} variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
           ) : null}

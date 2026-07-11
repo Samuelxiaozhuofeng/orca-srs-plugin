@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "cross-env NODE_ENV=production tsc && vite build",
+    "postbuild": "node --input-type=module -e \"import fs from 'node:fs'; import path from 'node:path'; const src='dist'; const pluginRoot='/Users/samdagreat/Documents/orca/plugins/orca-srs'; const dst=path.join(pluginRoot,'dist'); if (!fs.existsSync(src)) { console.error('[postbuild] missing source:', src); process.exit(1); } fs.mkdirSync(pluginRoot, { recursive: true }); fs.rmSync(dst, { recursive: true, force: true }); fs.cpSync(src, dst, { recursive: true }); console.log('[postbuild] copied', src, '->', dst);\"",
     "test": "vitest run",
     "preview": "vite preview"
   },
@@ -13,18 +14,21 @@
     "valtio": "^1.13.2"
   },
   "devDependencies": {
+    "@types/jsdom": "^28.0.3",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react-swc": "^3.5.0",
     "@vitest/coverage-v8": "^4.0.16",
     "cross-env": "^10.1.0",
     "fast-check": "^4.4.0",
+    "jsdom": "^29.1.1",
     "rollup-plugin-external-globals": "^0.9.2",
     "typescript": "^5.2.2",
     "vite": "^5.2.0",
     "vitest": "^4.0.16"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "ts-fsrs": "^5.2.3"
   }
 }

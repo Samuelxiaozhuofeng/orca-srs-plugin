@@ -1,16 +1,14 @@
 /**
- * 书籍渐进阅读（Book IR）创建模块
+ * 书籍渐进阅读（Book IR）兼容门面
  *
- * 场景：用户选择一个“book”块，块内包含多个“章节”块的行内引用（RefType.Inline = 1）。
- * 目标：批量把章节块初始化为 Topic（#card type=topic），并写入 ir.* 属性与分散的到期时间。
+ * 新逻辑位于 `src/srs/book-ir/*`。本文件保留：
+ * - 章节引用发现（遗留 UI / 右键菜单）
+ * - 分散到期计算
+ * - setupBookIR → initializeBookIR(distributed) 薄封装
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import { DEFAULT_IR_PRIORITY, getTopicBaseIntervalDays, normalizePriority } from "./incrementalReadingScheduler"
-import { invalidateIrBlockCache } from "./incrementalReadingStorage"
-import { isCardTag } from "./tagUtils"
-import { buildCardTagData } from "./cardTagDataBuilder"
-import { upsertIRIndexId } from "./incremental-reading/irIndex"
+import { initializeBookIR } from "./book-ir/bookIRService"
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -22,7 +20,7 @@ function getTodayMidnight(): Date {
 
 /**
  * 从 book 块及其子块中提取章节块 ID（只取行内引用 RefType.Inline = 1）
- * 
+ *
  * 支持两种场景：
  * 1. 书籍块本身包含 inline references
  * 2. 书籍块的子块包含 inline references（如标题块下的章节列表）
@@ -44,10 +42,8 @@ export function getChapterBlockIds(bookBlock: Block): DbId[] {
     }
   }
 
-  // 1. 检查书籍块本身
   collectInlineRefs(bookBlock)
 
-  // 2. 检查直接子块
   const childIds = bookBlock.children ?? []
   for (const childId of childIds) {
     const childBlock = orca.state.blocks?.[childId] as Block | undefined
@@ -80,10 +76,8 @@ export async function getChapterBlockIdsAsync(bookBlock: Block): Promise<DbId[]>
     }
   }
 
-  // 1. 检查书籍块本身
   collectInlineRefs(bookBlock)
 
-  // 2. 检查直接子块（异步获取）
   const childIds = bookBlock.children ?? []
   for (const childId of childIds) {
     let childBlock = orca.state.blocks?.[childId] as Block | undefined
@@ -138,19 +132,12 @@ type SetupBookIROptions = {
   pluginName?: string
   sourceBookId?: DbId | null
   sourceBookTitle?: string | null
-}
-
-function createIRBatchId(): string {
-  return `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  /** 新路径：distributed | sequential，默认 distributed */
+  mode?: "distributed" | "sequential"
 }
 
 /**
- * 批量为章节块初始化渐进阅读
- *
- * 规则：
- * - 没有 #card 时：插入 #card(type=topic)
- * - 已有 #card 时：至少更新 type=topic；priority 仅在缺失时补齐（避免覆盖用户已选）
- * - 写入 ir.*：priority/lastRead/readCount/due/sourceBook/batch 元数据
+ * 批量为章节块初始化渐进阅读（兼容门面 → bookIRService）。
  */
 export async function setupBookIR(
   chapterIds: DbId[],
@@ -162,92 +149,53 @@ export async function setupBookIR(
     return { success: [], failed: [] }
   }
 
-  const dueDates = calculateChapterDueDates(chapterIds.length, totalDays)
-  const numericPriority = normalizePriority(
-    Number.isFinite(priority) ? priority : DEFAULT_IR_PRIORITY
-  )
-  const baseIntervalDays = getTopicBaseIntervalDays(numericPriority)
-  const positionBase = Date.now()
-  const batchId = createIRBatchId()
-  const batchCreatedAt = new Date()
   const sourceBookId = typeof options.sourceBookId === "number" ? options.sourceBookId : null
   const sourceBookTitle = typeof options.sourceBookTitle === "string"
     ? (options.sourceBookTitle.trim() || null)
     : null
   const pluginName = options.pluginName || "orca-srs"
+  const mode = options.mode ?? "distributed"
 
-  const success: DbId[] = []
-  const failed: DbId[] = []
-
-  for (let i = 0; i < chapterIds.length; i++) {
-    const blockId = chapterIds[i]
-    const due = dueDates[i] ?? new Date()
-
-    try {
-      const block =
-        (orca.state.blocks?.[blockId] as Block | undefined)
-        || ((await orca.invokeBackend("get-block", blockId)) as Block | undefined)
-
-      if (!block) {
-        throw new Error(`未找到章节块 #${blockId}`)
+  // 无稳定 book id 时仍走 distributed 初始化但不写 plan（兼容旧右键入口）
+  if (sourceBookId == null) {
+    const { initializeChapterAsTopicIR } = await import("./book-ir/bookIRChapterInit")
+    const dueDates = calculateChapterDueDates(chapterIds.length, totalDays)
+    const success: DbId[] = []
+    const failed: DbId[] = []
+    const positionBase = Date.now()
+    for (let i = 0; i < chapterIds.length; i++) {
+      try {
+        await initializeChapterAsTopicIR(chapterIds[i], {
+          pluginName,
+          sourceBookId: null,
+          sourceBookTitle,
+          priority,
+          due: dueDates[i] ?? new Date(),
+          position: positionBase + i,
+          batchId: `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          batchCreatedAt: new Date()
+        })
+        success.push(chapterIds[i])
+      } catch (error) {
+        console.error("[BookIR] 初始化章节失败:", chapterIds[i], error)
+        failed.push(chapterIds[i])
       }
-
-      const hasCardTag = block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
-
-      if (!hasCardTag) {
-        // 插入 #card(type=topic)
-        await orca.commands.invokeEditorCommand(
-          "core.editor.insertTag",
-          null,
-          blockId,
-          "card",
-          await buildCardTagData(pluginName, blockId, "topic")
-        )
-      } else {
-        // 更新既有 #card：type=topic
-        const cardRef = block.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
-        if (cardRef) {
-          await orca.commands.invokeEditorCommand(
-            "core.editor.setRefData",
-            null,
-            cardRef,
-            [{ name: "type", value: "topic" }]
-          )
-        }
-      }
-
-      // 写入 ir.* 状态（与 incrementalReadingStorage.ts 一致）
-      await orca.commands.invokeEditorCommand(
-        "core.editor.setProperties",
-        null,
-        [blockId],
-        [
-          { name: "ir.priority", value: numericPriority, type: 3 },
-          { name: "ir.lastRead", value: null, type: 5 },
-          { name: "ir.readCount", value: 0, type: 3 },
-          { name: "ir.due", value: due, type: 5 },
-          { name: "ir.intervalDays", value: baseIntervalDays, type: 3 },
-          { name: "ir.postponeCount", value: 0, type: 3 },
-          { name: "ir.stage", value: "topic.preview", type: 2 },
-          { name: "ir.lastAction", value: "init", type: 2 },
-          // 维持章节顺序（越小越靠前），并尽量追加到现有 Topic 队列尾部
-          { name: "ir.position", value: positionBase + i, type: 3 },
-          { name: "ir.resumeBlockId", value: null, type: 3 },
-          { name: "ir.sourceBookId", value: sourceBookId, type: 3 },
-          { name: "ir.sourceBookTitle", value: sourceBookTitle, type: 2 },
-          { name: "ir.batchId", value: batchId, type: 2 },
-          { name: "ir.batchCreatedAt", value: batchCreatedAt, type: 5 }
-        ]
-      )
-      invalidateIrBlockCache(blockId)
-      upsertIRIndexId(pluginName, blockId, "topic")
-
-      success.push(blockId)
-    } catch (error) {
-      console.error("[BookIR] 初始化章节失败:", blockId, error)
-      failed.push(blockId)
     }
+    return { success, failed }
   }
 
-  return { success, failed }
+  const result = await initializeBookIR({
+    bookBlockId: sourceBookId,
+    bookTitle: sourceBookTitle ?? "",
+    chapterIds,
+    mode,
+    priority,
+    totalDays,
+    pluginName
+  })
+
+  return {
+    success: result.success,
+    failed: result.failed.map((f) => f.chapterId)
+  }
 }

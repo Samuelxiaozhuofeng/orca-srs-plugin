@@ -49,8 +49,94 @@ export async function performArchive(
   blockId: DbId,
   pluginName = "orca-srs"
 ): Promise<SessionActionOutcome> {
+  // 顺序书籍：完成本章并解锁下一章（与「跳过」区分 outcome）
+  const sequential = await tryAdvanceSequentialBook(blockId, "completed", pluginName)
+  if (sequential === "advanced" || sequential === "partial") {
+    return { state: null, leftCard: true }
+  }
+  if (sequential === "failed") {
+    // Do NOT fall through to plain completeIRCard — plan may already be mutated.
+    throw new Error("顺序推进失败，计划状态请检查后重试（不会再次按普通完成清理）")
+  }
   await completeIRCard(blockId, pluginName)
   return { state: null, leftCard: true }
+}
+
+/**
+ * 跳过本章并继续（仅顺序 Book IR）。
+ */
+export async function performSkipChapter(
+  blockId: DbId,
+  pluginName = "orca-srs"
+): Promise<SessionActionOutcome> {
+  const sequential = await tryAdvanceSequentialBook(blockId, "skipped", pluginName)
+  if (sequential === "not_applicable") {
+    throw new Error("当前卡片不是顺序解锁书籍的激活章节")
+  }
+  if (sequential === "failed") {
+    throw new Error("跳过并推进失败，请检查书籍计划后重试")
+  }
+  return { state: null, leftCard: true }
+}
+
+type SequentialAdvanceAttempt = "advanced" | "partial" | "not_applicable" | "failed"
+
+/**
+ * Attempt sequential book progression.
+ * - not_applicable: no sequential plan for this card → caller may use plain complete
+ * - advanced/partial: progression service ran (including partial next-init failure)
+ * - failed: progression threw after starting → do NOT plain-complete
+ */
+async function tryAdvanceSequentialBook(
+  blockId: DbId,
+  outcome: "completed" | "skipped",
+  pluginName: string
+): Promise<SequentialAdvanceAttempt> {
+  const block =
+    (orca.state.blocks?.[blockId] as { properties?: Array<{ name: string; value: unknown }> } | undefined)
+    || ((await orca.invokeBackend("get-block", blockId)) as
+      | { properties?: Array<{ name: string; value: unknown }> }
+      | undefined)
+  const bookId = block?.properties?.find((p) => p.name === "ir.sourceBookId")?.value
+  if (typeof bookId !== "number") return "not_applicable"
+
+  const { loadBookIRPlan } = await import("../book-ir/bookIRPlanRepository")
+  let plan
+  try {
+    plan = await loadBookIRPlan(bookId)
+  } catch (error) {
+    // Malformed plan must surface — not silent plain-complete
+    console.error("[IR Session] ir.bookPlan invalid:", error)
+    throw error
+  }
+  if (!plan || plan.mode !== "sequential") return "not_applicable"
+  if (plan.activeChapterId !== blockId) return "not_applicable"
+
+  try {
+    const { advanceSequentialBook } = await import("../book-ir/bookIRProgression")
+    const result = await advanceSequentialBook({
+      bookBlockId: bookId,
+      chapterId: blockId,
+      outcome,
+      pluginName
+    })
+    if (result.message) {
+      orca.notify(
+        result.kind === "partial" ? "warn" : "success",
+        result.message,
+        { title: "渐进阅读" }
+      )
+    }
+    return result.kind === "partial" ? "partial" : "advanced"
+  } catch (error) {
+    console.error("[IR Session] sequential advance failed:", error)
+    orca.notify(
+      "error",
+      error instanceof Error ? error.message : String(error),
+      { title: "渐进阅读" }
+    )
+    return "failed"
+  }
 }
 
 /**

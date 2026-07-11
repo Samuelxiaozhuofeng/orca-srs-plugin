@@ -10,6 +10,7 @@
 import React from "react"
 import { AIDialogMount } from "../../components/AIDialogMount"
 import { IRBookDialogMount } from "../../components/IRBookDialogMount"
+import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDialogMount"
 
 export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.aiDialogMount`, () => (
@@ -18,6 +19,10 @@ export function registerUIComponents(pluginName: string): void {
 
   orca.headbar.registerHeadbarButton(`${pluginName}.irBookDialogMount`, () => (
     <IRBookDialogMount pluginName={pluginName} />
+  ))
+
+  orca.headbar.registerHeadbarButton(`${pluginName}.epubImportDialogMount`, () => (
+    <EpubImportDialogMount pluginName={pluginName} />
   ))
   
   // 复习按钮 - 开始复习会话
@@ -132,11 +137,25 @@ export function registerUIComponents(pluginName: string): void {
     title: "ir_record",
     command: `${pluginName}.irRecordProgress`
   })
+
+  orca.toolbar.registerToolbarButton(`${pluginName}.importEpubButton`, {
+    icon: "ti ti-book-upload",
+    tooltip: "导入 EPUB",
+    command: `${pluginName}.importEpub`
+  })
+
+  orca.slashCommands.registerSlashCommand(`${pluginName}.importEpub`, {
+    icon: "ti ti-book-upload",
+    group: "SRS",
+    title: "导入 EPUB",
+    command: `${pluginName}.importEpub`
+  })
 }
 
 export function unregisterUIComponents(pluginName: string): void {
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.irBookDialogMount`)
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.epubImportDialogMount`)
   
   orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
@@ -144,6 +163,7 @@ export function unregisterUIComponents(pluginName: string): void {
   
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.importEpubButton`)
   
   // 斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
@@ -155,4 +175,5 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.importEpub`)
 }
