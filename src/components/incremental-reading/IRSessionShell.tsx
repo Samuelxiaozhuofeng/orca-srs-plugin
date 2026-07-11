@@ -85,6 +85,7 @@ export default function IRSessionShell({
   const [breakpointError, setBreakpointError] = useState<string | null>(null)
 
   const sessionRootRef = useRef<HTMLDivElement | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const currentCardContainerRef = useRef<HTMLDivElement | null>(null)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
   const metricsRef = useRef(new IRSessionMetrics())
@@ -104,6 +105,7 @@ export default function IRSessionShell({
     cardId: currentCard?.id ?? null,
     panelId,
     containerRef: currentCardContainerRef,
+    scrollContainerRef,
     previewContainerRef,
     previewBlockId,
     initialBreakpoint: currentCard?.readingBreakpoint ?? null,
@@ -490,7 +492,7 @@ export default function IRSessionShell({
         containerRef={currentCardContainerRef}
       />
 
-      <div className="ir-reading__scroll">
+      <div className="ir-reading__scroll" ref={scrollContainerRef}>
         <IRReadingPane
           cardId={currentCard.id}
           panelId={panelId}
