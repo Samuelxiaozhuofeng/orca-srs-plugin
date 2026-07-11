@@ -11,19 +11,16 @@ import {
 } from "../../../srs/incrementalReadingCollector"
 import { completeIRCard } from "../../../srs/irSessionActions"
 import {
-  IR_GROUP_DEFAULT_EXPANDED,
-  type IRDateGroupKey
-} from "../../../srs/incrementalReadingManagerUtils"
-import {
   collectIRSourceBookOptions,
   collectIRStageOptions,
   createDefaultIRLibraryFilters,
   filterAndSortIRCards,
+  hasActiveIRLibraryFilters,
   summarizeIRLibrary,
   type IRLibraryFilters
 } from "./irLibraryFilters"
-import { IR_LIBRARY_PAGE_SIZE } from "./IRLibraryList"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
+import { buildIRSourceTree, type IRTimeNavKey } from "./irSourceTreeBuilder"
 
 const { useCallback, useEffect, useMemo, useState } = window.React
 
@@ -36,13 +33,9 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
   const [libraryLoading, setLibraryLoading] = useState(true)
   const [libraryError, setLibraryError] = useState<string | null>(null)
   const [filters, setFilters] = useState<IRLibraryFilters>(() => createDefaultIRLibraryFilters())
-  const [expandedGroups, setExpandedGroups] = useState<Record<IRDateGroupKey, boolean>>(() => ({
-    ...IR_GROUP_DEFAULT_EXPANDED
-  }))
   const [selectedCardIds, setSelectedCardIds] = useState<Set<DbId>>(new Set())
   const [titleMap, setTitleMap] = useState<Record<string, string>>({})
   const [detailsCardId, setDetailsCardId] = useState<DbId | null>(null)
-  const [groupDisplayCounts, setGroupDisplayCounts] = useState<Record<string, number>>({})
   const [isBatchRemoving, setIsBatchRemoving] = useState(false)
   const [isDeferringOverflow, setIsDeferringOverflow] = useState(false)
   const [todayQueueInfo, setTodayQueueInfo] = useState({
@@ -51,6 +44,10 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     overflowCount: 0,
     actionEnabled: false
   })
+
+  const [timeNavKey, setTimeNavKey] = useState<IRTimeNavKey>("all")
+  const [expandedSourceIds, setExpandedSourceIds] = useState<Record<string, boolean>>({})
+  const [expandedChapterIds, setExpandedChapterIds] = useState<Record<string, boolean>>({})
 
   const loadLibrary = useCallback(async () => {
     setLibraryLoading(true)
@@ -160,6 +157,39 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     [libraryCards, detailsCardId]
   )
 
+  const sourceTreeResult = useMemo(() => {
+    return buildIRSourceTree(libraryCards, filters, timeNavKey, { titleMap })
+  }, [libraryCards, filters, timeNavKey, titleMap])
+
+  const isSourceExpanded = useCallback((sourceId: string): boolean => {
+    if (expandedSourceIds[sourceId] !== undefined) {
+      return expandedSourceIds[sourceId]
+    }
+    // 筛选后只剩一个来源时，可以自动展开该来源
+    if (sourceTreeResult.sources.length === 1 && (timeNavKey !== "all" || hasActiveIRLibraryFilters(filters))) {
+      return true
+    }
+    return false
+  }, [expandedSourceIds, sourceTreeResult.sources.length, timeNavKey, filters])
+
+  const toggleSourceExpanded = useCallback((sourceId: string) => {
+    setExpandedSourceIds((prev: Record<string, boolean>) => ({
+      ...prev,
+      [sourceId]: !isSourceExpanded(sourceId)
+    }))
+  }, [isSourceExpanded])
+
+  const isChapterExpanded = useCallback((chapterId: string): boolean => {
+    return Boolean(expandedChapterIds[chapterId])
+  }, [expandedChapterIds])
+
+  const toggleChapterExpanded = useCallback((chapterId: string) => {
+    setExpandedChapterIds((prev: Record<string, boolean>) => ({
+      ...prev,
+      [chapterId]: !prev[chapterId]
+    }))
+  }, [])
+
   const handleBatchRemove = useCallback(async () => {
     if (selectedCards.length === 0 || isBatchRemoving) return
     setIsBatchRemoving(true)
@@ -251,13 +281,6 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     }
   }, [pluginName, loadLibrary])
 
-  const loadMoreGroup = useCallback((key: IRDateGroupKey) => {
-    setGroupDisplayCounts((prev: Record<string, number>) => ({
-      ...prev,
-      [key]: (prev[key] ?? IR_LIBRARY_PAGE_SIZE) + IR_LIBRARY_PAGE_SIZE
-    }))
-  }, [])
-
   const handleDeferOverflow = useCallback(async () => {
     if (isDeferringOverflow) return
     setIsDeferringOverflow(true)
@@ -294,14 +317,22 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     libraryError,
     filters,
     setFilters,
-    expandedGroups,
-    setExpandedGroups,
+    timeNavKey,
+    setTimeNavKey,
+    expandedSourceIds,
+    setExpandedSourceIds,
+    expandedChapterIds,
+    setExpandedChapterIds,
+    isSourceExpanded,
+    toggleSourceExpanded,
+    isChapterExpanded,
+    toggleChapterExpanded,
+    sourceTreeResult,
     selectedCardIds,
     setSelectedCardIds,
     titleMap,
     detailsCardId,
     setDetailsCardId,
-    groupDisplayCounts,
     isBatchRemoving,
     isDeferringOverflow,
     todayQueueInfo,
@@ -316,7 +347,9 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     handleBatchRemove,
     handleRemoveSourceBook,
     handleDeferOverflow,
-    loadMoreGroup,
-    clearFilters: () => setFilters(createDefaultIRLibraryFilters())
+    clearFilters: () => {
+      setFilters(createDefaultIRLibraryFilters())
+      setTimeNavKey("all")
+    }
   }
 }

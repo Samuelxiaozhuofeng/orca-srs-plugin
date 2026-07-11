@@ -39,6 +39,7 @@ export type IRCard = {
   sourceBookTitle: string | null
   batchId: string | null
   batchCreatedAt: Date | null
+  sourceTopicId?: DbId | null
 }
 
 export type IRQueueOptions = {
@@ -88,7 +89,8 @@ function readIRSourceMeta(block: Block) {
     sourceBookId: parseOptionalNumber(readBlockProperty(block, "ir.sourceBookId")),
     sourceBookTitle: parseOptionalString(readBlockProperty(block, "ir.sourceBookTitle")),
     batchId: parseOptionalString(readBlockProperty(block, "ir.batchId")),
-    batchCreatedAt: parseOptionalDate(readBlockProperty(block, "ir.batchCreatedAt"))
+    batchCreatedAt: parseOptionalDate(readBlockProperty(block, "ir.batchCreatedAt")),
+    sourceTopicId: parseOptionalNumber(readBlockProperty(block, "ir.sourceTopicId"))
   }
 }
 

@@ -54,6 +54,9 @@ describe("incrementalReadingCollector", () => {
       createBlock(2, "topic"),
       createBlock(3, "basic")
     ]
+    blocks[0].properties = [
+      { name: "ir.sourceTopicId", value: 2, type: 3 }
+    ]
 
     const stateMap = new Map<DbId, IRState>([
       [1, { priority: 5, lastRead: null, readCount: 0, due: new Date(now.getTime() + 3600 * 1000), intervalDays: 1, postponeCount: 0, stage: "extract.raw", lastAction: "init", position: null, resumeBlockId: null }],
@@ -86,6 +89,7 @@ describe("incrementalReadingCollector", () => {
 
     expect(results.map(card => card.id)).toEqual([1, 2])
     expect(results.find(card => card.id === 1)?.isNew).toBe(true)
+    expect(results.find(card => card.id === 1)?.sourceTopicId).toBe(2)
     expect(vi.mocked(ensureIRState)).toHaveBeenCalledTimes(2)
 
     vi.useRealTimers()

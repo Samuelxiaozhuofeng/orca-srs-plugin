@@ -2,10 +2,11 @@
  * 统一渐进阅读工作区类型
  */
 
+import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
-import type { IRDateGroupKey } from "../../../srs/incrementalReadingManagerUtils"
 import type { IRLibraryFilters } from "./irLibraryFilters"
+import type { IRTimeNavKey } from "./irSourceTreeBuilder"
 
 export type IRWorkspaceMode = "library" | "reading"
 
@@ -34,10 +35,12 @@ export type IRWorkspaceLibraryState = {
   loading: boolean
   errorMessage: string | null
   filters: IRLibraryFilters
-  expandedGroups: Record<IRDateGroupKey, boolean>
-  selectedCardIds: Set<import("../../../orca.d.ts").DbId>
+  timeNavKey: IRTimeNavKey
+  expandedSourceIds: Record<string, boolean>
+  expandedChapterIds: Record<string, boolean>
+  selectedCardIds: Set<DbId>
   titleMap: Record<string, string>
-  detailsCardId: import("../../../orca.d.ts").DbId | null
+  detailsCardId: DbId | null
 }
 
 export const EMPTY_SESSION_STATE: IRWorkspaceSessionState = {

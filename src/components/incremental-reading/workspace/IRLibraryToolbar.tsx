@@ -1,13 +1,11 @@
 /**
- * 资料库搜索、排序与渐进式筛选工具栏
+ * 资料库搜索与渐进式筛选工具栏
  */
 
 import type {
   IRCardTypeFilter,
-  IRDueStatusFilter,
   IRImportanceFilter,
   IRLibraryFilters,
-  IRLibrarySortBy,
   IRSourceBookOption
 } from "./irLibraryFilters"
 import { formatIRStageLabel, hasActiveIRLibraryFilters } from "./irLibraryFilters"
@@ -27,7 +25,6 @@ type Props = {
 function countAdvancedFilters(filters: IRLibraryFilters): number {
   return [
     filters.cardType !== "all",
-    filters.dueStatus !== "all",
     filters.sourceBook !== "all",
     filters.stage !== "all",
     filters.importance !== "all"
@@ -88,34 +85,6 @@ export default function IRLibraryToolbar({
           <span>筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ""}</span>
         </button>
 
-        <div className="ir-library-toolbar__sort">
-          <label className="ir-sort-field">
-            <span className="ir-sr-only">排序字段</span>
-            <select
-              aria-label="排序字段"
-              value={filters.sortBy}
-              onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
-                onChange({ sortBy: event.currentTarget.value as IRLibrarySortBy })
-              }}
-            >
-              <option value="due">按到期时间</option>
-              <option value="priority">按重要性</option>
-              <option value="readCount">按阅读次数</option>
-              <option value="type">按类型</option>
-              <option value="stage">按阶段</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="ir-toolbar-icon-btn"
-            title={filters.sortDir === "asc" ? "当前升序，点击切换为降序" : "当前降序，点击切换为升序"}
-            aria-label={filters.sortDir === "asc" ? "切换为降序" : "切换为升序"}
-            onClick={() => onChange({ sortDir: filters.sortDir === "asc" ? "desc" : "asc" })}
-          >
-            <i className={`ti ${filters.sortDir === "asc" ? "ti-sort-ascending" : "ti-sort-descending"}`} aria-hidden="true" />
-          </button>
-        </div>
-
         {active ? (
           <button
             type="button"
@@ -142,24 +111,6 @@ export default function IRLibraryToolbar({
             <option value="all">全部类型</option>
             <option value="topic">主题</option>
             <option value="extracts">摘录</option>
-          </select>
-        </label>
-
-        <label className="ir-filter-item">
-          <span className="ir-filter-label">到期</span>
-          <select
-            value={filters.dueStatus}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
-              onChange({ dueStatus: event.currentTarget.value as IRDueStatusFilter })
-            }}
-          >
-            <option value="all">全部时间</option>
-            <option value="overdue">已逾期</option>
-            <option value="today">今天</option>
-            <option value="tomorrow">明天</option>
-            <option value="upcoming7">未来 7 天</option>
-            <option value="new">新卡</option>
-            <option value="later">7 天后</option>
           </select>
         </label>
 

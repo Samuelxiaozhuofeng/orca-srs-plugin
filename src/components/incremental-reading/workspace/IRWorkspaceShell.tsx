@@ -1,7 +1,8 @@
 import type { Block, DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
-import { getIRDateGroup, type IRDateGroupKey } from "../../../srs/incrementalReadingManagerUtils"
+import { getIRDateGroup } from "../../../srs/incrementalReadingManagerUtils"
 import type { IRLibraryFilters } from "./irLibraryFilters"
+import type { IRSourceNode } from "./irSourceTreeBuilder"
 import type { IRWorkspaceDrawer, IRWorkspaceMode } from "./irWorkspaceTypes"
 import IRDetailsDrawer from "./IRDetailsDrawer"
 import IRLibraryView from "./IRLibraryView"
@@ -123,7 +124,11 @@ export default function IRWorkspaceShell({
     if (mode === "library") {
       if (library.libraryLoading) return "加载中…"
       if (library.libraryError) return "资料库加载失败"
-      return `显示 ${library.summary.filtered}/${library.summary.total}`
+      const visibleCount = library.sourceTreeResult.sources.reduce(
+        (sum: number, source: IRSourceNode) => sum + source.stats.matchedCardCount,
+        0
+      )
+      return `显示 ${visibleCount}/${library.summary.total}`
     }
     if (reading.session.loading) return "队列加载中…"
     if (!reading.session.ready) return "选择时间盒"
@@ -160,12 +165,13 @@ export default function IRWorkspaceShell({
             errorMessage={library.libraryError}
             summary={library.summary}
             filters={library.filters}
-            filteredCards={library.filteredCards}
+            timeNavKey={library.timeNavKey}
+            sourceTreeResult={library.sourceTreeResult}
             titleMap={library.titleMap}
-            expandedGroups={library.expandedGroups}
+            isSourceExpanded={library.isSourceExpanded}
+            isChapterExpanded={library.isChapterExpanded}
             selectedCardIds={library.selectedCardIds}
             advancingIds={reading.advancingIds}
-            groupDisplayCounts={library.groupDisplayCounts}
             sourceBooks={library.sourceBooks}
             stages={library.stages}
             candidateBatchId={library.candidateBatchId}
@@ -178,13 +184,10 @@ export default function IRWorkspaceShell({
             onFiltersChange={(patch: Partial<IRLibraryFilters>) => {
               library.setFilters((prev: IRLibraryFilters) => ({ ...prev, ...patch }))
             }}
+            onTimeNavChange={library.setTimeNavKey}
             onClearFilters={library.clearFilters}
-            onToggleGroup={(key: IRDateGroupKey) => {
-              library.setExpandedGroups((prev: Record<IRDateGroupKey, boolean>) => ({
-                ...prev,
-                [key]: !prev[key]
-              }))
-            }}
+            onToggleSource={library.toggleSourceExpanded}
+            onToggleChapter={library.toggleChapterExpanded}
             onToggleCardSelection={(cardId: DbId) => {
               library.setSelectedCardIds((prev: Set<DbId>) => {
                 const next = new Set(prev)
@@ -216,7 +219,6 @@ export default function IRWorkspaceShell({
             onAdvanceLearn={(cardId: DbId) => {
               void reading.handleAdvanceDueOnly(cardId, () => void library.loadLibrary())
             }}
-            onLoadMore={library.loadMoreGroup}
             onSelectBatch={(batchId: string) => {
               const ids = library.libraryCards
                 .filter((c: IRCard) => c.batchId === batchId)

@@ -3,13 +3,13 @@
  */
 
 import type { DbId } from "../../../orca.d.ts"
-import type { IRCard } from "../../../srs/incrementalReadingCollector"
-import type { IRDateGroupKey } from "../../../srs/incrementalReadingManagerUtils"
 import type { IRLibraryFilters, IRLibrarySummary, IRSourceBookOption } from "./irLibraryFilters"
+import type { IRSourceTreeResult, IRTimeNavKey } from "./irSourceTreeBuilder"
 import IRBulkActionBar from "./IRBulkActionBar"
-import IRLibraryList from "./IRLibraryList"
+import IRLibrarySourceTree from "./IRLibrarySourceTree"
 import IRLibraryToolbar from "./IRLibraryToolbar"
 import IRQueueHealthBar from "./IRQueueHealthBar"
+import IRTimeNavigationBar from "./IRTimeNavigationBar"
 
 const { Button } = orca.components
 
@@ -19,12 +19,13 @@ type Props = {
   errorMessage: string | null
   summary: IRLibrarySummary
   filters: IRLibraryFilters
-  filteredCards: IRCard[]
+  timeNavKey: IRTimeNavKey
+  sourceTreeResult: IRSourceTreeResult
   titleMap: Record<string, string>
-  expandedGroups: Record<IRDateGroupKey, boolean>
+  isSourceExpanded: (sourceId: string) => boolean
+  isChapterExpanded: (chapterId: string) => boolean
   selectedCardIds: Set<DbId>
   advancingIds: Record<string, boolean>
-  groupDisplayCounts: Record<string, number>
   sourceBooks: IRSourceBookOption[]
   stages: string[]
   candidateBatchId: string | null
@@ -40,14 +41,15 @@ type Props = {
   searchInputRef: { current: HTMLInputElement | null }
   onRetry: () => void
   onFiltersChange: (patch: Partial<IRLibraryFilters>) => void
+  onTimeNavChange: (key: IRTimeNavKey) => void
   onClearFilters: () => void
-  onToggleGroup: (key: IRDateGroupKey) => void
+  onToggleSource: (sourceId: string) => void
+  onToggleChapter: (chapterId: string) => void
   onToggleCardSelection: (cardId: DbId) => void
   onToggleGroupSelection: (cardIds: DbId[]) => void
   onOpenDetails: (cardId: DbId) => void
   onStartReading: (cardId: DbId) => void
   onAdvanceLearn: (cardId: DbId) => void
-  onLoadMore: (key: IRDateGroupKey) => void
   onSelectBatch: (batchId: string) => void
   onClearSelection: () => void
   onBatchRemove: () => Promise<void>
@@ -61,12 +63,13 @@ export default function IRLibraryView({
   errorMessage,
   summary,
   filters,
-  filteredCards,
+  timeNavKey,
+  sourceTreeResult,
   titleMap,
-  expandedGroups,
+  isSourceExpanded,
+  isChapterExpanded,
   selectedCardIds,
   advancingIds,
-  groupDisplayCounts,
   sourceBooks,
   stages,
   candidateBatchId,
@@ -77,14 +80,15 @@ export default function IRLibraryView({
   searchInputRef,
   onRetry,
   onFiltersChange,
+  onTimeNavChange,
   onClearFilters,
-  onToggleGroup,
+  onToggleSource,
+  onToggleChapter,
   onToggleCardSelection,
   onToggleGroupSelection,
   onOpenDetails,
   onStartReading,
   onAdvanceLearn,
-  onLoadMore,
   onSelectBatch,
   onClearSelection,
   onBatchRemove,
@@ -115,6 +119,12 @@ export default function IRLibraryView({
         onDeferOverflow={onDeferOverflow}
       />
 
+      <IRTimeNavigationBar
+        timeNavKey={timeNavKey}
+        counts={sourceTreeResult.timeNavCounts}
+        onChange={onTimeNavChange}
+      />
+
       <IRLibraryToolbar
         workspaceId={workspaceId}
         filters={filters}
@@ -135,21 +145,22 @@ export default function IRLibraryView({
           </div>
         </div>
       ) : (
-        <IRLibraryList
-          cards={filteredCards}
+        <IRLibrarySourceTree
+          treeResult={sourceTreeResult}
           titleMap={titleMap}
-          expandedGroups={expandedGroups}
+          isSourceExpanded={isSourceExpanded}
+          isChapterExpanded={isChapterExpanded}
           selectedCardIds={selectedCardIds}
           advancingIds={advancingIds}
-          groupDisplayCounts={groupDisplayCounts}
           listRef={listRef}
-          onToggleGroup={onToggleGroup}
+          onToggleSource={onToggleSource}
+          onToggleChapter={onToggleChapter}
           onToggleCardSelection={onToggleCardSelection}
           onToggleGroupSelection={onToggleGroupSelection}
           onOpenDetails={onOpenDetails}
           onStartReading={onStartReading}
           onAdvanceLearn={onAdvanceLearn}
-          onLoadMore={onLoadMore}
+          onRemoveSourceBook={onRemoveSourceBook}
         />
       )}
 
