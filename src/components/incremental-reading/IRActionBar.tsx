@@ -29,7 +29,7 @@ export default function IRActionBar({
 
   return (
     <div className="ir-reading__footer" role="toolbar" aria-label="阅读动作">
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="ir-reading__footer-inner">
         <Button tabIndex={0} variant="solid" onClick={isWorking ? undefined : onNext} style={style} aria-disabled={isWorking} title="下一篇 Enter">
           下一篇
         </Button>

@@ -24,15 +24,7 @@ export default function IRPostponeMenu({ open, isWorking, onChoose, onClose }: P
   const style = isWorking ? { opacity: 0.6, pointerEvents: "none" as const } : undefined
 
   return (
-    <div style={{
-      display: "flex",
-      gap: "8px",
-      flexWrap: "wrap",
-      padding: "8px",
-      border: "1px solid var(--orca-color-border-1)",
-      borderRadius: "8px",
-      background: "var(--orca-color-bg-2)"
-    }}>
+    <div className="ir-reading__postpone">
       {(Object.keys(LABELS) as PostponeChoice[]).map(key => (
         <Button key={key} variant="plain" style={style} onClick={() => onChoose(key)}>
           {LABELS[key]}
