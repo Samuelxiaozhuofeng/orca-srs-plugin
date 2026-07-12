@@ -149,8 +149,10 @@ describe("initializeBookIR", () => {
       expect(block.refs?.some((r) => r.type === 2)).toBe(true)
     }
     const book = blockMap.get(100)!
-    const planRaw = book.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value
-    const plan = parseBookIRPlan(planRaw, 100)
+    const stored = book.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)
+    expect(stored?.type).toBe(0)
+    expect(typeof stored?.value).toBe("object")
+    const plan = parseBookIRPlan(stored?.value, 100)
     expect(plan.mode).toBe("distributed")
     expect(plan.selectedChapterIds).toEqual([1, 2, 3])
   })
@@ -238,10 +240,10 @@ describe("advanceSequentialBook", () => {
       outcome: "completed"
     })
     expect(result.kind).toBe("advanced")
-    const plan = parseBookIRPlan(
-      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
-      100
-    )
+    const stored = blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)
+    expect(stored?.type).toBe(0)
+    expect(typeof stored?.value).toBe("object")
+    const plan = parseBookIRPlan(stored?.value, 100)
     expect(plan.outcomes["1"]).toBe("completed")
     expect(plan.activeChapterId).toBe(2)
     expect(plan.outcomes["2"]).toBe("active")
@@ -365,7 +367,7 @@ describe("retryFailedBookIRInit", () => {
       100
     )
     persisted.outcomes["2"] = "removed"
-    setProp(blockMap.get(100)!, IR_BOOK_PLAN_PROP, JSON.stringify(persisted), 2)
+    setProp(blockMap.get(100)!, IR_BOOK_PLAN_PROP, persisted, 0)
     mockOrca.commands.invokeEditorCommand.mockImplementation(orig!)
 
     const { retryFailedBookIRInit } = await import("./bookIRService")

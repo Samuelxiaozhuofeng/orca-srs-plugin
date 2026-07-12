@@ -15,7 +15,8 @@ const OUTCOMES = new Set<BookIRChapterOutcome>([
   "removed"
 ])
 
-const PROP_TYPE_STRING = 2
+/** Orca PropType.JSON — see plugin-docs/documents/Core-Editor-Commands.md */
+const PROP_TYPE_JSON = 0
 
 async function getBlock(blockId: DbId): Promise<Block | undefined> {
   const cached = orca.state.blocks?.[blockId] as Block | undefined
@@ -37,10 +38,16 @@ export function parseBookIRPlan(raw: unknown, bookBlockId?: DbId): BookIRPlanV1 
     )
   }
 
-  let value: unknown = raw
-  if (typeof raw === "string") {
+  // Legacy writes used PropType.BlockRefs (2). Orca may return those text
+  // values as a single-element array, e.g. ['{"version":1,...}'].
+  const legacyValue = Array.isArray(raw) && raw.length === 1 && typeof raw[0] === "string"
+    ? raw[0]
+    : raw
+
+  let value: unknown = legacyValue
+  if (typeof legacyValue === "string") {
     try {
-      value = JSON.parse(raw)
+      value = JSON.parse(legacyValue)
     } catch {
       throw new EpubValidationError(
         `Malformed ir.bookPlan JSON${bookBlockId != null ? ` (book #${bookBlockId})` : ""}. Recovery: clear ir.bookPlan after verifying notes, then re-initialize.`,
@@ -48,6 +55,14 @@ export function parseBookIRPlan(raw: unknown, bookBlockId?: DbId): BookIRPlanV1 
         bookBlockId
       )
     }
+  }
+
+  if (Array.isArray(value)) {
+    throw new EpubValidationError(
+      `ir.bookPlan is an invalid BlockRefs array${bookBlockId != null ? ` (book #${bookBlockId})` : ""}. Recovery: clear ir.bookPlan after verifying notes, then re-initialize.`,
+      "plan_corrupted_blockrefs",
+      bookBlockId
+    )
   }
 
   if (!isRecord(value)) {
@@ -124,12 +139,12 @@ export async function loadBookIRPlan(bookBlockId: DbId): Promise<BookIRPlanV1 | 
 }
 
 export async function saveBookIRPlan(bookBlockId: DbId, plan: BookIRPlanV1): Promise<void> {
-  const json = serializeBookIRPlan({ ...plan, bookBlockId })
+  const validated = parseBookIRPlan({ ...plan, bookBlockId }, bookBlockId)
   await orca.commands.invokeEditorCommand(
     "core.editor.setProperties",
     null,
     [bookBlockId],
-    [{ name: IR_BOOK_PLAN_PROP, value: json, type: PROP_TYPE_STRING }]
+    [{ name: IR_BOOK_PLAN_PROP, value: validated, type: PROP_TYPE_JSON }]
   )
 }
 
