@@ -80,11 +80,12 @@ export function registerCommands(
         return null
       }
 
-      // 会话内必须由 Shell 先 flush 断点，再执行原子转化。
+      // 仅当命令目标就是会话当前卡时由 Shell 接管；Topic 子 Extract 继续走编辑器命令。
       const event = new CustomEvent("orca-srs:ir-session-action", {
         detail: {
           action: "itemize",
-          panelId: panelId || cursor.panelId || orca.state.activePanel
+          panelId: panelId || cursor.panelId || orca.state.activePanel,
+          targetBlockId: cursor.anchor.blockId
         },
         cancelable: true
       })

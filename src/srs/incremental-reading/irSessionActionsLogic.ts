@@ -58,3 +58,39 @@ export function resolveItemizeFailure(
     preserveExtract: extractStillExists && irStateIntact
   }
 }
+
+export type IRSessionItemizeIntercept =
+  | { handle: false }
+  | { handle: true; kind: "topic_block" }
+  | { handle: true; kind: "extract_block" }
+
+/**
+ * 会话是否应接管 Alt+Z/itemize：仅当事件 panel 匹配且命令目标块就是队列当前卡。
+ * Topic 下新建的 Extract 子块 targetBlockId 不同，交由编辑器命令识别并转化。
+ */
+export function resolveSessionItemizeIntercept(params: {
+  sessionPanelId: string
+  eventPanelId: string | undefined
+  currentCardId: number | null | undefined
+  currentCardType: "topic" | "extracts" | undefined
+  targetBlockId: number | undefined
+}): IRSessionItemizeIntercept {
+  const { sessionPanelId, eventPanelId, currentCardId, currentCardType, targetBlockId } = params
+
+  if (!eventPanelId || eventPanelId !== sessionPanelId) {
+    return { handle: false }
+  }
+  if (currentCardId == null || targetBlockId == null) {
+    return { handle: false }
+  }
+  if (targetBlockId !== currentCardId) {
+    return { handle: false }
+  }
+  if (currentCardType === "topic") {
+    return { handle: true, kind: "topic_block" }
+  }
+  if (currentCardType === "extracts") {
+    return { handle: true, kind: "extract_block" }
+  }
+  return { handle: false }
+}

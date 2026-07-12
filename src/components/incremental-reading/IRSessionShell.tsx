@@ -20,6 +20,7 @@ import {
   performPriorityAdjust,
   performSkipChapter
 } from "../../srs/incremental-reading/irSessionService"
+import { resolveSessionItemizeIntercept } from "../../srs/incremental-reading/irSessionActionsLogic"
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import { tierToPriority, priorityToTier } from "../../srs/incremental-reading/irQueuePolicy"
 import { recordDwellSample } from "../../srs/incremental-reading/irCostCalibration"
@@ -148,7 +149,11 @@ export default function IRSessionShell({
 
   useEffect(() => {
     const onAction = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { action?: string; panelId?: string } | undefined
+      const detail = (event as CustomEvent).detail as {
+        action?: string
+        panelId?: string
+        targetBlockId?: DbId
+      } | undefined
       if (!detail?.action || showSummary || loadFailed) return
       if (detail.panelId !== panelId) return
       if (detail.action === "next") void handleNext()
@@ -159,8 +164,17 @@ export default function IRSessionShell({
         void handleSkipChapter()
       }
       if (detail.action === "itemize") {
+        const intercept = resolveSessionItemizeIntercept({
+          sessionPanelId: panelId,
+          eventPanelId: detail.panelId,
+          currentCardId: currentCard?.id,
+          currentCardType: currentCard?.cardType,
+          targetBlockId: detail.targetBlockId
+        })
+        if (!intercept.handle) return
+
         event.preventDefault()
-        if (isTopic) {
+        if (intercept.kind === "topic_block") {
           orca.notify("warn", "请先创建 Extract，再将精炼内容制成记忆卡片", { title: "渐进阅读" })
         } else {
           void handleItemize()
