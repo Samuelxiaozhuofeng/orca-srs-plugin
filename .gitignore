@@ -39,3 +39,6 @@ dist-ssr
 create-release.bat
 deploy.bat
 dist.zip
+.ccb/agents/grk/provider-state/grok/home/.grok/auth.json.lock
+.ccb/agents/grk/provider-state/grok/home/.grok/managed_config.lock
+.ccb/agents/grk/provider-state/grok/home/.grok/worktrees.db
