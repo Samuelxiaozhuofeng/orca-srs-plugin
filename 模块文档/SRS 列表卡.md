@@ -77,3 +77,40 @@
 
 - 删除子块：对应条目不再存在
 - 新增子块：视为新条目（新卡），将按初始化规则进入解锁流程
+
+## 复习日志与启动清理（FC-04 / FC-05）
+
+列表卡每个条目有独立复习日志。新日志（存储 v2）写入结构化身份：
+
+- `blockId`：父列表根块
+- `listItemId`：条目子块
+- `cardKey`：`list:{blockId}:item:{listItemId}`（由 `cardIdentity` 统一生成）
+- `cardId`：兼容字段，仍为 `listItemId`
+
+### 启动清理如何判定 List 日志是否有效
+
+实现：`src/srs/deletedCardCleanup.ts`。**不再**用 `collectSrsBlocks()` 结果当删除真相。
+
+对结构化 List 日志，同时要求：
+
+1. 父列表块 **exists**，且仍为 `type=list` 的 SRS 卡
+2. `listItemId` 仍在父块的**直接** `children` 中
+3. 子条目块本身 **exists**
+
+删除条件（确认后才删）：
+
+- 父块或子块 **missing**
+- 子条目已不在父列表 `children` 中
+- 父块类型已不是 list
+
+**unknown 保留**：父或子 `get-block` 抛错时不得删除，计入 `retainedUnknownCount` 并写入 `errors`。
+
+### legacy 与部分结构化日志
+
+**pure legacy**（仅有 `cardId`，或 `legacy === true`，无其它身份痕迹）无法区分「父卡」与「List 子条目」：
+
+- 只检查 `cardId` 指向块是否存在
+- exists → 保留；missing → 删除；unknown → 保留
+- **不**因缺少 `#card` 标签删除
+
+若日志已有任一结构化痕迹（如 `legacy: false`、`blockId`、`cardType`、`listItemId`）但字段不完整（例如缺 `cardKey`），**不得**按 legacy 用 `cardId`（可能是子条目 ID）删除；应按结构化不完整处理：父块 exists/unknown 时保留并记错误，仅父块明确 missing 时可删。

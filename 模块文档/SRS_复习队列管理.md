@@ -34,7 +34,7 @@ flowchart TD
     D --> G[去重返回]
 ```
 
-#### `collectReviewCards(): Promise<ReviewCard[]>`
+#### `collectReviewCards(pluginName?, options?): Promise<ReviewCard[]>`
 
 将块转换为 ReviewCard 对象：
 
@@ -54,41 +54,76 @@ flowchart TD
 }
 ```
 
-#### `buildReviewQueue(cards): ReviewCard[]`
+**FC-13 收集性能（默认开启，不改变卡片数量/顺序/card key/due/isNew/deck）：**
 
-构建复习队列，采用两旧一新策略。
+1. **块缓存预热**：`preheatBlockCache(collectSrsBlocks 返回的完整块)`，避免 `ensure*` 对同一卡块再 `get-block`。
+2. **List 子块批量预取**：去重后 `get-blocks` 分批（默认 batch=50、并发≤4），再写入块缓存。
+3. **牌组名批量预取**：`prefetchDeckNamesForBlocks` 先读 `orca.state.blocks`，缺失目标块用正式 `get-blocks` 去重分批读取；单卡 `extractDeckName` 命中本轮缓存。收集结束 `clearDeckNameCache`，**不做长期牌组索引**。
+4. **metrics**：可选 `options.metricsOut` 写入 `CollectReviewCardsMetrics`（输入块数、输出卡数、总耗时、阶段耗时、最慢阶段、预热数、并发峰值、牌组/列表预取摘要）。`logMetrics: true` 时才 `console.info`；生产默认不刷屏。
+5. **测试开关**：`disableOptimizations: true` 仅用于 A/B 与行为等价回归，生产不得关闭。
+6. **失效**：评分/写入仍走既有 `invalidateBlockCache`；不引入依赖不完整删除/卡型/牌组事件的长期索引。
+7. **轮询策略（评估结论）**：
+   - 会话 60s 全库扫描：**保留**。`pendingDueCardsRef` 只覆盖 Again 后 5 分钟内重学卡；新到期卡/他处编辑无完整事件时，仅扫描短期候选无法证明可靠。调用成本已由本收集优化显著下降。fixed/repeat 仍禁止全库扫描。
+   - 首页 120s 兜底刷新：**保留**。已有 graded/postponed/suspended 事件即时刷新；编辑/删除事件不完整，低频全量仍作兜底。
 
-**关键特性（2025-12-10 更新）：**
+#### `buildReviewQueue(cards, limits?): ReviewCard[]`
 
-- **新卡到期检查**：新卡也需要检查到期时间，只有到期日期 <= 今天的新卡才会出现在队列中
-- **日期比较方式**：只比较日期（零点），忽略具体时分秒
-- **支持分天推送**：实现 Cloze 卡片的 c1 今天、c2 明天、c3 后天的分天推送机制
+构建复习队列：到期筛选 → **FC-11 稳定排序** → **FC-01 限额** → 两旧一新交织。
+
+**关键特性：**
+
+- **到期判断（精确时间）**：`card.srs.due.getTime() <= now`；新卡同样检查到期时间
+- **FC-11 稳定排序**（旧卡、新卡各自独立排序，不依赖输入/后端顺序）：
+  1. `due` 升序（逾期最久优先）
+  2. 相同 due：`cardIdentity` 结构化比较（`compareReviewCardIdentity` / `orderTupleFromIdentity`）
+     - Cloze：`clozeNumber` **数值**序（c2 先于 c10，避免 cardKey 字符串字典序）
+     - Direction：`forward` 先于 `backward`
+     - List：`listItemId` 数值自然序
+     - **不改变** `buildCardKey` / 日志字符串格式
+  3. 不随机；fixed 会话与动态候选共用同一 `buildReviewQueue`（均稳定排序）
+- **FC-01 每日正式根卡限额**：可选显式 `limits: { newCardsPerDay, reviewCardsPerDay }`；**不得**在函数内隐式读全局 settings
+  - 有 limits：在**已稳定排序**的序列上截断旧卡 `reviewCardsPerDay`、新卡 `newCardsPerDay`，再 2:1 交织
+  - `limits` 省略/`null`：不限额（fixed 会话、动态扫描候选列表），仍做稳定排序
+  - **辅助子卡不计入正式根卡额度**（先限额再展开；`formalRootCards` 仅含已选根）
+- **特殊卡 due 分天**：List 解锁、Cloze/Direction 分天推送由各自 `due` 决定入队与先后；排序只按 due + identity，不打乱分天策略
+- **FC-12 子卡展开**（`buildReviewQueueWithChildren` / `buildSessionReviewQueue` / `expandChildCardsForRoots`）：
+  - 跟随已排序正式根卡做**确定性前序**展开；**不改变** FC-11 根卡排序与链内既有顺序
+  - 正式根深度 = 0，始终保留；限制**只计辅助子卡**
+  - 显式 `childExpandLimits: { maxDepth, maxAuxChildCards }`；默认 **maxDepth=10**、**maxAuxChildCards=200**（每会话）
+  - 核心函数只收显式输入，**不读**全局 settings；无效值（负/NaN/小数/过大）`warn` 并回退默认
+  - 达单链深度或会话辅助数量上限：截断该扩展，**继续**后续正式根卡；链内循环安全终止
+  - 返回诊断（`truncated`、`reason`、`rootKey`、`depth`/`count`、`message`），不得静默；Renderer 生成简短 warning 交给 Demo 会话顶部展示，控制台打印具体诊断
+  - fixed / normal / repeat 行为一致（fixed 正式根仍不限额，但子卡展开仍受 FC-12 约束）
 
 ```typescript
-// 到期卡片：已复习过 && 到期日期 < 明天零点
-const dueCards = cards.filter(card => {
-  if (card.isNew) return false
-  return card.srs.due.getTime() < todayEnd.getTime()
-})
+// 显式限额（普通 all/deck 会话）
+buildReviewQueue(filteredCards, { newCardsPerDay: 30, reviewCardsPerDay: 200 })
 
-// 新卡片：未复习过 && 到期日期 < 明天零点（关键修改）
-const newCards = cards.filter(card => {
-  if (!card.isNew) return false
-  return card.srs.due.getTime() < todayEnd.getTime()
+// 不限额但稳定排序（fixed / 动态候选）
+buildReviewQueue(allCards, null)
+
+// 会话队列：正式根限额 + 子卡展开限制（默认 10/200）
+await buildSessionReviewQueue(cards, pluginName, dailyLimits, {
+  maxDepth: 10,
+  maxAuxChildCards: 200
 })
+// → { queue, formalRootCards, childExpandDiagnostics, childExpandLimits, auxChildCount }
 ```
 
 ```mermaid
 flowchart LR
-    A[到期卡片] --> B[队列]
-    C[今日新卡] --> B
-    D[未来新卡] -.被过滤.-> E[不进入队列]
-
-    subgraph 交织策略
-        F[旧1] --> G[旧2] --> H[新1] --> I[旧3] --> J[旧4] --> K[新2]
-    end
+    A[到期旧卡] --> S1[due升序+结构化identity]
+    C[到期新卡] --> S2[due升序+结构化identity]
+    S1 --> T[按 reviewCardsPerDay 截断]
+    S2 --> U[按 newCardsPerDay 截断]
+    T --> B[2:1 交织正式根]
+    U --> B
+    B --> E[FC-12 前序展开子卡]
+    E --> F[深度/数量上限截断+诊断]
+    D[未来卡] -.被过滤.-> G[不进入队列]
 ```
 
+相关纯函数：`partitionDueAndNewCards`、`sortCardsForReviewQueue` / `compareReviewCardsForQueue`、`applyDailyRootLimits`、`interleaveDueAndNew`、`resolveChildExpandLimits`、`expandChildCardsForRoots`、`formatChildExpandWarning`。回归：`cardCollector.queueOrdering.test.ts`、`cardCollector.queueLimits.test.ts`、`cardCollector.children.test.ts`。
 #### `calculateDeckStats(cards): DeckStats`
 
 计算各 Deck 的统计信息：
@@ -122,17 +157,20 @@ flowchart LR
 
 ### 复习队列策略
 
-#### 两旧一新交织
+#### 稳定排序 + 两旧一新交织
 
 ```
-输入：
-- 到期卡片：[A, B, C, D, E]
-- 新卡片：[1, 2, 3]
+输入（任意顺序）：
+- 到期旧卡 due 时间：C < A < B < D < E
+- 新卡 due / identity 序：1, 2, 3
 
-输出队列：
-[A, B, 1, C, D, 2, E, 3]
+排序后：
+- 旧卡：[C, A, B, D, E]
+- 新卡：[1, 2, 3]
+
+输出队列（2:1）：
+[C, A, 1, B, D, 2, E, 3]
 ```
-
 #### 到期判定（2025-12-10 更新）
 
 - **新卡定义**：`lastReviewed === null` 或 `reps === 0`
@@ -152,8 +190,9 @@ flowchart LR
 
 1. 获取/创建复习会话块
 2. 记录当前面板为主面板
-3. 在右侧创建复习面板
-4. 调整面板宽度比例
+3. 写入临时全局 `reviewDeckFilter`（仅供会话**启动瞬间**读取）
+4. 在右侧创建复习面板
+5. 调整面板宽度比例
 
 ```mermaid
 flowchart TD
@@ -167,6 +206,52 @@ flowchart TD
     G --> H[切换焦点]
 ```
 
+### 会话范围冻结（FC-02）
+
+核心文件：`src/srs/reviewSessionScope.ts`
+
+会话启动时把范围固化为显式不可变 `ReviewSessionScope`，经 Props 传给 `SrsReviewSessionDemo`。**之后全局 `getReviewDeckFilter()` 如何变化都不影响当前会话。** Demo **不得**再读取全局 deck filter。
+
+| kind | 含义 | 动态检查 |
+|------|------|----------|
+| `all` | 今日全部复习，无牌组限制 | 允许全库扫描，A/B 均可追加 |
+| `deck` | 固定单牌组 `deckName` | 允许扫描，但只接纳 `card.deck === deckName` |
+| `fixed` | 重复复习/困难卡/专项训练固定集合（`cardKeys` + List `fixedRootIds`） | **禁止**全库扫描；只允许集合内重新入队；List 同根后续条目/辅助预览允许 |
+
+规则摘要：
+
+1. 普通会话：`loadReviewQueue` 只读一次 `getReviewDeckFilter()` → `createScopeFromDeckFilter` → 用同一 scope 筛选初始 cards。
+2. 重复复习：对展开后的 `expandedCards` 建 `fixed` scope；轮次重置不改变固定集合语义。
+3. 定时 60s 刷新、手动「检查新到期卡片」、Again/Hard pending due 重入队，全部走同一 scope helper（`selectNewDueCardsForSession` / `selectPendingDueCardsForRequeue` / `isCardInSessionScope`）。
+4. card key 统一 `cardKeyFromReviewCard`；Cloze/Direction 按精确变体，不因同 `blockId` 串卡；List 用 `fixedRootIds` 允许同根下一条。
+
+### 每日正式根卡额度（FC-01）
+
+核心文件：`src/srs/reviewSessionBudget.ts`、`src/srs/cardCollector.ts`
+
+| 概念 | 规则 |
+|------|------|
+| 作用对象 | **仅正式根卡**（`buildReviewQueue` / 动态追加的到期根卡） |
+| 子卡 | `buildReviewQueueWithChildren` / `expandChildCardsForRoots` 随已选根卡展开的辅助子卡 **不消耗** 新/旧额度，也 **不能** 使额外根卡进入 |
+| 计算范围 | 指定 deck 会话：先按牌组过滤，再在该范围内截断；全部会话：在全库候选上截断 |
+| 交织 | 先截断再 **2 旧 : 1 新**；不实施 FC-11 稳定排序 |
+| fixed | **不受**每日限制；**不**做全库动态扫描（保持 FC-02） |
+| 会话冻结 | Renderer 启动时 `resolveDailyQueueLimits` 校验设置并冻结 `sessionDailyLimits` + `sessionFormalRootCards` 传给 Demo；会话中不重读全局 settings |
+| 动态追加 | 候选用**不限额** `buildReviewQueue(..., null)` → 先 scope → 再剩余额度；自动/手动共用 `selectNewDueCardsForSession(..., budget)` |
+| 短期重学 | 已接纳 `cardKey` 重新入队 **不重复消耗**；新身份才占额度 |
+| 额度生命周期 | 表示「本会话已接纳过的正式根卡」；`currentIndex` 前移或卡暂时离开待复习尾部 **不释放** |
+| 设置校验 | 仅接受有限、非负整数且 ≤ `MAX_DAILY_CARD_LIMIT`（10000）；拒绝负数 / NaN / Infinity / 小数 / 过大值；`console.warn`（及用户可见告警）后回退 schema 默认 **30 / 200**；不可静默；合法 `0` 得到空队列 |
+
+```typescript
+// 启动（普通会话）
+const resolved = resolveDailyQueueLimits(settings.newCardsPerDay, settings.reviewCardsPerDay)
+const { queue, formalRootCards } = await buildSessionReviewQueue(filteredCards, plugin, resolved)
+
+// 动态追加
+const candidates = buildReviewQueue(await collectReviewCards(plugin), null)
+const added = selectNewDueCardsForSession(candidates, prevQueue, sessionScope, budget)
+```
+
 ## 辅助函数
 
 | 函数                       | 说明                  |
@@ -176,12 +261,15 @@ flowchart TD
 | `resolveFrontBack(block)`  | 解析题目和答案        |
 | `removeHashTags(text)`     | 移除文本中的 # 标签   |
 | `extractDeckName(block)`   | 提取 Deck 名称        |
+| `resolveDailyQueueLimits`  | 校验并回退每日限额    |
+| `buildSessionReviewQueue`  | 正式根卡 + 子卡展开   |
+| `createSessionRootCardBudget` | 会话额度状态 seed  |
 
 ## 扩展点
 
 1. **筛选策略**：可扩展按 Deck、标签筛选
-2. **优先级算法**：可扩展更复杂的排序算法
-3. **学习限制**：可扩展每日新卡/复习卡上限
+2. **优先级算法**：可扩展更复杂的排序算法（FC-11）
+3. **学习限制**：每日新卡/复习卡上限已由 FC-01 接入
 
 ## 相关文件
 

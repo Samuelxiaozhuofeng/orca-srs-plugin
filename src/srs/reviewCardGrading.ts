@@ -12,9 +12,32 @@ import {
 } from "./storage"
 import { postponeCard, suspendCard } from "./cardStatusUtils"
 import { emitCardGraded, emitCardPostponed, emitCardSuspended } from "./srsEvents"
-import { saveReviewLog, createReviewLogId } from "./reviewLogStorage"
+import { saveAndFlushReviewLog, createReviewLogId } from "./reviewLogStorage"
+import {
+  compatibleCardId,
+  identityFieldsForLog,
+  identityFromReviewCard
+} from "./cardIdentity"
+import {
+  computeReviewTiming,
+  type ReviewTiming
+} from "./sessionProgressTracker"
 
+/** 评分成功（含 FC-10 timing；日志失败仍带 timing） */
 export type ReviewGradeSuccess = {
+  ok: true
+  updatedCard: ReviewCard
+  logMessage: string
+  warning?: string
+  /**
+   * 与日志同源的一次评分 timing。
+   * 日志失败时仍返回，供会话进度使用同一 effectiveDuration。
+   */
+  timing: ReviewTiming
+}
+
+/** 推迟 / 暂停成功（无时长） */
+export type ReviewStatusActionSuccess = {
   ok: true
   updatedCard: ReviewCard
   logMessage: string
@@ -27,10 +50,26 @@ export type ReviewGradeFailure = {
 }
 
 export type ReviewGradeResult = ReviewGradeSuccess | ReviewGradeFailure
+export type ReviewStatusActionResult = ReviewStatusActionSuccess | ReviewGradeFailure
 
 export type GradeReviewCardOptions = {
   /** 独立复习会话会自行展开 List 后续条目，因此只需共享核心评分。 */
   updateListProgression?: boolean
+  /**
+   * FC-10：注入评分时刻（固定 number 或单次调用的函数）。
+   * 只读取一次，同时生成 timestamp / rawDuration / effectiveDuration。
+   */
+  now?: number | (() => number)
+}
+
+function resolveGradeNow(nowOption: GradeReviewCardOptions["now"]): number {
+  if (typeof nowOption === "function") {
+    return nowOption()
+  }
+  if (typeof nowOption === "number" && Number.isFinite(nowOption)) {
+    return nowOption
+  }
+  return Date.now()
 }
 
 function cardLabel(card: ReviewCard): string {
@@ -137,25 +176,47 @@ export async function gradeReviewCard(
       ? "relearning"
       : (result.state.interval < 1 ? "learning" : "review")
 
-    const reviewDuration = Date.now() - reviewStartedAt
-    const timestamp = Date.now()
-    const logCardId = isListCard ? card.listItemId! : card.id
+    // FC-10：一次评分只读一次 now，timestamp / raw / effective 同源
+    const nowMs = resolveGradeNow(options.now)
+    const timing = computeReviewTiming(reviewStartedAt, nowMs)
+    const identity = identityFromReviewCard(card)
+    const identityFields = identityFieldsForLog(identity)
+    const logCardId = compatibleCardId(identity)
 
     const reviewLog: ReviewLogEntry = {
-      id: createReviewLogId(timestamp, logCardId),
+      id: createReviewLogId(timing.timestamp, identityFields.cardKey!),
       cardId: logCardId,
+      ...identityFields,
       deckName: card.deck,
-      timestamp,
+      timestamp: timing.timestamp,
       grade,
-      duration: reviewDuration,
+      /** 有效时长 0..60000 */
+      duration: timing.effectiveDuration,
+      /** 安全非负原始墙钟；异常为 0 */
+      rawDuration: timing.rawDuration,
       previousInterval,
       newInterval: result.state.interval,
       previousState,
       newState
     }
 
-    void saveReviewLog(pluginName, reviewLog)
-    emitCardGraded(logCardId, grade)
+    // 评分路径必须等待本条日志确认落盘；失败不回滚已成功的 FSRS 状态
+    try {
+      await saveAndFlushReviewLog(pluginName, reviewLog)
+    } catch (logError) {
+      const logWarning =
+        "评分已保存，但统计日志保存失败"
+      warning = warning ? `${warning}；${logWarning}` : logWarning
+      console.error(
+        "[SRS Review] 统计日志保存失败（评分状态已写入，pending 保留待重试）:",
+        logError
+      )
+    }
+
+    emitCardGraded(logCardId, grade, {
+      cardKey: identityFields.cardKey,
+      identity
+    })
 
     const label = cardLabel(card)
     const logMessage = `评分 ${grade.toUpperCase()}${label} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
@@ -164,14 +225,16 @@ export async function gradeReviewCard(
       ok: true,
       updatedCard,
       logMessage,
-      warning
+      warning,
+      // 日志失败仍返回 timing，会话进度可用同一 effectiveDuration
+      timing
     }
   } catch (error) {
     return { ok: false, error }
   }
 }
 
-export async function postponeReviewCard(card: ReviewCard): Promise<ReviewGradeResult> {
+export async function postponeReviewCard(card: ReviewCard): Promise<ReviewStatusActionResult> {
   try {
     const postponeBlockId = card.listItemId ?? card.id
     await postponeCard(postponeBlockId, card.clozeNumber, card.directionType)
@@ -186,7 +249,7 @@ export async function postponeReviewCard(card: ReviewCard): Promise<ReviewGradeR
   }
 }
 
-export async function suspendReviewCard(card: ReviewCard): Promise<ReviewGradeResult> {
+export async function suspendReviewCard(card: ReviewCard): Promise<ReviewStatusActionResult> {
   try {
     await suspendCard(card.id)
     emitCardSuspended(card.id)

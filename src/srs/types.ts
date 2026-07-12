@@ -89,6 +89,11 @@ export type ReviewCard = {
   srs: SrsState
   isNew: boolean
   deck: string  // 修改：从 deck?: string 改为必填
+  /**
+   * 卡片类型。真实收集路径（cardCollector / blockCardCollector）必须显式填入，
+   * 以便 Basic 与 Choice 等可区分；测试 fixture 可省略，由 cardIdentity 兜底推断。
+   */
+  cardType?: CardType
   clozeNumber?: number  // 填空编号（仅 cloze 卡片使用）
   directionType?: "forward" | "backward"  // 方向类型（仅 direction 卡片使用）
   // 列表卡相关字段（仅 list 卡片使用）
@@ -170,14 +175,39 @@ export function getTimeRangeStartDate(range: TimeRange): Date {
 /**
  * 复习记录条目
  * 记录单次复习的详细信息
+ *
+ * 身份字段（FC-05 / 存储 v2）：
+ * - cardId：兼容旧语义（List 用 listItemId，其余用父 blockId）；新逻辑不得用它猜变体
+ * - blockId / cardType / cardKey / 变体字段：新日志必写
+ * - legacy：读取 v1 或缺字段日志时归一化为 true
  */
 export interface ReviewLogEntry {
-  id: string                    // 唯一标识 (timestamp + cardId)
-  cardId: DbId                  // 卡片 ID
+  id: string                    // 唯一标识 (timestamp + cardKey 或兼容 cardId)
+  cardId: DbId                  // 兼容卡片 ID（见上）
+  /** 父卡块 ID；新日志必写 */
+  blockId?: DbId
+  /** 卡片类型；新日志必写 */
+  cardType?: CardType
+  /** 稳定身份键，由 cardIdentity 统一生成；新日志必写 */
+  cardKey?: string
+  clozeNumber?: number
+  directionType?: "forward" | "backward"
+  listItemId?: DbId
+  /** 旧版或缺少结构化身份的日志 */
+  legacy?: boolean
   deckName: string              // 牌组名称
   timestamp: number             // 复习时间戳 (毫秒)
   grade: Grade                  // 评分 (again/hard/good/easy)
-  duration: number              // 复习耗时 (毫秒)
+  /**
+   * 有效复习时长（毫秒）。
+   * FC-10：统一为 0..60000；新日志写入有效时长；旧日志读取时经 calculateEffectiveDuration 再归一化。
+   */
+  duration: number
+  /**
+   * 可选：安全非负原始墙钟耗时（毫秒，无 60s 截断）。
+   * 异常（负/NaN/Infinity）写入 0；统计累加使用 duration，不使用本字段。
+   */
+  rawDuration?: number
   previousInterval: number      // 复习前的间隔天数
   newInterval: number           // 复习后的间隔天数
   previousState: CardState      // 复习前的卡片状态

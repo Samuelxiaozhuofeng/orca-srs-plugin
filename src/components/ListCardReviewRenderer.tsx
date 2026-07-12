@@ -63,6 +63,8 @@ type ListCardReviewRendererProps = {
   onJumpToCard?: (blockId: DbId, shiftKey?: boolean) => void
   inSidePanel?: boolean
   panelId?: string
+  readOnly?: boolean
+  readOnlyStatusText?: string
 }
 
 export default function ListCardReviewRenderer({
@@ -83,8 +85,10 @@ export default function ListCardReviewRenderer({
   onJumpToCard,
   inSidePanel = false,
   panelId,
+  readOnly = false,
+  readOnlyStatusText,
 }: ListCardReviewRendererProps) {
-  const [showAnswer, setShowAnswer] = useState(false)
+  const [showAnswer, setShowAnswer] = useState(!!readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
 
   const prevCardKeyRef = useRef<string>("")
@@ -92,11 +96,13 @@ export default function ListCardReviewRenderer({
 
   useEffect(() => {
     if (prevCardKeyRef.current !== currentCardKey) {
-      setShowAnswer(false)
+      setShowAnswer(!!readOnly)
       setShowCardInfo(false)
       prevCardKeyRef.current = currentCardKey
+    } else if (readOnly) {
+      setShowAnswer(true)
     }
-  }, [currentCardKey])
+  }, [currentCardKey, readOnly])
 
   const snapshot = useSnapshot(orca.state)
 
@@ -120,7 +126,7 @@ export default function ListCardReviewRenderer({
   }, [parentBlock?.text])
 
   const handleGrade = async (grade: Grade) => {
-    if (isGrading) return
+    if (isGrading || readOnly) return
     await onGrade(grade)
     setShowAnswer(false)
   }
@@ -132,6 +138,7 @@ export default function ListCardReviewRenderer({
     onGrade: handleGrade,
     onBury: onPostpone,
     onSuspend,
+    readOnly,
   })
 
   const intervals = useMemo(() => {
@@ -254,7 +261,7 @@ export default function ListCardReviewRenderer({
 
           {/* 右侧：操作按钮 */}
           <div style={{ display: "flex", gap: "2px" }}>
-            {onPostpone && (
+            {!readOnly && onPostpone && (
               <Button
                 variant="plain"
                 onClick={onPostpone}
@@ -264,7 +271,7 @@ export default function ListCardReviewRenderer({
                 <i className="ti ti-calendar-pause" />
               </Button>
             )}
-            {onSuspend && (
+            {!readOnly && onSuspend && (
               <Button
                 variant="plain"
                 onClick={onSuspend}
@@ -403,8 +410,39 @@ export default function ListCardReviewRenderer({
           })}
         </ol>
 
-        {/* 显示答案按钮 / 评分按钮 */}
-        {!showAnswer ? (
+        {readOnly && (
+          <div
+            contentEditable={false}
+            style={{
+              marginBottom: "10px",
+              padding: "8px 12px",
+              borderRadius: "8px",
+              fontSize: "13px",
+              fontWeight: 500,
+              color: "var(--orca-color-warning-6)",
+              backgroundColor: "var(--orca-color-warning-1)",
+              textAlign: "center",
+            }}
+          >
+            {readOnlyStatusText ?? "只读回看"}
+          </div>
+        )}
+
+        {/* 显示答案按钮 / 评分按钮 / 只读继续 */}
+        {readOnly ? (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+            {onSkip && (
+              <Button
+                variant="solid"
+                onClick={onSkip}
+                title="继续复习"
+                style={{ padding: "12px 32px", fontSize: "16px" }}
+              >
+                继续
+              </Button>
+            )}
+          </div>
+        ) : !showAnswer ? (
           <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "12px" }}>
             {/* 跳过按钮 - 在答案未显示时也可用 */}
             {onSkip && (

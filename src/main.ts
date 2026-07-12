@@ -39,6 +39,15 @@ import {
 } from "./srs/incrementalReadingManagerUtils"
 import type { IRWorkspaceMode } from "./components/incremental-reading/workspace/irWorkspaceTypes"
 import { openIRWorkspace } from "./srs/incremental-reading/irWorkspacePanelLaunch"
+import {
+  runPluginUnloadSequence,
+  UNLOAD_LOG_FLUSH_PENDING_MESSAGE
+} from "./srs/pluginUnloadSequence"
+import { flushReviewLogs } from "./srs/reviewLogStorage"
+import {
+  clearRegisteredSessionProgressKeys,
+  getDefaultSessionStorage
+} from "./srs/sessionProgressStorage"
 
 // 插件全局状态
 let pluginName: string
@@ -102,28 +111,91 @@ export async function load(_name: string) {
   // 延迟执行已删除卡片清理（避免阻塞启动）
   setTimeout(async () => {
     try {
-      await cleanupDeletedCards(pluginName)
+      const report = await cleanupDeletedCards(pluginName)
+      if (report.errors.length > 0) {
+        console.error(
+          `[${pluginName}] 已删除卡片清理未完全成功: cleaned=${report.cleanedCount}, retainedUnknown=${report.retainedUnknownCount}, errors=${report.errors.length}`,
+          report.errors
+        )
+      }
     } catch (error) {
-      console.warn(`[${pluginName}] 清理已删除卡片时出错:`, error)
+      console.error(`[${pluginName}] 清理已删除卡片时出错（未完成）:`, error)
     }
   }, 3000) // 延迟 3 秒执行
 }
 
 /**
  * 插件卸载函数
- * 在插件禁用或 Orca 关闭时被调用
+ * 在插件禁用或 Orca 关闭时被调用。
+ * 顺序：先 flush 复习日志（数据 API 仍可用）→ 再注销/清理；flush 失败不阻断卸载。
  */
 export async function unload() {
-  orca.themes.removeCSSResources(PLUGIN_UI_STYLE_ROLE)
-  stopRecentDeckWatcher()
-  stopAutoMarkExtract(pluginName)
-  unregisterCommands(pluginName)
-  unregisterUIComponents(pluginName)
-  unregisterRenderers(pluginName)
-  unregisterConverters(pluginName)
-  unregisterContextMenu(pluginName)
-  await cleanupIncrementalReadingManagerBlock(pluginName)
-  console.log(`[${pluginName}] 插件已卸载`)
+  const name = pluginName
+  const result = await runPluginUnloadSequence({
+    pluginName: name,
+    flush: flushReviewLogs,
+    notifyFlushFailure: (message) => {
+      try {
+        orca.notify("error", message, { title: "SRS 日志" })
+      } catch (notifyError) {
+        // unload 时 notify 可能已不可用；不静默吞错
+        console.warn(`[${name}] unload 时 notify 失败:`, notifyError)
+      }
+    },
+    cleanupSteps: [
+      {
+        // FC-09：不支持断点恢复；卸载不依赖 progress 恢复。
+        // 仅清理本进程已登记的 scoped keys，失败可见且不阻断后续 unload。
+        name: "clearSessionProgressStorage",
+        run: () => {
+          const storage = getDefaultSessionStorage()
+          if (!storage) {
+            console.warn(
+              `[${name}] 卸载时 sessionStorage 不可用，跳过会话进度清理`
+            )
+            return
+          }
+          const result = clearRegisteredSessionProgressKeys(storage)
+          if (result.errors.length > 0) {
+            console.warn(
+              `[${name}] 卸载时部分会话进度 key 清理失败:`,
+              result.errors
+            )
+          }
+          if (result.cleared.length > 0) {
+            console.log(
+              `[${name}] 已清理会话进度 keys: ${result.cleared.length}`
+            )
+          }
+        }
+      },
+      {
+        name: "removeCSSResources",
+        run: () => {
+          orca.themes.removeCSSResources(PLUGIN_UI_STYLE_ROLE)
+        }
+      },
+      { name: "stopRecentDeckWatcher", run: () => stopRecentDeckWatcher() },
+      { name: "stopAutoMarkExtract", run: () => stopAutoMarkExtract(name) },
+      { name: "unregisterCommands", run: () => unregisterCommands(name) },
+      { name: "unregisterUIComponents", run: () => unregisterUIComponents(name) },
+      { name: "unregisterRenderers", run: () => unregisterRenderers(name) },
+      { name: "unregisterConverters", run: () => unregisterConverters(name) },
+      { name: "unregisterContextMenu", run: () => unregisterContextMenu(name) },
+      {
+        name: "cleanupIncrementalReadingManagerBlock",
+        run: () => cleanupIncrementalReadingManagerBlock(name)
+      }
+    ]
+  })
+
+  if (!result.flushOk) {
+    console.error(
+      `[${name}] 卸载完成，但统计日志未确认落盘：${UNLOAD_LOG_FLUSH_PENDING_MESSAGE}`,
+      result.flushError
+    )
+  }
+  console.log(`[${name}] 插件已卸载`)
 }
 
 // ========================================

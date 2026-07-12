@@ -169,7 +169,8 @@ export const nextReviewState = (
     lastReviewed: record.log.review,            // 本次复习时间
     reps: record.card.reps,                     // 总复习次数（每次评分 +1）
     lapses: record.card.lapses,                 // 遗忘次数（Again 会累计）
-    state: record.card.state                    // 当前 FSRS 状态（New/Learning/Review/Relearning）
+    state: record.card.state,                   // 当前 FSRS 状态（New/Learning/Review/Relearning）
+    resets: prevState?.resets ?? 0              // 重置次数不参与 FSRS 计算，但必须跨评分保留
   }
 
   return { state: nextState, log: record.log }

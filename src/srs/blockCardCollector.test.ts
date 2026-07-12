@@ -764,4 +764,69 @@ describe('blockCardCollector', () => {
       expect(result).toEqual([])
     })
   })
+
+  describe('FC-05 extracts/topic skip and choice identity', () => {
+    function cardBlockWithType(id, typeValue, extras = {}) {
+      return {
+        id,
+        created: new Date(),
+        modified: new Date(),
+        children: extras.children ?? [],
+        aliases: [],
+        properties: [],
+        refs: [{
+          id: 1,
+          from: id,
+          to: 100,
+          type: 2,
+          alias: extras.alias ?? 'card',
+          data: typeValue == null ? [] : [{ name: 'type', type: 1, value: typeValue }]
+        }],
+        backRefs: [],
+        text: extras.text ?? 'Card content'
+      }
+    }
+
+    it('should skip extracts cards (not return as SRS ReviewCard)', async () => {
+      const block = cardBlockWithType(11, 'extracts')
+      const result = await convertBlockToReviewCards(block)
+      expect(result).toEqual([])
+    })
+
+    it('should skip topic cards (not return as SRS ReviewCard)', async () => {
+      const block = cardBlockWithType(12, 'topic')
+      const result = await convertBlockToReviewCards(block)
+      expect(result).toEqual([])
+    })
+
+    it('should set cardType choice for choice cards', async () => {
+      // Need #card for hasCardTag; #choice makes extractCardType return choice
+      const block = cardBlockWithType(13, null, {
+        children: [201, 202],
+        text: 'Question?'
+      })
+      block.refs = [
+        {
+          id: 1,
+          from: 13,
+          to: 100,
+          type: 2,
+          alias: 'card',
+          data: []
+        },
+        {
+          id: 2,
+          from: 13,
+          to: 101,
+          type: 2,
+          alias: 'choice',
+          data: []
+        }
+      ]
+      const result = await convertBlockToReviewCards(block)
+      expect(result).toHaveLength(1)
+      expect(result[0].cardType).toBe('choice')
+      expect(result[0].id).toBe(13)
+    })
+  })
 })

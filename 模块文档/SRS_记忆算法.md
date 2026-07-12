@@ -33,6 +33,7 @@ type SrsState = {
   lastReviewed: Date | null; // 上次复习时间
   reps: number; // 已复习次数
   lapses: number; // 遗忘次数（Again 会增加）
+  resets?: number; // 用户主动重置次数，评分后继续保留
   state?: State; // FSRS 内部状态
 };
 
@@ -52,6 +53,7 @@ type Grade = "again" | "hard" | "good" | "easy";
 
 - 输入：上一次状态、评分等级、当前时间
 - 输出：新状态和复习日志
+- `resets` 不参与 FSRS 排期计算，但会从上一次状态原样继承，避免重置历史在评分后归零
 
 ### 算法流程
 

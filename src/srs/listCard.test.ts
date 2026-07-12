@@ -49,17 +49,22 @@ describe("list cards", () => {
     Object.keys(mockBlocks).forEach((k) => delete mockBlocks[k as any])
     vi.clearAllMocks()
 
-    mockOrca.invokeBackend.mockImplementation(async (name: string, args: any[]) => {
+    mockOrca.invokeBackend.mockImplementation(async (name: string, args: any) => {
       if (name === "get-blocks-with-tags") {
-        const tag = args?.[0]
-        if (tag?.toLowerCase?.() === "card") {
+        const tag = Array.isArray(args) ? args?.[0] : args
+        if (String(tag).toLowerCase?.() === "card") {
           return [mockBlocks[100 as DbId]]
         }
         return []
       }
       if (name === "get-block") {
         const id = args as unknown as DbId
-        return mockBlocks[id]
+        return mockBlocks[id as number]
+      }
+      if (name === "get-blocks") {
+        const ids = args as DbId[]
+        if (!Array.isArray(ids)) return []
+        return ids.map((id) => mockBlocks[id as number]).filter(Boolean)
       }
       return null
     })

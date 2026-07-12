@@ -85,6 +85,24 @@ type DifficultReason =
 | DIFFICULTY_THRESHOLD | 7 | 难度值阈值 |
 | REVIEW_LOG_DAYS | 30 | 复习记录查询天数 |
 
+## 日志身份匹配（FC-05）
+
+困难卡分析通过 `analyzeRecentReviews` 统计最近 Again 次数，**必须**使用 `cardIdentity` 的精确匹配，禁止 `includes` 字符串包含。
+
+### 新日志（结构化 / non-legacy）
+
+- 按 `cardKey` 完全相等匹配。
+- Cloze c1 的 Again **不会**计入 c2。
+- Direction forward / backward、List 不同 `listItemId` 彼此独立。
+
+### 旧日志（legacy）
+
+- version 1 或缺字段日志读取后标记 `legacy: true`。
+- 兼容规则：父 `blockId` 相同即可匹配；List 旧日志 `cardId` 曾为条目 ID，额外允许 `cardId === listItemId`。
+- **限制**：旧日志无法区分同父块下的变体（例如 c1/c2 会共享同一批 legacy Again 计数）。新产生的日志不再有此问题。
+
+相关实现：`src/srs/cardIdentity.ts`、`src/srs/difficultCardsManager.ts`。
+
 ## 排序规则
 
 困难卡片按以下优先级排序：

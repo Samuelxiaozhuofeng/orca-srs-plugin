@@ -12,6 +12,11 @@
 import type { ReviewCard, ReviewLogEntry } from "./types"
 import { getReviewLogs } from "./reviewLogStorage"
 import { collectReviewCards } from "./cardCollector"
+import {
+  identityFromReviewCard,
+  reviewLogMatchesIdentity,
+  type CardIdentity
+} from "./cardIdentity"
 
 // ============================================
 // 配置常量
@@ -75,40 +80,15 @@ export interface DifficultCardsStats {
 // ============================================
 
 /**
- * 生成卡片唯一键
- * 用于匹配复习记录和卡片
+ * 分析卡片的复习记录，计算最近 Again 次数。
+ * 使用统一身份精确匹配；legacy 日志按兼容规则匹配（见 cardIdentity）。
+ * 导出供回归测试直接调用真实实现。
  */
-function getCardKey(card: ReviewCard): string {
-  if (card.clozeNumber) {
-    return `${card.id}_cloze_${card.clozeNumber}`
-  }
-  if (card.directionType) {
-    return `${card.id}_direction_${card.directionType}`
-  }
-  return `${card.id}_basic`
-}
-
-/**
- * 从复习记录中提取卡片键
- */
-function getCardKeyFromLog(log: ReviewLogEntry): string {
-  // 复习记录的 cardId 格式可能是 "blockId" 或 "blockId_cloze_N" 或 "blockId_direction_type"
-  return log.cardId.toString()
-}
-
-/**
- * 分析卡片的复习记录，计算最近 Again 次数
- */
-function analyzeRecentReviews(
-  cardKey: string,
+export function analyzeRecentReviews(
+  identity: CardIdentity,
   logs: ReviewLogEntry[]
 ): { recentAgainCount: number; lastReviewDate: Date | null } {
-  // 筛选该卡片的复习记录
-  const cardLogs = logs.filter(log => {
-    const logKey = getCardKeyFromLog(log)
-    // 简单匹配：检查 cardId 是否包含在 cardKey 中
-    return cardKey.includes(log.cardId.toString())
-  })
+  const cardLogs = logs.filter(log => reviewLogMatchesIdentity(log, identity))
 
   if (cardLogs.length === 0) {
     return { recentAgainCount: 0, lastReviewDate: null }
@@ -119,7 +99,7 @@ function analyzeRecentReviews(
 
   // 取最近 N 次复习
   const recentLogs = cardLogs.slice(0, RECENT_REVIEW_WINDOW)
-  
+
   // 统计 Again 次数
   const recentAgainCount = recentLogs.filter(log => log.grade === "again").length
 
@@ -194,8 +174,8 @@ export async function getDifficultCards(
     // 新卡不算困难卡片
     if (card.isNew) continue
 
-    const cardKey = getCardKey(card)
-    const { recentAgainCount, lastReviewDate } = analyzeRecentReviews(cardKey, logs)
+    const identity = identityFromReviewCard(card)
+    const { recentAgainCount, lastReviewDate } = analyzeRecentReviews(identity, logs)
     const { isDifficult, reason } = isDifficultCard(card, recentAgainCount)
 
     if (isDifficult) {

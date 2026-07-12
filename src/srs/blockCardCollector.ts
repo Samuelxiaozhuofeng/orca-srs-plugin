@@ -220,6 +220,12 @@ export async function convertBlockToReviewCards(
 
   // 识别卡片类型
   const cardType = extractCardType(block)
+
+  // 与 cardCollector 一致：渐进阅读主题/摘录不进入 SRS ReviewCard
+  if (cardType === "extracts" || cardType === "topic") {
+    return cards
+  }
+
   const deckName = await extractDeckName(block)
   const nowTime = Date.now()
   const todayMidnight = getTodayMidnight()
@@ -246,6 +252,7 @@ export async function convertBlockToReviewCards(
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         deck: deckName,
+        cardType: "cloze",
         tags: extractNonCardTags(block),
         clozeNumber,
         content: block.content
@@ -283,6 +290,7 @@ export async function convertBlockToReviewCards(
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         deck: deckName,
+        cardType: "direction",
         tags: extractNonCardTags(block),
         directionType: dir
       })
@@ -299,7 +307,28 @@ export async function convertBlockToReviewCards(
       srs: srsState,
       isNew: !srsState.lastReviewed || srsState.reps === 0,
       deck: deckName,
+      cardType: "excerpt",
       tags: extractNonCardTags(block)
+    })
+  } else if (cardType === "choice") {
+    // Choice 卡片：与 cardCollector 一致，必须可与 Basic 区分身份
+    const question = block.text || ""
+    const srsState = await ensureCardSrsState(block.id, new Date())
+    const hasChildren = block.children && block.children.length > 0
+    if (!hasChildren) {
+      console.log(`[${pluginName}] convertBlockToReviewCards: 跳过无选项的选择题卡片 #${block.id}`)
+      return cards
+    }
+    cards.push({
+      id: block.id,
+      front: question,
+      back: "",
+      srs: srsState,
+      isNew: !srsState.lastReviewed || srsState.reps === 0,
+      deck: deckName,
+      cardType: "choice",
+      tags: extractNonCardTags(block),
+      content: block.content
     })
   } else if (cardType === "list") {
     // List 卡片：只取直接子块作为条目，逐次推送
@@ -335,6 +364,7 @@ export async function convertBlockToReviewCards(
       srs: dueItemSrs,
       isNew: !dueItemSrs.lastReviewed || dueItemSrs.reps === 0,
       deck: deckName,
+      cardType: "list",
       tags: extractNonCardTags(block),
       listItemId: dueItemId,
       listItemIndex: dueIndex,
@@ -357,6 +387,7 @@ export async function convertBlockToReviewCards(
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         deck: deckName,
+        cardType: "basic",
         tags: extractNonCardTags(block)
       })
     } else {
@@ -371,6 +402,7 @@ export async function convertBlockToReviewCards(
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         deck: deckName,
+        cardType: "basic",
         tags: extractNonCardTags(block)
       })
     }

@@ -1,15 +1,15 @@
 // @ts-nocheck
 /**
  * 统计管理器模块属性测试
- * 
+ *
  * 使用 fast-check 进行属性测试
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 // @ts-nocheck
-import * as fc from 'fast-check'
+import * as fc from 'fast-check'
 // @ts-nocheck
-import type { ReviewLogEntry, CardState, Grade } from './types'
+import type { ReviewLogEntry, CardState, Grade } from './types'
 // @ts-nocheck
 
 // 模拟存储
@@ -50,7 +50,7 @@ const mockOrca = {
 globalThis.orca = mockOrca
 
 // 导入被测模块（必须在 mock 之后）
-import {
+import {
 // @ts-nocheck
   calculateTodayStatistics,
   calculateFutureForecast,
@@ -69,6 +69,7 @@ import {
   saveTimeRangePreference,
   saveSelectedDeckPreference
 } from './statisticsManager'
+import { calculateEffectiveDuration } from './sessionProgressTracker'
 
 // 辅助函数：生成有效的 CardState
 const cardStateArbitrary = fc.constantFrom<CardState>('new', 'learning', 'review', 'relearning')
@@ -143,33 +144,33 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 1: 今日统计计算正确性**
      * **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5**
-     * 
+     *
      * 对于任意复习记录集合，今日统计的各项数值应该等于对应条件的记录数量之和
      */
     it('Property 1: today statistics should correctly count reviews by grade', () => {
       fc.assert(
         fc.property(mixedReviewLogsArbitrary, (logs) => {
           const stats = calculateTodayStatistics(logs)
-          
+
           // 过滤今日记录
           const todayLogs = logs.filter(log => isToday(log.timestamp))
-          
+
           // 验证已复习数量
           expect(stats.reviewedCount).toBe(todayLogs.length)
-          
+
           // 验证评分分布总和等于已复习数量
-          const gradeSum = stats.gradeDistribution.again + 
-                          stats.gradeDistribution.hard + 
-                          stats.gradeDistribution.good + 
+          const gradeSum = stats.gradeDistribution.again +
+                          stats.gradeDistribution.hard +
+                          stats.gradeDistribution.good +
                           stats.gradeDistribution.easy
           expect(gradeSum).toBe(stats.reviewedCount)
-          
+
           // 验证各评分数量
           const expectedAgain = todayLogs.filter(l => l.grade === 'again').length
           const expectedHard = todayLogs.filter(l => l.grade === 'hard').length
           const expectedGood = todayLogs.filter(l => l.grade === 'good').length
           const expectedEasy = todayLogs.filter(l => l.grade === 'easy').length
-          
+
           expect(stats.gradeDistribution.again).toBe(expectedAgain)
           expect(stats.gradeDistribution.hard).toBe(expectedHard)
           expect(stats.gradeDistribution.good).toBe(expectedGood)
@@ -183,11 +184,15 @@ describe('statisticsManager', () => {
       fc.assert(
         fc.property(mixedReviewLogsArbitrary, (logs) => {
           const stats = calculateTodayStatistics(logs)
-          
+
           // 过滤今日记录并计算预期总时间
           const todayLogs = logs.filter(log => isToday(log.timestamp))
-          const expectedTotalTime = todayLogs.reduce((sum, log) => sum + log.duration, 0)
-          
+          // FC-10：累计有效时长（旧日志异常 duration 截断到 60s）
+          const expectedTotalTime = todayLogs.reduce(
+            (sum, log) => sum + calculateEffectiveDuration(log.duration),
+            0
+          )
+
           expect(stats.totalTime).toBe(expectedTotalTime)
         }),
         { numRuns: 100 }
@@ -198,11 +203,11 @@ describe('statisticsManager', () => {
       fc.assert(
         fc.property(mixedReviewLogsArbitrary, (logs) => {
           const stats = calculateTodayStatistics(logs)
-          
+
           // 过滤今日记录中 previousState 为 'new' 的数量
           const todayLogs = logs.filter(log => isToday(log.timestamp))
           const expectedNewLearned = todayLogs.filter(l => l.previousState === 'new').length
-          
+
           expect(stats.newLearnedCount).toBe(expectedNewLearned)
         }),
         { numRuns: 100 }
@@ -213,11 +218,11 @@ describe('statisticsManager', () => {
       fc.assert(
         fc.property(mixedReviewLogsArbitrary, (logs) => {
           const stats = calculateTodayStatistics(logs)
-          
+
           // 过滤今日记录中 grade 为 'again' 的数量
           const todayLogs = logs.filter(log => isToday(log.timestamp))
           const expectedRelearned = todayLogs.filter(l => l.grade === 'again').length
-          
+
           expect(stats.relearnedCount).toBe(expectedRelearned)
         }),
         { numRuns: 100 }
@@ -226,7 +231,7 @@ describe('statisticsManager', () => {
 
     it('should return zero counts for empty logs', () => {
       const stats = calculateTodayStatistics([])
-      
+
       expect(stats.reviewedCount).toBe(0)
       expect(stats.newLearnedCount).toBe(0)
       expect(stats.relearnedCount).toBe(0)
@@ -258,7 +263,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 2: 未来预测累计一致性**
      * **Validates: Requirements 2.1, 2.3**
-     * 
+     *
      * 对于任意卡片集合和预测天数 N，第 N 天的累计到期数应该等于第 1 天到第 N 天每日到期数的总和
      */
     it('Property 2: cumulative count should equal sum of daily counts', () => {
@@ -268,7 +273,7 @@ describe('statisticsManager', () => {
           fc.integer({ min: 1, max: 30 }),
           (cards, days) => {
             const forecast = calculateFutureForecast(cards, days)
-            
+
             // 验证每天的累计值等于之前所有天的总和
             let runningSum = 0
             for (let i = 0; i < forecast.days.length; i++) {
@@ -303,7 +308,7 @@ describe('statisticsManager', () => {
           fc.integer({ min: 1, max: 60 }),
           (cards, days) => {
             const forecast = calculateFutureForecast(cards, days)
-            
+
             // 最后一天的累计值不应超过卡片总数
             // 注意：由于卡片可能在预测范围之外到期，累计值可能小于卡片总数
             const lastDay = forecast.days[forecast.days.length - 1]
@@ -334,9 +339,9 @@ describe('statisticsManager', () => {
   describe('calculateReviewHistory', () => {
     // 辅助函数：生成指定日期范围内的时间戳
     function getTimestampInRange(startDate: Date, endDate: Date): fc.Arbitrary<number> {
-      return fc.integer({ 
-        min: startDate.getTime(), 
-        max: endDate.getTime() 
+      return fc.integer({
+        min: startDate.getTime(),
+        max: endDate.getTime()
       })
     }
 
@@ -359,20 +364,20 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 3: 复习历史评分总和一致性**
      * **Validates: Requirements 3.1, 3.2**
-     * 
+     *
      * 对于任意复习历史数据，每天的 again + hard + good + easy 应该等于该天的 total
      */
     it('Property 3: each day grade sum should equal total', () => {
       // 使用固定的日期范围进行测试
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       fc.assert(
         fc.property(
           fc.array(reviewLogInRangeArbitrary(startDate, endDate), { minLength: 0, maxLength: 100 }),
           (logs) => {
             const history = calculateReviewHistory(logs, startDate, endDate)
-            
+
             // 验证每天的评分总和等于 total
             for (const day of history.days) {
               const gradeSum = day.again + day.hard + day.good + day.easy
@@ -387,13 +392,13 @@ describe('statisticsManager', () => {
     it('Property 3: total reviews should equal sum of all daily totals', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       fc.assert(
         fc.property(
           fc.array(reviewLogInRangeArbitrary(startDate, endDate), { minLength: 0, maxLength: 100 }),
           (logs) => {
             const history = calculateReviewHistory(logs, startDate, endDate)
-            
+
             // 验证总复习数等于所有天的 total 之和
             const sumOfDailyTotals = history.days.reduce((sum, day) => sum + day.total, 0)
             expect(history.totalReviews).toBe(sumOfDailyTotals)
@@ -406,13 +411,13 @@ describe('statisticsManager', () => {
     it('Property 3: average per day should be correctly calculated', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       fc.assert(
         fc.property(
           fc.array(reviewLogInRangeArbitrary(startDate, endDate), { minLength: 0, maxLength: 100 }),
           (logs) => {
             const history = calculateReviewHistory(logs, startDate, endDate)
-            
+
             // 验证日均复习数计算正确
             const numberOfDays = history.days.length || 1
             const expectedAverage = history.totalReviews / numberOfDays
@@ -426,9 +431,9 @@ describe('statisticsManager', () => {
     it('should return correct number of days in range', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-10')
-      
+
       const history = calculateReviewHistory([], startDate, endDate)
-      
+
       // 1月1日到1月10日应该有10天
       expect(history.days.length).toBe(10)
     })
@@ -436,9 +441,9 @@ describe('statisticsManager', () => {
     it('should return zero counts for empty logs', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-07')
-      
+
       const history = calculateReviewHistory([], startDate, endDate)
-      
+
       expect(history.totalReviews).toBe(0)
       expect(history.averagePerDay).toBe(0)
       for (const day of history.days) {
@@ -467,7 +472,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 5: 卡片状态分布总和一致性**
      * **Validates: Requirements 4.1, 4.3**
-     * 
+     *
      * 对于任意卡片集合，new + learning + review + suspended 应该等于 total
      */
     it('Property 5: state distribution sum should equal total', () => {
@@ -476,11 +481,11 @@ describe('statisticsManager', () => {
           fc.array(cardForDistributionArbitrary, { minLength: 0, maxLength: 100 }),
           (cards) => {
             const distribution = calculateCardStateDistribution(cards)
-            
+
             // 验证各状态数量之和等于总数
-            const stateSum = distribution.new + 
-                            distribution.learning + 
-                            distribution.review + 
+            const stateSum = distribution.new +
+                            distribution.learning +
+                            distribution.review +
                             distribution.suspended
             expect(stateSum).toBe(distribution.total)
           }
@@ -518,7 +523,7 @@ describe('statisticsManager', () => {
 
     it('should return zero counts for empty cards', () => {
       const distribution = calculateCardStateDistribution([])
-      
+
       expect(distribution.new).toBe(0)
       expect(distribution.learning).toBe(0)
       expect(distribution.review).toBe(0)
@@ -533,9 +538,9 @@ describe('statisticsManager', () => {
         { isNew: false, srs: { reps: 5, lapses: 1, state: 3 }, deck: 'test' }, // Relearning
         { isNew: false, srs: { reps: 10, lapses: 0, state: 2 }, deck: 'test' } // Review
       ]
-      
+
       const distribution = calculateCardStateDistribution(cards)
-      
+
       expect(distribution.learning).toBe(2) // Learning + Relearning
       expect(distribution.review).toBe(1)
       expect(distribution.total).toBe(3)
@@ -545,9 +550,9 @@ describe('statisticsManager', () => {
   describe('calculateReviewTimeStats', () => {
     // 辅助函数：生成指定日期范围内的时间戳
     function getTimestampInRange(startDate: Date, endDate: Date): fc.Arbitrary<number> {
-      return fc.integer({ 
-        min: startDate.getTime(), 
-        max: endDate.getTime() 
+      return fc.integer({
+        min: startDate.getTime(),
+        max: endDate.getTime()
       })
     }
 
@@ -570,19 +575,19 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 6: 复习时间平均值正确性**
      * **Validates: Requirements 5.2, 5.3**
-     * 
+     *
      * 对于任意复习时间统计数据，averagePerDay 应该等于 totalTime / numberOfDays
      */
     it('Property 6: average per day should equal totalTime / numberOfDays', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       fc.assert(
         fc.property(
           fc.array(reviewLogInRangeArbitrary(startDate, endDate), { minLength: 0, maxLength: 100 }),
           (logs) => {
             const stats = calculateReviewTimeStats(logs, startDate, endDate)
-            
+
             // 验证平均每天复习时间计算正确
             const numberOfDays = stats.dailyTime.length || 1
             const expectedAverage = stats.totalTime / numberOfDays
@@ -596,13 +601,13 @@ describe('statisticsManager', () => {
     it('Property 6: total time should equal sum of all daily times', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       fc.assert(
         fc.property(
           fc.array(reviewLogInRangeArbitrary(startDate, endDate), { minLength: 0, maxLength: 100 }),
           (logs) => {
             const stats = calculateReviewTimeStats(logs, startDate, endDate)
-            
+
             // 验证总时间等于所有天的时间之和
             const sumOfDailyTimes = stats.dailyTime.reduce((sum, day) => sum + day.time, 0)
             expect(stats.totalTime).toBe(sumOfDailyTimes)
@@ -615,15 +620,18 @@ describe('statisticsManager', () => {
     it('Property 6: total time should equal sum of all log durations', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       fc.assert(
         fc.property(
           fc.array(reviewLogInRangeArbitrary(startDate, endDate), { minLength: 0, maxLength: 100 }),
           (logs) => {
             const stats = calculateReviewTimeStats(logs, startDate, endDate)
-            
-            // 验证总时间等于所有记录的 duration 之和
-            const expectedTotalTime = logs.reduce((sum, log) => sum + log.duration, 0)
+
+            // FC-10：总时间等于有效时长之和（非原始 duration 原样累加）
+            const expectedTotalTime = logs.reduce(
+              (sum, log) => sum + calculateEffectiveDuration(log.duration),
+              0
+            )
             expect(stats.totalTime).toBe(expectedTotalTime)
           }
         ),
@@ -634,9 +642,9 @@ describe('statisticsManager', () => {
     it('should return zero times for empty logs', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-07')
-      
+
       const stats = calculateReviewTimeStats([], startDate, endDate)
-      
+
       expect(stats.totalTime).toBe(0)
       expect(stats.averagePerDay).toBe(0)
       for (const day of stats.dailyTime) {
@@ -657,7 +665,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 7: 间隔分布分组完整性**
      * **Validates: Requirements 6.1, 6.2**
-     * 
+     *
      * 对于任意卡片集合，所有分组的卡片数量之和应该等于总卡片数
      */
     it('Property 7: bucket counts sum should equal total cards', () => {
@@ -666,7 +674,7 @@ describe('statisticsManager', () => {
           fc.array(cardForIntervalArbitrary, { minLength: 0, maxLength: 100 }),
           (cards) => {
             const distribution = calculateIntervalDistribution(cards)
-            
+
             // 验证所有分组的卡片数量之和等于总卡片数
             const bucketSum = distribution.buckets.reduce((sum, bucket) => sum + bucket.count, 0)
             expect(bucketSum).toBe(cards.length)
@@ -679,7 +687,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 8: 间隔平均值正确性**
      * **Validates: Requirements 6.3**
-     * 
+     *
      * 对于任意卡片集合，平均间隔应该等于所有卡片间隔之和除以卡片数量
      */
     it('Property 8: average interval should be correctly calculated', () => {
@@ -688,7 +696,7 @@ describe('statisticsManager', () => {
           fc.array(cardForIntervalArbitrary, { minLength: 1, maxLength: 100 }),
           (cards) => {
             const distribution = calculateIntervalDistribution(cards)
-            
+
             // 验证平均间隔计算正确
             const totalInterval = cards.reduce((sum, card) => sum + card.srs.interval, 0)
             const expectedAverage = totalInterval / cards.length
@@ -705,7 +713,7 @@ describe('statisticsManager', () => {
           fc.array(cardForIntervalArbitrary, { minLength: 1, maxLength: 100 }),
           (cards) => {
             const distribution = calculateIntervalDistribution(cards)
-            
+
             // 验证最大间隔正确
             const expectedMax = Math.max(...cards.map(c => c.srs.interval))
             expect(distribution.maxInterval).toBe(expectedMax)
@@ -717,7 +725,7 @@ describe('statisticsManager', () => {
 
     it('should return zero values for empty cards', () => {
       const distribution = calculateIntervalDistribution([])
-      
+
       expect(distribution.averageInterval).toBe(0)
       expect(distribution.maxInterval).toBe(0)
       for (const bucket of distribution.buckets) {
@@ -744,7 +752,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 9: 答题按钮正确率计算**
      * **Validates: Requirements 7.1, 7.4**
-     * 
+     *
      * 对于任意答题按钮统计数据，correctRate 应该等于 (good + easy) / total
      */
     it('Property 9: correct rate should equal (good + easy) / total', () => {
@@ -753,7 +761,7 @@ describe('statisticsManager', () => {
           fc.array(reviewLogArbitrary, { minLength: 1, maxLength: 100 }),
           (logs) => {
             const stats = calculateAnswerButtonStats(logs)
-            
+
             // 验证正确率计算正确
             const expectedCorrectRate = (stats.good + stats.easy) / stats.total
             expect(stats.correctRate).toBeCloseTo(expectedCorrectRate, 10)
@@ -769,7 +777,7 @@ describe('statisticsManager', () => {
           fc.array(reviewLogArbitrary, { minLength: 0, maxLength: 100 }),
           (logs) => {
             const stats = calculateAnswerButtonStats(logs)
-            
+
             // 验证各评分数量之和等于总数
             const gradeSum = stats.again + stats.hard + stats.good + stats.easy
             expect(gradeSum).toBe(stats.total)
@@ -794,7 +802,7 @@ describe('statisticsManager', () => {
 
     it('should return zero values for empty logs', () => {
       const stats = calculateAnswerButtonStats([])
-      
+
       expect(stats.again).toBe(0)
       expect(stats.hard).toBe(0)
       expect(stats.good).toBe(0)
@@ -817,7 +825,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 11: 难度分布统计正确性**
      * **Validates: Requirements 10.1, 10.2, 10.3**
-     * 
+     *
      * 对于任意卡片集合，平均难度应该等于所有卡片难度之和除以卡片数量，
      * 且最小值和最大值应该正确反映实际范围
      */
@@ -827,7 +835,7 @@ describe('statisticsManager', () => {
           fc.array(cardForDifficultyArbitrary, { minLength: 1, maxLength: 100 }),
           (cards) => {
             const distribution = calculateDifficultyDistribution(cards)
-            
+
             // 验证平均难度计算正确
             const totalDifficulty = cards.reduce((sum, card) => sum + card.srs.difficulty, 0)
             const expectedAverage = totalDifficulty / cards.length
@@ -844,12 +852,12 @@ describe('statisticsManager', () => {
           fc.array(cardForDifficultyArbitrary, { minLength: 1, maxLength: 100 }),
           (cards) => {
             const distribution = calculateDifficultyDistribution(cards)
-            
+
             // 验证最小和最大难度正确
             const difficulties = cards.map(c => c.srs.difficulty)
             const expectedMin = Math.min(...difficulties)
             const expectedMax = Math.max(...difficulties)
-            
+
             expect(distribution.minDifficulty).toBeCloseTo(expectedMin, 5)
             expect(distribution.maxDifficulty).toBeCloseTo(expectedMax, 5)
           }
@@ -864,7 +872,7 @@ describe('statisticsManager', () => {
           fc.array(cardForDifficultyArbitrary, { minLength: 0, maxLength: 100 }),
           (cards) => {
             const distribution = calculateDifficultyDistribution(cards)
-            
+
             // 验证所有分组的卡片数量之和等于总卡片数
             const bucketSum = distribution.buckets.reduce((sum, bucket) => sum + bucket.count, 0)
             expect(bucketSum).toBe(cards.length)
@@ -876,7 +884,7 @@ describe('statisticsManager', () => {
 
     it('should return zero values for empty cards', () => {
       const distribution = calculateDifficultyDistribution([])
-      
+
       expect(distribution.averageDifficulty).toBe(0)
       expect(distribution.minDifficulty).toBe(0)
       expect(distribution.maxDifficulty).toBe(0)
@@ -906,7 +914,7 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 4: 时间范围过滤正确性**
      * **Validates: Requirements 3.3, 5.4, 7.3, 8.2**
-     * 
+     *
      * 对于任意复习记录集合和时间范围，过滤后的记录应该只包含时间范围内的记录，
      * 且不遗漏任何符合条件的记录
      */
@@ -916,7 +924,7 @@ describe('statisticsManager', () => {
       const endDate = new Date('2024-01-20')
       const startTime = startDate.getTime()
       const endTime = endDate.getTime()
-      
+
       // 生成混合时间范围的记录
       const beforeRangeArbitrary = reviewLogWithTimestampArbitrary(
         startTime - 30 * 24 * 60 * 60 * 1000, // 30天前
@@ -927,7 +935,7 @@ describe('statisticsManager', () => {
         endTime + 1,
         endTime + 30 * 24 * 60 * 60 * 1000 // 30天后
       )
-      
+
       fc.assert(
         fc.property(
           fc.tuple(
@@ -938,13 +946,13 @@ describe('statisticsManager', () => {
           ([beforeLogs, inRangeLogs, afterLogs]) => {
             const allLogs = [...beforeLogs, ...inRangeLogs, ...afterLogs]
             const filtered = filterLogsByTimeRange(allLogs, startDate, endDate)
-            
+
             // 验证所有过滤后的记录都在时间范围内
             for (const log of filtered) {
               expect(log.timestamp).toBeGreaterThanOrEqual(startTime)
               expect(log.timestamp).toBeLessThanOrEqual(endTime)
             }
-            
+
             // 验证没有遗漏任何符合条件的记录
             expect(filtered.length).toBe(inRangeLogs.length)
           }
@@ -958,7 +966,7 @@ describe('statisticsManager', () => {
       const endDate = new Date('2024-01-31')
       const startTime = startDate.getTime()
       const endTime = endDate.getTime()
-      
+
       const logsArbitrary = fc.array(
         reviewLogWithTimestampArbitrary(
           startTime - 10 * 24 * 60 * 60 * 1000,
@@ -966,12 +974,12 @@ describe('statisticsManager', () => {
         ),
         { minLength: 0, maxLength: 50 }
       )
-      
+
       fc.assert(
         fc.property(logsArbitrary, (logs) => {
           const originalLength = logs.length
           filterLogsByTimeRange(logs, startDate, endDate)
-          
+
           // 验证原数组未被修改
           expect(logs.length).toBe(originalLength)
         }),
@@ -982,7 +990,7 @@ describe('statisticsManager', () => {
     it('should return empty array when no logs in range', () => {
       const startDate = new Date('2024-01-15')
       const endDate = new Date('2024-01-20')
-      
+
       // 所有记录都在范围之外
       const logs: ReviewLogEntry[] = [
         {
@@ -998,7 +1006,7 @@ describe('statisticsManager', () => {
           newState: 'review'
         }
       ]
-      
+
       const filtered = filterLogsByTimeRange(logs, startDate, endDate)
       expect(filtered.length).toBe(0)
     })
@@ -1006,7 +1014,7 @@ describe('statisticsManager', () => {
     it('should return all logs when all are in range', () => {
       const startDate = new Date('2024-01-01')
       const endDate = new Date('2024-01-31')
-      
+
       const logs: ReviewLogEntry[] = [
         {
           id: '1',
@@ -1033,7 +1041,7 @@ describe('statisticsManager', () => {
           newState: 'review'
         }
       ]
-      
+
       const filtered = filterLogsByTimeRange(logs, startDate, endDate)
       expect(filtered.length).toBe(2)
     })
@@ -1059,14 +1067,14 @@ describe('statisticsManager', () => {
     /**
      * **Feature: anki-statistics, Property 10: 牌组过滤正确性**
      * **Validates: Requirements 9.2, 9.3, 9.4**
-     * 
+     *
      * 对于任意复习记录集合和牌组名称，过滤后的记录应该只包含该牌组的记录，
      * 且不遗漏任何符合条件的记录
      */
     it('Property 10: filtered logs should only contain logs from specified deck', () => {
       const targetDeck = 'targetDeck'
       const otherDeck = 'otherDeck'
-      
+
       fc.assert(
         fc.property(
           fc.tuple(
@@ -1076,12 +1084,12 @@ describe('statisticsManager', () => {
           ([targetLogs, otherLogs]) => {
             const allLogs = [...targetLogs, ...otherLogs]
             const filtered = filterLogsByDeck(allLogs, targetDeck)
-            
+
             // 验证所有过滤后的记录都属于目标牌组
             for (const log of filtered) {
               expect(log.deckName).toBe(targetDeck)
             }
-            
+
             // 验证没有遗漏任何符合条件的记录
             expect(filtered.length).toBe(targetLogs.length)
           }
@@ -1093,7 +1101,7 @@ describe('statisticsManager', () => {
     it('Property 10: filtering with undefined deck should return all logs', () => {
       const deck1 = 'deck1'
       const deck2 = 'deck2'
-      
+
       fc.assert(
         fc.property(
           fc.tuple(
@@ -1103,7 +1111,7 @@ describe('statisticsManager', () => {
           ([logs1, logs2]) => {
             const allLogs = [...logs1, ...logs2]
             const filtered = filterLogsByDeck(allLogs, undefined)
-            
+
             // 验证返回所有记录
             expect(filtered.length).toBe(allLogs.length)
           }
@@ -1119,7 +1127,7 @@ describe('statisticsManager', () => {
           (logs) => {
             const originalLength = logs.length
             filterLogsByDeck(logs, 'anyDeck')
-            
+
             // 验证原数组未被修改
             expect(logs.length).toBe(originalLength)
           }
@@ -1143,7 +1151,7 @@ describe('statisticsManager', () => {
           newState: 'review'
         }
       ]
-      
+
       const filtered = filterLogsByDeck(logs, 'nonExistentDeck')
       expect(filtered.length).toBe(0)
     })
@@ -1169,7 +1177,7 @@ describe('statisticsManager', () => {
     it('Property 10: filtered cards should only contain cards from specified deck', () => {
       const targetDeck = 'targetDeck'
       const otherDeck = 'otherDeck'
-      
+
       fc.assert(
         fc.property(
           fc.tuple(
@@ -1179,12 +1187,12 @@ describe('statisticsManager', () => {
           ([targetCards, otherCards]) => {
             const allCards = [...targetCards, ...otherCards]
             const filtered = filterCardsByDeck(allCards, targetDeck)
-            
+
             // 验证所有过滤后的卡片都属于目标牌组
             for (const card of filtered) {
               expect(card.deck).toBe(targetDeck)
             }
-            
+
             // 验证没有遗漏任何符合条件的卡片
             expect(filtered.length).toBe(targetCards.length)
           }
@@ -1196,7 +1204,7 @@ describe('statisticsManager', () => {
     it('Property 10: filtering with undefined deck should return all cards', () => {
       const deck1 = 'deck1'
       const deck2 = 'deck2'
-      
+
       fc.assert(
         fc.property(
           fc.tuple(
@@ -1206,7 +1214,7 @@ describe('statisticsManager', () => {
           ([cards1, cards2]) => {
             const allCards = [...cards1, ...cards2]
             const filtered = filterCardsByDeck(allCards, undefined)
-            
+
             // 验证返回所有卡片
             expect(filtered.length).toBe(allCards.length)
           }
@@ -1225,21 +1233,21 @@ describe('statisticsManager', () => {
 
     it('should return default preferences when no preferences are stored', async () => {
       const preferences = await getStatisticsPreferences(pluginName)
-      
+
       expect(preferences.timeRange).toBe('1month')
       expect(preferences.selectedDeck).toBeUndefined()
     })
 
     it('should save and retrieve time range preference', async () => {
       await saveTimeRangePreference(pluginName, '3months')
-      
+
       const preferences = await getStatisticsPreferences(pluginName)
       expect(preferences.timeRange).toBe('3months')
     })
 
     it('should save and retrieve selected deck preference', async () => {
       await saveSelectedDeckPreference(pluginName, 'myDeck')
-      
+
       const preferences = await getStatisticsPreferences(pluginName)
       expect(preferences.selectedDeck).toBe('myDeck')
     })
@@ -1249,7 +1257,7 @@ describe('statisticsManager', () => {
         timeRange: '1year',
         selectedDeck: 'testDeck'
       })
-      
+
       const preferences = await getStatisticsPreferences(pluginName)
       expect(preferences.timeRange).toBe('1year')
       expect(preferences.selectedDeck).toBe('testDeck')
@@ -1258,10 +1266,10 @@ describe('statisticsManager', () => {
     it('should merge partial preferences with existing ones', async () => {
       // 先保存时间范围
       await saveTimeRangePreference(pluginName, '3months')
-      
+
       // 再保存牌组选择
       await saveSelectedDeckPreference(pluginName, 'anotherDeck')
-      
+
       // 验证两个设置都被保留
       const preferences = await getStatisticsPreferences(pluginName)
       expect(preferences.timeRange).toBe('3months')
@@ -1271,10 +1279,10 @@ describe('statisticsManager', () => {
     it('should clear selected deck when set to undefined', async () => {
       // 先设置牌组
       await saveSelectedDeckPreference(pluginName, 'someDeck')
-      
+
       // 清除牌组选择
       await saveSelectedDeckPreference(pluginName, undefined)
-      
+
       const preferences = await getStatisticsPreferences(pluginName)
       expect(preferences.selectedDeck).toBeUndefined()
     })

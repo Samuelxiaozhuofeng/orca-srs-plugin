@@ -52,7 +52,7 @@ type ClozeCardReviewRendererProps = {
   onPostpone?: () => void
   onSuspend?: () => void
   onClose?: () => void
-  onSkip?: () => void  // 跳过当前卡片
+  onSkip?: () => void  // 跳过当前卡片（只读时为继续）
   onPrevious?: () => void  // 回到上一张
   canGoPrevious?: boolean  // 是否可以回到上一张
   srsInfo?: Partial<SrsState>
@@ -62,6 +62,8 @@ type ClozeCardReviewRendererProps = {
   panelId?: string
   pluginName: string
   clozeNumber?: number  // 当前复习的填空编号（仅隐藏该编号的填空）
+  readOnly?: boolean
+  readOnlyStatusText?: string
 }
 
 export default function ClozeCardReviewRenderer({
@@ -78,23 +80,27 @@ export default function ClozeCardReviewRenderer({
   onJumpToCard,
   inSidePanel = false,
   panelId,
-  clozeNumber
+  clozeNumber,
+  readOnly = false,
+  readOnlyStatusText
 }: ClozeCardReviewRendererProps) {
-  const [showAnswer, setShowAnswer] = useState(false)
+  const [showAnswer, setShowAnswer] = useState(!!readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
   const prevCardKeyRef = useRef<string>("")
   const currentCardKey = `${blockId}-${clozeNumber ?? 0}`
 
-  // 当卡片变化时重置状态
+  // 当卡片变化时重置状态；只读回看默认展示答案
   useEffect(() => {
     if (prevCardKeyRef.current !== currentCardKey) {
-      setShowAnswer(false)
+      setShowAnswer(!!readOnly)
       setShowCardInfo(false)
       prevCardKeyRef.current = currentCardKey
+    } else if (readOnly) {
+      setShowAnswer(true)
     }
-  }, [currentCardKey])
+  }, [currentCardKey, readOnly])
 
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state)
@@ -106,7 +112,7 @@ export default function ClozeCardReviewRenderer({
   }, [snapshot?.blocks, blockId])
 
   const handleGrade = async (grade: Grade) => {
-    if (isGrading) return
+    if (isGrading || readOnly) return
     await onGrade(grade)
     setShowAnswer(false)
   }
@@ -119,6 +125,7 @@ export default function ClozeCardReviewRenderer({
     onGrade: handleGrade,
     onBury: onPostpone,
     onSuspend,
+    readOnly,
   })
 
   // 预览各评分对应的间隔天数（用于按钮显示）
@@ -177,6 +184,24 @@ export default function ClozeCardReviewRenderer({
       boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
     }}>
 
+      {readOnly && (
+        <div
+          contentEditable={false}
+          style={{
+            marginBottom: "10px",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            fontWeight: 500,
+            color: "var(--orca-color-warning-6)",
+            backgroundColor: "var(--orca-color-warning-1)",
+            textAlign: "center"
+          }}
+        >
+          {readOnlyStatusText ?? "只读回看"}
+        </div>
+      )}
+
       {/* 卡片类型标识 */}
       <div style={{
         display: "flex",
@@ -221,7 +246,7 @@ export default function ClozeCardReviewRenderer({
 
         {/* 右侧：操作按钮（仅图标） */}
         <div style={{ display: "flex", gap: "2px" }}>
-          {onPostpone && (
+          {!readOnly && onPostpone && (
             <Button
               variant="plain"
               onClick={onPostpone}
@@ -231,7 +256,7 @@ export default function ClozeCardReviewRenderer({
               <i className="ti ti-calendar-pause" />
             </Button>
           )}
-          {onSuspend && (
+          {!readOnly && onSuspend && (
             <Button
               variant="plain"
               onClick={onSuspend}
@@ -343,8 +368,21 @@ export default function ClozeCardReviewRenderer({
         />
       </div>
 
-      {/* 显示答案按钮 / 评分按钮 */}
-      {!showAnswer ? (
+      {/* 显示答案按钮 / 评分按钮 / 只读继续 */}
+      {readOnly ? (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+          {onSkip && (
+            <Button
+              variant="solid"
+              onClick={onSkip}
+              title="继续复习"
+              style={{ padding: "12px 32px", fontSize: "16px" }}
+            >
+              继续
+            </Button>
+          )}
+        </div>
+      ) : !showAnswer ? (
         <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "12px" }}>
           {/* 跳过按钮 - 在答案未显示时也可用 */}
           {onSkip && (

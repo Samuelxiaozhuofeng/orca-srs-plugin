@@ -9,29 +9,25 @@
  * - 4：easy（简单）
  * - b：postpone（推迟到明天）
  * - s：suspend（暂停卡片）
- * 
+ *
  * 选择题卡片额外支持：
  * - 1-9：选择对应选项（答案未显示时）
  * - Enter：提交答案（多选模式）
- * - Requirements: 5.1, 5.2, 5.3, 5.4
+ *
+ * FC-06：readOnly 时禁用评分、bury、suspend、choice 选择/提交；
+ * 仍允许显示答案（只读回看）。
  */
 
 import type { Grade, ChoiceMode } from "../srs/types"
+import { resolveReviewShortcut } from "./reviewShortcutRules"
+
+export {
+  resolveReviewShortcut,
+  type ResolvedReviewShortcut,
+  type ResolveReviewShortcutInput
+} from "./reviewShortcutRules"
 
 const { useEffect, useCallback } = window.React
-
-/**
- * 快捷键配置
- */
-const SHORTCUTS: Record<string, Grade | "showAnswer" | "bury" | "suspend"> = {
-  " ": "showAnswer",  // 空格显示答案
-  "1": "again",       // 忘记
-  "2": "hard",        // 困难
-  "3": "good",        // 良好
-  "4": "easy",        // 简单
-  "b": "bury",        // 推迟到明天（内部仍使用bury以保持兼容）
-  "s": "suspend",     // 暂停卡片
-}
 
 /**
  * 选择题卡片配置
@@ -62,42 +58,17 @@ type UseReviewShortcutsOptions = {
   onSuspend?: () => void
   /** 是否启用快捷键（默认 true） */
   enabled?: boolean
+  /**
+   * FC-06 只读回看：禁用评分 / 推迟 / 暂停 / 选择题提交与选项选择。
+   * 仍允许显示答案以便回看。
+   */
+  readOnly?: boolean
   /** 选择题卡片配置（可选） */
   choiceCard?: ChoiceCardOptions
 }
 
 /**
  * 使用复习快捷键
- *
- * @param options - 快捷键配置选项
- *
- * @example
- * ```tsx
- * // 普通卡片
- * useReviewShortcuts({
- *   showAnswer,
- *   isGrading,
- *   onShowAnswer: () => setShowAnswer(true),
- *   onGrade: handleGrade,
- *   onBury: handleBury,
- *   onSuspend: handleSuspend,
- * })
- * 
- * // 选择题卡片
- * useReviewShortcuts({
- *   showAnswer: isAnswerRevealed,
- *   isGrading,
- *   onGrade: handleGrade,
- *   onBury: handleBury,
- *   onSuspend: handleSuspend,
- *   choiceCard: {
- *     mode: "single",
- *     optionCount: options.length,
- *     onSelectOption: (index) => handleOptionClick(options[index].blockId),
- *     onSubmit: handleSubmit,
- *   },
- * })
- * ```
  */
 export function useReviewShortcuts({
   showAnswer,
@@ -107,14 +78,13 @@ export function useReviewShortcuts({
   onBury,
   onSuspend,
   enabled = true,
-  choiceCard,
+  readOnly = false,
+  choiceCard
 }: UseReviewShortcutsOptions): void {
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      // 如果快捷键被禁用，直接返回
       if (!enabled) return
 
-      // 忽略来自输入框的按键事件
       const target = event.target as HTMLElement
       if (
         target.tagName === "INPUT" ||
@@ -124,69 +94,62 @@ export function useReviewShortcuts({
         return
       }
 
-      // 选择题卡片特殊处理
-      if (choiceCard && !showAnswer && !isGrading) {
-        // 数字键 1-9 选择选项（Requirements 5.1, 5.2）
-        const num = parseInt(event.key)
-        if (num >= 1 && num <= 9 && num <= choiceCard.optionCount) {
-          event.preventDefault()
-          event.stopPropagation()
-          choiceCard.onSelectOption(num - 1)
-          return
-        }
+      const resolved = resolveReviewShortcut({
+        key: event.key,
+        showAnswer,
+        isGrading,
+        enabled,
+        readOnly,
+        choiceCard: choiceCard
+          ? { mode: choiceCard.mode, optionCount: choiceCard.optionCount }
+          : undefined,
+        hasShowAnswer: !!onShowAnswer,
+        hasBury: !!onBury,
+        hasSuspend: !!onSuspend
+      })
 
-        // Enter 键提交答案（多选模式）（Requirements 5.3）
-        if (event.key === "Enter" && choiceCard.mode === "multiple") {
-          event.preventDefault()
-          event.stopPropagation()
-          choiceCard.onSubmit()
-          return
-        }
-      }
+      if (resolved.type === "none") return
 
-      const action = SHORTCUTS[event.key]
-      if (!action) return
-
-      // 阻止默认行为（如空格滚动页面）
       event.preventDefault()
       event.stopPropagation()
 
-      if (action === "showAnswer") {
-        // 空格键：显示答案（答案未显示时）或评分为良好（答案已显示时）
-        if (!showAnswer && !isGrading) {
-          // 选择题多选模式：空格提交答案
-          if (choiceCard && choiceCard.mode === "multiple") {
-            choiceCard.onSubmit()
-          } else if (onShowAnswer) {
-            onShowAnswer()
-          }
-        } else if (showAnswer && !isGrading) {
-          onGrade("good")
-        }
-      } else if (action === "bury") {
-        // b 键：推迟卡片（任何时候都可以）
-        if (!isGrading && onBury) {
-          onBury()
-        }
-      } else if (action === "suspend") {
-        // s 键：暂停卡片（任何时候都可以）
-        if (!isGrading && onSuspend) {
-          onSuspend()
-        }
-      } else {
-        // 数字键 1-4：评分（仅在答案已显示且未在评分中时有效）（Requirements 5.4）
-        if (showAnswer && !isGrading) {
-          onGrade(action)
-        }
+      switch (resolved.type) {
+        case "showAnswer":
+          onShowAnswer?.()
+          break
+        case "grade":
+          onGrade(resolved.grade)
+          break
+        case "bury":
+          onBury?.()
+          break
+        case "suspend":
+          onSuspend?.()
+          break
+        case "choiceSelect":
+          choiceCard?.onSelectOption(resolved.index)
+          break
+        case "choiceSubmit":
+          choiceCard?.onSubmit()
+          break
       }
     },
-    [showAnswer, isGrading, onShowAnswer, onGrade, onBury, onSuspend, enabled, choiceCard]
+    [
+      showAnswer,
+      isGrading,
+      onShowAnswer,
+      onGrade,
+      onBury,
+      onSuspend,
+      enabled,
+      readOnly,
+      choiceCard
+    ]
   )
 
   useEffect(() => {
     if (!enabled) return
 
-    // 添加全局键盘事件监听
     document.addEventListener("keydown", handleKeyDown)
 
     return () => {
@@ -196,4 +159,3 @@ export function useReviewShortcuts({
 }
 
 export default useReviewShortcuts
-

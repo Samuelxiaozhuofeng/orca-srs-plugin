@@ -8,8 +8,34 @@ import {
   resetCurrentRound,
   type RepeatReviewSession
 } from "../srs/repeatReviewManager"
+import {
+  createGuardedSessionCloser,
+  REVIEW_LOG_FLUSH_PENDING_MESSAGE
+} from "../srs/reviewSessionClose"
+import { flushReviewLogs } from "../srs/reviewLogStorage"
+import {
+  createAllScope,
+  prepareFixedSessionScope,
+  prepareNormalSessionQueueInput,
+  type ReviewSessionScope
+} from "../srs/reviewSessionScope"
+import {
+  resolveDailyQueueLimits,
+  type ReviewQueueLimits
+} from "../srs/reviewSessionBudget"
+import { getReviewSettings } from "../srs/settings/reviewSettingsSchema"
+import {
+  createSessionProgressDescriptorFromFixedSource,
+  createSessionProgressDescriptorFromNormal,
+  type SessionProgressDescriptor
+} from "../srs/sessionProgressStorage"
+import {
+  formatChildExpandWarning,
+  resolveChildExpandLimits,
+  type ChildExpandLimits
+} from "../srs/cardCollector"
 
-const { useEffect, useState } = window.React
+const { useEffect, useState, useMemo, useRef } = window.React
 const { BlockShell, Button } = orca.components
 
 type RendererProps = {
@@ -43,6 +69,31 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const [isRepeatMode, setIsRepeatMode] = useState(false)
   const [currentRound, setCurrentRound] = useState(1)
   const [repeatSession, setRepeatSession] = useState<RepeatReviewSession | null>(null)
+  /** 会话启动时冻结的范围；之后不随全局 reviewDeckFilter 变化 */
+  const [sessionScope, setSessionScope] = useState<ReviewSessionScope>(() => createAllScope())
+  /**
+   * 会话启动时冻结的每日正式根卡额度；fixed 为 null（不限额）。
+   * Demo 不得在会话中重读全局 settings。
+   */
+  const [sessionDailyLimits, setSessionDailyLimits] = useState<ReviewQueueLimits | null>(null)
+  /** 初始正式根卡（计额度 seed）；子卡不在此列 */
+  const [sessionFormalRootCards, setSessionFormalRootCards] = useState<ReviewCard[]>([])
+  /**
+   * FC-09：会话进度 storage 描述（加载队列时冻结）。
+   * Demo 只消费 progressStorageKey，不得重读全局 filter / repeat manager。
+   * 默认 all，避免 loading 阶段误用共享键。
+   */
+  const [progressDescriptor, setProgressDescriptor] = useState<SessionProgressDescriptor>(
+    () => createSessionProgressDescriptorFromNormal(null)
+  )
+  /**
+   * FC-12：子卡展开截断的会话顶部简短提示；无截断为 null。
+   * 详细诊断在 console；核心展开不读全局 settings。
+   */
+  const [childExpandWarning, setChildExpandWarning] = useState<string | null>(null)
+  /** 会话冻结的子卡展开限制（默认 10/200）；fixed/normal/repeat 共用 */
+  const [sessionChildExpandLimits, setSessionChildExpandLimits] =
+    useState<ChildExpandLimits | null>(null)
 
   useEffect(() => {
     void loadReviewQueue()
@@ -61,11 +112,20 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const loadReviewQueue = async () => {
     setIsLoading(true)
     setErrorMessage(null)
+    setChildExpandWarning(null)
 
     try {
       const { getPluginName } = await import("../main")
       const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
       setPluginName(currentPluginName)
+
+      // FC-12：边界解析默认展开限制，核心只收显式 limits（不读全局 settings）
+      const resolvedChildExpand = resolveChildExpandLimits(undefined)
+      const frozenChildExpand: ChildExpandLimits = Object.freeze({
+        maxDepth: resolvedChildExpand.maxDepth,
+        maxAuxChildCards: resolvedChildExpand.maxAuxChildCards
+      })
+      setSessionChildExpandLimits(frozenChildExpand)
 
       // 首先检查是否有活跃的重复复习会话（从右键菜单启动）
       const activeRepeatSession = getRepeatReviewSession()
@@ -74,30 +134,100 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
         // 使用重复复习会话中的卡片，但需要展开子卡片链
         console.log(`[SRS Review Session Renderer] 使用重复复习会话，原始卡片数: ${activeRepeatSession.cards.length}`)
         
-        const { buildReviewQueueWithChildren } = await import("../main")
-        const expandedCards = await buildReviewQueueWithChildren(activeRepeatSession.cards, currentPluginName)
+        const { buildSessionReviewQueue } = await import("../srs/cardCollector")
+        // fixed：正式根不限额；子卡展开仍受 FC-12 限制（与 normal/repeat 一致）
+        const {
+          queue: expandedCards,
+          formalRootCards,
+          childExpandDiagnostics
+        } = await buildSessionReviewQueue(
+          activeRepeatSession.cards,
+          currentPluginName,
+          null,
+          frozenChildExpand
+        )
         
         console.log(`[SRS Review Session Renderer] 展开子卡片后卡片数: ${expandedCards.length}`)
+        if (childExpandDiagnostics.length > 0) {
+          console.warn(
+            `[SRS Review Session Renderer] 子卡展开截断诊断:`,
+            childExpandDiagnostics
+          )
+        }
+        setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
         
+        // fixed scope：原始卡 + 展开子卡均纳入允许集合（含 List root）
+        const fixedScope = prepareFixedSessionScope(expandedCards)
+        setSessionScope(fixedScope)
+        // 进度 scope：困难卡 / 专项 / 重复；round 变更不改 key（同专项会话）
+        setProgressDescriptor(
+          createSessionProgressDescriptorFromFixedSource(
+            activeRepeatSession.sourceType,
+            activeRepeatSession.sourceBlockId
+          )
+        )
+        setSessionDailyLimits(null)
+        setSessionFormalRootCards(formalRootCards)
         setCards(expandedCards)
         setIsRepeatMode(true)
         setCurrentRound(activeRepeatSession.currentRound)
         setRepeatSession({ ...activeRepeatSession, cards: expandedCards })
       } else {
-        // 正常模式：加载所有到期卡片
+        // 正常模式：启动时只读取一次 deck filter + 每日限额，立即冻结
         const {
           collectReviewCards,
-          buildReviewQueueWithChildren,
           getReviewDeckFilter
         } = await import("../main")
+        const { buildSessionReviewQueue } = await import("../srs/cardCollector")
         
         const allCards = await collectReviewCards(currentPluginName)
         const deckFilter = typeof getReviewDeckFilter === "function" ? getReviewDeckFilter() : null
-        const filteredCards = deckFilter
-          ? allCards.filter(card => card.deck === deckFilter)
-          : allCards
-        // 使用带子卡片展开的队列构建函数
-        const queue = await buildReviewQueueWithChildren(filteredCards, currentPluginName)
+        const { scope, filteredCards } = prepareNormalSessionQueueInput(allCards, deckFilter)
+        setSessionScope(scope)
+        // 进度 scope：与队列 scope 同源冻结，Demo 不得重读 getReviewDeckFilter
+        setProgressDescriptor(createSessionProgressDescriptorFromNormal(deckFilter))
+
+        const settings = getReviewSettings(currentPluginName)
+        const resolvedLimits = resolveDailyQueueLimits(
+          settings.newCardsPerDay,
+          settings.reviewCardsPerDay
+        )
+        if (resolvedLimits.warnings.length > 0) {
+          console.warn(
+            `[SRS Review Session Renderer] 每日限额设置无效，已回退默认：`,
+            resolvedLimits.warnings
+          )
+          orca.notify(
+            "warn",
+            `每日限额设置无效，已使用默认 ${resolvedLimits.newCardsPerDay}/${resolvedLimits.reviewCardsPerDay}`,
+            { title: "SRS 复习" }
+          )
+        }
+        const frozenLimits: ReviewQueueLimits = Object.freeze({
+          newCardsPerDay: resolvedLimits.newCardsPerDay,
+          reviewCardsPerDay: resolvedLimits.reviewCardsPerDay
+        })
+        setSessionDailyLimits(frozenLimits)
+
+        // 正式根卡应用冻结额度；子卡展开不消耗额度，但受 FC-12 限制
+        const {
+          queue,
+          formalRootCards,
+          childExpandDiagnostics
+        } = await buildSessionReviewQueue(
+          filteredCards,
+          currentPluginName,
+          frozenLimits,
+          frozenChildExpand
+        )
+        if (childExpandDiagnostics.length > 0) {
+          console.warn(
+            `[SRS Review Session Renderer] 子卡展开截断诊断:`,
+            childExpandDiagnostics
+          )
+        }
+        setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
+        setSessionFormalRootCards(formalRootCards)
         setCards(queue)
         setIsRepeatMode(false)
         setCurrentRound(1)
@@ -120,10 +250,36 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     
     const updatedSession = resetCurrentRound(repeatSession)
     
-    // 展开子卡片链
-    const { buildReviewQueueWithChildren } = await import("../main")
-    const expandedCards = await buildReviewQueueWithChildren(updatedSession.cards, pluginName)
+    // fixed 轮次：正式根仍不限额；子卡展开用会话冻结的 FC-12 限制
+    const { buildSessionReviewQueue } = await import("../srs/cardCollector")
+    const expandLimits =
+      sessionChildExpandLimits ??
+      (() => {
+        const r = resolveChildExpandLimits(undefined)
+        return Object.freeze({
+          maxDepth: r.maxDepth,
+          maxAuxChildCards: r.maxAuxChildCards
+        })
+      })()
+    const {
+      queue: expandedCards,
+      formalRootCards,
+      childExpandDiagnostics
+    } = await buildSessionReviewQueue(
+      updatedSession.cards,
+      pluginName,
+      null,
+      expandLimits
+    )
     
+    if (childExpandDiagnostics.length > 0) {
+      console.warn(
+        `[SRS Review Session Renderer] 子卡展开截断诊断（第 ${updatedSession.currentRound} 轮）:`,
+        childExpandDiagnostics
+      )
+    }
+    setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
+    setSessionFormalRootCards(formalRootCards)
     setCards(expandedCards)
     setCurrentRound(updatedSession.currentRound)
     setRepeatSession({ ...updatedSession, cards: expandedCards })
@@ -131,13 +287,32 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     console.log(`[SRS Review Session Renderer] 开始第 ${updatedSession.currentRound} 轮复习，展开后卡片数: ${expandedCards.length}`)
   }
 
-  const handleClose = () => {
-    // 清理重复复习会话
-    if (isRepeatMode) {
-      clearRepeatReviewSession()
-    }
-    orca.nav.close(panelId)
-  }
+  // 统一 async 关闭：flush -> 失败 notify -> close；防重复点击
+  // 唯一 flush 入口，Demo 所有 onClose 最终走此处，避免双重 flush
+  const isRepeatModeRef = useRef(isRepeatMode)
+  isRepeatModeRef.current = isRepeatMode
+
+  const handleClose = useMemo(
+    () =>
+      createGuardedSessionCloser({
+        pluginName,
+        flush: flushReviewLogs,
+        beforeFlush: () => {
+          if (isRepeatModeRef.current) {
+            clearRepeatReviewSession()
+          }
+        },
+        notifyFlushFailure: (message) => {
+          orca.notify("error", message || REVIEW_LOG_FLUSH_PENDING_MESSAGE, {
+            title: "SRS 复习"
+          })
+        },
+        close: () => {
+          orca.nav.close(panelId)
+        }
+      }),
+    [pluginName, panelId]
+  )
 
   /**
    * 跳转到卡片
@@ -194,6 +369,11 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
       <SrsErrorBoundary componentName="复习会话" errorTitle="复习会话加载出错">
         <SrsReviewSessionDemo
           cards={cards}
+          sessionScope={sessionScope}
+          sessionDailyLimits={sessionDailyLimits}
+          sessionFormalRootCards={sessionFormalRootCards}
+          progressStorageKey={progressDescriptor.storageKey}
+          childExpandWarning={childExpandWarning}
           onClose={handleClose}
           onJumpToCard={handleJumpToCard}
           inSidePanel={true}

@@ -1,5 +1,6 @@
 import type { DbId } from "../orca.d.ts"
 import type { Grade } from "./types"
+import type { CardIdentity } from "./cardIdentity"
 
 /**
  * SRS 跨组件事件定义（基于 Orca broadcasts）
@@ -14,8 +15,25 @@ export const SRS_EVENTS = {
   CARD_SUSPENDED: "srs.cardSuspended" // 卡片被暂停
 } as const
 
-export function emitCardGraded(blockId: DbId, grade: Grade): void {
-  orca.broadcasts.broadcast(SRS_EVENTS.CARD_GRADED, { blockId, grade })
+/**
+ * 评分事件可选扩展（FC-05）。
+ * 保留 blockId/grade 兼容字段；现有消费者可忽略 extras。
+ */
+export type CardGradedExtras = {
+  cardKey?: string
+  identity?: CardIdentity
+}
+
+export function emitCardGraded(
+  blockId: DbId,
+  grade: Grade,
+  extras?: CardGradedExtras
+): void {
+  orca.broadcasts.broadcast(SRS_EVENTS.CARD_GRADED, {
+    blockId,
+    grade,
+    ...(extras ?? {})
+  })
 }
 
 export function emitCardPostponed(blockId: DbId): void {

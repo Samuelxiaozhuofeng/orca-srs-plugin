@@ -52,7 +52,7 @@ interface DirectionCardReviewRendererProps {
   onPostpone?: () => void
   onSuspend?: () => void
   onClose?: () => void
-  onSkip?: () => void  // 跳过当前卡片
+  onSkip?: () => void  // 跳过当前卡片（只读时为继续）
   onPrevious?: () => void  // 回到上一张
   canGoPrevious?: boolean  // 是否可以回到上一张
   srsInfo?: Partial<SrsState>
@@ -62,6 +62,8 @@ interface DirectionCardReviewRendererProps {
   panelId?: string
   pluginName: string
   reviewDirection: "forward" | "backward" // 当前复习的方向
+  readOnly?: boolean
+  readOnlyStatusText?: string
 }
 
 export default function DirectionCardReviewRenderer({
@@ -80,22 +82,26 @@ export default function DirectionCardReviewRenderer({
   panelId,
   pluginName,
   reviewDirection,
+  readOnly = false,
+  readOnlyStatusText,
 }: DirectionCardReviewRendererProps) {
-  const [showAnswer, setShowAnswer] = useState(false)
+  const [showAnswer, setShowAnswer] = useState(!!readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
   const prevCardKeyRef = useRef<string>("")
   const currentCardKey = `${blockId}-${reviewDirection}`
 
-  // 当卡片变化时重置状态
+  // 当卡片变化时重置状态；只读回看默认展示答案
   useEffect(() => {
     if (prevCardKeyRef.current !== currentCardKey) {
-      setShowAnswer(false)
+      setShowAnswer(!!readOnly)
       setShowCardInfo(false)
       prevCardKeyRef.current = currentCardKey
+    } else if (readOnly) {
+      setShowAnswer(true)
     }
-  }, [currentCardKey])
+  }, [currentCardKey, readOnly])
 
   const snapshot = useSnapshot(orca.state)
   const block = useMemo(() => {
@@ -109,7 +115,7 @@ export default function DirectionCardReviewRenderer({
 
   // 处理评分
   const handleGrade = async (grade: Grade) => {
-    if (isGrading) return
+    if (isGrading || readOnly) return
     await onGrade(grade)
     setShowAnswer(false)
   }
@@ -122,6 +128,7 @@ export default function DirectionCardReviewRenderer({
     onGrade: handleGrade,
     onBury: onPostpone,
     onSuspend,
+    readOnly,
   })
 
   // 预览间隔
@@ -259,7 +266,7 @@ export default function DirectionCardReviewRenderer({
 
         {/* 右侧：操作按钮（仅图标） */}
         <div style={{ display: "flex", gap: "2px" }}>
-          {onPostpone && (
+          {!readOnly && onPostpone && (
             <Button
               variant="plain"
               onClick={onPostpone}
@@ -269,7 +276,7 @@ export default function DirectionCardReviewRenderer({
               <i className="ti ti-calendar-pause" />
             </Button>
           )}
-          {onSuspend && (
+          {!readOnly && onSuspend && (
             <Button
               variant="plain"
               onClick={onSuspend}
@@ -453,8 +460,39 @@ export default function DirectionCardReviewRenderer({
         )}
       </div>
 
-      {/* 显示答案 / 评分按钮 */}
-      {!showAnswer ? (
+      {readOnly && (
+        <div
+          contentEditable={false}
+          style={{
+            marginBottom: "10px",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            fontWeight: 500,
+            color: "var(--orca-color-warning-6)",
+            backgroundColor: "var(--orca-color-warning-1)",
+            textAlign: "center",
+          }}
+        >
+          {readOnlyStatusText ?? "只读回看"}
+        </div>
+      )}
+
+      {/* 显示答案 / 评分按钮 / 只读继续 */}
+      {readOnly ? (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+          {onSkip && (
+            <Button
+              variant="solid"
+              onClick={onSkip}
+              title="继续复习"
+              style={{ padding: "12px 32px", fontSize: "16px" }}
+            >
+              继续
+            </Button>
+          )}
+        </div>
+      ) : !showAnswer ? (
         <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "12px" }}>
           {/* 跳过按钮 - 在答案未显示时也可用 */}
           {onSkip && (

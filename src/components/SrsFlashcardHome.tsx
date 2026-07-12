@@ -1394,6 +1394,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }, [loadData])
 
   // 动态更新：定期刷新数据以显示新到期的卡片
+  // FC-13：graded/postponed/suspended 已事件驱动即时刷新；编辑/删除事件不完整，
+  // 故保留 120s 低频全量兜底。收集成本由 cardCollector FC-13 预热/批量读取降低。
   useEffect(() => {
     const autoRefresh = async () => {
       try {

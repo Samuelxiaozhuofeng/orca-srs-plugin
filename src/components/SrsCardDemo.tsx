@@ -28,6 +28,7 @@ import {
   shuffleOptions,
   calculateAutoGrade,
 } from "../srs/choiceUtils";
+import { createChoiceAnswerHandler } from "../srs/choiceAnswerStatistics";
 import { isOrderedTag } from "../srs/tagUtils";
 import SrsErrorBoundary from "./SrsErrorBoundary";
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts";
@@ -375,7 +376,7 @@ type SrsCardDemoProps = {
   onPostpone?: () => void;
   onSuspend?: () => void;
   onClose?: () => void;
-  onSkip?: () => void; // 跳过当前卡片
+  onSkip?: () => void; // 跳过当前卡片（只读回看时语义为「继续」）
   onPrevious?: () => void; // 回到上一张
   canGoPrevious?: boolean; // 是否可以回到上一张
   srsInfo?: Partial<SrsState>;
@@ -393,6 +394,10 @@ type SrsCardDemoProps = {
   listItemIndex?: number;
   listItemIds?: DbId[];
   isAuxiliaryPreview?: boolean;
+  /** FC-06：只读回看（禁用评分/推迟/暂停与相关快捷键） */
+  readOnly?: boolean;
+  /** 只读状态文案，如「只读回看 / 上次评分 GOOD」 */
+  readOnlyStatusText?: string;
 };
 
 export default function SrsCardDemo({
@@ -419,8 +424,10 @@ export default function SrsCardDemo({
   listItemIndex,
   listItemIds,
   isAuxiliaryPreview = false,
+  readOnly = false,
+  readOnlyStatusText,
 }: SrsCardDemoProps) {
-  const [showAnswer, setShowAnswer] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(!!readOnly);
   const [showCardInfo, setShowCardInfo] = useState(false);
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
@@ -430,14 +437,16 @@ export default function SrsCardDemo({
     directionType ?? "basic"
   }-${listItemId ?? 0}`;
 
-  // 当卡片变化时重置状态，防止闪烁
+  // 当卡片变化时重置状态，防止闪烁；只读回看默认展示答案
   useEffect(() => {
     if (prevCardKeyRef.current !== currentCardKey) {
-      setShowAnswer(false);
+      setShowAnswer(!!readOnly);
       setShowCardInfo(false);
       prevCardKeyRef.current = currentCardKey;
+    } else if (readOnly) {
+      setShowAnswer(true);
     }
-  }, [currentCardKey]);
+  }, [currentCardKey, readOnly]);
 
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state);
@@ -515,7 +524,7 @@ export default function SrsCardDemo({
     (reprType === "srs.list-card" && (!blockId || !listItemId));
 
   const handleGrade = async (grade: Grade) => {
-    if (isGrading) return;
+    if (isGrading || readOnly) return;
     console.log(`[SRS Card Demo] 用户选择评分: ${grade}`);
     await onGrade(grade);
     setShowAnswer(false);
@@ -523,6 +532,7 @@ export default function SrsCardDemo({
 
   // 【修复 React Hooks 规则】将 useReviewShortcuts 移到条件返回之前
   // 只有渲染 basic 卡片时才启用快捷键（cloze/direction 组件有自己的快捷键处理）
+  // FC-06：readOnly 时禁止评分/推迟/暂停快捷键
   useReviewShortcuts({
     showAnswer,
     isGrading,
@@ -531,6 +541,7 @@ export default function SrsCardDemo({
     onBury: onPostpone,
     onSuspend,
     enabled: shouldRenderBasicCard, // 仅在渲染 basic 卡片时启用
+    readOnly,
   });
   // 【修复 React Hooks 规则】将 intervals 计算移到条件返回之前
   // 预览各评分对应的间隔天数（用于按钮显示）
@@ -611,6 +622,8 @@ export default function SrsCardDemo({
           panelId={panelId}
           pluginName={pluginName}
           clozeNumber={clozeNumber} // 传递填空编号
+          readOnly={readOnly}
+          readOnlyStatusText={readOnlyStatusText}
         />
       </SrsErrorBoundary>
     );
@@ -636,6 +649,8 @@ export default function SrsCardDemo({
           panelId={panelId}
           pluginName={pluginName}
           reviewDirection={directionType} // 传递复习方向
+          readOnly={readOnly}
+          readOnlyStatusText={readOnlyStatusText}
         />
       </SrsErrorBoundary>
     );
@@ -663,6 +678,8 @@ export default function SrsCardDemo({
           onJumpToCard={onJumpToCard}
           inSidePanel={inSidePanel}
           panelId={panelId}
+          readOnly={readOnly}
+          readOnlyStatusText={readOnlyStatusText}
         />
       </SrsErrorBoundary>
     )
@@ -689,6 +706,15 @@ export default function SrsCardDemo({
     // 检测选择题模式
     const choiceMode = detectChoiceMode(rawOptions);
 
+    // FC-08：实际提交时写入答题统计；只读回看由 Choice 渲染器门闩禁止 onAnswer
+    // 正确 ID 来自选项 isCorrect（乱序不影响）；保存失败不阻断评分
+    const onChoiceAnswer = readOnly
+      ? undefined
+      : createChoiceAnswerHandler({
+          blockId,
+          options: rawOptions
+        });
+
     return (
       <SrsErrorBoundary
         componentName="选择题卡片"
@@ -699,6 +725,7 @@ export default function SrsCardDemo({
           options={shuffledOptions}
           mode={choiceMode}
           onGrade={onGrade}
+          onAnswer={onChoiceAnswer}
           onPostpone={onPostpone}
           onSuspend={onSuspend}
           onClose={onClose}
@@ -710,6 +737,8 @@ export default function SrsCardDemo({
           onJumpToCard={onJumpToCard}
           inSidePanel={inSidePanel}
           panelId={panelId}
+          readOnly={readOnly}
+          readOnlyStatusText={readOnlyStatusText}
         />
       </SrsErrorBoundary>
     );
@@ -726,6 +755,25 @@ export default function SrsCardDemo({
         boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
       }}
     >
+      {/* FC-06 只读回看状态 */}
+      {readOnly && (
+        <div
+          contentEditable={false}
+          style={{
+            marginBottom: "10px",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            fontWeight: 500,
+            color: "var(--orca-color-warning-6)",
+            backgroundColor: "var(--orca-color-warning-1)",
+            textAlign: "center",
+          }}
+        >
+          {readOnlyStatusText ?? "只读回看"}
+        </div>
+      )}
+
       {/* 顶部工具栏：简化为图标按钮，降低视觉干扰 */}
       {blockId && (
         <div
@@ -760,9 +808,9 @@ export default function SrsCardDemo({
             )}
           </div>
 
-          {/* 右侧：操作按钮（仅图标） */}
+          {/* 右侧：操作按钮（仅图标）；只读时已由上层隐藏 postpone/suspend */}
           <div style={{ display: "flex", gap: "2px" }}>
-            {onPostpone && (
+            {!readOnly && onPostpone && (
               <Button
                 variant="plain"
                 onClick={onPostpone}
@@ -772,7 +820,7 @@ export default function SrsCardDemo({
                 <i className="ti ti-calendar-pause" />
               </Button>
             )}
-            {onSuspend && (
+            {!readOnly && onSuspend && (
               <Button
                 variant="plain"
                 onClick={onSuspend}
@@ -960,7 +1008,28 @@ export default function SrsCardDemo({
             )}
           </div>
 
-          {/* 评分按钮（含跳过） */}
+          {/* 评分按钮（含跳过）；只读回看仅显示继续 */}
+          {readOnly ? (
+            <div
+              contentEditable={false}
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: "8px",
+              }}
+            >
+              {onSkip && (
+                <Button
+                  variant="solid"
+                  onClick={onSkip}
+                  title="继续复习"
+                  style={{ padding: "12px 32px", fontSize: "16px" }}
+                >
+                  继续
+                </Button>
+              )}
+            </div>
+          ) : (
           <div
             contentEditable={false}
             className="srs-card-grade-buttons"
@@ -1203,7 +1272,7 @@ export default function SrsCardDemo({
                 简单
               </span>
             </button>
-          </div>
+          </div>)}
         </>
       ) : /* 普通卡片：如果没有子块（摘录卡），直接显示评分按钮；否则显示答案按钮 */
       totalChildCount === 0 || showAnswer ? (
@@ -1243,7 +1312,28 @@ export default function SrsCardDemo({
             </div>
           )}
 
-          {/* 评分按钮（含跳过） */}
+          {/* 评分按钮（含跳过）；只读回看仅显示继续 */}
+          {readOnly ? (
+            <div
+              contentEditable={false}
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: "8px",
+              }}
+            >
+              {onSkip && (
+                <Button
+                  variant="solid"
+                  onClick={onSkip}
+                  title="继续复习"
+                  style={{ padding: "12px 32px", fontSize: "16px" }}
+                >
+                  继续
+                </Button>
+              )}
+            </div>
+          ) : (
           <div
             contentEditable={false}
             className="srs-card-grade-buttons"
@@ -1486,7 +1576,7 @@ export default function SrsCardDemo({
                 简单
               </span>
             </button>
-          </div>
+          </div>)}
         </>
       ) : (
         // 有子块但未显示答案：显示"显示答案"按钮和跳过按钮

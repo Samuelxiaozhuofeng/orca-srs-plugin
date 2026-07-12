@@ -26,6 +26,7 @@ import type {
 import { getTimeRangeStartDate } from "./types"
 import { getReviewLogs } from "./reviewLogStorage"
 import { collectReviewCards } from "./cardCollector"
+import { effectiveDurationFromReviewLog } from "./sessionProgressTracker"
 
 // ============================================
 // 缓存系统
@@ -253,8 +254,8 @@ export function calculateTodayStatistics(logs: ReviewLogEntry[], deckName?: stri
 
   // 遍历今日记录计算各项统计
   for (const log of todayLogs) {
-    // 累计复习时间
-    stats.totalTime += log.duration
+    // FC-10：新旧日志统一经 effectiveDurationFromReviewLog（旧 duration 异常截断）
+    stats.totalTime += effectiveDurationFromReviewLog(log)
 
     // 统计评分分布
     stats.gradeDistribution[log.grade]++
@@ -604,16 +605,17 @@ export function calculateReviewTimeStats(
     current.setUTCDate(current.getUTCDate() + 1)
   }
 
-  // 统计每天的复习时间
+  // 统计每天的复习时间（FC-10：与今日统计同一有效时长口径）
   let totalTime = 0
   for (const log of filteredLogs) {
     const logDate = new Date(log.timestamp)
     const key = getUTCDateKey(logDate)
-    
+
     const day = dayMap.get(key)
     if (day) {
-      day.time += log.duration
-      totalTime += log.duration
+      const effective = effectiveDurationFromReviewLog(log)
+      day.time += effective
+      totalTime += effective
     }
   }
 

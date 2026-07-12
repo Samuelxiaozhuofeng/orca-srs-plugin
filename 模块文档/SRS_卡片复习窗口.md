@@ -33,13 +33,17 @@ flowchart TD
 
 #### Props
 
-| 属性         | 类型              | 说明           |
-| ------------ | ----------------- | -------------- |
-| cards        | ReviewCard[]      | 复习队列       |
-| onClose      | () => void        | 关闭回调       |
-| onJumpToCard | (blockId) => void | 跳转回调       |
-| inSidePanel  | boolean           | 是否在侧边面板 |
-| panelId      | string            | 面板 ID        |
+| 属性         | 类型                         | 说明 |
+| ------------ | ---------------------------- | ---- |
+| cards        | ReviewCard[]                 | 复习队列 |
+| progressStorageKey | string | **FC-09 必填**：会话进度 sessionStorage 键（Renderer 加载队列时冻结并传入） |
+| sessionScope | ReviewSessionScope | 会话范围（启动时冻结） |
+| sessionDailyLimits | ReviewQueueLimits \| null | 每日正式根卡额度（fixed 为 null） |
+| onClose      | () => void \| Promise\<void\> | **统一关闭入口**（由 Renderer 提供：flush 日志后再关面板） |
+| onJumpToCard | (blockId) => void            | 跳转回调 |
+| inSidePanel  | boolean                      | 是否在侧边面板 |
+| panelId      | string                       | 面板 ID |
+| pluginName   | string                       | 插件名（评分写日志用） |
 
 #### 状态管理
 
@@ -47,8 +51,117 @@ flowchart TD
 - `currentIndex`：当前卡片索引
 - `reviewedCount`：已复习数量
 - `isGrading`：正在评分标志
-- `lastLog`：最近评分日志
+- `lastLog`：最近评分日志（若有 `gradeResult.warning` 会一并显示，并 `orca.notify`）
 - `isMaximized`：是否最大化显示
+- `sessionHistory`：会话历史（FC-06，见下）
+
+#### 返回上一张与只读回看（FC-06）
+
+第一阶段实现**只读回看**，不做真正撤销。
+
+| 动作 | 是否锁定只读 | 说明 |
+| ---- | ------------ | ---- |
+| 正式评分 | 是 | 会写 SRS / 日志 / 会话统计；List 可能推进 |
+| 重复复习模式评分 | 是 | 不写 SRS，但已计会话进度 |
+| 列表辅助预览评分 | 是 | 不写 SRS / 日志，但已走过该卡 |
+| 推迟 / 暂停 | 是 | 改变 due / suspend 状态 |
+| 跳过 | **否** | 不改变状态；返回被跳过卡片后允许正常评分 |
+
+**实现要点**：
+
+- 纯模块 `src/srs/reviewSessionHistory.ts`：记录 `cardKey`、`actionKind`、可选 `grade`、展示摘要与原索引；`outcomesByKey` 永久保留锁定结果；导航栈可 pop/push。
+- 身份使用 `getReviewCardKey` / `cardKeyFromReviewCard`；Cloze/Direction/List 变体独立；Basic/Choice 同 `blockId` 也按 cardType 区分。
+- 返回时**按 card key 定位**队列；找不到则 `console.warn` + 用户可见提示，并安全跳过该历史项，**绝不跳到错误卡**。
+- `handleGrade` / `handlePostpone` / `handleSuspend`（及任何会推进 List/统计/日志的入口）有最终 `guardSideEffectAction`；即使子组件误调用也只 notify，不落盘。
+- UI：只读时隐藏评分/推迟/暂停；跳过按钮切换为「继续」语义，**不得**把继续记成 skip 覆盖原 outcome。
+- 快捷键：`useReviewShortcuts({ readOnly })` + `reviewShortcutRules.resolveReviewShortcut`；数字键/Enter/B/S/空格（评分）不得绕过。
+- Choice 只读：揭晓正确答案，单选 150ms timer、重复点击与快捷键不能提交/评分；只读时 **不** 传 / 不调用 `onAnswer`，不写统计。
+- Choice 正式答题统计（FC-08）：`SrsCardDemo` 在非只读时通过 `createChoiceAnswerHandler` 向 `ChoiceCardReviewRenderer` 传 `onAnswer`；提交时写入 `srs.choice.statistics`（见 `模块文档/SRS_数据存储.md`）。防重复依赖 `choiceSubmitGate`，保存失败 `orca.notify("warn")` 且不阻断 FSRS 评分。
+
+#### 关闭与日志 flush（FC-03）
+
+- **唯一 flush 入口在 `SrsReviewSessionRenderer.handleClose`**（`createGuardedSessionCloser`）：`flushReviewLogs` → 失败时 notify「复习已保存，但统计日志仍待重试」→ `orca.nav.close`。
+- Demo 内所有关闭入口先清理会话进度（`abandonSession`），再走 `onClose`：正常完成（`handleFinishSession`）、空队列关闭、Modal overlay 关闭、卡片 UI 关闭按钮。Demo **不再**自行 flush，避免与 Renderer 双重 flush。
+- 守卫防止重复点击并发 close。
+- 评分使用 `gradeReviewCard` → `saveAndFlushReviewLog`；若返回 `warning`（如日志落盘失败），Demo 必须显示/notify，不能只写 `logMessage`。
+
+#### 会话进度存储隔离（FC-09）
+
+**产品规则（第一阶段）**：**不支持断点恢复**。每次真正启动新复习会话都从零开始；不能只恢复统计而不恢复队列/索引。`sessionStorage` 仅用于当前挂载会话的 scoped 自动保存/诊断。
+
+##### Scope / storage key
+
+| 场景 | Scope | Key 形态 |
+| ---- | ----- | -------- |
+| 普通全部 | `normal/all` | `srs-session-progress:v2:normal/all` |
+| 指定牌组 | `normal/deck/<deckName>` | `…:v2:normal/deck/<encodeURIComponent(deckName)>` |
+| 困难卡（Home：`sourceBlockId=0` + `children`） | `fixed/difficult` | `…:v2:fixed/difficult` |
+| 其他专项/重复 | `fixed/<sourceType>/<sourceBlockId>` | `…:v2:fixed/<enc type>/<enc id>` |
+
+- 纯模块：`src/srs/sessionProgressStorage.ts`（key 编码、StorageLike 安全读写、严格 parse、进程内 key registry）。
+- Renderer 在 `loadReviewQueue` 时冻结 `progressDescriptor` / `progressStorageKey` 并传入 Demo；**Demo 不得**重读 `getReviewDeckFilter` 或 `getRepeatReviewSession` 自行拼 key。
+- 重复复习的「再复习一轮」属于**同一**专项 scope（key 不变），但 `resetSession` 仍把本轮统计归零。
+
+##### Hook 行为（`useSessionProgressTracker`）
+
+- `storageKey` **必填**，禁止固定默认共享键 `srs-session-progress`。
+- 首次挂载：创建全新 state，并 `removeItem(scoped key)`；**不** `getItem` 自动恢复。
+- 仅在 `storageKey` 真正变化 / 新挂载时初始化；progress 更新不会清空 storage。
+- `autoSave` 写 scoped key；`finishSession` / `abandonSession` 清理并 `unregister`。
+- 显式 `restore(json)`：严格校验 version/结构，失败返回 `false` 并 `console.warn`（本阶段 UI 不调用）。
+- `sessionStorage` get/set/remove 抛错时 `console.warn`，不阻断主复习流程。
+
+##### 完成结算（纯 render + 一次性 finalize）
+
+- 纯 helper：`src/srs/sessionProgressFinalize.ts`（`ensureSessionFinalized` / `resetSessionFinalizeController`）。
+- 从未完成 → 完成：在 **effect** 中调用一次 `finishProgressSession` 并 `setSessionStats`；**render 禁止** `sessionStats || finish…` fallback。
+- 完成界面在 `sessionStats == null` 的极短窗口显示「正在汇总...」。
+- 「完成」按钮使用已缓存 `sessionStats`；若极端早于 effect 点击，仍走 `ensureSessionFinalized`，保证总计只 finish 一次，再 notify / abandon（幂等）/ onClose flush。
+- 轮次 reset / 新会话：`resetSessionFinalizeController` + `setSessionStats(null)`，下一轮可再独立 finish 一次。
+
+##### 关闭与卸载清理
+
+| 路径 | 进度 storage | 日志 flush |
+| ---- | ------------ | ---------- |
+| 正常完成 `finishSession` | 清理 scoped key | 再 `onClose` → Renderer flush |
+| 主动关闭 / 放弃 | Demo `handleRequestClose` → `abandonSession` 再 `onClose` | 同上 |
+| 插件卸载 | 因不支持恢复，**不依赖** progress 恢复；清理本进程 **registry 已登记** keys（`clearRegisteredSessionProgressKeys`），单项失败 warn 且继续 | unload 序列中 flush 日志在先（FC-03） |
+
+- 不扫全 `sessionStorage`、不删除其他插件或旧无关 key。
+
+##### 复习时长统一口径（FC-10）
+
+**产品规则：**
+
+- 使用**墙钟耗时**（页面隐藏 / 失焦 / 编辑内容**暂不暂停**），但**每张卡有效时长最多 60 秒**（`MAX_EFFECTIVE_CARD_DURATION_MS = 60000`）。
+- 负数、NaN、Infinity、系统时间回拨 → 有效时长 **0**。
+- **唯一实现**：`src/srs/sessionProgressTracker.ts` 中的 `calculateEffectiveDuration` / `safeRawDuration` / `computeReviewTiming` / `effectiveDurationFromReviewLog`；永久日志、Hook、`statisticsManager` 均 import 同一函数与常量，禁止复制规则。
+
+**写入与读取：**
+
+| 字段 | 含义 |
+| ---- | ---- |
+| `duration` | **有效时长**（0..60000）；新日志写入有效值 |
+| `rawDuration?` | 可选；安全非负原始墙钟（异常为 0，**不**做 60s 截断） |
+| 旧日志仅有 `duration` | 统计时再经 `effectiveDurationFromReviewLog` 归一化（幂等；历史异常大值截断） |
+
+**评分路径：**
+
+1. `gradeReviewCard` **只读一次** `now`（可用 `options.now` 注入测试），生成同源 `timestamp` / `rawDuration` / `effectiveDuration`，经 `ReviewGradeSuccess.timing` 返回。
+2. 日志：`duration = effective`，`rawDuration = safe raw`；日志失败仍 `ok: true` + warning（FC-03），**timing 仍返回**。
+3. Demo 正式评分：把 `gradeResult.timing.effectiveDuration` 传给 `recordEffectiveGrade`，**禁止**无参让 Hook 二次 `Date.now`。
+4. 卡切换：Demo 的 `cardStartTime`（`currentIndex` effect）仍维护，供 grading / repeat 计时。
+5. **repeat 专项模式**：不经 `gradeReviewCard`，但用同一 `computeReviewTiming(cardStartTime, now)` 算有效时长后写入会话进度。
+6. **列表辅助预览**：仍不计会话进度（FC-06 只读规则不变）。
+
+##### 关联文件
+
+- `src/srs/sessionProgressStorage.ts` / `sessionProgressStorage.test.ts`
+- `src/hooks/useSessionProgressTracker.ts`（`recordEffectiveGrade(grade, effectiveDuration)`）
+- `src/srs/sessionProgressTracker.ts`（时长归一化唯一源 + 序列化）
+- `src/srs/reviewCardGrading.ts` / `statisticsManager.ts`
+- `src/components/SrsReviewSessionRenderer.tsx`、`SrsReviewSessionDemo.tsx`
+- `src/main.ts` unload 步骤 `clearSessionProgressStorage`
 
 #### 会话流程
 
@@ -307,6 +420,7 @@ stateDiagram-v2
 - 快捷键仅在复习界面激活时生效
 - 在输入框、文本区域中不会触发快捷键
 - 评分中（isGrading=true）快捷键被禁用，防止重复触发
+- **只读回看（readOnly=true）**：禁用评分、推迟、暂停、选择题选择/提交；仍可空格显示答案以便回看
 
 ### 卡片管理功能（2025-12-11 新增）
 

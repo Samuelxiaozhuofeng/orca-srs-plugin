@@ -175,6 +175,34 @@ flowchart LR
 
 ---
 
+## sessionProgressTracker.ts（FC-10 时长口径唯一源）
+
+**职责**：会话进度纯函数 + **复习有效时长**归一化（日志 / 会话 / 统计页共用）。
+
+### 常量
+
+| 常量 | 值 | 说明 |
+| ---- | -- | ---- |
+| `MAX_EFFECTIVE_CARD_DURATION_MS` | 60000 | 单卡有效时长上限（墙钟，隐藏/失焦暂不暂停） |
+| `IDLE_TIMEOUT_THRESHOLD` | 同上 | 兼容别名 |
+
+### 时长函数
+
+| 函数 | 说明 |
+| ---- | ---- |
+| `calculateEffectiveDuration(unknown)` | 非有限/负→0，超过阈值→阈值；幂等 |
+| `safeRawDuration(unknown)` | 安全非负原始墙钟（无上限） |
+| `computeReviewTiming(start, now)` | 单次 now 同源 timestamp/raw/effective |
+| `effectiveDurationFromReviewLog(log)` | 统计累计入口；只用 `duration`，不重复用 raw |
+| `recordEffectiveGrade(state, grade, effective)` | 会话进度写入（再校验归一化） |
+| `formatDuration` / `generateStatsSummary` | 对 NaN/Infinity 安全，不输出 `NaN:NaN` |
+
+### statisticsManager 约定
+
+今日 `totalTime`、复习时间趋势 `dailyTime` / `totalTime` 等所有 `log.duration` 累计均调用 `effectiveDurationFromReviewLog`，保证与会话摘要同一口径。
+
+---
+
 ## 相关文件
 
 | 文件                                                                                 | 说明       |
@@ -185,3 +213,5 @@ flowchart LR
 | [deckUtils.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/deckUtils.ts)         | Deck 工具  |
 | [cardCreator.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/cardCreator.ts)     | 卡片创建   |
 | [cardBrowser.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/cardBrowser.ts)     | 浏览器管理 |
+| [sessionProgressTracker.ts](../src/srs/sessionProgressTracker.ts) | 会话进度与时长归一化 |
+| [statisticsManager.ts](../src/srs/statisticsManager.ts) | 统计页时长累计 |

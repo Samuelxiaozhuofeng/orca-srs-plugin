@@ -15,6 +15,11 @@ import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard } from "./types"
 import { BlockWithRepr, isSrsCardBlock } from "./blockUtils"
 import { hasCardTag, convertBlockToReviewCards } from "./blockCardCollector"
+import {
+  buildCardKey,
+  cardKeyFromReviewCard,
+  type CardIdentity
+} from "./cardIdentity"
 
 const PLUGIN_NAME = "srs-plugin"
 
@@ -33,7 +38,8 @@ const PLUGIN_NAME = "srs-plugin"
 const processedParentCards = new Set<string>()
 
 /**
- * 生成父卡片的唯一键
+ * 生成父卡片的唯一键（会话级去重）
+ * 公开签名保持兼容；内部统一走 cardIdentity。
  */
 export function getParentCardKey(
   blockId: DbId,
@@ -41,10 +47,17 @@ export function getParentCardKey(
   directionType?: string,
   listItemId?: DbId
 ): string {
+  let identity: CardIdentity
   if (listItemId !== undefined) {
-    return `${blockId}-list-${listItemId}`
+    identity = { blockId, cardType: "list", listItemId }
+  } else if (clozeNumber) {
+    identity = { blockId, cardType: "cloze", clozeNumber }
+  } else if (directionType === "forward" || directionType === "backward") {
+    identity = { blockId, cardType: "direction", directionType }
+  } else {
+    identity = { blockId, cardType: "basic" }
   }
-  return `${blockId}-${clozeNumber || 0}-${directionType || "basic"}`
+  return buildCardKey(identity)
 }
 
 /**
@@ -190,16 +203,13 @@ export async function hasChildCards(blockId: DbId): Promise<boolean> {
 
 /**
  * 生成唯一的卡片键
- * 用于去重和比较卡片
- * 
+ * 用于去重和比较卡片；统一委托 cardIdentity。
+ *
  * @param card - ReviewCard 对象
  * @returns 唯一键字符串
  */
 export function getCardKey(card: ReviewCard): string {
-  if (card.listItemId !== undefined) {
-    return `${card.id}-list-${card.listItemId}`
-  }
-  return `${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}`
+  return cardKeyFromReviewCard(card)
 }
 
 /**

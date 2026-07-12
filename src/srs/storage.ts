@@ -18,6 +18,41 @@ import type { Grade, SrsState } from "./types"
 
 const blockCache = new Map<DbId, Block | null>()
 
+/** get-blocks 默认批次大小，同时作为硬上限 */
+export const BLOCK_PREFETCH_BATCH_SIZE = 50
+/** get-blocks 默认最大并发批次数，同时作为硬上限（禁止无上限 Promise.all） */
+export const BLOCK_PREFETCH_CONCURRENCY = 4
+
+/**
+ * 归一化受控正整数限制（batchSize / concurrency）。
+ * - 非 number、非有限（NaN/±Infinity）、≤0 → 回退 defaultValue
+ * - 小数：Math.floor（明确整数规则）
+ * - 最终 clamp 到 [1, maxValue]
+ * defaultValue / maxValue 通常均为导出的 50 或 4。
+ */
+export function normalizeBoundedPositiveInt(
+  value: unknown,
+  defaultValue: number,
+  maxValue: number
+): number {
+  const max = Number.isFinite(maxValue) && maxValue >= 1
+    ? Math.floor(maxValue)
+    : 1
+  const fallbackRaw = Number.isFinite(defaultValue) && defaultValue >= 1
+    ? Math.floor(defaultValue)
+    : 1
+  const fallback = Math.min(Math.max(1, fallbackRaw), max)
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback
+  }
+  const floored = Math.floor(value)
+  if (floored < 1) {
+    return fallback
+  }
+  return Math.min(floored, max)
+}
+
 const getBlockCached = async (blockId: DbId): Promise<Block | undefined> => {
   if (blockCache.has(blockId)) {
     return blockCache.get(blockId) ?? undefined
@@ -31,11 +66,186 @@ const getBlockCached = async (blockId: DbId): Promise<Block | undefined> => {
 /**
  * 清除指定块的缓存
  * 在外部模块修改块属性后调用，确保下次读取获取最新数据
- * 
+ *
  * @param blockId - 块 ID
  */
 export const invalidateBlockCache = (blockId: DbId): void => {
   blockCache.delete(blockId)
+}
+
+/**
+ * 用已获取的完整块预热本轮缓存（例如 get-blocks-with-tags 返回值）。
+ * 不发起后端请求；覆盖同 id 的既有缓存条目。
+ * 写入/评分后的 invalidateBlockCache / save* 失效语义不变。
+ *
+ * @returns 写入缓存的块数量
+ */
+export function preheatBlockCache(blocks: ReadonlyArray<Block | null | undefined>): number {
+  let count = 0
+  for (const block of blocks) {
+    if (block == null || block.id == null) continue
+    blockCache.set(block.id, block)
+    count++
+  }
+  return count
+}
+
+/**
+ * 清空全部块缓存（测试与单轮收集边界清理用）。
+ * 生产路径依赖 invalidateBlockCache 做精确失效，不应依赖本函数作长期索引。
+ */
+export function clearBlockCache(): void {
+  blockCache.clear()
+}
+
+/** 测试/诊断：指定块是否已在缓存中 */
+export function hasBlockCacheEntry(blockId: DbId): boolean {
+  return blockCache.has(blockId)
+}
+
+export type PrefetchBlocksByIdsOptions = {
+  batchSize?: number
+  concurrency?: number
+  /** 跳过已在缓存中的 id */
+  skipCached?: boolean
+}
+
+export type PrefetchBlocksByIdsResult = {
+  requestedIds: number
+  fetchedIds: number
+  batchCount: number
+  concurrencyPeak: number
+  getBlocksCalls: number
+}
+
+/**
+ * 对缺失块 id 用正式 `get-blocks` 分批预热缓存。
+ * 批次大小与并发均有固定上限；批量失败会抛出，不得静默吞掉。
+ */
+export async function prefetchBlocksByIds(
+  blockIds: ReadonlyArray<DbId>,
+  options: PrefetchBlocksByIdsOptions = {}
+): Promise<PrefetchBlocksByIdsResult> {
+  const batchSize = normalizeBoundedPositiveInt(
+    options.batchSize,
+    BLOCK_PREFETCH_BATCH_SIZE,
+    BLOCK_PREFETCH_BATCH_SIZE
+  )
+  const concurrency = normalizeBoundedPositiveInt(
+    options.concurrency,
+    BLOCK_PREFETCH_CONCURRENCY,
+    BLOCK_PREFETCH_CONCURRENCY
+  )
+  const skipCached = options.skipCached !== false
+
+  const unique: DbId[] = []
+  const seen = new Set<DbId>()
+  for (const id of blockIds) {
+    if (id == null || seen.has(id)) continue
+    seen.add(id)
+    if (skipCached && blockCache.has(id)) continue
+    unique.push(id)
+  }
+
+  if (unique.length === 0) {
+    return {
+      requestedIds: 0,
+      fetchedIds: 0,
+      batchCount: 0,
+      concurrencyPeak: 0,
+      getBlocksCalls: 0
+    }
+  }
+
+  const batches: DbId[][] = []
+  for (let i = 0; i < unique.length; i += batchSize) {
+    batches.push(unique.slice(i, i + batchSize))
+  }
+
+  let concurrencyPeak = 0
+  let active = 0
+  let getBlocksCalls = 0
+  let fetchedIds = 0
+
+  await runBoundedConcurrency(batches, concurrency, async (batch) => {
+    active++
+    if (active > concurrencyPeak) concurrencyPeak = active
+    try {
+      getBlocksCalls++
+      const result = (await orca.invokeBackend("get-blocks", batch)) as
+        | Block[]
+        | undefined
+        | null
+      if (!Array.isArray(result)) {
+        throw new Error(
+          `[storage] get-blocks 返回非数组（batchSize=${batch.length}）`
+        )
+      }
+      for (const block of result) {
+        if (block == null || block.id == null) continue
+        blockCache.set(block.id, block)
+        fetchedIds++
+      }
+      // 请求了但未返回的 id：缓存为 null，避免随后逐个 get-block 风暴
+      const returned = new Set(
+        result.filter((b): b is Block => b != null && b.id != null).map((b) => b.id)
+      )
+      for (const id of batch) {
+        if (!returned.has(id) && !blockCache.has(id)) {
+          blockCache.set(id, null)
+        }
+      }
+    } catch (error) {
+      console.error(
+        `[storage] get-blocks 批量读取失败（ids=${batch.slice(0, 8).join(",")}${batch.length > 8 ? "…" : ""} count=${batch.length}）:`,
+        error
+      )
+      throw error
+    } finally {
+      active--
+    }
+  })
+
+  return {
+    requestedIds: unique.length,
+    fetchedIds,
+    batchCount: batches.length,
+    concurrencyPeak,
+    getBlocksCalls
+  }
+}
+
+/**
+ * 固定上限并发执行任务（worker 数量 = min(normalizedConcurrency, items.length)）。
+ * 禁止对全量 items 做无上限 Promise.all。
+ * concurrency 经归一化：NaN/Infinity/小数/过大均不会创建无界 runner。
+ *
+ * @param hardMax - 并发硬上限，默认 BLOCK_PREFETCH_CONCURRENCY（4）
+ */
+export async function runBoundedConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+  hardMax: number = BLOCK_PREFETCH_CONCURRENCY
+): Promise<void> {
+  const limit = normalizeBoundedPositiveInt(
+    concurrency,
+    BLOCK_PREFETCH_CONCURRENCY,
+    hardMax
+  )
+  if (items.length === 0) return
+
+  let next = 0
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const index = next++
+        await worker(items[index], index)
+      }
+    }
+  )
+  await Promise.all(runners)
 }
 
 const hasPropertyWithPrefix = (block: Block | undefined, prefix: string): boolean =>
