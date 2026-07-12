@@ -30,7 +30,6 @@ import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
 import IRActionBar from "./IRActionBar"
 import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRReadingPane from "./IRReadingPane"
-import IRSelectionToolbar from "./IRSelectionToolbar"
 import IRSessionHeader from "./IRSessionHeader"
 import IRSessionSummary from "./IRSessionSummary"
 
@@ -81,7 +80,6 @@ export default function IRSessionShell({
   const [moreOpen, setMoreOpen] = useState(false)
   const [postponeOpen, setPostponeOpen] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
-  const [selectionActive, setSelectionActive] = useState(false)
   const [breakpointError, setBreakpointError] = useState<string | null>(null)
 
   const sessionRootRef = useRef<HTMLDivElement | null>(null)
@@ -147,25 +145,6 @@ export default function IRSessionShell({
     const nextPreview = currentCard.readingBreakpoint?.previewBlockId
     setPreviewBlockId(nextPreview && nextPreview !== currentCard.id ? nextPreview : null)
   }, [currentCard?.id])
-
-  useEffect(() => {
-    const onSel = () => {
-      const sel = window.getSelection()
-      const container = currentCardContainerRef.current
-      const belongsToCurrentCard = Boolean(
-        container &&
-        sel?.anchorNode &&
-        sel.focusNode &&
-        container.contains(sel.anchorNode) &&
-        container.contains(sel.focusNode)
-      )
-      setSelectionActive(Boolean(
-        belongsToCurrentCard && sel && !sel.isCollapsed && sel.toString().trim()
-      ))
-    }
-    document.addEventListener("selectionchange", onSel)
-    return () => document.removeEventListener("selectionchange", onSel)
-  }, [])
 
   useEffect(() => {
     const onAction = (event: Event) => {
@@ -482,15 +461,6 @@ export default function IRSessionShell({
           )}
         </div>
       ) : null}
-
-      <IRSelectionToolbar
-        visible={selectionActive}
-        isTopic={isTopic}
-        isWorking={isWorking}
-        onExtract={handleExtract}
-        onCloze={handleItemize}
-        containerRef={currentCardContainerRef}
-      />
 
       <div className="ir-reading__scroll" ref={scrollContainerRef}>
         <IRReadingPane

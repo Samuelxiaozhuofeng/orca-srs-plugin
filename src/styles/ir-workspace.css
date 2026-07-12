@@ -1076,21 +1076,6 @@
   border-radius: 8px !important;
 }
 
-/* ---------- Selection toolbar ---------- */
-
-.ir-selection-toolbar {
-  position: fixed;
-  z-index: 10050;
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--orca-color-border-1, #e2e8f0);
-  background: var(--orca-color-bg-1, #ffffff);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  pointer-events: auto;
-}
-
 /* ---------- Drawers / overlay ---------- */
 
 .ir-drawer-overlay {
