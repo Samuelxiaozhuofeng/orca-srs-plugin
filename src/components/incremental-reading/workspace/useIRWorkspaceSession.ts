@@ -3,7 +3,10 @@
  */
 
 import type { DbId } from "../../../orca.d.ts"
-import type { IRCard } from "../../../srs/incrementalReadingCollector"
+import {
+  collectAllIRCardsFromBlocks,
+  type IRCard
+} from "../../../srs/incrementalReadingCollector"
 import {
   popNextIRSessionFocusCardId,
   setNextIRSessionFocusCardId
@@ -117,9 +120,23 @@ export function useIRWorkspaceSession(
 
       let focusedQueue = policyQueue.queue
       if (focusCardId) {
-        const focusCard =
-          result.cards.find((c: IRCard) => c.id === focusCardId) ??
-          libraryCards.find((c: IRCard) => c.id === focusCardId)
+        let focusCard = result.cards.find((c: IRCard) => c.id === focusCardId)
+        if (!focusCard) {
+          try {
+            const block = await orca.invokeBackend("get-block", focusCardId)
+            if (block) {
+              const cards = await collectAllIRCardsFromBlocks([block], name)
+              if (cards.length > 0) {
+                focusCard = cards[0]
+              }
+            }
+          } catch (err) {
+            console.error("[IR Workspace] 无法从数据库加载焦点卡片最新状态:", err)
+          }
+        }
+        if (!focusCard) {
+          focusCard = libraryCards.find((c: IRCard) => c.id === focusCardId)
+        }
         if (focusCard) {
           const without = focusedQueue.filter((c: IRCard) => c.id !== focusCardId)
           focusedQueue = [focusCard, ...without]
