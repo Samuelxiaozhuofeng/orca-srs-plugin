@@ -62,7 +62,8 @@
 
 12. **[渐进阅读.md](渐进阅读.md)**
    - 渐进阅读数据模型、调度、会话语义与 **原生 block 面板统一工作区**（`srs.ir-session` 虚拟块 + 渐进式筛选资料库 + 时间盒专注阅读；启动页本次只读/混合模式与只记交叉导流）
-   - 关联：`src/components/incremental-reading/workspace/*`、`src/srs/incremental-reading/*`
+   - 右键：**加入渐进阅读**（默认优先级 50、正常排期、不自动进今天）/ Topic **今天阅读**（仅 `advanceDueToToday`）
+   - 关联：`src/components/incremental-reading/workspace/*`、`src/srs/incremental-reading/*`、`src/srs/topicCardCreator.ts`、`src/srs/topicIRMenu.ts`、`src/srs/registry/contextMenuRegistry.tsx`
 
 13. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)**
    - 面向 SuperMemo 风格低压阅读的分阶段优化计划

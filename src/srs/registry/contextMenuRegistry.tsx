@@ -17,12 +17,17 @@ import {
 import { createRepeatReviewSession } from "../repeatReviewManager"
 import { getChapterBlockIds, getChapterBlockIdsAsync } from "../bookIRCreator"
 import { showIRBookDialog } from "../../components/IRBookDialogMount"
+import { classifyTopicIRBlockMenu, advanceTopicDueToToday } from "../topicIRMenu"
+import { createTopicCardByBlockId } from "../topicCardCreator"
 
 /** 已注册的菜单项 ID 列表 */
 const registeredMenuIds: string[] = []
 
 /** 重试状态存储 */
 const retryState: Map<DbId, { type: 'query' | 'children', retryCount: number }> = new Map()
+
+/** 渐进阅读右键动作进行中的块（防双击并发写入；菜单 close 后组件会卸载） */
+const topicIRMenuInflight = new Set<string>()
 
 /**
  * 处理复习启动错误
@@ -205,6 +210,46 @@ export function registerContextMenu(pluginName: string): void {
     }
   })
   registeredMenuIds.push(resumeEpubMenuId)
+
+  // 加入渐进阅读（普通非查询块，且当前不是 Topic IR）
+  const joinTopicIRMenuId = `${pluginName}.joinTopicIR`
+  orca.blockMenuCommands.registerBlockMenuCommand(joinTopicIRMenuId, {
+    worksOnMultipleBlocks: false,
+    render: (blockId: DbId, _rootBlockId: DbId, close: () => void) => {
+      const block = orca.state.blocks?.[blockId] as Block | undefined
+      if (classifyTopicIRBlockMenu(block) !== "join") {
+        return null
+      }
+      return (
+        <JoinTopicIRMenuItem
+          blockId={blockId}
+          pluginName={pluginName}
+          close={close}
+        />
+      )
+    }
+  })
+  registeredMenuIds.push(joinTopicIRMenuId)
+
+  // 今天阅读（已是 Topic IR 的非查询块；仅提前 due）
+  const readTopicTodayMenuId = `${pluginName}.readTopicToday`
+  orca.blockMenuCommands.registerBlockMenuCommand(readTopicTodayMenuId, {
+    worksOnMultipleBlocks: false,
+    render: (blockId: DbId, _rootBlockId: DbId, close: () => void) => {
+      const block = orca.state.blocks?.[blockId] as Block | undefined
+      if (classifyTopicIRBlockMenu(block) !== "readToday") {
+        return null
+      }
+      return (
+        <ReadTopicTodayMenuItem
+          blockId={blockId}
+          pluginName={pluginName}
+          close={close}
+        />
+      )
+    }
+  })
+  registeredMenuIds.push(readTopicTodayMenuId)
 
   console.log(`[${pluginName}] 右键菜单已注册`)
 }
@@ -547,6 +592,90 @@ function BookIRMenuItem({
       preIcon="ti ti-book"
       title={title}
       onClick={handleClick}
+    />
+  )
+}
+
+/**
+ * 加入渐进阅读：将普通块初始化为 Topic IR
+ */
+function JoinTopicIRMenuItem({
+  blockId,
+  pluginName,
+  close
+}: {
+  blockId: DbId
+  pluginName: string
+  close: () => void
+}) {
+  const [working, setWorking] = React.useState(false)
+  const inflightKey = `join:${String(blockId)}`
+
+  const handleClick = async () => {
+    if (working || topicIRMenuInflight.has(inflightKey)) return
+    topicIRMenuInflight.add(inflightKey)
+    setWorking(true)
+    close()
+    try {
+      await createTopicCardByBlockId(blockId, pluginName)
+    } catch (error) {
+      console.error(`[${pluginName}] 加入渐进阅读失败:`, error)
+      orca.notify("error", `加入渐进阅读失败: ${error}`, { title: "渐进阅读" })
+    } finally {
+      topicIRMenuInflight.delete(inflightKey)
+      setWorking(false)
+    }
+  }
+
+  const MenuText = orca.components.MenuText
+  return (
+    <MenuText
+      preIcon="ti ti-book-2"
+      title={working ? "加入渐进阅读..." : "加入渐进阅读"}
+      disabled={working}
+      onClick={() => { void handleClick() }}
+    />
+  )
+}
+
+/**
+ * 今天阅读：仅 advanceDueToToday，不改其他长期 IR 状态
+ */
+function ReadTopicTodayMenuItem({
+  blockId,
+  pluginName,
+  close
+}: {
+  blockId: DbId
+  pluginName: string
+  close: () => void
+}) {
+  const [working, setWorking] = React.useState(false)
+  const inflightKey = `today:${String(blockId)}`
+
+  const handleClick = async () => {
+    if (working || topicIRMenuInflight.has(inflightKey)) return
+    topicIRMenuInflight.add(inflightKey)
+    setWorking(true)
+    close()
+    try {
+      await advanceTopicDueToToday(blockId, pluginName)
+    } catch (error) {
+      console.error(`[${pluginName}] 今天阅读失败:`, error)
+      orca.notify("error", `今天阅读失败: ${error}`, { title: "渐进阅读" })
+    } finally {
+      topicIRMenuInflight.delete(inflightKey)
+      setWorking(false)
+    }
+  }
+
+  const MenuText = orca.components.MenuText
+  return (
+    <MenuText
+      preIcon="ti ti-calendar-due"
+      title={working ? "今天阅读..." : "今天阅读"}
+      disabled={working}
+      onClick={() => { void handleClick() }}
     />
   )
 }
