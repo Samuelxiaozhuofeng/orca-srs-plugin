@@ -10,6 +10,7 @@ import {
   extractTopHeadingTitle,
   getHtmlContentRoot,
   parseHtml,
+  preferChapterTitle,
   removeMatchingTopHeading,
   rewriteImageSources,
   sanitizeHtmlForOrca
@@ -135,73 +136,85 @@ export class EpubParser {
     opfDoc: Document,
     manifestItems: Map<string, EpubManifestItem>
   ): Promise<void> {
-    const chapterByHref = new Map<string, EpubChapter>()
-    chapters.forEach((ch) => {
-      const baseHref = ch.href.split("#")[0]
-      chapterByHref.set(ch.href, ch)
-      chapterByHref.set(baseHref, ch)
-    })
+    const chapterByHref = buildChapterHrefIndex(chapters)
 
-    // EPUB 3: Navigation Document
+    // EPUB 3: Navigation Document — apply matches; do not return early.
+    // Zero matches or partial matches still allow NCX to fill gaps.
+    await this.applyNavTitles(chapterByHref, opfDoc)
+
+    // EPUB 2 NCX (or dual-nav books): only fill chapters still without a title.
+    await this.applyNcxTitles(chapterByHref, opfDoc, manifestItems)
+  }
+
+  private async applyNavTitles(
+    chapterByHref: Map<string, EpubChapter>,
+    opfDoc: Document
+  ): Promise<void> {
     const navItem = opfDoc.querySelector('manifest > item[properties*="nav"]')
-    if (navItem) {
-      const navHref = navItem.getAttribute("href")
-      if (navHref) {
-        try {
-          const navContent = await this.getFile(this.resolvePath(navHref))
-          const navDoc = new DOMParser().parseFromString(
-            navContent,
-            "text/html"
-          )
+    if (!navItem) return
 
-          const tocNav = navDoc.querySelector('nav[epub\\:type="toc"], nav.toc')
-          if (tocNav) {
-            tocNav.querySelectorAll("a").forEach((a) => {
-              const href = a.getAttribute("href")
-              const title = a.textContent?.trim()
-              if (href && title) {
-                const baseHref = href.split("#")[0]
-                const chapter = chapterByHref.get(baseHref)
-                if (chapter) {
-                  chapter.title = title
-                }
-              }
-            })
-            return
-          }
-        } catch {
-          // Fall through to NCX
+    const navHref = navItem.getAttribute("href")
+    if (!navHref) return
+
+    try {
+      const navContent = await this.getFile(this.resolvePath(navHref))
+      const navDoc = new DOMParser().parseFromString(navContent, "text/html")
+      const tocNav = navDoc.querySelector('nav[epub\\:type="toc"], nav.toc')
+      if (!tocNav) return
+
+      const navDir = hrefDirectory(navHref)
+      tocNav.querySelectorAll("a").forEach((a) => {
+        const href = a.getAttribute("href")
+        const title = a.textContent?.trim()
+        if (!href || !title) return
+
+        const key = normalizeComparableHref(href, navDir)
+        const chapter = chapterByHref.get(key)
+        if (chapter && !chapter.title) {
+          chapter.title = title
         }
+      })
+    } catch (error) {
+      // Fall through to NCX; keep prior behavior of not failing the whole parse.
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[epub] Failed to parse navigation document titles", error)
       }
     }
+  }
 
-    // EPUB 2: NCX fallback
+  private async applyNcxTitles(
+    chapterByHref: Map<string, EpubChapter>,
+    opfDoc: Document,
+    manifestItems: Map<string, EpubManifestItem>
+  ): Promise<void> {
     const spine = opfDoc.querySelector("spine")
     const tocId = spine?.getAttribute("toc")
-    if (tocId) {
-      const ncxItem = manifestItems.get(tocId)
-      if (ncxItem) {
-        try {
-          const ncxContent = await this.getFile(
-            this.resolvePath(ncxItem.href)
-          )
-          const ncxDoc = new DOMParser().parseFromString(ncxContent, "text/xml")
+    if (!tocId) return
 
-          ncxDoc.querySelectorAll("navPoint").forEach((navPoint) => {
-            const label = navPoint.querySelector("navLabel > text")?.textContent?.trim()
-            const content = navPoint.querySelector("content")
-            const src = content?.getAttribute("src")
-            if (label && src) {
-              const baseHref = src.split("#")[0]
-              const chapter = chapterByHref.get(baseHref)
-              if (chapter) {
-                chapter.title = label
-              }
-            }
-          })
-        } catch {
-          // NCX parsing failed
+    const ncxItem = manifestItems.get(tocId)
+    if (!ncxItem) return
+
+    try {
+      const ncxContent = await this.getFile(this.resolvePath(ncxItem.href))
+      const ncxDoc = new DOMParser().parseFromString(ncxContent, "text/xml")
+      const ncxDir = hrefDirectory(ncxItem.href)
+
+      ncxDoc.querySelectorAll("navPoint").forEach((navPoint) => {
+        const label = navPoint.querySelector("navLabel > text")?.textContent?.trim()
+        const content = navPoint.querySelector("content")
+        const src = content?.getAttribute("src")
+        if (!label || !src) return
+
+        const key = normalizeComparableHref(src, ncxDir)
+        const chapter = chapterByHref.get(key)
+        // Only fill gaps — never overwrite a title already set by nav.
+        if (chapter && !chapter.title) {
+          chapter.title = label
         }
+      })
+    } catch (error) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[epub] Failed to parse NCX titles", error)
       }
     }
   }
@@ -215,14 +228,23 @@ export class EpubParser {
         const content = await this.getFile(this.resolvePath(chapter.href))
         const doc = parseHtml(content)
         const root = getHtmlContentRoot(doc, content)
-        const title = extractTopHeadingTitle(root)
-        if (title) {
-          chapter.title = title
+        const contentTitle = extractTopHeadingTitle(root)
+        if (contentTitle) {
+          chapter.title = preferChapterTitle(chapter.title, contentTitle)
         } else if (!chapter.title) {
-          chapter.title = extractDocumentFallbackTitle(doc, root, [chapter.id, chapter.href])
+          chapter.title = extractDocumentFallbackTitle(doc, root, [
+            chapter.id,
+            chapter.href
+          ])
         }
-      } catch {
-        // keep previous title
+      } catch (error) {
+        // Keep previous title; do not fail remaining chapters.
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn(
+            `[epub] Failed to extract content title for ${chapter.href}`,
+            error
+          )
+        }
       }
       if (!chapter.title) chapter.title = `未命名章节 ${index + 1}`
     }
@@ -271,21 +293,10 @@ export class EpubParser {
   private resolvePath(href: string): string {
     const pathOnly = href.split("#")[0]
     if (pathOnly.startsWith("/")) {
-      return pathOnly.substring(1)
+      return normalizePathSegments(pathOnly.substring(1))
     }
 
-    const parts = (this.opfDir + pathOnly).split("/")
-    const resolved: string[] = []
-
-    for (const part of parts) {
-      if (part === "..") {
-        resolved.pop()
-      } else if (part !== "." && part !== "") {
-        resolved.push(part)
-      }
-    }
-
-    return resolved.join("/")
+    return normalizePathSegments(this.opfDir + pathOnly)
   }
 }
 
@@ -312,8 +323,88 @@ export function makeChapterKey(
   return key
 }
 
+/**
+ * Normalize an OPF/spine href for identity (fragment stripped, slashes normalized).
+ */
 export function normalizeHref(href: string): string {
-  return href.split("#")[0].replace(/^\//, "").replace(/\\/g, "/")
+  return normalizeComparableHref(href, "")
+}
+
+/**
+ * Normalize a nav/NCX/spine href into a comparable path relative to the OPF.
+ *
+ * - Strips fragment identifiers
+ * - Resolves relative to `baseDir` (directory of the nav/NCX file, OPF-relative)
+ * - Handles `.`, `..`, leading `/`, and `\`
+ * - Best-effort URL decoding; malformed percent-encoding leaves the path unchanged
+ */
+export function normalizeComparableHref(href: string, baseDir = ""): string {
+  let path = href.split("#")[0] ?? ""
+  path = path.replace(/\\/g, "/")
+  path = safeDecodePath(path)
+
+  if (path.startsWith("/")) {
+    path = path.replace(/^\/+/, "")
+  } else {
+    const dir = baseDir.replace(/\\/g, "/")
+    const prefix = dir && !dir.endsWith("/") ? `${dir}/` : dir
+    path = `${prefix}${path}`
+  }
+
+  return normalizePathSegments(path)
+}
+
+/** Directory portion of an OPF-relative href, including trailing `/` when non-empty. */
+export function hrefDirectory(href: string): string {
+  const path = (href.split("#")[0] ?? "").replace(/\\/g, "/")
+  const idx = path.lastIndexOf("/")
+  return idx >= 0 ? path.slice(0, idx + 1) : ""
+}
+
+function buildChapterHrefIndex(chapters: EpubChapter[]): Map<string, EpubChapter> {
+  const chapterByHref = new Map<string, EpubChapter>()
+  for (const ch of chapters) {
+    const key = normalizeComparableHref(ch.href)
+    chapterByHref.set(key, ch)
+  }
+  return chapterByHref
+}
+
+function normalizePathSegments(path: string): string {
+  const resolved: string[] = []
+  for (const part of path.split("/")) {
+    if (part === "..") {
+      resolved.pop()
+    } else if (part !== "." && part !== "") {
+      resolved.push(part)
+    }
+  }
+  return resolved.join("/")
+}
+
+/**
+ * Decode percent-encoded path segments without throwing on malformed sequences.
+ * Intentional fallback (not silent error swallowing): keep original on failure.
+ */
+function safeDecodePath(path: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(path) && !/%/.test(path)) {
+    return path
+  }
+  try {
+    return path
+      .split("/")
+      .map((segment) => {
+        try {
+          return decodeURIComponent(segment)
+        } catch {
+          // Malformed encoding in this segment — keep raw segment.
+          return segment
+        }
+      })
+      .join("/")
+  } catch {
+    return path
+  }
 }
 
 function collectCoverHrefs(opfDoc: Document): Set<string> {

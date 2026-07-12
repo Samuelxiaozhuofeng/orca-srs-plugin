@@ -224,3 +224,161 @@ export async function buildInvalidContainerEpub(): Promise<ArrayBuffer> {
   )
   return zip.generateAsync({ type: "arraybuffer" })
 }
+
+/**
+ * EPUB 3 where nav lives under Text/ and links use `../Text/...` paths.
+ * Mirrors real books where string-equality matching against spine href fails.
+ */
+export async function buildEpub3NavRelativePaths(): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+  zip.file(
+    "OEBPS/content.opf",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Logic Book</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="uid">logic-1</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="Text/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="c1" href="Text/chapter001.xhtml" media-type="application/xhtml+xml"/>
+    <item id="c2" href="Text/chapter002.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="c1"/>
+    <itemref idref="c2"/>
+  </spine>
+</package>`
+  )
+  zip.file(
+    "OEBPS/Text/nav.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li><a href="../Text/chapter001.xhtml">1 Why logic?</a></li>
+        <li><a href="../Text/chapter002.xhtml">2 What is logic?</a></li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+  )
+  zip.file(
+    "OEBPS/Text/chapter001.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <h1 class="chapter-number">1</h1>
+    <h1 class="chapter-title">WHY LOGIC?</h1>
+    <p>Body of chapter one.</p>
+    <h2>A section later</h2>
+    <p>Section body.</p>
+  </body>
+</html>`
+  )
+  zip.file(
+    "OEBPS/Text/chapter002.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <h1 class="chapter-number">2</h1>
+    <h1 class="chapter-title">WHAT IS LOGIC?</h1>
+    <p>Body of chapter two.</p>
+  </body>
+</html>`
+  )
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
+ * Nav exists but its links never match spine hrefs (wrong paths).
+ * NCX has correct relative links and should fill titles.
+ */
+export async function buildEpubNavZeroMatchNcxFallback(): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+  zip.file(
+    "OEBPS/content.opf",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Dual TOC Book</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="uid">dual-toc-1</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="Text/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="c1" href="Text/c1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="c2" href="Text/c2.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="c1"/>
+    <itemref idref="c2"/>
+  </spine>
+</package>`
+  )
+  // Broken nav links that will never match spine after normalization.
+  zip.file(
+    "OEBPS/Text/nav.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li><a href="missing/c1.xhtml">Broken Nav A</a></li>
+        <li><a href="missing/c2.xhtml">Broken Nav B</a></li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+  )
+  zip.file(
+    "OEBPS/toc.ncx",
+    `<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="n1">
+      <navLabel><text>NCX Fallback A</text></navLabel>
+      <content src="Text/c1.xhtml"/>
+    </navPoint>
+    <navPoint id="n2">
+      <navLabel><text>NCX Fallback B</text></navLabel>
+      <content src="Text/c2.xhtml"/>
+    </navPoint>
+  </navMap>
+</ncx>`
+  )
+  zip.file(
+    "OEBPS/Text/c1.xhtml",
+    `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>1</h1><p>A</p></body></html>`
+  )
+  zip.file(
+    "OEBPS/Text/c2.xhtml",
+    `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>2</h1><p>B</p></body></html>`
+  )
+  return zip.generateAsync({ type: "arraybuffer" })
+}
