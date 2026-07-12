@@ -61,7 +61,7 @@
    - 关键文件：`src/srs/listCardCreator.ts`、`src/srs/cardCollector.ts`、`src/components/ListCardReviewRenderer.tsx`
 
 12. **[渐进阅读.md](渐进阅读.md)**
-   - 渐进阅读数据模型、调度、会话语义与 **原生 block 面板统一工作区**（`srs.ir-session` 虚拟块 + 渐进式筛选资料库 + 时间盒专注阅读）
+   - 渐进阅读数据模型、调度、会话语义与 **原生 block 面板统一工作区**（`srs.ir-session` 虚拟块 + 渐进式筛选资料库 + 时间盒专注阅读；启动页本次只读/混合模式与只记交叉导流）
    - 关联：`src/components/incremental-reading/workspace/*`、`src/srs/incremental-reading/*`
 
 13. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)**

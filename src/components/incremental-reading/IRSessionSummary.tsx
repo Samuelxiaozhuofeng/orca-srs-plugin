@@ -39,6 +39,12 @@ export default function IRSessionSummary({
 
         <div className="ir-session-summary__stats">
           <div className="ir-stat-box">
+            <span className="ir-stat-box__label">本次阅读 / 复习</span>
+            <div className="ir-stat-box__value">
+              本次阅读 <strong>{readingCompleted}</strong> · 复习 <strong>{reviewCompleted}</strong>
+            </div>
+          </div>
+          <div className="ir-stat-box">
             <span className="ir-stat-box__label">进度 (完成 / 计划)</span>
             <div className="ir-stat-box__value">
               <strong>{metrics.completedCount}</strong> / {metrics.plannedCount}
@@ -48,19 +54,8 @@ export default function IRSessionSummary({
             <span className="ir-stat-box__label">已处理条目</span>
             <div className="ir-stat-box__value">
               Topic <strong>{metrics.topicProcessed}</strong> · Extract <strong>{metrics.extractProcessed}</strong>
-              {reviewCompleted > 0 ? (
-                <> · 复习 <strong>{reviewCompleted}</strong></>
-              ) : null}
             </div>
           </div>
-          {reviewCompleted > 0 ? (
-            <div className="ir-stat-box">
-              <span className="ir-stat-box__label">阅读 / 复习完成</span>
-              <div className="ir-stat-box__value">
-                阅读 <strong>{readingCompleted}</strong> · 复习 <strong>{reviewCompleted}</strong>
-              </div>
-            </div>
-          ) : null}
           <div className="ir-stat-box">
             <span className="ir-stat-box__label">新产出</span>
             <div className="ir-stat-box__value">

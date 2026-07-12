@@ -31,10 +31,25 @@ import { estimateCardCostSecondsCalibrated } from "../../../srs/incremental-read
 import { buildCollectError, buildCollectOk } from "../../../srs/incremental-reading/irCollectResult"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
+import {
+  buildMixedDegradedNotice,
+  resolveSessionMixedEnabled,
+  type IRSessionLaunchMode
+} from "./irSessionLaunchMode"
 import type { IRWorkspaceSessionState } from "./irWorkspaceTypes"
 import { EMPTY_SESSION_STATE } from "./irWorkspaceTypes"
 
 const { useCallback, useRef, useState } = window.React
+
+export type LoadReadingQueueOptions = {
+  timeBudgetMinutes: number
+  focusCardId?: DbId | null
+  /**
+   * 传入时覆盖/设定本次启动模式；省略时复用上一次会话模式（刷新/重试）。
+   * 传 null 表示不指定本次模式，混合开关回退全局设置。
+   */
+  sessionLaunchMode?: IRSessionLaunchMode | null
+}
 
 export function useIRWorkspaceSession(
   loadPluginName: () => Promise<string>,
@@ -48,15 +63,22 @@ export function useIRWorkspaceSession(
   const [advancingIds, setAdvancingIds] = useState<Record<string, boolean>>({})
   const advancingRef = useRef<Set<DbId>>(new Set())
   const autoBatchIdRef = useRef<string | null>(null)
+  /** 上次显式/继承的本次模式，供刷新/重试在未传 sessionLaunchMode 时复用 */
+  const sessionLaunchModeRef = useRef<IRSessionLaunchMode | null>(null)
 
-  const loadReadingQueue = useCallback(async (options: {
-    timeBudgetMinutes: number
-    focusCardId?: DbId | null
-  }) => {
+  const loadReadingQueue = useCallback(async (options: LoadReadingQueueOptions) => {
+    const launchMode: IRSessionLaunchMode | null =
+      "sessionLaunchMode" in options
+        ? (options.sessionLaunchMode ?? null)
+        : sessionLaunchModeRef.current
+    sessionLaunchModeRef.current = launchMode
+
     setSession((prev: IRWorkspaceSessionState) => ({
       ...prev,
       loading: true,
-      collectResult: null
+      collectResult: null,
+      sessionLaunchMode: launchMode,
+      mixedDegradedNotice: null
     }))
     try {
       const name = await loadPluginName()
@@ -77,16 +99,22 @@ export function useIRWorkspaceSession(
           loading: false,
           entries: [],
           collectResult: result,
+          sessionLaunchMode: launchMode,
+          mixedDegradedNotice: null,
           generation: prev.generation + 1
         }))
         return
       }
 
       const settings = getIncrementalReadingSettings(name)
+      const mixedEnabledForSession = resolveSessionMixedEnabled(
+        launchMode,
+        settings.mixedLearningEnabled
+      )
       const seed = new Date().toISOString().slice(0, 10)
       const sessionStartedAt = new Date()
       let reviewCards: import("../../../srs/types").ReviewCard[] = []
-      if (settings.mixedLearningEnabled) {
+      if (mixedEnabledForSession) {
         const { collectReviewCards } = await import("../../../srs/cardCollector")
         reviewCards = await collectReviewCards(name)
       }
@@ -151,7 +179,7 @@ export function useIRWorkspaceSession(
         0
       )
       const mixed = buildMixedSessionQueue({
-        enabled: settings.mixedLearningEnabled,
+        enabled: mixedEnabledForSession,
         readingQueue: focusedQueue,
         reviewCards: eligibleReviewCards,
         reviewRatioPercent: settings.mixedLearningReviewRatio,
@@ -161,6 +189,10 @@ export function useIRWorkspaceSession(
         now: sessionStartedAt
       })
       const sessionEntries: IRSessionEntry[] = mixed.entries
+      const mixedDegradedNotice = buildMixedDegradedNotice({
+        mixedEnabledForSession,
+        selectedReviewCount: mixed.selectedReviewCount
+      })
 
       setSession({
         ready: true,
@@ -170,7 +202,9 @@ export function useIRWorkspaceSession(
         collectResult: result,
         autoPostponeLabel: autoLabel,
         autoBatchId: autoBatchIdRef.current,
-        generation: Date.now()
+        generation: Date.now(),
+        sessionLaunchMode: launchMode,
+        mixedDegradedNotice
       })
     } catch (error) {
       console.error("[IR Workspace] 加载阅读队列失败:", error)
@@ -181,6 +215,8 @@ export function useIRWorkspaceSession(
         loading: false,
         entries: [],
         collectResult: errResult,
+        sessionLaunchMode: launchMode,
+        mixedDegradedNotice: null,
         generation: prev.generation + 1
       }))
       orca.notify("error", "加载渐进阅读队列失败", { title: "渐进阅读" })
@@ -199,9 +235,11 @@ export function useIRWorkspaceSession(
         onAfterAdvance?.()
       }
       await setNextIRSessionFocusCardId(name, cardId)
+      // 资料库选卡：不带本次模式，混合行为回退全局设置
       await loadReadingQueue({
         timeBudgetMinutes: session.timeBudgetMinutes || 20,
-        focusCardId: cardId
+        focusCardId: cardId,
+        sessionLaunchMode: null
       })
     } catch (error) {
       console.error("[IR Workspace] 开始阅读失败:", error)

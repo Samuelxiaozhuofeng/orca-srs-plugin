@@ -5,6 +5,9 @@
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import type { IRSessionEntry } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import IRSessionShell from "../IRSessionShell"
+import type { IRSessionLaunchMode } from "./irSessionLaunchMode"
+
+const { useCallback, useState } = window.React
 
 type Props = {
   workspaceId: string
@@ -16,8 +19,9 @@ type Props = {
   timeBudgetMinutes: number
   collectResult: IRCollectResult | null
   autoPostponeLabel: string | null
+  mixedDegradedNotice: string | null
   sessionGeneration: number
-  onStartSession: (minutes: number) => void
+  onStartSession: (minutes: number, mode: IRSessionLaunchMode) => void
   onRetryLoad: () => void
   onUndoAutoPostpone: () => void
   onBackToLibrary: () => void
@@ -37,6 +41,7 @@ export default function IRReadingView({
   timeBudgetMinutes,
   collectResult,
   autoPostponeLabel,
+  mixedDegradedNotice,
   sessionGeneration,
   onStartSession,
   onRetryLoad,
@@ -47,6 +52,25 @@ export default function IRReadingView({
   onClose,
   onCloseHandlerChange
 }: Props) {
+  /** 启动页本次模式；默认只读（保守，不替老用户自动开混合），不写回全局设置 */
+  const [launchMode, setLaunchMode] = useState<IRSessionLaunchMode>("read-only")
+  const [reviewStarting, setReviewStarting] = useState(false)
+
+  const handleStartReviewSession = useCallback(async () => {
+    if (reviewStarting) return
+    setReviewStarting(true)
+    try {
+      const { startReviewSession } = await import("../../../main")
+      await startReviewSession()
+    } catch (error) {
+      console.error("[IR Workspace] 启动独立复习会话失败:", error)
+      const message = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `启动复习失败：${message}`, { title: "渐进阅读" })
+    } finally {
+      setReviewStarting(false)
+    }
+  }, [reviewStarting])
+
   if (sessionLoading) {
     return (
       <div
@@ -70,20 +94,63 @@ export default function IRReadingView({
       >
         <div className="ir-reading__launch">
           <div className="ir-reading__launch-title">开始专注阅读</div>
-          <div className="ir-reading__launch-hint">选择本次时间盒，系统将生成有限队列</div>
+          <div className="ir-reading__launch-hint">选择本次会话模式与时间盒，系统将生成有限队列</div>
+
+          <div className="ir-reading__launch-field">
+            <div className="ir-reading__launch-label" id={`${workspaceId}-session-mode-label`}>
+              本次模式
+            </div>
+            <div
+              className="ir-session-mode"
+              role="radiogroup"
+              aria-labelledby={`${workspaceId}-session-mode-label`}
+            >
+              <button
+                type="button"
+                role="radio"
+                className="ir-session-mode__btn"
+                aria-checked={launchMode === "read-only"}
+                onClick={() => setLaunchMode("read-only")}
+              >
+                只读
+              </button>
+              <button
+                type="button"
+                role="radio"
+                className="ir-session-mode__btn"
+                aria-checked={launchMode === "mixed"}
+                onClick={() => setLaunchMode("mixed")}
+              >
+                混合
+                <span className="ir-session-mode__badge">推荐</span>
+              </button>
+            </div>
+          </div>
+
           <div className="ir-reading__launch-actions">
             {[10, 20, 30].map(mins => (
               <button
                 type="button"
                 key={mins}
                 className={`ir-timebox-btn${mins === 20 ? " ir-timebox-btn--recommended" : ""}`}
-                onClick={() => onStartSession(mins)}
+                onClick={() => onStartSession(mins, launchMode)}
               >
                 <span>{mins}</span>
                 <small>分钟</small>
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            className="ir-text-btn ir-text-btn--command"
+            disabled={reviewStarting}
+            onClick={() => void handleStartReviewSession()}
+          >
+            <i className="ti ti-cards" aria-hidden="true" />
+            {reviewStarting ? "正在打开复习…" : "去复习到期卡"}
+          </button>
+
           <button type="button" className="ir-text-btn" onClick={onBackToLibrary}>
             <i className="ti ti-arrow-left" aria-hidden="true" />
             返回资料库
@@ -112,6 +179,7 @@ export default function IRReadingView({
         loadErrorMessage={collectResult?.errorMessage ?? null}
         onRetryLoad={onRetryLoad}
         autoPostponeLabel={autoPostponeLabel}
+        sessionNotice={mixedDegradedNotice}
         onUndoAutoPostpone={onUndoAutoPostpone}
         embedded
         onBackToLibrary={onBackToLibrary}

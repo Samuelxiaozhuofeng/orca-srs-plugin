@@ -105,6 +105,7 @@ export default function IRWorkspaceShell({
   const handleRefresh = useCallback(() => {
     if (mode === "library") void library.loadLibrary()
     else if (reading.session.ready) {
+      // 省略 sessionLaunchMode：复用本次会话已记录的模式（或全局回退）
       void reading.loadReadingQueue({ timeBudgetMinutes: reading.session.timeBudgetMinutes })
     } else {
       void library.loadLibrary()
@@ -244,8 +245,11 @@ export default function IRWorkspaceShell({
             timeBudgetMinutes={reading.session.timeBudgetMinutes}
             collectResult={reading.session.collectResult}
             autoPostponeLabel={reading.session.autoPostponeLabel}
+            mixedDegradedNotice={reading.session.mixedDegradedNotice}
             sessionGeneration={reading.session.generation}
-            onStartSession={(minutes) => void reading.loadReadingQueue({ timeBudgetMinutes: minutes })}
+            onStartSession={(minutes, sessionLaunchMode) =>
+              void reading.loadReadingQueue({ timeBudgetMinutes: minutes, sessionLaunchMode })
+            }
             onRetryLoad={() => void reading.loadReadingQueue({
               timeBudgetMinutes: reading.session.timeBudgetMinutes
             })}

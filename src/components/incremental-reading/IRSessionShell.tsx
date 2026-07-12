@@ -53,6 +53,8 @@ export type IRSessionShellProps = {
   loadErrorMessage?: string | null
   onRetryLoad?: () => void
   autoPostponeLabel?: string | null
+  /** 会话级事实型提示（如混合退化为纯阅读），不打扰主路径 */
+  sessionNotice?: string | null
   onUndoAutoPostpone?: () => void
   onClose?: () => void
   /** 嵌入工作区时隐藏顶层关闭，改由工作区顶栏处理 */
@@ -73,6 +75,7 @@ export default function IRSessionShell({
   loadErrorMessage = null,
   onRetryLoad,
   autoPostponeLabel = null,
+  sessionNotice = null,
   onUndoAutoPostpone,
   onClose,
   embedded = false,
@@ -477,6 +480,7 @@ export default function IRSessionShell({
           progress={progress}
           remainingTimeLabel={timer.formattedRemaining}
           autoPostponeLabel={autoPostponeLabel}
+          sessionNotice={sessionNotice}
           onUndoAutoPostpone={onUndoAutoPostpone}
           onClose={embedded ? undefined : () => void handleClose()}
           onOpenQueue={onOpenQueue}
@@ -508,6 +512,7 @@ export default function IRSessionShell({
         progress={progress}
         remainingTimeLabel={timer.formattedRemaining}
         autoPostponeLabel={autoPostponeLabel}
+        sessionNotice={sessionNotice}
         onUndoAutoPostpone={onUndoAutoPostpone}
         onClose={embedded ? undefined : () => void handleClose()}
         onOpenQueue={onOpenQueue}
