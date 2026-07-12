@@ -947,6 +947,25 @@
   background: var(--orca-color-bg-2, #f8fafc);
 }
 
+.ir-reading--mixed-review .ir-reading__scroll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ir-reading__mixed-review {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.ir-reading__mixed-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .ir-reading__footer {
   flex-shrink: 0;
   border-top: 1px solid var(--orca-color-border-1, #e2e8f0);

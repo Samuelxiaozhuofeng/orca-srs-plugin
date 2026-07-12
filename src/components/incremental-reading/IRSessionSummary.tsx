@@ -9,6 +9,7 @@ const { Button } = orca.components
 type Props = {
   metrics: IRSessionMetricsSnapshot
   autoPostponeCount?: number
+  reviewCompleted?: number
   onClose?: () => void
   closeLabel?: string
 }
@@ -16,9 +17,11 @@ type Props = {
 export default function IRSessionSummary({
   metrics,
   autoPostponeCount = 0,
+  reviewCompleted = 0,
   onClose,
   closeLabel = "关闭"
 }: Props) {
+  const readingCompleted = Math.max(0, metrics.completedCount - reviewCompleted)
   const durationMins = metrics.durationMs != null ? Math.round(metrics.durationMs / 60000) : 0
 
   return (
@@ -42,11 +45,22 @@ export default function IRSessionSummary({
             </div>
           </div>
           <div className="ir-stat-box">
-            <span className="ir-stat-box__label">已读卡片</span>
+            <span className="ir-stat-box__label">已处理条目</span>
             <div className="ir-stat-box__value">
               Topic <strong>{metrics.topicProcessed}</strong> · Extract <strong>{metrics.extractProcessed}</strong>
+              {reviewCompleted > 0 ? (
+                <> · 复习 <strong>{reviewCompleted}</strong></>
+              ) : null}
             </div>
           </div>
+          {reviewCompleted > 0 ? (
+            <div className="ir-stat-box">
+              <span className="ir-stat-box__label">阅读 / 复习完成</span>
+              <div className="ir-stat-box__value">
+                阅读 <strong>{readingCompleted}</strong> · 复习 <strong>{reviewCompleted}</strong>
+              </div>
+            </div>
+          ) : null}
           <div className="ir-stat-box">
             <span className="ir-stat-box__label">新产出</span>
             <div className="ir-stat-box__value">

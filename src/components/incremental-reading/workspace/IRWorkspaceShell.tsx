@@ -134,7 +134,7 @@ export default function IRWorkspaceShell({
     if (!reading.session.ready) return "选择时间盒"
     if (reading.session.collectResult?.status === "error") return "队列读取失败"
     if (reading.queueSnapshot.queue.length === 0 && reading.session.ready) return "会话结束或空队列"
-    return `阅读中 ${reading.queueSnapshot.currentIndex + 1}/${reading.queueSnapshot.queue.length || reading.session.cards.length}`
+    return `阅读中 ${reading.queueSnapshot.currentIndex + 1}/${reading.queueSnapshot.queue.length || reading.session.entries.length}`
   }, [mode, library, reading])
 
   const detailsTitle = library.detailsCard
@@ -240,7 +240,7 @@ export default function IRWorkspaceShell({
             pluginName={pluginName}
             sessionReady={reading.session.ready}
             sessionLoading={reading.session.loading}
-            sessionCards={reading.session.cards}
+            sessionEntries={reading.session.entries}
             timeBudgetMinutes={reading.session.timeBudgetMinutes}
             collectResult={reading.session.collectResult}
             autoPostponeLabel={reading.session.autoPostponeLabel}
@@ -281,7 +281,7 @@ export default function IRWorkspaceShell({
 
       <IRQueueDrawer
         open={drawer === "queue"}
-        queue={reading.queueSnapshot.queue.length > 0 ? reading.queueSnapshot.queue : reading.session.cards}
+        queue={reading.queueSnapshot.queue.length > 0 ? reading.queueSnapshot.queue : reading.session.entries}
         currentIndex={reading.queueSnapshot.currentIndex}
         titleMap={library.titleMap}
         onClose={() => setDrawer(null)}

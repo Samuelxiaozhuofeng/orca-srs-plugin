@@ -5,6 +5,7 @@
 import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
+import type { IRSessionEntry } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import type { IRLibraryFilters } from "./irLibraryFilters"
 import type { IRTimeNavKey } from "./irSourceTreeBuilder"
 
@@ -21,7 +22,7 @@ export type IRWorkspaceDrawer =
 export type IRWorkspaceSessionState = {
   ready: boolean
   loading: boolean
-  cards: IRCard[]
+  entries: IRSessionEntry[]
   timeBudgetMinutes: number
   collectResult: IRCollectResult | null
   autoPostponeLabel: string | null
@@ -46,7 +47,7 @@ export type IRWorkspaceLibraryState = {
 export const EMPTY_SESSION_STATE: IRWorkspaceSessionState = {
   ready: false,
   loading: false,
-  cards: [],
+  entries: [],
   timeBudgetMinutes: 20,
   collectResult: null,
   autoPostponeLabel: null,

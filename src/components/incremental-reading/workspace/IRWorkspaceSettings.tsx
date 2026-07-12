@@ -10,6 +10,7 @@ import {
   incrementalReadingSettingsSchema,
   type IncrementalReadingSettings
 } from "../../../srs/settings/incrementalReadingSettingsSchema"
+import { MIXED_LEARNING_RATIO_OPTIONS } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../../../srs/incrementalReadingAutoMark"
 import IRFunnelDiagnosticsPanel from "../IRFunnelDiagnosticsPanel"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
@@ -99,6 +100,12 @@ export default function IRWorkspaceSettings({
       if (patch.enableAutoDefer !== undefined) {
         toSave[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer] = patch.enableAutoDefer
       }
+      if (patch.mixedLearningEnabled !== undefined) {
+        toSave[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled] = patch.mixedLearningEnabled
+      }
+      if (patch.mixedLearningReviewRatio !== undefined) {
+        toSave[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio] = patch.mixedLearningReviewRatio
+      }
 
       await orca.plugins.setSettings("app", pluginName, toSave)
       setSettings((prev: IncrementalReadingSettings | null) => ({
@@ -161,7 +168,11 @@ export default function IRWorkspaceSettings({
     dailyLimit:
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.dailyLimit].defaultValue,
     enableAutoDefer:
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue,
+    mixedLearningEnabled:
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue,
+    mixedLearningReviewRatio:
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio].defaultValue
   } satisfies IncrementalReadingSettings
 
   const busy = isSaving || isResetting
@@ -255,6 +266,48 @@ export default function IRWorkspaceSettings({
                 />
                 <div className="ir-drawer__hint">0 表示不限制（默认 {DEFAULT_IR_DAILY_LIMIT}）</div>
               </div>
+
+              <div className="ir-drawer__field">
+                <label htmlFor="ir-setting-mixed-learning">混合学习模式</label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400 }}>
+                  <input
+                    id="ir-setting-mixed-learning"
+                    type="checkbox"
+                    checked={settings.mixedLearningEnabled}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                      void saveSettings(
+                        { mixedLearningEnabled: event.currentTarget.checked },
+                        { notify: true }
+                      )
+                    }}
+                  />
+                  <span>专注阅读时均匀混入已到期 SRS 复习卡</span>
+                </label>
+                <div className="ir-drawer__hint">默认关闭；不影响独立 SRS 复习入口</div>
+              </div>
+
+              {settings.mixedLearningEnabled ? (
+                <div className="ir-drawer__field">
+                  <label>SRS 占比</label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {MIXED_LEARNING_RATIO_OPTIONS.map(ratio => (
+                      <Button
+                        key={ratio}
+                        tabIndex={0}
+                        variant={settings.mixedLearningReviewRatio === ratio ? "solid" : "outline"}
+                        onClick={() => {
+                          if (settings.mixedLearningReviewRatio !== ratio) {
+                            void saveSettings({ mixedLearningReviewRatio: ratio }, { notify: true })
+                          }
+                        }}
+                      >
+                        {ratio}%
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="ir-drawer__hint">目标比例：复习条目占整个混合队列的 {settings.mixedLearningReviewRatio}%</div>
+                </div>
+              ) : null}
 
               <div className="ir-drawer__field">
                 <label htmlFor="ir-setting-auto-defer">溢出推后按钮</label>

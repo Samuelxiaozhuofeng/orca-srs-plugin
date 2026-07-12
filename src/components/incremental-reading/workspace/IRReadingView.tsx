@@ -2,8 +2,8 @@
  * 专注阅读模式：时间盒启动 + 嵌入会话外壳
  */
 
-import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
+import type { IRSessionEntry } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import IRSessionShell from "../IRSessionShell"
 
 type Props = {
@@ -12,7 +12,7 @@ type Props = {
   pluginName: string
   sessionReady: boolean
   sessionLoading: boolean
-  sessionCards: IRCard[]
+  sessionEntries: IRSessionEntry[]
   timeBudgetMinutes: number
   collectResult: IRCollectResult | null
   autoPostponeLabel: string | null
@@ -21,7 +21,7 @@ type Props = {
   onRetryLoad: () => void
   onUndoAutoPostpone: () => void
   onBackToLibrary: () => void
-  onQueueSnapshot: (snapshot: { queue: IRCard[]; currentIndex: number }) => void
+  onQueueSnapshot: (snapshot: { queue: IRSessionEntry[]; currentIndex: number }) => void
   onOpenQueue: () => void
   onClose: () => void
   onCloseHandlerChange?: (handler: (() => Promise<void>) | null) => void
@@ -33,7 +33,7 @@ export default function IRReadingView({
   pluginName,
   sessionReady,
   sessionLoading,
-  sessionCards,
+  sessionEntries,
   timeBudgetMinutes,
   collectResult,
   autoPostponeLabel,
@@ -104,7 +104,7 @@ export default function IRReadingView({
     >
       <IRSessionShell
         key={sessionGeneration}
-        cards={sessionCards}
+        entries={sessionEntries}
         panelId={panelId}
         pluginName={pluginName}
         timeBudgetMinutes={timeBudgetMinutes}

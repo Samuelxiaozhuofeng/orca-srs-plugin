@@ -25,9 +25,14 @@ import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import { tierToPriority, priorityToTier } from "../../srs/incremental-reading/irQueuePolicy"
 import { recordDwellSample } from "../../srs/incremental-reading/irCostCalibration"
 import type { IRSessionProgress } from "../../srs/incremental-reading/irTypes"
+import {
+  readingCardsToEntries,
+  type IRSessionEntry
+} from "../../srs/incremental-reading/irMixedQueuePolicy"
 import { useIRReadingBreakpoint } from "../../hooks/useIRReadingBreakpoint"
 import { useIRShortcuts } from "../../hooks/useIRShortcuts"
 import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
+import IRMixedReviewPane from "./IRMixedReviewPane"
 import IRActionBar from "./IRActionBar"
 import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRReadingPane from "./IRReadingPane"
@@ -38,7 +43,9 @@ const { useEffect, useMemo, useRef, useState } = window.React
 const { Button, ConfirmBox } = orca.components
 
 export type IRSessionShellProps = {
-  cards: IRCard[]
+  entries?: IRSessionEntry[]
+  /** 兼容旧入口：仅阅读卡队列 */
+  cards?: IRCard[]
   panelId: string
   pluginName?: string
   timeBudgetMinutes?: number
@@ -51,12 +58,13 @@ export type IRSessionShellProps = {
   /** 嵌入工作区时隐藏顶层关闭，改由工作区顶栏处理 */
   embedded?: boolean
   onBackToLibrary?: () => void
-  onQueueSnapshot?: (snapshot: { queue: IRCard[]; currentIndex: number }) => void
+  onQueueSnapshot?: (snapshot: { queue: IRSessionEntry[]; currentIndex: number }) => void
   onOpenQueue?: () => void
   onCloseHandlerChange?: (handler: (() => Promise<void>) | null) => void
 }
 
 export default function IRSessionShell({
+  entries: entriesProp,
   cards,
   panelId,
   pluginName = "orca-srs",
@@ -73,9 +81,10 @@ export default function IRSessionShell({
   onOpenQueue,
   onCloseHandlerChange
 }: IRSessionShellProps) {
-  const [queue, setQueue] = useState<IRCard[]>(cards)
+  const initialEntries = entriesProp ?? readingCardsToEntries(cards ?? [])
+  const [queue, setQueue] = useState<IRSessionEntry[]>(initialEntries)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [progress, setProgress] = useState<IRSessionProgress>(() => createSessionProgress(cards.length))
+  const [progress, setProgress] = useState<IRSessionProgress>(() => createSessionProgress(initialEntries.length))
   const [previewBlockId, setPreviewBlockId] = useState<DbId | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -91,8 +100,14 @@ export default function IRSessionShell({
   const startedRef = useRef(false)
   const cardEnteredAtRef = useRef<number>(Date.now())
 
-  const currentCard = queue[currentIndex]
+  const currentEntry = queue[currentIndex]
+  const currentCard = currentEntry?.kind === "reading" ? currentEntry.card : undefined
+  const isReviewEntry = currentEntry?.kind === "review"
   const isTopic = currentCard?.cardType === "topic"
+  const nextEntry = queue[currentIndex + 1]
+  const nextReadingBlockId = nextEntry?.kind === "reading"
+    ? nextEntry.card.id
+    : undefined
 
   const timer = useIRSessionTimer({
     budgetMinutes: timeBudgetMinutes,
@@ -109,7 +124,7 @@ export default function IRSessionShell({
     previewBlockId,
     initialBreakpoint: currentCard?.readingBreakpoint ?? null,
     initialResumeBlockId: currentCard?.resumeBlockId ?? null,
-    enabled: Boolean(currentCard) && !showSummary,
+    enabled: Boolean(currentCard) && !showSummary && !isReviewEntry,
     onSaveError: (err) => {
       setBreakpointError(err instanceof Error ? err.message : String(err))
       metricsRef.current.record("breakpoint.save_failure")
@@ -124,18 +139,22 @@ export default function IRSessionShell({
 
   useEffect(() => {
     cardEnteredAtRef.current = Date.now()
-  }, [currentCard?.id])
+  }, [currentEntry?.key])
 
+  const sessionSeed = entriesProp ?? cards
   useEffect(() => {
-    setQueue(cards)
+    const nextEntries = entriesProp ?? readingCardsToEntries(cards ?? [])
+    setQueue(nextEntries)
     setCurrentIndex(0)
-    setProgress(createSessionProgress(cards.length))
+    setProgress(createSessionProgress(nextEntries.length))
     setShowSummary(false)
-    if (!startedRef.current && cards.length > 0) {
+    setMoreOpen(false)
+    setPostponeOpen(false)
+    if (!startedRef.current && nextEntries.length > 0) {
       startedRef.current = true
-      metricsRef.current.record("session.start", cards.length)
+      metricsRef.current.record("session.start", nextEntries.length)
     }
-  }, [cards])
+  }, [sessionSeed])
 
   useEffect(() => {
     onQueueSnapshot?.({ queue, currentIndex })
@@ -185,9 +204,12 @@ export default function IRSessionShell({
     return () => window.removeEventListener("orca-srs:ir-session-action", onAction as EventListener)
   })
 
-  const removeCurrent = () => {
-    setQueue((prev: IRCard[]) => {
-      const next = prev.filter((_: IRCard, idx: number) => idx !== currentIndex)
+  const removeCurrent = (options?: { metric?: "action.review" }) => {
+    if (options?.metric === "action.review") {
+      metricsRef.current.record("action.review")
+    }
+    setQueue((prev: IRSessionEntry[]) => {
+      const next = prev.filter((_: IRSessionEntry, idx: number) => idx !== currentIndex)
       const nextIndex = next.length === 0 ? 0 : Math.min(currentIndex, next.length - 1)
       setCurrentIndex(nextIndex)
       setProgress((p: IRSessionProgress) => syncSessionRemaining(markSessionItemCompleted(p), next.length))
@@ -342,13 +364,19 @@ export default function IRSessionShell({
     if (!currentCard) return
     try {
       const next = await performPriorityAdjust(currentCard.id, tierToPriority(tier))
-      setQueue((prev: IRCard[]) => prev.map((c: IRCard, i: number) => i === currentIndex ? {
-        ...c,
-        priority: next.priority,
-        intervalDays: next.intervalDays,
-        due: next.due,
-        lastAction: next.lastAction
-      } : c))
+      setQueue((prev: IRSessionEntry[]) => prev.map((entry: IRSessionEntry, i: number) => {
+        if (i !== currentIndex || entry.kind !== "reading") return entry
+        return {
+          ...entry,
+          card: {
+            ...entry.card,
+            priority: next.priority,
+            intervalDays: next.intervalDays,
+            due: next.due,
+            lastAction: next.lastAction
+          }
+        }
+      }))
       orca.notify("success", `重要性已设为${tier === "high" ? "高" : tier === "medium" ? "中" : "低"}`, { title: "渐进阅读" })
     } catch (error) {
       console.error("[IR Session] 调整重要性失败:", error)
@@ -382,7 +410,7 @@ export default function IRSessionShell({
   }, [onCloseHandlerChange, handleClose])
 
   useIRShortcuts({
-    enabled: !showSummary && !loadFailed,
+    enabled: !showSummary && !loadFailed && !isReviewEntry,
     panelId,
     sessionRootRef,
     handlers: {
@@ -432,9 +460,37 @@ export default function IRSessionShell({
         <IRSessionSummary
           metrics={metricsRef.current.getSnapshot()}
           autoPostponeCount={0}
+          reviewCompleted={metricsRef.current.getSnapshot().reviewProcessed}
           onClose={embedded ? onBackToLibrary : () => void handleClose()}
           closeLabel={embedded ? "返回资料库" : "关闭"}
         />
+      </div>
+    )
+  }
+
+  if (!currentEntry) return null
+
+  if (isReviewEntry && currentEntry.kind === "review") {
+    return (
+      <div ref={sessionRootRef} className="ir-reading ir-reading--mixed-review">
+        <IRSessionHeader
+          progress={progress}
+          remainingTimeLabel={timer.formattedRemaining}
+          autoPostponeLabel={autoPostponeLabel}
+          onUndoAutoPostpone={onUndoAutoPostpone}
+          onClose={embedded ? undefined : () => void handleClose()}
+          onOpenQueue={onOpenQueue}
+          compact={embedded}
+        />
+        <div className="ir-reading__scroll">
+          <IRMixedReviewPane
+            card={currentEntry.card}
+            panelId={panelId}
+            pluginName={pluginName}
+            nextBlockId={nextReadingBlockId}
+            onComplete={() => removeCurrent({ metric: "action.review" })}
+          />
+        </div>
       </div>
     )
   }

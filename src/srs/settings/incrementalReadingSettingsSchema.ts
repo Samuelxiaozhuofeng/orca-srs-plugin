@@ -4,11 +4,18 @@
  * 定义渐进阅读相关功能的设置项
  */
 
+import {
+  DEFAULT_MIXED_LEARNING_REVIEW_RATIO,
+  normalizeMixedLearningRatio
+} from "../incremental-reading/irMixedQueuePolicy"
+
 export const INCREMENTAL_READING_SETTINGS_KEYS = {
   enableAutoExtractMark: "enableAutoExtractMark",
   topicQuotaPercent: "topicQuotaPercent",
   dailyLimit: "dailyLimit",
-  enableAutoDefer: "enableAutoDefer"
+  enableAutoDefer: "enableAutoDefer",
+  mixedLearningEnabled: "mixedLearningEnabled",
+  mixedLearningReviewRatio: "mixedLearningReviewRatio"
 } as const
 
 export const DEFAULT_IR_TOPIC_QUOTA_PERCENT = 20
@@ -42,6 +49,18 @@ export const incrementalReadingSettingsSchema = {
     type: "boolean" as const,
     defaultValue: true,
     description: "当到期卡超过每日上限时，显示“一键把溢出推后”按钮；打开面板只展示，不会自动改排期"
+  },
+  [INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled]: {
+    label: "混合学习模式",
+    type: "boolean" as const,
+    defaultValue: false,
+    description: "专注阅读时间盒中均匀混入已到期 SRS 复习卡（默认关闭）"
+  },
+  [INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio]: {
+    label: "混合学习 SRS 占比（%）",
+    type: "number" as const,
+    defaultValue: DEFAULT_MIXED_LEARNING_REVIEW_RATIO,
+    description: "SRS 复习条目占混合队列的目标比例，仅支持 20/30/40"
   }
 }
 
@@ -53,6 +72,8 @@ export interface IncrementalReadingSettings {
   topicQuotaPercent: number
   dailyLimit: number
   enableAutoDefer: boolean
+  mixedLearningEnabled: boolean
+  mixedLearningReviewRatio: number
 }
 
 /**
@@ -75,6 +96,12 @@ export function getIncrementalReadingSettings(pluginName: string): IncrementalRe
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.dailyLimit].defaultValue,
     enableAutoDefer:
       settings?.[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer] ??
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue,
+    mixedLearningEnabled:
+      settings?.[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled] ??
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue,
+    mixedLearningReviewRatio: normalizeMixedLearningRatio(
+      settings?.[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio]
+    )
   }
 }

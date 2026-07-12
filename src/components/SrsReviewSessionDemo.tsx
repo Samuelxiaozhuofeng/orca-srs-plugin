@@ -2,20 +2,17 @@
  * SRS 复习会话组件（使用真实数据队列）
  */
 import type { DbId } from "../orca.d.ts"
-import type { Grade, ReviewCard, CardState, ReviewLogEntry } from "../srs/types"
+import type { Grade, ReviewCard } from "../srs/types"
 import type { SessionStatsSummary } from "../srs/sessionProgressTracker"
 import {
-  updateSrsState,
-  updateClozeSrsState,
-  updateDirectionSrsState,
   ensureCardSrsStateWithInitialDue,
   loadCardSrsState,
   invalidateBlockCache
 } from "../srs/storage"
 import { postponeCard, suspendCard } from "../srs/cardStatusUtils"
-import { emitCardPostponed, emitCardGraded, emitCardSuspended } from "../srs/srsEvents"
+import { emitCardPostponed, emitCardSuspended } from "../srs/srsEvents"
 import { showNotification } from "../srs/settings/reviewSettingsSchema"
-import { saveReviewLog, createReviewLogId } from "../srs/reviewLogStorage"
+import { gradeReviewCard } from "../srs/reviewCardGrading"
 import { 
   markParentCardProcessed, 
   resetProcessedParentCards,
@@ -44,17 +41,6 @@ type SrsReviewSessionProps = {
   currentRound?: number
   /** 再复习一轮回调（仅重复复习模式） */
   onRepeatRound?: () => void
-}
-
-/**
- * 格式化日期为简单的"月-日"格式
- * @param date - 日期对象
- * @returns 格式化后的字符串，如 "12-10"
- */
-function formatSimpleDate(date: Date): string {
-  const month = date.getMonth() + 1
-  const day = date.getDate()
-  return `${month}-${day}`
 }
 
 function getTodayMidnight(): Date {
@@ -580,67 +566,23 @@ export default function SrsReviewSession({
       return
     }
 
-    // 正常复习模式：更新 SRS 状态
-    // 记录复习前的状态
-    const previousInterval = currentCard.srs.interval
-    const previousState: CardState = currentCard.isNew 
-      ? "new" 
-      : (currentCard.srs.interval < 1 ? "learning" : "review")
-
-    // 根据卡片类型选择不同的更新函数
-    let result
-    if (currentCard.clozeNumber) {
-      // Cloze 卡片
-      result = await updateClozeSrsState(currentCard.id, currentCard.clozeNumber, grade, pluginName)
-    } else if (currentCard.directionType) {
-      // Direction 卡片
-      result = await updateDirectionSrsState(currentCard.id, currentCard.directionType, grade, pluginName)
-    } else if (isListCard) {
-      // List 卡片：更新条目子块的 SRS 状态（父块仅负责渲染与结构）
-      result = await updateSrsState(currentCard.listItemId!, grade, pluginName)
-    } else {
-      // Basic 卡片
-      result = await updateSrsState(currentCard.id, grade, pluginName)
-    }
-
-    updatedCard = { ...currentCard, srs: result.state, isNew: false }
-    nextQueue[currentIndex] = updatedCard
-
-    // 计算复习后的状态
-    const newState: CardState = grade === "again" 
-      ? "relearning" 
-      : (result.state.interval < 1 ? "learning" : "review")
-
-    // 计算复习耗时
-    const reviewDuration = Date.now() - cardStartTime
-    const timestamp = Date.now()
-
-    // 日志与事件：列表卡使用条目子块 ID 作为 cardId，确保条目独立统计
-    const logCardId = isListCard ? currentCard.listItemId! : currentCard.id
-
-    // 记录复习日志 (Requirements: 11.1)
-    const reviewLog: ReviewLogEntry = {
-      id: createReviewLogId(timestamp, logCardId),
-      cardId: logCardId,
-      deckName: currentCard.deck,
-      timestamp,
+    const gradeResult = await gradeReviewCard(
+      currentCard,
       grade,
-      duration: reviewDuration,
-      previousInterval,
-      newInterval: result.state.interval,
-      previousState,
-      newState
+      pluginName,
+      cardStartTime,
+      { updateListProgression: false }
+    )
+    if (!gradeResult.ok) {
+      console.error("[SRS Review Session] 评分失败:", gradeResult.error)
+      orca.notify("error", `评分失败: ${gradeResult.error}`, { title: "SRS 复习" })
+      setIsGrading(false)
+      return
     }
 
-    // 异步保存复习记录，不阻塞 UI
-    void saveReviewLog(pluginName, reviewLog)
-
-    setLastLog(
-      `评分 ${grade.toUpperCase()}${cardLabel} -> 下次 ${formatSimpleDate(result.state.due)}，间隔 ${result.state.interval} 天`
-    )
-
-    // 通知其他组件静默刷新
-    emitCardGraded(logCardId, grade)
+    updatedCard = gradeResult.updatedCard
+    nextQueue[currentIndex] = updatedCard
+    setLastLog(gradeResult.logMessage)
 
     setReviewedCount((prev: number) => prev + 1)
     recordProgressGrade(grade)  // 记录进度追踪
@@ -740,10 +682,10 @@ export default function SrsReviewSession({
     setQueue(nextQueue)
     
     // 如果评分为 Again 或 Hard，且卡片在 5 分钟内到期，追踪它以便自动加入队列
-    const dueTime = result.state.due.getTime()
+    const dueTime = updatedCard.srs.due.getTime()
     const now = Date.now()
     if ((grade === "again" || grade === "hard") && dueTime - now <= 5 * 60 * 1000) {
-      trackPendingDueCard(updatedCard, result.state.due)
+      trackPendingDueCard(updatedCard, updatedCard.srs.due)
     }
     
     setIsGrading(false)

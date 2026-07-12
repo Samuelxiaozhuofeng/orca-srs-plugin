@@ -10,6 +10,7 @@ export type IRMetricEventName =
   | "queue.load"
   | "queue.load_error"
   | "action.next"
+  | "action.review"
   | "action.postpone"
   | "action.archive"
   | "action.extract"
@@ -40,6 +41,7 @@ export type IRSessionMetricsSnapshot = {
   completedCount: number
   topicProcessed: number
   extractProcessed: number
+  reviewProcessed: number
   itemCreated: number
   extractCreated: number
   extractSuccess: number
@@ -69,6 +71,7 @@ const emptySnapshot = (): IRSessionMetricsSnapshot => ({
   completedCount: 0,
   topicProcessed: 0,
   extractProcessed: 0,
+  reviewProcessed: 0,
   itemCreated: 0,
   extractCreated: 0,
   extractSuccess: 0,
@@ -146,6 +149,10 @@ export class IRSessionMetrics {
           s.dwellMsTotal += event.value
           s.dwellSamples += 1
         }
+        break
+      case "action.review":
+        s.completedCount += 1
+        s.reviewProcessed += 1
         break
       case "action.postpone":
         s.postponeCount += 1

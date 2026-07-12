@@ -16,8 +16,15 @@ import {
 } from "../../../srs/incremental-reading/irOverloadService"
 import {
   DEFAULT_QUEUE_POLICY,
+  budgetSeconds,
   selectQueueWithPolicy
 } from "../../../srs/incremental-reading/irQueuePolicy"
+import {
+  buildMixedSessionQueue,
+  filterEligibleReviewCards,
+  type IRSessionEntry
+} from "../../../srs/incremental-reading/irMixedQueuePolicy"
+import { estimateCardCostSecondsCalibrated } from "../../../srs/incremental-reading/irCostCalibration"
 import { buildCollectError, buildCollectOk } from "../../../srs/incremental-reading/irCollectResult"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
@@ -31,7 +38,7 @@ export function useIRWorkspaceSession(
   libraryCards: IRCard[]
 ) {
   const [session, setSession] = useState<IRWorkspaceSessionState>(EMPTY_SESSION_STATE)
-  const [queueSnapshot, setQueueSnapshot] = useState<{ queue: IRCard[]; currentIndex: number }>({
+  const [queueSnapshot, setQueueSnapshot] = useState<{ queue: IRSessionEntry[]; currentIndex: number }>({
     queue: [],
     currentIndex: 0
   })
@@ -65,7 +72,7 @@ export function useIRWorkspaceSession(
           ...prev,
           ready: true,
           loading: false,
-          cards: [],
+          entries: [],
           collectResult: result,
           generation: prev.generation + 1
         }))
@@ -74,9 +81,19 @@ export function useIRWorkspaceSession(
 
       const settings = getIncrementalReadingSettings(name)
       const seed = new Date().toISOString().slice(0, 10)
+      const sessionStartedAt = new Date()
+      let reviewCards: import("../../../srs/types").ReviewCard[] = []
+      if (settings.mixedLearningEnabled) {
+        const { collectReviewCards } = await import("../../../srs/cardCollector")
+        reviewCards = await collectReviewCards(name)
+      }
+      const eligibleReviewCards = filterEligibleReviewCards(reviewCards, sessionStartedAt)
+      const readingBudgetMinutes = eligibleReviewCards.length > 0
+        ? options.timeBudgetMinutes * (1 - settings.mixedLearningReviewRatio / 100)
+        : options.timeBudgetMinutes
       const policyQueue = selectQueueWithPolicy(result.cards, {
         ...DEFAULT_QUEUE_POLICY,
-        timeBudgetMinutes: options.timeBudgetMinutes,
+        timeBudgetMinutes: readingBudgetMinutes,
         dailyLimit: settings.dailyLimit,
         seed
       })
@@ -112,10 +129,26 @@ export function useIRWorkspaceSession(
         }
       }
 
+      const readingCostSeconds = focusedQueue.reduce(
+        (sum, card) => sum + estimateCardCostSecondsCalibrated(card),
+        0
+      )
+      const mixed = buildMixedSessionQueue({
+        enabled: settings.mixedLearningEnabled,
+        readingQueue: focusedQueue,
+        reviewCards: eligibleReviewCards,
+        reviewRatioPercent: settings.mixedLearningReviewRatio,
+        budgetSeconds: budgetSeconds(options.timeBudgetMinutes),
+        readingCostSeconds,
+        seed,
+        now: sessionStartedAt
+      })
+      const sessionEntries: IRSessionEntry[] = mixed.entries
+
       setSession({
         ready: true,
         loading: false,
-        cards: focusedQueue,
+        entries: sessionEntries,
         timeBudgetMinutes: options.timeBudgetMinutes,
         collectResult: result,
         autoPostponeLabel: autoLabel,
@@ -129,7 +162,7 @@ export function useIRWorkspaceSession(
         ...prev,
         ready: true,
         loading: false,
-        cards: [],
+        entries: [],
         collectResult: errResult,
         generation: prev.generation + 1
       }))
