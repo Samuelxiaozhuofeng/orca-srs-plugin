@@ -85,6 +85,7 @@ flowchart TD
   - 有 limits：在**已稳定排序**的序列上截断旧卡 `reviewCardsPerDay`、新卡 `newCardsPerDay`，再 2:1 交织
   - `limits` 省略/`null`：不限额（fixed 会话、动态扫描候选列表），仍做稳定排序
   - **辅助子卡不计入正式根卡额度**（先限额再展开；`formalRootCards` 仅含已选根）
+  - **跨普通会话按当天日志累计**：Renderer 启动普通会话时读取本地时区「今天 00:00:00.000 → 当前」`getReviewLogs`，按 `cardKey` 去重统计已用新/旧卡额度，将 `remaining = max(0, configured - used)` 同时传给 `setSessionDailyLimits` 与 `buildSessionReviewQueue`；同一 remaining 冻结为动态追加 budget
 - **特殊卡 due 分天**：List 解锁、Cloze/Direction 分天推送由各自 `due` 决定入队与先后；排序只按 due + identity，不打乱分天策略
 - **FC-12 子卡展开**（`buildReviewQueueWithChildren` / `buildSessionReviewQueue` / `expandChildCardsForRoots`）：
   - 跟随已排序正式根卡做**确定性前序**展开；**不改变** FC-11 根卡排序与链内既有顺序
@@ -227,27 +228,41 @@ flowchart TD
 
 ### 每日正式根卡额度（FC-01）
 
-核心文件：`src/srs/reviewSessionBudget.ts`、`src/srs/cardCollector.ts`
+核心文件：`src/srs/reviewSessionBudget.ts`、`src/srs/cardCollector.ts`、`src/components/SrsReviewSessionRenderer.tsx`
 
 | 概念 | 规则 |
 |------|------|
 | 作用对象 | **仅正式根卡**（`buildReviewQueue` / 动态追加的到期根卡） |
 | 子卡 | `buildReviewQueueWithChildren` / `expandChildCardsForRoots` 随已选根卡展开的辅助子卡 **不消耗** 新/旧额度，也 **不能** 使额外根卡进入 |
 | 计算范围 | 指定 deck 会话：先按牌组过滤，再在该范围内截断；全部会话：在全库候选上截断 |
-| 交织 | 先截断再 **2 旧 : 1 新**；不实施 FC-11 稳定排序 |
-| fixed | **不受**每日限制；**不**做全库动态扫描（保持 FC-02） |
-| 会话冻结 | Renderer 启动时 `resolveDailyQueueLimits` 校验设置并冻结 `sessionDailyLimits` + `sessionFormalRootCards` 传给 Demo；会话中不重读全局 settings |
-| 动态追加 | 候选用**不限额** `buildReviewQueue(..., null)` → 先 scope → 再剩余额度；自动/手动共用 `selectNewDueCardsForSession(..., budget)` |
+| **跨会话累计** | 普通会话启动时读取本地时区「今天 00:00:00.000 → 当前」日志（`getReviewLogs`，内部先 flush）；按稳定 `cardKey` 去重统计 **今日已用**；`remaining = max(0, configured − used)` 构建初始队列并冻结给会话 budget |
+| 新卡 used | 当天日志中 `previousState === "new"` 的不同 `cardKey` 数；同一身份多次评分只计 1 |
+| 旧卡 used | 当天日志中 `previousState !== "new"` 的不同 `cardKey` 数；同一身份多次评分只计 1 |
+| 新优先归类 | 同一身份当天同时出现在新卡与旧卡记录中，**只计新卡**，不得双占 |
+| scope 过滤 | deck 会话只统计同名 `deckName` 日志；all 统计全部；限额在会话 scope 内计算 |
+| 交织 | 先截断再 **2 旧 : 1 新**（根卡侧另经 FC-11 稳定排序） |
+| fixed / 重复 / 专项 | **不受**每日限制；**不**读今日日志做额度扣除；**不**做全库动态扫描（保持 FC-02） |
+| 会话冻结 | `resolveDailyQueueLimits` → 今日 used → **remaining** 冻结为 `sessionDailyLimits` + seed `sessionFormalRootCards`；会话中不重读全局 settings，也不在会话中重算「今日 used」 |
+| 动态追加 | 候选用**不限额** `buildReviewQueue(..., null)` → 先 scope → 再**本会话剩余**额度；自动/手动共用 `selectNewDueCardsForSession(..., budget)`，**不得**绕过 remaining |
 | 短期重学 | 已接纳 `cardKey` 重新入队 **不重复消耗**；新身份才占额度 |
-| 额度生命周期 | 表示「本会话已接纳过的正式根卡」；`currentIndex` 前移或卡暂时离开待复习尾部 **不释放** |
-| 设置校验 | 仅接受有限、非负整数且 ≤ `MAX_DAILY_CARD_LIMIT`（10000）；拒绝负数 / NaN / Infinity / 小数 / 过大值；`console.warn`（及用户可见告警）后回退 schema 默认 **30 / 200**；不可静默；合法 `0` 得到空队列 |
+| 额度生命周期 | 会话内：表示「本会话已接纳过的正式根卡」；`currentIndex` 前移或卡暂时离开待复习尾部 **不释放**。跨会话：由当天日志 used 决定下一会话 remaining |
+| 失败可见 | 读取/flush 今日日志失败 → 加载失败（错误 UI + notify），**禁止**用 used=0 兜底（否则会突破每日限制） |
+| 设置校验 | 仅接受有限、非负整数且 ≤ `MAX_DAILY_CARD_LIMIT`（10000）；拒绝负数 / NaN / Infinity / 小数 / 过大值；`console.warn`（及用户可见告警）后回退 schema 默认 **30 / 200**（告警展示 **configured** 回退值）；不可静默；合法 `0` 得到空队列 |
 
 ```typescript
 // 启动（普通会话）
 const resolved = resolveDailyQueueLimits(settings.newCardsPerDay, settings.reviewCardsPerDay)
-const { queue, formalRootCards } = await buildSessionReviewQueue(filteredCards, plugin, resolved)
+const { start, end } = getLocalTodayBounds()
+const todayLogs = await getReviewLogs(plugin, start, end) // 失败则加载失败
+const remaining = remainingDailyLimitsFromLogs(resolved, todayLogs, {
+  deckName: scope.kind === "deck" ? scope.deckName : null
+})
+// remaining 同时用于 sessionDailyLimits 与初始队列
+const { queue, formalRootCards } = await buildSessionReviewQueue(
+  filteredCards, plugin, remaining
+)
 
-// 动态追加
+// 动态追加（仍用会话冻结的 remaining budget）
 const candidates = buildReviewQueue(await collectReviewCards(plugin), null)
 const added = selectNewDueCardsForSession(candidates, prevQueue, sessionScope, budget)
 ```
@@ -262,6 +277,9 @@ const added = selectNewDueCardsForSession(candidates, prevQueue, sessionScope, b
 | `removeHashTags(text)`     | 移除文本中的 # 标签   |
 | `extractDeckName(block)`   | 提取 Deck 名称        |
 | `resolveDailyQueueLimits`  | 校验并回退每日限额    |
+| `countUsedDailyQuotasFromLogs` | 从今日日志统计已用新/旧额度（cardKey 去重） |
+| `remainingDailyLimitsFromLogs` | configured − used → remaining |
+| `getLocalTodayBounds`      | 本地时区今日 00:00 → now |
 | `buildSessionReviewQueue`  | 正式根卡 + 子卡展开   |
 | `createSessionRootCardBudget` | 会话额度状态 seed  |
 

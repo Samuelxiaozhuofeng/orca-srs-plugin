@@ -78,7 +78,9 @@ const newCards = selectNewDueCardsForSession(
 ### 额度模块 (`src/srs/reviewSessionBudget.ts`)
 
 - `resolveDailyQueueLimits`：校验设置，无效 warn 并回退 30/200
-- `createSessionRootCardBudget`：会话已接纳正式根卡集合
+- `countUsedDailyQuotasFromLogs` / `remainingDailyLimitsFromLogs`：从今日日志按 cardKey 去重统计 used，得到跨会话 remaining
+- `getLocalTodayBounds`：本地时区今天 00:00 → now
+- `createSessionRootCardBudget`：会话已接纳正式根卡集合（limits 为 remaining 时即本会话 budget）
 - `acceptFormalRoot` / `filterAndAcceptNewFormalRoots`
 
 ### 复习会话组件 (SrsReviewSessionDemo.tsx)

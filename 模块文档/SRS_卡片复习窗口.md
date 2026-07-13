@@ -38,7 +38,7 @@ flowchart TD
 | cards        | ReviewCard[]                 | 复习队列 |
 | progressStorageKey | string | **FC-09 必填**：会话进度 sessionStorage 键（Renderer 加载队列时冻结并传入） |
 | sessionScope | ReviewSessionScope | 会话范围（启动时冻结） |
-| sessionDailyLimits | ReviewQueueLimits \| null | 每日正式根卡额度（fixed 为 null） |
+| sessionDailyLimits | ReviewQueueLimits \| null | 普通会话：启动时按「今日日志 used」扣除后的 **剩余** 正式根卡额度（configured − used）；fixed 为 null（不限额） |
 | onClose      | () => void \| Promise\<void\> | **统一关闭入口**（由 Renderer 提供：flush 日志后再关面板） |
 | onJumpToCard | (blockId) => void            | 跳转回调 |
 | inSidePanel  | boolean                      | 是否在侧边面板 |
@@ -77,6 +77,17 @@ flowchart TD
 - 快捷键：`useReviewShortcuts({ readOnly })` + `reviewShortcutRules.resolveReviewShortcut`；数字键/Enter/B/S/空格（评分）不得绕过。
 - Choice 只读：揭晓正确答案，单选 150ms timer、重复点击与快捷键不能提交/评分；只读时 **不** 传 / 不调用 `onAnswer`，不写统计。
 - Choice 正式答题统计（FC-08）：`SrsCardDemo` 在非只读时通过 `createChoiceAnswerHandler` 向 `ChoiceCardReviewRenderer` 传 `onAnswer`；提交时写入 `srs.choice.statistics`（见 `模块文档/SRS_数据存储.md`）。防重复依赖 `choiceSubmitGate`，保存失败 `orca.notify("warn")` 且不阻断 FSRS 评分。
+
+#### 普通会话每日额度（FC-01，跨会话）
+
+`SrsReviewSessionRenderer.loadReviewQueue` 在**非** fixed/重复模式下：
+
+1. `resolveDailyQueueLimits` 校验设置（无效则 warn + notify，告警展示 **configured** 回退默认 30/200）。
+2. `getLocalTodayBounds()` + `getReviewLogs(plugin, todayStart, now)` 读取本地时区「今天 00:00 → 当前」日志（内部先 flush）。
+3. `remainingDailyLimitsFromLogs(configured, logs, { deckName })`：按 `cardKey` 去重统计今日 used；deck 会话只计同名 `deckName`，all 计全部；`remaining = max(0, configured − used)`。
+4. **remaining** 同时 `setSessionDailyLimits` 并传入 `buildSessionReviewQueue`；Demo 会话 budget 与动态追加共用该冻结值，**不得**再读全局设置或绕过剩余额度。
+5. 读取/flush 日志失败 → 加载失败（错误 UI + notify），**禁止** used=0 兜底。
+6. fixed / 重复 / 专项：`sessionDailyLimits = null`，不读今日日志做限额。
 
 #### 关闭与日志 flush（FC-03）
 

@@ -12,7 +12,7 @@ import {
   createGuardedSessionCloser,
   REVIEW_LOG_FLUSH_PENDING_MESSAGE
 } from "../srs/reviewSessionClose"
-import { flushReviewLogs } from "../srs/reviewLogStorage"
+import { flushReviewLogs, getReviewLogs } from "../srs/reviewLogStorage"
 import {
   createAllScope,
   prepareFixedSessionScope,
@@ -20,6 +20,8 @@ import {
   type ReviewSessionScope
 } from "../srs/reviewSessionScope"
 import {
+  getLocalTodayBounds,
+  remainingDailyLimitsFromLogs,
   resolveDailyQueueLimits,
   type ReviewQueueLimits
 } from "../srs/reviewSessionBudget"
@@ -192,6 +194,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
           settings.newCardsPerDay,
           settings.reviewCardsPerDay
         )
+        // 无效设置告警仍展示 configured 回退值（非 remaining）
         if (resolvedLimits.warnings.length > 0) {
           console.warn(
             `[SRS Review Session Renderer] 每日限额设置无效，已回退默认：`,
@@ -203,13 +206,42 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
             { title: "SRS 复习" }
           )
         }
-        const frozenLimits: ReviewQueueLimits = Object.freeze({
+        const configuredLimits: ReviewQueueLimits = Object.freeze({
           newCardsPerDay: resolvedLimits.newCardsPerDay,
           reviewCardsPerDay: resolvedLimits.reviewCardsPerDay
         })
+
+        // 跨会话每日额度：读取本地时区「今天 00:00 → now」日志，扣除已用后冻结 remaining
+        // getReviewLogs 会先 flush；读取/flush 失败必须向上抛出，禁止用 used=0 兜底突破限额
+        const { start: todayStart, end: todayEnd } = getLocalTodayBounds()
+        const todayLogs = await getReviewLogs(
+          currentPluginName,
+          todayStart,
+          todayEnd
+        )
+        const deckNameForQuota =
+          scope.kind === "deck" ? scope.deckName : null
+        const remaining = remainingDailyLimitsFromLogs(
+          configuredLimits,
+          todayLogs,
+          { deckName: deckNameForQuota }
+        )
+        const frozenLimits: ReviewQueueLimits = Object.freeze({
+          newCardsPerDay: remaining.newCardsPerDay,
+          reviewCardsPerDay: remaining.reviewCardsPerDay
+        })
+        console.log(
+          `[SRS Review Session Renderer] 每日额度 ` +
+            `scope=${scope.kind === "deck" ? `deck:${scope.deckName}` : "all"} ` +
+            `configured new/review=${configuredLimits.newCardsPerDay}/${configuredLimits.reviewCardsPerDay} ` +
+            `used=${remaining.usedNew}/${remaining.usedReview} ` +
+            `remaining=${frozenLimits.newCardsPerDay}/${frozenLimits.reviewCardsPerDay} ` +
+            `(logs=${todayLogs.length})`
+        )
+        // 会话预算与初始队列均使用 remaining，动态追加不得绕过
         setSessionDailyLimits(frozenLimits)
 
-        // 正式根卡应用冻结额度；子卡展开不消耗额度，但受 FC-12 限制
+        // 正式根卡应用冻结剩余额度；子卡展开不消耗额度，但受 FC-12 限制
         const {
           queue,
           formalRootCards,

@@ -1,13 +1,17 @@
 /**
  * 复习会话正式根卡每日额度（FC-01）
  *
- * - 核心函数只接受显式、纯数据的 limits / budget，不读全局 Orca settings
+ * - 核心函数只接受显式、纯数据的 limits / budget，不读全局 Orca settings / storage
  * - 额度按「正式根卡」cardKey 计：子卡展开不消耗；已接纳身份短期重入不重复消耗
+ * - 跨普通会话：按本地时区「今天」复习日志累计 used，剩余额度 = max(0, configured - used)
  * - fixed 会话传 null budget = 不限额
  */
 
-import type { ReviewCard } from "./types"
-import { cardKeyFromReviewCard } from "./cardIdentity"
+import type { ReviewCard, ReviewLogEntry } from "./types"
+import {
+  cardKeyFromReviewCard,
+  normalizeReviewLogIdentity
+} from "./cardIdentity"
 import {
   DEFAULT_NEW_CARDS_PER_DAY,
   DEFAULT_REVIEW_CARDS_PER_DAY
@@ -120,6 +124,140 @@ export function resolveDailyQueueLimits(
     warnings: Object.freeze(warnings),
     usedDefaults
   })
+}
+
+/**
+ * 本地时区「今天」起止边界：
+ * - start：当天 00:00:00.000
+ * - end：传入时刻（默认 now）
+ *
+ * 供会话启动时调用 getReviewLogs(plugin, start, end)。
+ */
+export function getLocalTodayBounds(now: Date = new Date()): {
+  start: Date
+  end: Date
+} {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return { start, end: now }
+}
+
+/**
+ * 从复习日志解析稳定卡片身份（cardKey）。
+ * 兼容读取层已归一化的 legacy cardKey；缺字段时再走 normalizeReviewLogIdentity。
+ */
+export function stableCardKeyFromReviewLog(log: ReviewLogEntry): string {
+  if (typeof log.cardKey === "string" && log.cardKey.length > 0) {
+    return log.cardKey
+  }
+  const normalized = normalizeReviewLogIdentity(log)
+  if (typeof normalized.cardKey === "string" && normalized.cardKey.length > 0) {
+    return normalized.cardKey
+  }
+  // 极端兜底：与 normalize 约定一致，避免 silent empty key 合并
+  return `legacy:${normalized.cardId}`
+}
+
+/** 今日已消耗额度（按稳定 cardKey 去重） */
+export type DailyQuotaUsage = {
+  readonly usedNew: number
+  readonly usedReview: number
+  /** 归为新卡的身份集合（previousState === "new"） */
+  readonly newKeys: ReadonlySet<string>
+  /** 归为旧复习卡的身份集合（排除已归新卡的身份） */
+  readonly reviewKeys: ReadonlySet<string>
+}
+
+export type CountUsedDailyQuotasOptions = {
+  /**
+   * 指定牌组时只统计同名 deckName 日志；
+   * null/undefined/空字符串 → 统计全部日志（all scope）。
+   */
+  deckName?: string | null
+}
+
+/**
+ * 根据今日 ReviewLogEntry[] 统计已消耗的正式卡额度。
+ *
+ * 规则：
+ * - 新卡：previousState === "new" 的不同 cardKey 数
+ * - 旧卡：previousState !== "new" 的不同 cardKey 数
+ * - 同一身份若同时出现在新/旧记录中，只计新卡，不双占
+ * - 可选 deckName 过滤（限额在会话 scope 内计算）
+ *
+ * 纯函数：不读 settings/storage。
+ */
+export function countUsedDailyQuotasFromLogs(
+  logs: readonly ReviewLogEntry[],
+  options: CountUsedDailyQuotasOptions = {}
+): DailyQuotaUsage {
+  const deckFilter =
+    options.deckName != null && options.deckName !== ""
+      ? options.deckName
+      : null
+
+  const newKeys = new Set<string>()
+  const reviewKeys = new Set<string>()
+
+  for (const log of logs) {
+    if (deckFilter != null && log.deckName !== deckFilter) {
+      continue
+    }
+    const key = stableCardKeyFromReviewLog(log)
+    if (log.previousState === "new") {
+      newKeys.add(key)
+    } else {
+      reviewKeys.add(key)
+    }
+  }
+
+  // 新卡优先：不得同时占两边额度
+  for (const key of newKeys) {
+    reviewKeys.delete(key)
+  }
+
+  return {
+    usedNew: newKeys.size,
+    usedReview: reviewKeys.size,
+    newKeys,
+    reviewKeys
+  }
+}
+
+/** 配置上限扣除今日已用后的剩余额度（及 used 诊断字段） */
+export type RemainingDailyLimits = ReviewQueueLimits & {
+  readonly usedNew: number
+  readonly usedReview: number
+}
+
+/**
+ * remaining = max(0, configured - used)；不可为负。
+ * 结果可直接作为会话冻结 limits / createSessionRootCardBudget 输入。
+ */
+export function computeRemainingDailyLimits(
+  configured: ReviewQueueLimits,
+  usage: Pick<DailyQuotaUsage, "usedNew" | "usedReview">
+): RemainingDailyLimits {
+  return Object.freeze({
+    newCardsPerDay: Math.max(0, configured.newCardsPerDay - usage.usedNew),
+    reviewCardsPerDay: Math.max(
+      0,
+      configured.reviewCardsPerDay - usage.usedReview
+    ),
+    usedNew: usage.usedNew,
+    usedReview: usage.usedReview
+  })
+}
+
+/**
+ * 从已校验 configured limits + 今日日志计算会话剩余额度（纯函数组合）。
+ */
+export function remainingDailyLimitsFromLogs(
+  configured: ReviewQueueLimits,
+  todayLogs: readonly ReviewLogEntry[],
+  options: CountUsedDailyQuotasOptions = {}
+): RemainingDailyLimits {
+  const usage = countUsedDailyQuotasFromLogs(todayLogs, options)
+  return computeRemainingDailyLimits(configured, usage)
 }
 
 /**
