@@ -22,6 +22,7 @@ import {
   clearSessionProgressKey,
   getDefaultSessionStorage,
   registerSessionProgressKey,
+  resumeSessionProgressAutosave,
   tryParseSessionProgressJson,
   unregisterSessionProgressKey,
   type StorageLike,
@@ -83,6 +84,12 @@ export interface UseSessionProgressTrackerReturn {
    * 清理失败仅 warn，不阻断后续 onClose flush。
    */
   abandonSession: () => void
+  /**
+   * F2-04：在 finishSession 之后因短期重学重新进入进行中时调用。
+   * 重新允许 autosave，**不清零** progressState（第二次摘要须累计重入评分）。
+   * 不是 F2-09 跨重启断点恢复。
+   */
+  resumeSessionPersistence: () => void
 
   // 序列化
   /** 序列化当前状态 */
@@ -236,6 +243,17 @@ export function useSessionProgressTracker(
     }
   }, [autoSave, storageKey])
 
+  /**
+   * F2-04：过早 finish 后同一会话继续（pending 重入）——恢复 autosave，不清零统计。
+   */
+  const resumeSessionPersistence = useCallback(() => {
+    storageActiveRef.current = true
+    if (!autoSave) return
+    const storage = storageRef.current
+    const serialized = serializeProgressState(progressState)
+    resumeSessionProgressAutosave(storage, storageKey, serialized)
+  }, [autoSave, storageKey, progressState])
+
   // ============================================
   // Serialization
   // ============================================
@@ -326,6 +344,7 @@ export function useSessionProgressTracker(
     resetSession,
     finishSession,
     abandonSession,
+    resumeSessionPersistence,
     serialize,
     restore,
   }

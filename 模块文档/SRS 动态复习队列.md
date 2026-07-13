@@ -83,12 +83,28 @@ const newCards = selectNewDueCardsForSession(
 - `createSessionRootCardBudget`：会话已接纳正式根卡集合（limits 为 remaining 时即本会话 budget）
 - `acceptFormalRoot` / `filterAndAcceptNewFormalRoots`
 
+### 短期重学 pending（F2-04，`src/srs/pendingDueRequeue.ts`）
+
+Again/Hard 后若 FSRS `due` 落在 **5 分钟窗口**内，卡片进入会话内 pending，到期后追加到**队尾**。
+
+| 规则 | 说明 |
+|------|------|
+| 触发 | 仅**正式** `again` / `hard`；`fixed/repeat` 纯训练与 List 辅助预览**不**伪造正式 pending |
+| 幂等 | 按稳定 `cardKey` upsert 最新 card snapshot + 绝对 `dueTime`；`generation` 单调递增 |
+| Timer | 唯一有效 wake 带 `scheduledToken`；due 变早/变晚均重排；旧 token 触发时 stale，不得入队 |
+| 去重 | **只检查 `currentIndex + 1` 之后的未处理尾部**；历史副本（index 及之前）**不阻止**重入 |
+| 顺序 | 多卡到期：`dueTime` 升序，再用 `cardKey` 稳定 tie-break，追加到队尾 |
+| 额度 | 经 `selectPendingDueCardsForRequeue`；已接纳身份重入**不重复消耗**；未接纳新身份仍受额度限制 |
+| 失败 | scope/budget 拒绝或提交异常：**保留** pending 并诊断，不静默丢记录；接纳成功或已在尾部才移除 |
+| 生命周期 | 明确完成按钮 / 关闭 / 卸载 / 新轮次：`deactivateAndClearPending` + 清 timer。**到达队尾 UI 不清 pending**（最后一张 Again 仍可重入）。**不持久化**（F2-09） |
+| 完成摘要 reopen | 完成态下 pending **实际追加 ≥1** 时：`reopenSessionFinalizeIfNeeded` 重置 finalize 缓存并 `setSessionStats(null)`，**不清零** progress；`resumeSessionPersistence` 恢复 autosave。未实际追加不得重置摘要。第二次完成摘要须含此前评分 + 重入评分 |
+
 ### 复习会话组件 (SrsReviewSessionDemo.tsx)
 
 - prop：`sessionScope`、`sessionDailyLimits`、`sessionFormalRootCards`（均由 Renderer 启动时冻结）
 - 60s 定时器：先判断 `allowsFullLibraryDynamicScan`，再 collect + 共用过滤（含额度）
 - 手动检查：fixed 直接提示，不 collect
-- pending due：scope + 已接纳额度（短期重学同一 cardKey 不重复消耗）
+- pending due（F2-04）：`pendingDueStateRef` + `pendingDueRequeue` 纯逻辑；评分成功且 action token 有效后 `trackPendingDueCard`
 - List 动态下一条/辅助预览：`isCardInSessionScope`（fixed 同根允许）；显式 `cardType: "list"`
 
 ### Flash Home 组件 (SrsFlashcardHome.tsx)
@@ -117,6 +133,8 @@ const newCards = selectNewDueCardsForSession(
 |------|------|
 | `src/srs/reviewSessionScope.ts` | 会话范围纯逻辑 |
 | `src/srs/reviewSessionScope.test.ts` | FC-02 / FC-14 回归测试 |
+| `src/srs/pendingDueRequeue.ts` | F2-04 Again/Hard 短期 pending 纯逻辑 |
+| `src/srs/pendingDueRequeue.test.ts` | 尾部去重 / token / fake timer 回归 |
 | `src/components/SrsReviewSessionRenderer.tsx` | 启动时创建并传递 scope |
 | `src/components/SrsReviewSessionDemo.tsx` | 动态队列与 pending due |
 | `模块文档/SRS_复习队列管理.md` | 队列构建与 scope 总述 |

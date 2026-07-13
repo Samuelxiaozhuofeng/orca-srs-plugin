@@ -3,8 +3,9 @@ import type { ReviewCard } from "../srs/types"
 import SrsReviewSessionDemo from "./SrsReviewSessionDemo"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 import {
-  getRepeatReviewSession,
-  clearRepeatReviewSession,
+  getRepeatReviewSessionById,
+  retainRepeatReviewSession,
+  releaseRepeatReviewSession,
   resetCurrentRound,
   type RepeatReviewSession
 } from "../srs/repeatReviewManager"
@@ -36,8 +37,16 @@ import {
   resolveChildExpandLimits,
   type ChildExpandLimits
 } from "../srs/cardCollector"
+import {
+  ReviewSessionDescriptorError,
+  readReviewSessionDescriptorFromBlock,
+  scopeFromReviewSessionDescriptor,
+  type ReviewSessionDescriptor
+} from "../srs/reviewSessionDescriptor"
+import { resolveReviewSessionBlock } from "../srs/reviewSessionManager"
+import { createLoadGenerationGate } from "../srs/asyncLoadGeneration"
 
-const { useEffect, useState, useMemo, useRef } = window.React
+const { useEffect, useState, useMemo, useRef, useCallback } = window.React
 const { BlockShell, Button } = orca.components
 
 type RendererProps = {
@@ -49,6 +58,15 @@ type RendererProps = {
   mirrorId?: DbId
   initiallyCollapsed?: boolean
   renderingMode?: "normal" | "simple" | "simple-children"
+}
+
+function deckFilterFromDescriptor(
+  descriptor: ReviewSessionDescriptor
+): string | null {
+  if (descriptor.kind === "normal" && descriptor.scope.kind === "deck") {
+    return descriptor.scope.deckName
+  }
+  return null
 }
 
 export default function SrsReviewSessionRenderer(props: RendererProps) {
@@ -67,222 +85,346 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [pluginName, setPluginName] = useState("orca-srs")
-  // 重复复习模式状态
   const [isRepeatMode, setIsRepeatMode] = useState(false)
   const [currentRound, setCurrentRound] = useState(1)
   const [repeatSession, setRepeatSession] = useState<RepeatReviewSession | null>(null)
-  /** 会话启动时冻结的范围；之后不随全局 reviewDeckFilter 变化 */
   const [sessionScope, setSessionScope] = useState<ReviewSessionScope>(() => createAllScope())
-  /**
-   * 会话启动时冻结的每日正式根卡额度；fixed 为 null（不限额）。
-   * Demo 不得在会话中重读全局 settings。
-   */
   const [sessionDailyLimits, setSessionDailyLimits] = useState<ReviewQueueLimits | null>(null)
-  /** 初始正式根卡（计额度 seed）；子卡不在此列 */
   const [sessionFormalRootCards, setSessionFormalRootCards] = useState<ReviewCard[]>([])
-  /**
-   * FC-09：会话进度 storage 描述（加载队列时冻结）。
-   * Demo 只消费 progressStorageKey，不得重读全局 filter / repeat manager。
-   * 默认 all，避免 loading 阶段误用共享键。
-   */
   const [progressDescriptor, setProgressDescriptor] = useState<SessionProgressDescriptor>(
     () => createSessionProgressDescriptorFromNormal(null)
   )
-  /**
-   * FC-12：子卡展开截断的会话顶部简短提示；无截断为 null。
-   * 详细诊断在 console；核心展开不读全局 settings。
-   */
   const [childExpandWarning, setChildExpandWarning] = useState<string | null>(null)
-  /** 会话冻结的子卡展开限制（默认 10/200）；fixed/normal/repeat 共用 */
   const [sessionChildExpandLimits, setSessionChildExpandLimits] =
     useState<ChildExpandLimits | null>(null)
 
-  useEffect(() => {
-    void loadReviewQueue()
-  }, [blockId])  // 当 blockId 变化时重新加载队列
-  
-  // 组件卸载时清理重复复习会话
-  useEffect(() => {
-    return () => {
-      // 无论是否为重复模式，都尝试清理会话
-      // 因为组件卸载时应该清理所有相关状态
-      console.log(`[SRS Review Session Renderer] 组件卸载，清理重复复习会话`)
-      clearRepeatReviewSession()
-    }
-  }, [])  // 只在组件卸载时执行
+  /** 异步 load latest-wins */
+  const loadGateRef = useRef(createLoadGenerationGate())
+  /**
+   * 本 Renderer 当前 retain 的 fixed sessionId（引用计数）。
+   * 生命周期：成功绑定后 retain；effect cleanup / 换代 release。
+   * 关闭不在 beforeFlush 再 release，避免双重 release。
+   */
+  const retainedSessionIdRef = useRef<string | null>(null)
+  /** 诊断用：最近一次成功 commit 的 sessionId */
+  const boundSessionIdRef = useRef<string | null>(null)
 
-  const loadReviewQueue = async () => {
-    setIsLoading(true)
-    setErrorMessage(null)
-    setChildExpandWarning(null)
-
-    try {
-      const { getPluginName } = await import("../main")
-      const currentPluginName = typeof getPluginName === "function" ? getPluginName() : "orca-srs"
-      setPluginName(currentPluginName)
-
-      // FC-12：边界解析默认展开限制，核心只收显式 limits（不读全局 settings）
-      const resolvedChildExpand = resolveChildExpandLimits(undefined)
-      const frozenChildExpand: ChildExpandLimits = Object.freeze({
-        maxDepth: resolvedChildExpand.maxDepth,
-        maxAuxChildCards: resolvedChildExpand.maxAuxChildCards
-      })
-      setSessionChildExpandLimits(frozenChildExpand)
-
-      // 首先检查是否有活跃的重复复习会话（从右键菜单启动）
-      const activeRepeatSession = getRepeatReviewSession()
-      
-      if (activeRepeatSession) {
-        // 使用重复复习会话中的卡片，但需要展开子卡片链
-        console.log(`[SRS Review Session Renderer] 使用重复复习会话，原始卡片数: ${activeRepeatSession.cards.length}`)
-        
-        const { buildSessionReviewQueue } = await import("../srs/cardCollector")
-        // fixed：正式根不限额；子卡展开仍受 FC-12 限制（与 normal/repeat 一致）
-        const {
-          queue: expandedCards,
-          formalRootCards,
-          childExpandDiagnostics
-        } = await buildSessionReviewQueue(
-          activeRepeatSession.cards,
-          currentPluginName,
-          null,
-          frozenChildExpand
-        )
-        
-        console.log(`[SRS Review Session Renderer] 展开子卡片后卡片数: ${expandedCards.length}`)
-        if (childExpandDiagnostics.length > 0) {
-          console.warn(
-            `[SRS Review Session Renderer] 子卡展开截断诊断:`,
-            childExpandDiagnostics
-          )
-        }
-        setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
-        
-        // fixed scope：原始卡 + 展开子卡均纳入允许集合（含 List root）
-        const fixedScope = prepareFixedSessionScope(expandedCards)
-        setSessionScope(fixedScope)
-        // 进度 scope：困难卡 / 专项 / 重复；round 变更不改 key（同专项会话）
-        setProgressDescriptor(
-          createSessionProgressDescriptorFromFixedSource(
-            activeRepeatSession.sourceType,
-            activeRepeatSession.sourceBlockId
-          )
-        )
-        setSessionDailyLimits(null)
-        setSessionFormalRootCards(formalRootCards)
-        setCards(expandedCards)
-        setIsRepeatMode(true)
-        setCurrentRound(activeRepeatSession.currentRound)
-        setRepeatSession({ ...activeRepeatSession, cards: expandedCards })
-      } else {
-        // 正常模式：启动时只读取一次 deck filter + 每日限额，立即冻结
-        const {
-          collectReviewCards,
-          getReviewDeckFilter
-        } = await import("../main")
-        const { buildSessionReviewQueue } = await import("../srs/cardCollector")
-        
-        const allCards = await collectReviewCards(currentPluginName)
-        const deckFilter = typeof getReviewDeckFilter === "function" ? getReviewDeckFilter() : null
-        const { scope, filteredCards } = prepareNormalSessionQueueInput(allCards, deckFilter)
-        setSessionScope(scope)
-        // 进度 scope：与队列 scope 同源冻结，Demo 不得重读 getReviewDeckFilter
-        setProgressDescriptor(createSessionProgressDescriptorFromNormal(deckFilter))
-
-        const settings = getReviewSettings(currentPluginName)
-        const resolvedLimits = resolveDailyQueueLimits(
-          settings.newCardsPerDay,
-          settings.reviewCardsPerDay
-        )
-        // 无效设置告警仍展示 configured 回退值（非 remaining）
-        if (resolvedLimits.warnings.length > 0) {
-          console.warn(
-            `[SRS Review Session Renderer] 每日限额设置无效，已回退默认：`,
-            resolvedLimits.warnings
-          )
-          orca.notify(
-            "warn",
-            `每日限额设置无效，已使用默认 ${resolvedLimits.newCardsPerDay}/${resolvedLimits.reviewCardsPerDay}`,
-            { title: "SRS 复习" }
-          )
-        }
-        const configuredLimits: ReviewQueueLimits = Object.freeze({
-          newCardsPerDay: resolvedLimits.newCardsPerDay,
-          reviewCardsPerDay: resolvedLimits.reviewCardsPerDay
-        })
-
-        // 跨会话每日额度：读取本地时区「今天 00:00 → now」日志，扣除已用后冻结 remaining
-        // getReviewLogs 会先 flush；读取/flush 失败必须向上抛出，禁止用 used=0 兜底突破限额
-        const { start: todayStart, end: todayEnd } = getLocalTodayBounds()
-        const todayLogs = await getReviewLogs(
-          currentPluginName,
-          todayStart,
-          todayEnd
-        )
-        const deckNameForQuota =
-          scope.kind === "deck" ? scope.deckName : null
-        const remaining = remainingDailyLimitsFromLogs(
-          configuredLimits,
-          todayLogs,
-          { deckName: deckNameForQuota }
-        )
-        const frozenLimits: ReviewQueueLimits = Object.freeze({
-          newCardsPerDay: remaining.newCardsPerDay,
-          reviewCardsPerDay: remaining.reviewCardsPerDay
-        })
-        console.log(
-          `[SRS Review Session Renderer] 每日额度 ` +
-            `scope=${scope.kind === "deck" ? `deck:${scope.deckName}` : "all"} ` +
-            `configured new/review=${configuredLimits.newCardsPerDay}/${configuredLimits.reviewCardsPerDay} ` +
-            `used=${remaining.usedNew}/${remaining.usedReview} ` +
-            `remaining=${frozenLimits.newCardsPerDay}/${frozenLimits.reviewCardsPerDay} ` +
-            `(logs=${todayLogs.length})`
-        )
-        // 会话预算与初始队列均使用 remaining，动态追加不得绕过
-        setSessionDailyLimits(frozenLimits)
-
-        // 正式根卡应用冻结剩余额度；子卡展开不消耗额度，但受 FC-12 限制
-        const {
-          queue,
-          formalRootCards,
-          childExpandDiagnostics
-        } = await buildSessionReviewQueue(
-          filteredCards,
-          currentPluginName,
-          frozenLimits,
-          frozenChildExpand
-        )
-        if (childExpandDiagnostics.length > 0) {
-          console.warn(
-            `[SRS Review Session Renderer] 子卡展开截断诊断:`,
-            childExpandDiagnostics
-          )
-        }
-        setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
-        setSessionFormalRootCards(formalRootCards)
-        setCards(queue)
-        setIsRepeatMode(false)
-        setCurrentRound(1)
-        setRepeatSession(null)
-      }
-    } catch (error) {
-      console.error("[SRS Review Session Renderer] 加载复习队列失败:", error)
-      setErrorMessage(error instanceof Error ? error.message : `${error}`)
-      orca.notify("error", "加载复习队列失败", { title: "SRS 复习" })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const releaseRetainedIfAny = useCallback(() => {
+    const sid = retainedSessionIdRef.current
+    if (sid == null) return
+    console.log(
+      `[SRS Review Session Renderer] release repeat 引用 sessionId=${sid}`
+    )
+    releaseRepeatReviewSession(sid)
+    retainedSessionIdRef.current = null
+  }, [])
 
   /**
-   * 处理再复习一轮
+   * 在 generation 仍有效时 retain；同一 sessionId 已 retain 则不重复。
+   * 切换到不同 sessionId 时先 release 旧引用。
    */
+  const retainIfCurrent = useCallback(
+    (generation: number, sessionId: string): boolean => {
+      if (!loadGateRef.current.isCurrent(generation)) {
+        return false
+      }
+      if (retainedSessionIdRef.current === sessionId) {
+        return true
+      }
+      if (retainedSessionIdRef.current != null) {
+        releaseRepeatReviewSession(retainedSessionIdRef.current)
+        retainedSessionIdRef.current = null
+      }
+      retainRepeatReviewSession(sessionId)
+      retainedSessionIdRef.current = sessionId
+      return true
+    },
+    []
+  )
+
+  const commitIfCurrent = useCallback((generation: number): boolean => {
+    return loadGateRef.current.isCurrent(generation)
+  }, [])
+
+  const loadReviewQueue = useCallback(
+    async (targetBlockId: DbId, generation: number) => {
+      // 同步阶段：仅当前 gen 可进入 loading UI
+      if (!commitIfCurrent(generation)) return
+      setIsLoading(true)
+      setErrorMessage(null)
+      setChildExpandWarning(null)
+
+      try {
+        const { getPluginName } = await import("../main")
+        if (!commitIfCurrent(generation)) return
+
+        const currentPluginName =
+          typeof getPluginName === "function" ? getPluginName() : "orca-srs"
+        if (!commitIfCurrent(generation)) return
+        setPluginName(currentPluginName)
+
+        const sessionBlock = await resolveReviewSessionBlock(targetBlockId)
+        if (!commitIfCurrent(generation)) return
+
+        let descriptor: ReviewSessionDescriptor
+        try {
+          descriptor = readReviewSessionDescriptorFromBlock(sessionBlock)
+        } catch (descError) {
+          const message =
+            descError instanceof ReviewSessionDescriptorError
+              ? descError.message
+              : descError instanceof Error
+                ? descError.message
+                : String(descError)
+          throw new Error(
+            `无法加载会话描述（block #${targetBlockId}）：${message}`
+          )
+        }
+        if (!commitIfCurrent(generation)) return
+
+        console.log(
+          `[SRS Review Session Renderer] 加载会话 gen=${generation} sessionId=${descriptor.sessionId} kind=${descriptor.kind}`
+        )
+
+        if (descriptor.kind === "custom") {
+          throw new ReviewSessionDescriptorError(
+            "unsupported_kind",
+            "自定义学习尚未实现，无法加载此会话。请使用普通复习或重复复习入口。"
+          )
+        }
+
+        const resolvedChildExpand = resolveChildExpandLimits(undefined)
+        const frozenChildExpand: ChildExpandLimits = Object.freeze({
+          maxDepth: resolvedChildExpand.maxDepth,
+          maxAuxChildCards: resolvedChildExpand.maxAuxChildCards
+        })
+        if (!commitIfCurrent(generation)) return
+        setSessionChildExpandLimits(frozenChildExpand)
+
+        if (descriptor.kind === "fixed" && descriptor.mode === "repeat") {
+          const activeRepeatSession = getRepeatReviewSessionById(
+            descriptor.sessionId
+          )
+
+          if (!activeRepeatSession) {
+            throw new Error(
+              `重复复习会话数据不可用（sessionId=${descriptor.sessionId}）。` +
+                `请重新从查询块/子块/困难卡入口启动；不会回退为全部复习。`
+            )
+          }
+
+          if (
+            String(activeRepeatSession.sourceBlockId) !==
+              descriptor.source.sourceBlockId ||
+            activeRepeatSession.sourceType !== descriptor.source.sourceType
+          ) {
+            throw new Error(
+              `重复复习会话与块描述不一致（sessionId=${descriptor.sessionId}），已中止加载`
+            )
+          }
+
+          const { buildSessionReviewQueue } = await import("../srs/cardCollector")
+          if (!commitIfCurrent(generation)) return
+
+          const {
+            queue: expandedCards,
+            formalRootCards,
+            childExpandDiagnostics
+          } = await buildSessionReviewQueue(
+            activeRepeatSession.cards,
+            currentPluginName,
+            null,
+            frozenChildExpand
+          )
+          if (!commitIfCurrent(generation)) return
+
+          if (childExpandDiagnostics.length > 0) {
+            console.warn(
+              `[SRS Review Session Renderer] 子卡展开截断诊断:`,
+              childExpandDiagnostics
+            )
+          }
+
+          // retain 必须在任意 setState 之前且 generation 有效时完成
+          if (!retainIfCurrent(generation, descriptor.sessionId)) {
+            return
+          }
+          if (!commitIfCurrent(generation)) {
+            // retain 后 generation 失效：释放本次 retain，不写 state
+            releaseRetainedIfAny()
+            return
+          }
+
+          boundSessionIdRef.current = descriptor.sessionId
+          const fixedScope = prepareFixedSessionScope(expandedCards)
+          setSessionScope(fixedScope)
+          setProgressDescriptor(
+            createSessionProgressDescriptorFromFixedSource(
+              activeRepeatSession.sourceType,
+              activeRepeatSession.sourceBlockId
+            )
+          )
+          setSessionDailyLimits(null)
+          setSessionFormalRootCards(formalRootCards)
+          setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
+          setCards(expandedCards)
+          setIsRepeatMode(true)
+          setCurrentRound(activeRepeatSession.currentRound)
+          setRepeatSession({ ...activeRepeatSession, cards: expandedCards })
+        } else if (descriptor.kind === "normal") {
+          // normal 不参与 repeat retain；若先前 retain 了 fixed，换到 normal 时应释放
+          // （effect cleanup 在 blockId 变化时已 release；retry 同 normal 块则无 retain）
+          if (retainedSessionIdRef.current != null) {
+            releaseRetainedIfAny()
+          }
+
+          const { collectReviewCards } = await import("../main")
+          const { buildSessionReviewQueue } = await import("../srs/cardCollector")
+          if (!commitIfCurrent(generation)) return
+
+          const allCards = await collectReviewCards(currentPluginName)
+          if (!commitIfCurrent(generation)) return
+
+          const deckFilter = deckFilterFromDescriptor(descriptor)
+          const { scope, filteredCards } = prepareNormalSessionQueueInput(
+            allCards,
+            deckFilter
+          )
+          const scopeFromDesc = scopeFromReviewSessionDescriptor(descriptor)
+          if (scope.kind !== scopeFromDesc.kind) {
+            throw new Error(
+              `会话 scope 与描述不一致：prepared=${scope.kind} descriptor=${scopeFromDesc.kind}`
+            )
+          }
+          if (
+            scope.kind === "deck" &&
+            scopeFromDesc.kind === "deck" &&
+            scope.deckName !== scopeFromDesc.deckName
+          ) {
+            throw new Error(
+              `会话牌组与描述不一致：prepared=${scope.deckName} descriptor=${scopeFromDesc.deckName}`
+            )
+          }
+
+          const settings = getReviewSettings(currentPluginName)
+          const resolvedLimits = resolveDailyQueueLimits(
+            settings.newCardsPerDay,
+            settings.reviewCardsPerDay
+          )
+          if (resolvedLimits.warnings.length > 0) {
+            console.warn(
+              `[SRS Review Session Renderer] 每日限额设置无效，已回退默认：`,
+              resolvedLimits.warnings
+            )
+            if (commitIfCurrent(generation)) {
+              orca.notify(
+                "warn",
+                `每日限额设置无效，已使用默认 ${resolvedLimits.newCardsPerDay}/${resolvedLimits.reviewCardsPerDay}`,
+                { title: "SRS 复习" }
+              )
+            }
+          }
+          const configuredLimits: ReviewQueueLimits = Object.freeze({
+            newCardsPerDay: resolvedLimits.newCardsPerDay,
+            reviewCardsPerDay: resolvedLimits.reviewCardsPerDay
+          })
+
+          const { start: todayStart, end: todayEnd } = getLocalTodayBounds()
+          const todayLogs = await getReviewLogs(
+            currentPluginName,
+            todayStart,
+            todayEnd
+          )
+          if (!commitIfCurrent(generation)) return
+
+          const deckNameForQuota =
+            scope.kind === "deck" ? scope.deckName : null
+          const remaining = remainingDailyLimitsFromLogs(
+            configuredLimits,
+            todayLogs,
+            { deckName: deckNameForQuota }
+          )
+          const frozenLimits: ReviewQueueLimits = Object.freeze({
+            newCardsPerDay: remaining.newCardsPerDay,
+            reviewCardsPerDay: remaining.reviewCardsPerDay
+          })
+
+          const {
+            queue,
+            formalRootCards,
+            childExpandDiagnostics
+          } = await buildSessionReviewQueue(
+            filteredCards,
+            currentPluginName,
+            frozenLimits,
+            frozenChildExpand
+          )
+          if (!commitIfCurrent(generation)) return
+
+          if (childExpandDiagnostics.length > 0) {
+            console.warn(
+              `[SRS Review Session Renderer] 子卡展开截断诊断:`,
+              childExpandDiagnostics
+            )
+          }
+
+          boundSessionIdRef.current = descriptor.sessionId
+          setSessionScope(scope)
+          setProgressDescriptor(
+            createSessionProgressDescriptorFromNormal(deckFilter)
+          )
+          setSessionDailyLimits(frozenLimits)
+          setSessionFormalRootCards(formalRootCards)
+          setChildExpandWarning(formatChildExpandWarning(childExpandDiagnostics))
+          setCards(queue)
+          setIsRepeatMode(false)
+          setCurrentRound(1)
+          setRepeatSession(null)
+        } else {
+          throw new Error(
+            `不支持的会话描述 kind，无法加载（不得回退 all）`
+          )
+        }
+      } catch (error) {
+        if (!commitIfCurrent(generation)) {
+          // 旧 generation 失败不得覆盖新 generation 的成功/错误状态
+          return
+        }
+        console.error("[SRS Review Session Renderer] 加载复习队列失败:", error)
+        setErrorMessage(error instanceof Error ? error.message : `${error}`)
+        orca.notify("error", "加载复习队列失败", { title: "SRS 复习" })
+      } finally {
+        if (commitIfCurrent(generation)) {
+          setIsLoading(false)
+        }
+      }
+    },
+    [commitIfCurrent, retainIfCurrent, releaseRetainedIfAny]
+  )
+
+  // blockId 变化或首次挂载：新 generation；cleanup 使旧 gen 失效并 release retain
+  useEffect(() => {
+    const generation = loadGateRef.current.begin()
+    void loadReviewQueue(blockId, generation)
+    return () => {
+      loadGateRef.current.invalidate()
+      releaseRetainedIfAny()
+      boundSessionIdRef.current = null
+    }
+  }, [blockId, loadReviewQueue, releaseRetainedIfAny])
+
+  const handleRetry = useCallback(() => {
+    // 重试：新 generation；不在 begin 前 release payload（同 session 可能仍需）。
+    // 若成功绑定同一 sessionId，retainIfCurrent 不会双计；
+    // 若最终变为 normal，load 内会 release。
+    const generation = loadGateRef.current.begin()
+    void loadReviewQueue(blockId, generation)
+  }, [blockId, loadReviewQueue])
+
   const handleRepeatRound = async () => {
     if (!repeatSession) return
-    
+
     const updatedSession = resetCurrentRound(repeatSession)
-    
-    // fixed 轮次：正式根仍不限额；子卡展开用会话冻结的 FC-12 限制
     const { buildSessionReviewQueue } = await import("../srs/cardCollector")
     const expandLimits =
       sessionChildExpandLimits ??
@@ -303,7 +445,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
       null,
       expandLimits
     )
-    
+
     if (childExpandDiagnostics.length > 0) {
       console.warn(
         `[SRS Review Session Renderer] 子卡展开截断诊断（第 ${updatedSession.currentRound} 轮）:`,
@@ -315,12 +457,8 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     setCards(expandedCards)
     setCurrentRound(updatedSession.currentRound)
     setRepeatSession({ ...updatedSession, cards: expandedCards })
-    
-    console.log(`[SRS Review Session Renderer] 开始第 ${updatedSession.currentRound} 轮复习，展开后卡片数: ${expandedCards.length}`)
   }
 
-  // 统一 async 关闭：flush -> 失败 notify -> close；防重复点击
-  // 唯一 flush 入口，Demo 所有 onClose 最终走此处，避免双重 flush
   const isRepeatModeRef = useRef(isRepeatMode)
   isRepeatModeRef.current = isRepeatMode
 
@@ -329,11 +467,9 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
       createGuardedSessionCloser({
         pluginName,
         flush: flushReviewLogs,
-        beforeFlush: () => {
-          if (isRepeatModeRef.current) {
-            clearRepeatReviewSession()
-          }
-        },
+        // 不在此 release：避免与 effect cleanup 双重 release。
+        // 关面板 → unmount → effect cleanup → releaseRetainedIfAny。
+        beforeFlush: undefined,
         notifyFlushFailure: (message) => {
           orca.notify("error", message || REVIEW_LOG_FLUSH_PENDING_MESSAGE, {
             title: "SRS 复习"
@@ -346,17 +482,10 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     [pluginName, panelId]
   )
 
-  /**
-   * 跳转到卡片
-   * - 直接点击：在当前面板打开
-   * - Shift+点击：在侧面板打开（原生行为）
-   */
   const handleJumpToCard = (cardBlockId: DbId, shiftKey?: boolean) => {
     if (shiftKey) {
-      // Shift+点击：使用原生方法在新面板打开
       orca.nav.openInLastPanel("block", { blockId: cardBlockId })
     } else {
-      // 直接点击：在当前面板打开
       orca.nav.goTo("block", { blockId: cardBlockId }, panelId)
     }
   }
@@ -390,7 +519,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
           textAlign: "center"
         }}>
           <div style={{ color: "var(--orca-color-danger-5)" }}>加载失败：{errorMessage}</div>
-          <Button variant="solid" onClick={loadReviewQueue}>
+          <Button variant="solid" onClick={handleRetry}>
             重试
           </Button>
         </div>

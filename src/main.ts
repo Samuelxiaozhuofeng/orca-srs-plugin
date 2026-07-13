@@ -29,7 +29,11 @@ import {
   getIncrementalReadingSettings,
   incrementalReadingSettingsSchema
 } from "./srs/settings/incrementalReadingSettingsSchema"
-import { getOrCreateReviewSessionBlock, cleanupReviewSessionBlock } from "./srs/reviewSessionManager"
+import { createReviewSessionBlockWithDescriptor } from "./srs/reviewSessionManager"
+import {
+  createFixedRepeatSessionDescriptor,
+  createNormalSessionDescriptor
+} from "./srs/reviewSessionDescriptor"
 import { getOrCreateFlashcardHomeBlock } from "./srs/flashcardHomeManager"
 import { cleanupDeletedCards } from "./srs/deletedCardCleanup"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "./srs/incrementalReadingAutoMark"
@@ -51,6 +55,7 @@ import {
 
 // 插件全局状态
 let pluginName: string
+/** @deprecated F2-01：scope 已写入会话块 descriptor，不再作为加载来源 */
 let reviewDeckFilter: string | null = null
 let reviewHostPanelId: string | null = null
 const PLUGIN_UI_STYLE_ROLE = "orca-srs-ui"
@@ -211,6 +216,7 @@ export async function unload() {
  */
 async function startReviewSession(deckName?: string, openInCurrentPanel: boolean = false) {
   try {
+    // 诊断用；Renderer 不得读取此变量作为 scope 来源
     reviewDeckFilter = deckName ?? null
     const activePanelId = orca.state.activePanel
 
@@ -222,8 +228,12 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
     // 记录主面板 ID（用于跳转到卡片）
     reviewHostPanelId = activePanelId
 
-    // 获取或创建复习会话块
-    const blockId = await getOrCreateReviewSessionBlock(pluginName)
+    // F2-01：每次启动新建会话块 + 版本化 descriptor，禁止复用单例块覆盖 scope
+    const descriptor = createNormalSessionDescriptor(deckName)
+    const blockId = await createReviewSessionBlockWithDescriptor(
+      pluginName,
+      descriptor
+    )
 
     // 根据调用方式决定打开位置
     if (openInCurrentPanel) {
@@ -233,7 +243,9 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
         ? `已打开 ${deckName} 复习会话`
         : "复习会话已打开"
       orca.notify("success", message, { title: "SRS 复习" })
-      console.log(`[${pluginName}] 复习会话已在当前面板启动，面板ID: ${activePanelId}`)
+      console.log(
+        `[${pluginName}] 复习会话已在当前面板启动，sessionId=${descriptor.sessionId}, 面板ID: ${activePanelId}`
+      )
       return
     }
 
@@ -262,7 +274,7 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
         return
       }
     } else {
-      // 导航到现有右侧面板
+      // 导航到现有右侧面板（新 blockId，新 descriptor）
       orca.nav.goTo("block", { blockId }, rightPanelId)
     }
 
@@ -278,7 +290,9 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
       : "复习会话已在右侧面板打开"
 
     orca.notify("success", message, { title: "SRS 复习" })
-    console.log(`[${pluginName}] 复习会话已启动，面板ID: ${rightPanelId}`)
+    console.log(
+      `[${pluginName}] 复习会话已启动，sessionId=${descriptor.sessionId}, 面板ID: ${rightPanelId}`
+    )
   } catch (error) {
     console.error(`[${pluginName}] 启动复习失败:`, error)
     orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" })
@@ -286,7 +300,8 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
 }
 
 /**
- * 获取当前复习会话的 deck 过滤器
+ * @deprecated F2-01：Renderer 必须从会话块 descriptor 读取 scope。
+ * 保留导出仅兼容旧调用；值可能被后续启动覆盖，不可靠。
  */
 export function getReviewDeckFilter(): string | null {
   return reviewDeckFilter
@@ -506,18 +521,31 @@ async function startRepeatReviewSession(blockId: DbId, openInCurrentPanel: boole
       }
     }
 
-    // 创建重复复习会话
-    createRepeatReviewSession(cards, blockId, sourceType)
-
-    // 获取或创建复习会话块
-    const reviewBlockId = await getOrCreateReviewSessionBlock(pluginName)
+    // F2-01：descriptor 与内存载荷共用 sessionId，再写入新会话块
+    const descriptor = createFixedRepeatSessionDescriptor({
+      cards,
+      sourceBlockId: blockId,
+      sourceType
+    })
+    createRepeatReviewSession(
+      cards,
+      blockId,
+      sourceType,
+      descriptor.sessionId
+    )
+    const reviewBlockId = await createReviewSessionBlockWithDescriptor(
+      pluginName,
+      descriptor
+    )
 
     // 根据调用方式决定打开位置
     if (openInCurrentPanel) {
       // 在当前面板打开
       orca.nav.goTo("block", { blockId: reviewBlockId }, activePanelId)
       orca.notify("success", `已开始复习 ${cards.length} 张卡片`, { title: "SRS 复习" })
-      console.log(`[${pluginName}] 重复复习会话已在当前面板启动，面板ID: ${activePanelId}`)
+      console.log(
+        `[${pluginName}] 重复复习会话已在当前面板启动，sessionId=${descriptor.sessionId}, 面板ID: ${activePanelId}`
+      )
       return
     }
 
@@ -558,7 +586,9 @@ async function startRepeatReviewSession(blockId: DbId, openInCurrentPanel: boole
     }
 
     orca.notify("success", `已开始复习 ${cards.length} 张卡片`, { title: "SRS 复习" })
-    console.log(`[${pluginName}] 重复复习会话已启动，面板ID: ${rightPanelId}`)
+    console.log(
+      `[${pluginName}] 重复复习会话已启动，sessionId=${descriptor.sessionId}, 面板ID: ${rightPanelId}`
+    )
   } catch (error) {
     console.error(`[${pluginName}] 启动重复复习失败:`, error)
     

@@ -17,6 +17,21 @@ import { isSrsCardBlock, type BlockWithRepr } from "./blockUtils"
 import { clearLogCache } from "./reviewLogStorage"
 import { isChoiceTag } from "./tagUtils"
 import type { CardType, ReviewLogEntry, ReviewLogStorage } from "./types"
+import {
+  BlockExistenceCache,
+  isCardBlockExists,
+  resolveBlockExistence,
+  type BlockExistenceResult,
+  type BlockExistenceStatus
+} from "./blockExistence"
+
+// 兼容导出：三态能力已抽到 blockExistence.ts（F2-06）
+export {
+  BlockExistenceCache,
+  isCardBlockExists,
+  resolveBlockExistence
+}
+export type { BlockExistenceStatus }
 
 /**
  * 是否仍可视为 SRS 卡片块。
@@ -26,9 +41,6 @@ function isStillSrsCard(block: BlockWithRepr): boolean {
   if (isSrsCardBlock(block)) return true
   return block.refs?.some(ref => ref.type === 2 && isChoiceTag(ref.alias)) ?? false
 }
-
-/** 块读取三态 */
-export type BlockExistenceStatus = "exists" | "missing" | "unknown"
 
 /** 单条日志清理判定 */
 export type LogRetentionDecision = "keep" | "delete" | "unknown"
@@ -40,86 +52,8 @@ export type CleanupDeletedCardsReport = {
   errors: string[]
 }
 
-type BlockResolveResult = {
-  status: BlockExistenceStatus
-  block?: Block
-  error?: unknown
-}
-
 // 存储键前缀（与 reviewLogStorage.ts 保持一致）
 const STORAGE_KEY_PREFIX = "reviewLogs"
-
-/**
- * 单次清理运行内的块读取缓存，避免对同一 blockId 重复后端调用
- */
-export class BlockExistenceCache {
-  private cache = new Map<DbId, BlockResolveResult>()
-
-  async resolve(blockId: DbId): Promise<BlockResolveResult> {
-    const cached = this.cache.get(blockId)
-    if (cached) return cached
-
-    // orca.state.blocks 仅作命中缓存：有则 exists；缺失不代表 missing
-    const fromState = orca.state?.blocks?.[blockId]
-    if (fromState) {
-      const hit: BlockResolveResult = { status: "exists", block: fromState as Block }
-      this.cache.set(blockId, hit)
-      return hit
-    }
-
-    try {
-      const block = (await orca.invokeBackend("get-block", blockId)) as Block | null | undefined
-      // 仅 null/undefined 视为 missing；抛错为 unknown
-      if (block == null) {
-        const missing: BlockResolveResult = { status: "missing" }
-        this.cache.set(blockId, missing)
-        return missing
-      }
-      const exists: BlockResolveResult = { status: "exists", block }
-      this.cache.set(blockId, exists)
-      return exists
-    } catch (error) {
-      const unknown: BlockResolveResult = { status: "unknown", error }
-      this.cache.set(blockId, unknown)
-      return unknown
-    }
-  }
-
-  /** 测试用：预置缓存 */
-  set(blockId: DbId, result: BlockResolveResult): void {
-    this.cache.set(blockId, result)
-  }
-}
-
-/**
- * 解析块存在性（三态）。同一 cleanup 运行应复用 BlockExistenceCache。
- */
-export async function resolveBlockExistence(
-  blockId: DbId,
-  cache?: BlockExistenceCache
-): Promise<BlockResolveResult> {
-  const c = cache ?? new BlockExistenceCache()
-  return c.resolve(blockId)
-}
-
-/**
- * 验证卡片块是否存在（兼容导出）。
- *
- * - exists → true
- * - missing → false
- * - unknown → 抛出错误（不得将 unknown 当作 false）
- */
-export async function isCardBlockExists(blockId: DbId): Promise<boolean> {
-  const result = await resolveBlockExistence(blockId)
-  if (result.status === "unknown") {
-    const detail =
-      result.error instanceof Error ? result.error.message : String(result.error ?? "unknown error")
-    throw new Error(
-      `[isCardBlockExists] 无法确认块是否存在 (blockId=${blockId}): ${detail}`
-    )
-  }
-  return result.status === "exists"
-}
 
 /**
  * 是否存在任一结构化身份痕迹。

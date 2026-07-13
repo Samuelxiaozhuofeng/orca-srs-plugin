@@ -559,8 +559,9 @@ export default function SrsCardDemo({
           state: srsInfo.state,
         }
       : null;
-    return previewIntervals(fullState);
-  }, [srsInfo]);
+    // F2-08：预览与正式评分共用 pluginName → 同一 validated FSRS 配置
+    return previewIntervals(fullState, undefined, pluginName);
+  }, [srsInfo, pluginName]);
 
   // 预览各评分对应的到期日期
   const dueDates = useMemo(() => {
@@ -576,8 +577,8 @@ export default function SrsCardDemo({
           state: srsInfo.state,
         }
       : null;
-    return previewDueDates(fullState);
-  }, [srsInfo]);
+    return previewDueDates(fullState, undefined, pluginName);
+  }, [srsInfo, pluginName]);
 
   // 如果块确认已被删除（已尝试加载但仍不存在），自动跳过
   useEffect(() => {
@@ -678,6 +679,7 @@ export default function SrsCardDemo({
           onJumpToCard={onJumpToCard}
           inSidePanel={inSidePanel}
           panelId={panelId}
+          pluginName={pluginName}
           readOnly={readOnly}
           readOnlyStatusText={readOnlyStatusText}
         />
@@ -737,6 +739,7 @@ export default function SrsCardDemo({
           onJumpToCard={onJumpToCard}
           inSidePanel={inSidePanel}
           panelId={panelId}
+          pluginName={pluginName}
           readOnly={readOnly}
           readOnlyStatusText={readOnlyStatusText}
         />

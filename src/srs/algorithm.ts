@@ -1,84 +1,288 @@
 import { FSRS, Rating, State, createEmptyCard, generatorParameters } from "ts-fsrs"
 import type { Card, Grade as FsrsGrade, RecordLogItem, FSRSParameters } from "ts-fsrs"
 import type { Grade, SrsState } from "./types"
-import { 
-  DEFAULT_FSRS_WEIGHTS,
-  DEFAULT_REQUEST_RETENTION, 
+import {
+  DEFAULT_FSRS_WEIGHTS_ARRAY,
+  DEFAULT_REQUEST_RETENTION,
   DEFAULT_MAXIMUM_INTERVAL,
-  parseFsrsWeights
+  formatFsrsIssuesMessage,
+  formatFsrsWeights,
+  getDefaultValidatedFsrsConfig,
+  readAndValidateFsrsSettings,
+  validateFsrsConfig,
+  type ValidatedFsrsConfig
 } from "./settings/reviewSettingsSchema"
 
-// 当前 FSRS 参数缓存
-let currentParams = {
-  weightsStr: DEFAULT_FSRS_WEIGHTS,
-  requestRetention: DEFAULT_REQUEST_RETENTION,
-  maximumInterval: DEFAULT_MAXIMUM_INTERVAL
+/** 规范化后的生效参数（用于 cache 比较；不含 issues） */
+export type EffectiveFsrsParams = {
+  readonly weightsStr: string
+  readonly requestRetention: number
+  readonly maximumInterval: number
+  readonly weights: readonly number[]
 }
 
-// 创建 FSRS 实例的函数
-const createFsrsInstance = (
-  weights?: number[],
-  requestRetention: number = DEFAULT_REQUEST_RETENTION,
-  maximumInterval: number = DEFAULT_MAXIMUM_INTERVAL
+// 当前生效 FSRS 参数缓存（规范化后）
+let currentParams: EffectiveFsrsParams = {
+  weightsStr: formatFsrsWeights(DEFAULT_FSRS_WEIGHTS_ARRAY),
+  requestRetention: DEFAULT_REQUEST_RETENTION,
+  maximumInterval: DEFAULT_MAXIMUM_INTERVAL,
+  weights: [...DEFAULT_FSRS_WEIGHTS_ARRAY]
+}
+
+/**
+ * 同一份非法配置指纹只 warn 一次；配置变化可再通知。
+ * 指纹基于 raw 校验输入的稳定序列化，而非「碰巧相同的默认生效值」。
+ */
+let lastWarnedConfigFingerprint: string | null = null
+
+/**
+ * 仅用已校验配置创建 FSRS 实例。
+ * 调用方必须保证 weights 为恰好 21 个有限数字；本函数不再做宽松 `>=19` 判断。
+ */
+const createFsrsInstanceFromValidated = (
+  config: Pick<
+    ValidatedFsrsConfig,
+    "weights" | "requestRetention" | "maximumInterval"
+  >
 ): FSRS => {
   const params: Partial<FSRSParameters> = {
-    request_retention: requestRetention,
-    maximum_interval: maximumInterval
-  }
-  // 如果提供了有效权重则使用，否则让 ts-fsrs 使用原生默认权重
-  if (weights && weights.length >= 19) {
-    params.w = weights
+    request_retention: config.requestRetention,
+    maximum_interval: config.maximumInterval,
+    w: [...config.weights]
   }
   return new FSRS(generatorParameters(params))
 }
 
-// 解析默认权重
-const defaultWeights = parseFsrsWeights(DEFAULT_FSRS_WEIGHTS)
+// 默认 FSRS 实例（安全默认）
+let fsrs = createFsrsInstanceFromValidated(getDefaultValidatedFsrsConfig())
 
-// 默认 FSRS 实例
-let fsrs = createFsrsInstance(defaultWeights, DEFAULT_REQUEST_RETENTION, DEFAULT_MAXIMUM_INTERVAL)
+function effectiveKey(params: EffectiveFsrsParams): string {
+  return `${params.requestRetention}|${params.maximumInterval}|${params.weightsStr}`
+}
+
+function toEffectiveParams(config: ValidatedFsrsConfig): EffectiveFsrsParams {
+  return {
+    weightsStr: config.weightsStr,
+    requestRetention: config.requestRetention,
+    maximumInterval: config.maximumInterval,
+    weights: config.weights
+  }
+}
 
 /**
- * 更新 FSRS 实例的参数
- * 
+ * 用 validated 配置更新运行时 FSRS（仅当规范化参数变化时重建）。
+ */
+export function applyValidatedFsrsConfig(config: ValidatedFsrsConfig): void {
+  const next = toEffectiveParams(config)
+  if (effectiveKey(next) === effectiveKey(currentParams)) {
+    return
+  }
+  fsrs = createFsrsInstanceFromValidated(config)
+  currentParams = {
+    weightsStr: next.weightsStr,
+    requestRetention: next.requestRetention,
+    maximumInterval: next.maximumInterval,
+    weights: [...next.weights]
+  }
+  console.log("[FSRS] 已更新算法参数", {
+    requestRetention: currentParams.requestRetention,
+    maximumInterval: currentParams.maximumInterval,
+    weightsCount: currentParams.weights.length
+  })
+}
+
+/**
+ * 构建非法配置指纹（用于 notify 去重）。
+ * 同一 raw 设置重复预览四个评分时不重复弹通知。
+ */
+export function buildFsrsConfigFingerprint(
+  raw: {
+    weights?: unknown
+    requestRetention?: unknown
+    maximumInterval?: unknown
+  },
+  issues: ValidatedFsrsConfig["issues"]
+): string {
+  // 稳定序列化：字段 + 原值摘要 + 原因，避免仅 console
+  const issuePart = issues
+    .map((i) => `${i.field}:${i.rawSummary}:${i.reason}`)
+    .join("|")
+  // 含 raw 三元组，确保「不同非法值但相同 issue 文案」仍可区分
+  let rawWeights = ""
+  let rawRet = ""
+  let rawMax = ""
+  try {
+    rawWeights = JSON.stringify(raw.weights)
+  } catch {
+    rawWeights = String(raw.weights)
+  }
+  try {
+    rawRet = JSON.stringify(raw.requestRetention)
+  } catch {
+    rawRet = String(raw.requestRetention)
+  }
+  try {
+    rawMax = JSON.stringify(raw.maximumInterval)
+  } catch {
+    rawMax = String(raw.maximumInterval)
+  }
+  return `${rawWeights}#${rawRet}#${rawMax}#${issuePart}`
+}
+
+/**
+ * 当存在 issues 时向用户 warn（按指纹去重）。
+ * 无 issues（合法 / 未设置静默默认）时重置去重状态，使「修好后再破坏」可再次通知。
+ * 不修改 FSRS 实例 cache。
+ * notify 失败仅 console，不得阻止使用安全默认值。
+ */
+export function maybeWarnFsrsConfigIssues(
+  config: ValidatedFsrsConfig,
+  fingerprint: string
+): void {
+  if (config.issues.length === 0) {
+    // 安全配置也算配置变化：清除非法 fingerprint
+    lastWarnedConfigFingerprint = null
+    return
+  }
+  if (fingerprint === lastWarnedConfigFingerprint) {
+    return
+  }
+  lastWarnedConfigFingerprint = fingerprint
+
+  const message = formatFsrsIssuesMessage(config.issues)
+  console.warn("[FSRS]", message, config.issues)
+
+  try {
+    orca.notify("warn", message, { title: "SRS FSRS 设置" })
+  } catch (error) {
+    console.error("[FSRS] 无法显示设置警告通知:", error)
+  }
+}
+
+/**
+ * 从 raw 输入校验、可选 warn、并应用运行时实例。
+ * 返回生效配置（issues 可能非空）。
+ *
+ * 去重规则：
+ * - 同一非法指纹连续预览/四评分：只 notify 一次
+ * - 非法 A → 非法 B：各 notify 一次
+ * - 无 issues（合法或 undefined 静默默认）时重置去重；之后再遇非法 A 必须再 notify
+ * - 重置去重不影响 FSRS 生效参数 cache
+ */
+export function resolveAndApplyFsrsConfig(
+  raw: {
+    weights?: unknown
+    requestRetention?: unknown
+    maximumInterval?: unknown
+  },
+  options?: { warn?: boolean }
+): ValidatedFsrsConfig {
+  const config = validateFsrsConfig(raw)
+  if (config.issues.length === 0) {
+    // 合法 / 未设置：安全状态，清除非法 warning 去重（不动 FSRS cache 逻辑）
+    lastWarnedConfigFingerprint = null
+  } else if (options?.warn !== false) {
+    const fingerprint = buildFsrsConfigFingerprint(raw, config.issues)
+    maybeWarnFsrsConfigIssues(config, fingerprint)
+  }
+  applyValidatedFsrsConfig(config)
+  return config
+}
+
+/**
+ * 更新 FSRS 实例参数（接受可能非法的 raw；内部严格校验）。
+ * 非法值不会传入 generatorParameters。
+ *
  * @param weightsStr - 权重字符串
  * @param requestRetention - 目标记忆保留率
  * @param maximumInterval - 最大间隔天数
+ * @param options.warn - 是否用户可见 warn（默认 true）
  */
 export const updateFsrsParams = (
   weightsStr: string,
   requestRetention: number,
-  maximumInterval: number
-): void => {
-  // 检查参数是否有变化
-  if (
-    weightsStr === currentParams.weightsStr &&
-    requestRetention === currentParams.requestRetention &&
-    maximumInterval === currentParams.maximumInterval
-  ) {
-    return
-  }
-  
-  const weights = parseFsrsWeights(weightsStr)
-  fsrs = createFsrsInstance(weights, requestRetention, maximumInterval)
-  currentParams = { weightsStr, requestRetention, maximumInterval }
-  console.log("[FSRS] 已更新算法参数", { requestRetention, maximumInterval })
+  maximumInterval: number,
+  options?: { warn?: boolean }
+): ValidatedFsrsConfig => {
+  return resolveAndApplyFsrsConfig(
+    {
+      weights: weightsStr,
+      requestRetention,
+      maximumInterval
+    },
+    options
+  )
 }
 
 /**
- * 获取当前 FSRS 实例（确保使用最新设置）
- * 
- * @param pluginName - 插件名称（用于读取设置）
+ * 获取当前 FSRS 实例（确保使用最新、已校验设置）
+ *
+ * @param pluginName - 插件名称（用于读取设置）；省略时返回当前缓存实例（默认或上次生效）
  */
 export const getFsrsInstance = (pluginName?: string): FSRS => {
   if (pluginName) {
     const settings = orca.state.plugins[pluginName]?.settings
-    const weightsStr = settings?.["review.fsrsWeights"] ?? DEFAULT_FSRS_WEIGHTS
-    const requestRetention = settings?.["review.fsrsRequestRetention"] ?? DEFAULT_REQUEST_RETENTION
-    const maximumInterval = settings?.["review.fsrsMaximumInterval"] ?? DEFAULT_MAXIMUM_INTERVAL
-    updateFsrsParams(weightsStr, requestRetention, maximumInterval)
+    const raw = {
+      weights: settings?.["review.fsrsWeights"],
+      requestRetention: settings?.["review.fsrsRequestRetention"],
+      maximumInterval: settings?.["review.fsrsMaximumInterval"]
+    }
+    resolveAndApplyFsrsConfig(raw, { warn: true })
   }
   return fsrs
+}
+
+/**
+ * 读取并返回当前生效的规范化参数（可选带 pluginName 刷新）。
+ * 测试/诊断用；保证与 getFsrsInstance 同一校验路径。
+ */
+export function getEffectiveFsrsParams(
+  pluginName?: string
+): EffectiveFsrsParams {
+  if (pluginName) {
+    getFsrsInstance(pluginName)
+  }
+  return {
+    weightsStr: currentParams.weightsStr,
+    requestRetention: currentParams.requestRetention,
+    maximumInterval: currentParams.maximumInterval,
+    weights: [...currentParams.weights]
+  }
+}
+
+/**
+ * 返回最近一次 validate 后的 issues 视角：从 plugin settings 重新校验（不应用、不 warn）。
+ * 供测试断言「非法值不会成为生效参数」。
+ */
+export function peekValidatedFsrsConfig(
+  pluginName: string
+): ValidatedFsrsConfig {
+  return readAndValidateFsrsSettings(pluginName)
+}
+
+/**
+ * 清理 FSRS 运行时 warning 指纹与实例缓存，恢复为项目默认参数。
+ * 供「恢复 FSRS 默认设置」命令在 setSettings 成功后调用；
+ * 下一次预览/评分将确定使用默认（或新写入的设置）。
+ */
+export function clearFsrsRuntimeState(): void {
+  lastWarnedConfigFingerprint = null
+  const defaults = getDefaultValidatedFsrsConfig()
+  fsrs = createFsrsInstanceFromValidated(defaults)
+  currentParams = {
+    weightsStr: defaults.weightsStr,
+    requestRetention: defaults.requestRetention,
+    maximumInterval: defaults.maximumInterval,
+    weights: [...defaults.weights]
+  }
+  console.log("[FSRS] 运行时状态已重置为默认参数")
+}
+
+/**
+ * 仅清除 warning 去重指纹（测试用；生产命令走 clearFsrsRuntimeState）。
+ */
+export function clearFsrsWarningFingerprint(): void {
+  lastWarnedConfigFingerprint = null
 }
 
 const GRADE_TO_RATING: Record<Grade, FsrsGrade> = {
@@ -131,9 +335,9 @@ export const createInitialSrsState = (now: Date = DEFAULT_NOW()): SrsState => {
 
 /**
  * 重置卡片为新卡状态
- * 
+ *
  * 保留重置次数计数，其他状态重置为初始值
- * 
+ *
  * @param prevState - 当前 SRS 状态
  * @param now - 当前时间（默认为现在）
  * @returns 重置后的 SRS 状态
@@ -144,7 +348,7 @@ export const resetCardState = (
 ): SrsState => {
   const initialState = createInitialSrsState(now)
   const currentResets = prevState?.resets ?? 0
-  
+
   return {
     ...initialState,
     resets: currentResets + 1
@@ -178,9 +382,9 @@ export const nextReviewState = (
 
 /**
  * 预览各评分对应的间隔时间（毫秒）
- * 
+ *
  * 用于在评分按钮上显示预览时间，帮助用户了解不同评分的后果
- * 
+ *
  * @param prevState - 当前 SRS 状态
  * @param now - 当前时间（默认为现在）
  * @param pluginName - 插件名称（用于读取设置）
@@ -206,9 +410,9 @@ export const previewIntervals = (
 
 /**
  * 格式化间隔毫秒数为人类可读的字符串
- * 
+ *
  * 支持分钟、小时、天、月、年的显示（类似 Anki）
- * 
+ *
  * @param ms - 间隔毫秒数
  * @returns 格式化后的字符串，如 "1m", "10m", "1h", "5d", "2mo", "1y"
  */
@@ -233,7 +437,7 @@ export const formatInterval = (ms: number): string => {
 
 /**
  * 格式化间隔为中文格式
- * 
+ *
  * @param ms - 间隔毫秒数
  * @returns 格式化后的字符串，如 "10分钟后", "2天后", "3个月后"
  */
@@ -259,7 +463,7 @@ export const formatIntervalChinese = (ms: number): string => {
 
 /**
  * 格式化日期为简短格式（月-日）
- * 
+ *
  * @param date - 日期对象
  * @returns 格式化后的字符串，如 "12-25"
  */
@@ -271,7 +475,7 @@ export const formatDueDate = (date: Date): string => {
 
 /**
  * 预览各评分对应的具体到期日期
- * 
+ *
  * @param prevState - 当前 SRS 状态
  * @param now - 当前时间（默认为现在）
  * @param pluginName - 插件名称（用于读取设置）

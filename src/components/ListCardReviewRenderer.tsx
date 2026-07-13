@@ -63,6 +63,8 @@ type ListCardReviewRendererProps = {
   onJumpToCard?: (blockId: DbId, shiftKey?: boolean) => void
   inSidePanel?: boolean
   panelId?: string
+  /** F2-08：预览间隔读取同一插件 FSRS 设置 */
+  pluginName: string
   readOnly?: boolean
   readOnlyStatusText?: string
 }
@@ -85,6 +87,7 @@ export default function ListCardReviewRenderer({
   onJumpToCard,
   inSidePanel = false,
   panelId,
+  pluginName,
   readOnly = false,
   readOnlyStatusText,
 }: ListCardReviewRendererProps) {
@@ -154,8 +157,8 @@ export default function ListCardReviewRenderer({
           state: srsInfo.state,
         }
       : null
-    return previewIntervals(fullState)
-  }, [srsInfo])
+    return previewIntervals(fullState, undefined, pluginName)
+  }, [srsInfo, pluginName])
 
   const dueDates = useMemo(() => {
     const fullState: SrsState | null = srsInfo
@@ -170,8 +173,8 @@ export default function ListCardReviewRenderer({
           state: srsInfo.state,
         }
       : null
-    return previewDueDates(fullState)
-  }, [srsInfo])
+    return previewDueDates(fullState, undefined, pluginName)
+  }, [srsInfo, pluginName])
 
   if (!parentBlock) {
     return (

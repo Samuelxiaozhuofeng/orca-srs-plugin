@@ -1662,17 +1662,33 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const handleDifficultCardsReview = useCallback(async (cards: ReviewCard[]) => {
     try {
       const { createRepeatReviewSession } = await import("../srs/repeatReviewManager")
-      const { getOrCreateReviewSessionBlock } = await import("../srs/reviewSessionManager")
-      
-      // 创建重复复习会话
-      createRepeatReviewSession(cards, 0 as DbId, "children")
-      
-      // 获取复习会话块
-      const reviewBlockId = await getOrCreateReviewSessionBlock(pluginName)
-      
+      const { createReviewSessionBlockWithDescriptor } = await import(
+        "../srs/reviewSessionManager"
+      )
+      const { createFixedRepeatSessionDescriptor } = await import(
+        "../srs/reviewSessionDescriptor"
+      )
+
+      // F2-01：困难卡固定 sourceBlockId=0 + children，与进度 scope 约定一致
+      const descriptor = createFixedRepeatSessionDescriptor({
+        cards,
+        sourceBlockId: 0,
+        sourceType: "children"
+      })
+      createRepeatReviewSession(
+        cards,
+        0 as DbId,
+        "children",
+        descriptor.sessionId
+      )
+      const reviewBlockId = await createReviewSessionBlockWithDescriptor(
+        pluginName,
+        descriptor
+      )
+
       // 使用原生方法在新面板打开
       orca.nav.openInLastPanel("block", { blockId: reviewBlockId })
-      
+
       orca.notify("success", `已开始复习 ${cards.length} 张困难卡片`, { title: "SRS 复习" })
     } catch (error) {
       console.error(`[${pluginName}] 启动困难卡片复习失败:`, error)

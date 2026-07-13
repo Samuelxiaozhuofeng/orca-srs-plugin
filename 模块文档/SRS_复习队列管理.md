@@ -14,8 +14,10 @@
 
 ### 核心文件
 
-- [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)（队列管理函数）
-- [reviewSessionManager.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/reviewSessionManager.ts)（会话块管理）
+- [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)（队列管理函数、启动入口）
+- [reviewSessionDescriptor.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/reviewSessionDescriptor.ts)（**F2-01** 版本化会话描述）
+- [reviewSessionManager.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/reviewSessionManager.ts)（会话块创建与 descriptor 写入）
+- [repeatReviewManager.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/repeatReviewManager.ts)（fixed/repeat 按 sessionId 内存载荷）
 
 ### 核心函数
 
@@ -63,7 +65,7 @@ flowchart TD
 5. **测试开关**：`disableOptimizations: true` 仅用于 A/B 与行为等价回归，生产不得关闭。
 6. **失效**：评分/写入仍走既有 `invalidateBlockCache`；不引入依赖不完整删除/卡型/牌组事件的长期索引。
 7. **轮询策略（评估结论）**：
-   - 会话 60s 全库扫描：**保留**。`pendingDueCardsRef` 只覆盖 Again 后 5 分钟内重学卡；新到期卡/他处编辑无完整事件时，仅扫描短期候选无法证明可靠。调用成本已由本收集优化显著下降。fixed/repeat 仍禁止全库扫描。
+   - 会话 60s 全库扫描：**保留**。F2-04 `pendingDueStateRef`（`pendingDueRequeue`）只覆盖正式 Again/Hard 后 5 分钟内重学卡；新到期卡/他处编辑无完整事件时，仅扫描短期候选无法证明可靠。调用成本已由本收集优化显著下降。fixed/repeat 仍禁止全库扫描。
    - 首页 120s 兜底刷新：**保留**。已有 graded/postponed/suspended 事件即时刷新；编辑/删除事件不完整，低频全量仍作兜底。
 
 #### `buildReviewQueue(cards, limits?): ReviewCard[]`
@@ -139,22 +141,47 @@ flowchart LR
 }
 ```
 
-### 会话块管理
+### 会话描述与会话块管理（F2-01）
 
-#### `getOrCreateReviewSessionBlock(pluginName): Promise<DbId>`
+#### `ReviewSessionDescriptor`（`reviewSessionDescriptor.ts`）
 
-获取或创建复习会话块：
+版本化、可序列化的**会话启动描述**，至少包含：
 
-1. 检查内存中是否已有会话块
-2. 检查插件数据存储
-3. 创建新会话块
+| 字段 | 说明 |
+|------|------|
+| `version` | 当前为 `1`；未知版本严格失败 |
+| `sessionId` | 稳定会话身份（供后续 F2-09 断点恢复关联；本阶段不实现恢复 UI） |
+| `createdAt` | 创建时间 Unix 毫秒 |
+| `kind` | 互斥：`normal` \| `fixed` \| `custom` |
+| `updatesSrs` / `consumesDailyQuota` | 是否更新正式 SRS / 消耗全局每日额度 |
 
-#### `cleanupReviewSessionBlock(pluginName): Promise<void>`
+| kind | 子类型 | updatesSrs | consumesDailyQuota | 说明 |
+|------|--------|------------|--------------------|------|
+| `normal` | `scope.kind=all` | true | true | 全部牌组正式复习 |
+| `normal` | `scope.kind=deck` + `deckName` | true | true | 单牌组正式复习 |
+| `fixed` | `mode=repeat` + source + cardKeys | false | false | 重复复习 / 困难卡 / 查询块专项 |
+| `custom` | `definition.mode=scheduled\|practice` | 视模式 | 视模式 | **仅类型可扩展**；无启动 UI，Renderer 加载时明确报错 |
 
-清理复习会话块记录：
+校验规则：缺失、损坏、未知版本、未知 kind → 抛 `ReviewSessionDescriptorError`，**禁止**回退为 all scope。
 
-- 重置内存中的块 ID
-- 清除插件数据存储
+#### 与会话块的稳定关联
+
+- 每次「启动复习」调用 `createReviewSessionBlockWithDescriptor(pluginName, descriptor)` **新建** `srs.review-session` 块。
+- 描述写入块 `_repr.sessionDescriptor`（与 `type: "srs.review-session"` 一并设置）；属性 `srs.sessionId` 便于诊断。
+- **禁止**复用单一全局 `reviewSessionBlockId` 再覆盖描述（旧 `getOrCreateReviewSessionBlock` 已废弃并抛错）。
+- Renderer 只按当前 `blockId` 读描述；异步收集期间其它启动创建的是**另一块**，不会改写本块描述。
+
+#### 同一会话块重复打开的语义
+
+| 动作 | 语义 |
+|------|------|
+| 再次导航到**同一** `blockId` | **复用**块上已冻结的 descriptor（同 `sessionId`、同 scope）；不新建会话 |
+| 再次点击「开始复习 / 牌组复习 / 重复复习」 | **新建**块 + 新 `sessionId` + 新描述；不覆盖旧块 |
+| fixed/repeat 内存载荷丢失（如进程重启） | 明确错误，请用户重新从入口启动；不回退 all |
+
+#### `cleanupReviewSessionBlock(pluginName)`
+
+仅清理进程内 last-created 指针；不删除笔记中的会话块，避免打开中的面板丢描述。
 
 ### 复习队列策略
 
@@ -187,31 +214,33 @@ flowchart LR
 
 #### `startReviewSession(deckName?)`
 
-启动复习会话：
+启动普通复习会话（F2-01）：
 
-1. 获取/创建复习会话块
-2. 记录当前面板为主面板
-3. 写入临时全局 `reviewDeckFilter`（仅供会话**启动瞬间**读取）
-4. 在右侧创建复习面板
-5. 调整面板宽度比例
+1. `createNormalSessionDescriptor(deckName)` → 版本化描述（all 或 deck）
+2. `createReviewSessionBlockWithDescriptor` 新建会话块并写入 `_repr.sessionDescriptor`
+3. 记录当前面板为主面板
+4. 在右侧（或当前）面板打开**该** `blockId`
+5. Renderer 只读本块描述加载队列
 
 ```mermaid
 flowchart TD
-    A[开始] --> B[获取会话块]
-    B --> C[记录主面板 ID]
-    C --> D{右侧有面板?}
-    D -->|否| E[创建右侧面板]
-    D -->|是| F[复用右侧面板]
-    E --> G[调整面板宽度]
-    F --> G
-    G --> H[切换焦点]
+    A[开始] --> B[创建 ReviewSessionDescriptor]
+    B --> C[新建会话块并写入 _repr]
+    C --> D[记录主面板 ID]
+    D --> E{右侧有面板?}
+    E -->|否| F[创建右侧面板指向新 blockId]
+    E -->|是| G[goTo 新 blockId]
+    F --> H[切换焦点]
+    G --> H
 ```
 
-### 会话范围冻结（FC-02）
+`getReviewDeckFilter()` 已废弃：可能被后续启动覆盖，**不得**作为 Renderer 加载来源。
 
-核心文件：`src/srs/reviewSessionScope.ts`
+### 会话范围冻结（FC-02 + F2-01）
 
-会话启动时把范围固化为显式不可变 `ReviewSessionScope`，经 Props 传给 `SrsReviewSessionDemo`。**之后全局 `getReviewDeckFilter()` 如何变化都不影响当前会话。** Demo **不得**再读取全局 deck filter。
+核心文件：`src/srs/reviewSessionScope.ts`、`src/srs/reviewSessionDescriptor.ts`
+
+启动入口把范围写入**块上**的 `ReviewSessionDescriptor`；Renderer 解析后得到不可变 `ReviewSessionScope`，经 Props 传给 `SrsReviewSessionDemo`。Demo **不得**再读取全局 deck filter 或模块级「当前会话」。
 
 | kind | 含义 | 动态检查 |
 |------|------|----------|
@@ -221,10 +250,12 @@ flowchart TD
 
 规则摘要：
 
-1. 普通会话：`loadReviewQueue` 只读一次 `getReviewDeckFilter()` → `createScopeFromDeckFilter` → 用同一 scope 筛选初始 cards。
-2. 重复复习：对展开后的 `expandedCards` 建 `fixed` scope；轮次重置不改变固定集合语义。
-3. 定时 60s 刷新、手动「检查新到期卡片」、Again/Hard pending due 重入队，全部走同一 scope helper（`selectNewDueCardsForSession` / `selectPendingDueCardsForRequeue` / `isCardInSessionScope`）。
-4. card key 统一 `cardKeyFromReviewCard`；Cloze/Direction 按精确变体，不因同 `blockId` 串卡；List 用 `fixedRootIds` 允许同根下一条。
+1. 普通会话：`loadReviewQueue` 从 `blockId` 读 descriptor → `scopeFromReviewSessionDescriptor` / `prepareNormalSessionQueueInput` 筛选初始 cards。快速连续启动 Deck A 再 Deck B：各自新块、各自描述，异步收集互不影响。
+2. 重复复习：`createFixedRepeatSessionDescriptor` + `createRepeatReviewSession(..., sessionId)`（创建 ≠ retain）；Renderer 用 `getRepeatReviewSessionById` + **retain**；effect cleanup **release**。引用归零才删内存载荷。多面板同 sessionId 互不影响。
+3. 异步加载：`asyncLoadGeneration` generation gate，latest-wins；旧 in-flight 不得提交 state。
+4. 定时 60s 刷新、手动「检查新到期卡片」、Again/Hard pending due 重入队，全部走同一 scope helper（`selectNewDueCardsForSession` / `selectPendingDueCardsForRequeue` / `isCardInSessionScope`）。
+5. **F2-04 短期重入**：`pendingDueRequeue` 幂等 upsert + timer token；入队去重**只查未处理尾部**（历史副本不挡）；到期追加队尾；已接纳身份不二次消耗额度。详见 `模块文档/SRS 动态复习队列.md`。
+6. card key 统一 `cardKeyFromReviewCard`；Cloze/Direction 按精确变体，不因同 `blockId` 串卡；List 用 `fixedRootIds` 允许同根下一条。
 
 ### 每日正式根卡额度（FC-01）
 

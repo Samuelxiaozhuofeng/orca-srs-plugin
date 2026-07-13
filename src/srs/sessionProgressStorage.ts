@@ -225,6 +225,28 @@ export function autoSaveSessionProgress(
   return safeStorageSetItem(storage, key, serialized)
 }
 
+/**
+ * F2-04：同一会话在「过早 finish 后」因短期重学重新进入进行中时，
+ * 重新登记 key 并写回当前进度快照。**不清零** progress 内容。
+ *
+ * 调用方须同步把本地 autosave gate（如 storageActiveRef）设回 true。
+ * 这不是 F2-09 跨重启断点恢复；仅恢复当前挂载会话的 sessionStorage 写入。
+ */
+export function resumeSessionProgressAutosave(
+  storage: StorageLike | null,
+  key: string,
+  serializedProgress: string
+): boolean {
+  if (typeof key !== "string" || key.length === 0) {
+    return false
+  }
+  registerSessionProgressKey(key)
+  if (!storage) {
+    return true
+  }
+  return autoSaveSessionProgress(storage, key, serializedProgress)
+}
+
 // ============================================
 // Strict deserialize / restore（显式 API，本阶段不自动恢复）
 // ============================================

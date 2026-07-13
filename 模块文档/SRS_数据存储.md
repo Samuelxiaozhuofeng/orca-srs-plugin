@@ -295,9 +295,12 @@ if (state.due <= now) {
 
 | 状态 | 含义 |
 | ---- | ---- |
-| `exists` | `orca.state.blocks` 命中，或 `orca.invokeBackend("get-block", id)` 返回非空块 |
+| `exists` | `orca.state.blocks` 命中，或 `get-block` 在超时内返回可验证块（object + 有限 number id === 请求 id） |
 | `missing` | 后端明确返回 `null` / `undefined` |
-| `unknown` | 后端抛错；**不得当 missing 删除** |
+| `unknown` | 后端抛错、**timeout**、或非 null 但身份不可判定；**不得当 missing 删除** |
+
+通用实现：`src/srs/blockExistence.ts`（`resolveBlockExistence` / `BlockExistenceCache` / `DEFAULT_GET_BLOCK_TIMEOUT_MS` / 最小身份校验）。
+超时后晚到的 backend 结果不得写 state 或改写已返回结论。`deletedCardCleanup.ts` 与复习会话（F2-06）共用三态语义；cleanup 在单次运行内对 blockId 缓存结果；复习当前卡路径可对 unknown 真实重试。
 
 同一清理运行内对 blockId 缓存读取结果。直接 `setData` / `removeData` 修改分片后必须 `clearLogCache()`。
 
@@ -335,6 +338,7 @@ if (state.due <= now) {
 - `src/srs/reviewCardGrading.ts`：评分时写入结构化身份
 - `src/srs/difficultCardsManager.ts`：精确 `cardKey` 匹配
 - `src/srs/childCardCollector.ts`：`getCardKey` / `getParentCardKey` 复用统一身份
+- `src/srs/blockExistence.ts`：块 exists/missing/unknown 通用解析
 - `src/srs/deletedCardCleanup.ts`：启动时按三态 + 结构化身份清理日志
 
 ## 选择题答题统计（FC-08）

@@ -89,6 +89,7 @@ flowchart TD
 | `${pluginName}.createDirectionBackward` | 编辑器命令 | 创建反向方向卡 ←               | commands.ts |
 | `${pluginName}.makeAICard`              | 编辑器命令 | AI 生成记忆卡片                | commands.ts |
 | `${pluginName}.testAIConnection`        | 普通命令   | 测试 AI 连接                   | commands.ts |
+| `${pluginName}.resetFsrsSettings`       | 普通命令   | **F2-08** 恢复 FSRS 默认设置（权重 / 保留率 / 最大间隔） | commands.ts |
 
 ### 顶部栏按钮（Headbar）
 
@@ -188,6 +189,17 @@ export async function load(_name: string) {
 - ✅ 设置国际化在所有注册之前
 - ✅ 将 `openFlashcardHome` 函数传递给 `registerCommands`
 - ✅ 注册顺序无强制要求（Orca API 无依赖）
+
+### F2-08：恢复 FSRS 默认设置命令
+
+- **命令 ID**：`${pluginName}.resetFsrsSettings`
+- **Label**：`SRS: 恢复 FSRS 默认设置`
+- **行为**：
+  1. `orca.plugins.setSettings("app", pluginName, getDefaultFsrsSettingsPatch())` 写回三项默认（`review.fsrsWeights` / `review.fsrsRequestRetention` / `review.fsrsMaximumInterval`）
+  2. 成功后 `clearFsrsRuntimeState()` 清理算法 warning 指纹与实例 cache
+  3. `orca.notify("success" | "error", ...)`：失败时 `console.error`，**不假装成功**
+- **注销**：`unregisterCommands` 调用 `unregisterCommand(getResetFsrsSettingsCommandId(pluginName))`
+- 校验规则与运行时统一路径见 `模块文档/SRS_记忆算法.md`（F2-08 节）
 
 ## unload 函数
 

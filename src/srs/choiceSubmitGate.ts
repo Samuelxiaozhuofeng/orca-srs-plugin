@@ -6,6 +6,12 @@
  * - setTimeout 闭包读到过期 readOnly，进入只读或切卡后仍 onAnswer
  *
  * 纯逻辑、无 React 依赖；组件用 ref 持有可变 state。
+ *
+ * 职责边界（F2-05）：
+ * - **本模块**：仅 Choice 答案提交（选项选择 / 单选延迟 / 多选 Enter）
+ *   与 `srs.choice.statistics`，不写 FSRS、不推进会话 index。
+ * - **`reviewSessionActionGate`**：会话层 grade / postpone / suspend /
+ *   250ms 切卡等持久化与推进动作。二者不得互相替代。
  */
 
 export type ChoiceSubmitGateState = {

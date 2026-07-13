@@ -8,13 +8,13 @@
 
 1. **[SRS\_记忆算法.md](SRS_记忆算法.md)**
 
-   - FSRS 算法实现和状态管理
-   - 关键文件：`src/srs/algorithm.ts`、`src/srs/types.ts`
+   - FSRS 算法实现和状态管理；**F2-08** 设置严格校验与统一运行时参数
+   - 关联文件：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/types.ts`
 
 2. **[SRS\_数据存储.md](SRS_数据存储.md)**
 
-   - 卡片数据的持久化和读取
-   - 关键文件：`src/srs/storage.ts`
+   - 卡片数据的持久化和读取；块 exists/missing/unknown 三态（`blockExistence.ts`）
+   - 关键文件：`src/srs/storage.ts`、`src/srs/blockExistence.ts`、`src/srs/deletedCardCleanup.ts`
 
 3. **[SRS\_卡片创建与管理.md](SRS_卡片创建与管理.md)**
 
@@ -29,8 +29,8 @@
 
 5. **[SRS\_卡片复习窗口.md](SRS_卡片复习窗口.md)**
 
-   - 复习会话界面和交互
-   - 关键文件：`src/components/SrsReviewSession*.tsx`、`SrsCardDemo.tsx`
+   - 复习会话界面和交互；**F2-06** 当前卡块 missing/unknown 三态与可重试错误；**F2-08** 预览/评分同 pluginName 校验路径
+   - 关键文件：`src/components/SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`src/srs/reviewSessionBlockLoad.ts`
 
 6. **[SRS\_卡片浏览器.md](SRS_卡片浏览器.md)**
 
@@ -49,8 +49,8 @@
    - 关键文件：`src/main.ts`（2025-12-09 已精简，核心逻辑拆分到子模块）
 
 9. **[SRS\_复习队列管理.md](SRS_复习队列管理.md)**
-   - 复习队列的构建和管理
-   - 关键文件：`src/srs/cardCollector.ts`、`src/srs/reviewSessionManager.ts`
+   - 复习队列的构建和管理；**F2-01** 版本化 `ReviewSessionDescriptor` 与会话块启动交接
+   - 关联文件：`src/srs/cardCollector.ts`、`src/srs/reviewSessionDescriptor.ts`、`src/srs/reviewSessionManager.ts`、`src/srs/repeatReviewManager.ts`
 
 10. **[SRS\_事件通信.md](SRS_事件通信.md)** ⭐ 新增
    - 基于 Orca broadcasts 的跨组件事件通知

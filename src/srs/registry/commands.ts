@@ -22,8 +22,32 @@ import {
   getIncrementalReadingSettings,
   INCREMENTAL_READING_SETTINGS_KEYS
 } from "../settings/incrementalReadingSettingsSchema"
+import { getDefaultFsrsSettingsPatch } from "../settings/reviewSettingsSchema"
+import { clearFsrsRuntimeState } from "../algorithm"
 import { isCardTag } from "../tagUtils"
 import { clearRecentDeckPreference } from "../recentDeckManager"
+
+/** F2-08：恢复 FSRS 默认设置的命令 ID 后缀 */
+export const RESET_FSRS_SETTINGS_COMMAND = "resetFsrsSettings" as const
+
+export function getResetFsrsSettingsCommandId(pluginName: string): string {
+  return `${pluginName}.${RESET_FSRS_SETTINGS_COMMAND}`
+}
+
+/**
+ * F2-08：将 FSRS 三项设置写回默认，并清理运行时 cache/warning。
+ * 成功/失败均由调用方负责用户可见通知；本函数失败会抛出（不假装成功）。
+ */
+export async function resetFsrsSettingsToDefaults(
+  pluginName: string
+): Promise<void> {
+  await orca.plugins.setSettings(
+    "app",
+    pluginName,
+    getDefaultFsrsSettingsPatch()
+  )
+  clearFsrsRuntimeState()
+}
 
 export function registerCommands(
   pluginName: string
@@ -430,6 +454,27 @@ export function registerCommands(
     "SRS: 清除最近默认牌组"
   )
 
+  // F2-08：恢复 FSRS 默认权重 / retention / maximum interval
+  orca.commands.registerCommand(
+    getResetFsrsSettingsCommandId(pluginName),
+    async () => {
+      try {
+        await resetFsrsSettingsToDefaults(_pluginName)
+        orca.notify("success", "已恢复 FSRS 默认设置（权重、目标保留率、最大间隔）", {
+          title: "SRS FSRS 设置"
+        })
+      } catch (error) {
+        console.error(`[${_pluginName}] 恢复 FSRS 默认设置失败:`, error)
+        orca.notify(
+          "error",
+          `恢复 FSRS 默认设置失败: ${error instanceof Error ? error.message : String(error)}`,
+          { title: "SRS FSRS 设置" }
+        )
+      }
+    },
+    "SRS: 恢复 FSRS 默认设置"
+  )
+
   // 渐进阅读会话动作：可选手动绑定到非 Enter 键；广播必须带 panelId，默认不全局 assign Enter
   orca.commands.registerCommand(
     `${pluginName}.irSessionNext`,
@@ -668,6 +713,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.openIRManager`)
   orca.commands.unregisterCommand(`${pluginName}.toggleAutoExtractMark`)
   orca.commands.unregisterCommand(`${pluginName}.clearRecentDeckPreference`)
+  orca.commands.unregisterCommand(getResetFsrsSettingsCommandId(pluginName))
   orca.commands.unregisterCommand(`${pluginName}.importEpub`)
   orca.commands.unregisterCommand(`${pluginName}.skipSequentialChapter`)
   orca.commands.unregisterCommand(`${pluginName}.removeBookFromIR`)

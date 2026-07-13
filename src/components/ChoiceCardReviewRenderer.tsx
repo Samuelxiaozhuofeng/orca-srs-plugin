@@ -81,6 +81,8 @@ interface ChoiceCardReviewRendererProps {
   onJumpToCard?: (blockId: DbId, shiftKey?: boolean) => void
   inSidePanel?: boolean
   panelId?: string
+  /** F2-08：预览间隔读取同一插件 FSRS 设置 */
+  pluginName: string
   suggestedGrade?: Grade | null              // 自动评分建议
   /** FC-06 只读回看：展示正确答案，禁止选择/提交/评分 */
   readOnly?: boolean
@@ -104,6 +106,7 @@ export default function ChoiceCardReviewRenderer({
   onJumpToCard,
   inSidePanel = false,
   panelId,
+  pluginName,
   suggestedGrade,
   readOnly = false,
   readOnlyStatusText,
@@ -310,8 +313,8 @@ export default function ChoiceCardReviewRenderer({
           state: srsInfo.state,
         }
       : null
-    return previewDueDates(fullState)
-  }, [srsInfo])
+    return previewDueDates(fullState, undefined, pluginName)
+  }, [srsInfo, pluginName])
 
   // 快捷键支持（包括选择题特有的数字键和Enter键）
   // Requirements: 5.1, 5.2, 5.3, 5.4

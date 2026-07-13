@@ -135,6 +135,12 @@ export async function collectChildCards(
   // 遍历反链
   for (const backRef of backRefs) {
     const refBlockId = backRef.from
+
+    // Orca 块可能存在自身反链（from === to === parentBlockId）。
+    // 若将其当作子卡，后续展开会误报循环引用。
+    if (refBlockId === parentBlockId) {
+      continue
+    }
     
     // 跳过已处理的块
     if (processedIds.has(refBlockId)) {

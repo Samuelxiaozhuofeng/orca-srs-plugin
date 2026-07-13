@@ -15,7 +15,8 @@
 ### 核心文件
 
 - [SrsReviewSessionDemo.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsReviewSessionDemo.tsx)（会话主组件）
-- [SrsReviewSessionRenderer.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsReviewSessionRenderer.tsx)（块渲染器包装）
+- [SrsReviewSessionRenderer.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsReviewSessionRenderer.tsx)（块渲染器包装；**F2-01** 按 block 描述加载）
+- [reviewSessionDescriptor.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/reviewSessionDescriptor.ts)（版本化会话描述）
 - [SrsCardDemo.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsCardDemo.tsx)（单卡片组件）
 
 ### 组件层次
@@ -50,10 +51,90 @@ flowchart TD
 - `queue`：复习队列
 - `currentIndex`：当前卡片索引
 - `reviewedCount`：已复习数量
-- `isGrading`：正在评分标志
+- `isGrading`：正在评分标志（**仅 UI/快捷键禁用展示**；并发正确性见 F2-05 action gate）
 - `lastLog`：最近评分日志（若有 `gradeResult.warning` 会一并显示，并 `orca.notify`）
 - `isMaximized`：是否最大化显示
 - `sessionHistory`：会话历史（FC-06，见下）
+
+#### 会话动作同步门闩（F2-05）
+
+`setIsGrading(true)` 是异步 React state，**不能**挡住同 tick 双击、键盘自动重复，或 grade 与 postpone/suspend 交叉触发。并发正确性由同步 ref 门闩保证。
+
+| 门闩 | 模块 | 职责 |
+| ---- | ---- | ---- |
+| **会话动作 gate** | `src/srs/reviewSessionActionGate.ts` | 正式 `grade`、`repeat_grade`、`auxiliary_grade`、`postpone`、`suspend`，以及成功后 250ms 切卡 timer |
+| **选择题提交 gate** | `src/srs/choiceSubmitGate.ts` | 仅 Choice 答案提交（单选 150ms / 多选 Enter）与选项统计；**不**写 FSRS、**不**推进会话 index |
+
+二者**不得互相替代**。`choiceSubmitGate` 不能充当评分/推迟/暂停锁。
+
+**语义**：
+
+1. `acquire(cardKey, actionKind)` **同步**获取；一次只允许一个会话持久化/推进动作；成功返回单调唯一 `SessionActionToken`。
+2. 第二次同 tick acquire 必须失败（同动作双击、键盘重复、grade↔postpone/suspend 交叉）。
+3. 失败路径 `release(token)`，用户可重试；成功路径在**卡片身份真正切换前**保持锁定（250ms 动画窗口内不得二次持久化）。
+4. 切卡 timer 仅当 `decideAdvanceAfterDelay(gate, token) === "advance"` 才 `setCurrentIndex`；随后 `bindCard(新 key)` 作废旧 token。
+5. 返回上一张、跳过、只读继续、队列自动剔除、组件卸载：`invalidate` + 清理 timer；旧 Promise 完成时 `canCommitSessionAction` 为 false → **安静停止**，不得写 `lastLog` / history / reviewedCount / progress / queue / index 到新卡。
+6. List 在正式评分成功后的后续处理若部分失败：保留「评分已保存但后续处理失败」语义（`orca.notify`），**不**通过 gate 吞错或回滚已成功写入。
+7. repeat / List 辅助预览虽不写正式 SRS，仍走同一 gate，只能推进一次。
+
+**Demo 接入点**：`SrsReviewSessionDemo` 的 `handleGrade` / `handlePostpone` / `handleSuspend` / `scheduleAdvance`；导航类 `handleSkip` / `handleContinue` / `handlePrevious` 与自动剔除路径作废 token。
+
+#### 当前卡块三态加载（F2-06）
+
+复习会话进入某张卡时，必须确认其渲染所需块可用。**不得**把后端异常与「块已删除」混成同一种 `false` 后自动跳卡。
+
+| 状态 | 判定 | 行为 |
+| ---- | ---- | ---- |
+| **exists** | `orca.state.blocks` 命中，或 `get-block` 在超时内返回**可验证**块（非数组 object + 有限 number `id === 请求 id`） | 必要时写入 `orca.state.blocks`，正常继续 |
+| **missing** | 后端**明确**返回 `null` / `undefined` | 安全剔除当前卡：写入 `autoDroppedCardKeysRef`、从队列移除、F2-05 `invalidate` |
+| **unknown** | `get-block` **throw**、**timeout**（默认 `DEFAULT_GET_BLOCK_TIMEOUT_MS=10000`，可注入更短测试值）、或非 null 但身份不可判定（false/string/array/`{}`/wrong id 等） | **保留**当前卡与队列；**不**写 auto-dropped；展示可重试错误 |
+
+**List 规则**：
+
+- 同时验证父块 `card.id` 与条目块 `card.listItemId`。
+- 必须检查完所有 required 块后再决策；不得在尚有 unknown / 未检查项时因 partial missing 提前剔除。
+- 任一 **unknown** → 整卡 `retain_unknown`（不剔除）。
+- 无 unknown 且任一 **missing** → `drop_missing`。
+- 全部 **exists** → `ready`。
+
+**重试**：
+
+- unknown 时 UI 显示错误条（含 blockId / cardKey 上下文）与「重试」按钮。
+- 重试递增 `blockLoadRetryNonce`，强制 effect 重新请求；不依赖「卡片 props 变化」才能再次拉块。
+- 旧异步请求：`cancelled` 或 `currentCardKey` 已切换时，不得写错误、删队列或覆盖新卡状态。
+
+**下一张预缓存**：
+
+- 仅优化：成功可将块写入 `orca.state.blocks`。
+- 明确 null 或 throw → 只打可诊断日志；**不**改当前卡、队列、auto-dropped 或主流程。
+- 现有设计预缓存 `nextCard.id`（父块）；不因 F2-06 扩张为强制双块预取。
+
+**get-block 超时与身份校验**（`blockExistence.ts`）：
+
+- 超时归 **unknown**（不得当 missing）；错误信息含 `blockId` 与超时毫秒；UI 走既有重试入口。
+- 超时后 backend 晚到：不写 `orca.state.blocks`、不改已缓存结论。
+- 非 null 返回值仅做最小身份校验（非数组 object + 有限 number id 且等于请求 id）；失败 → unknown 且不写 state。不做完整 Block schema。
+
+**纯模块**：
+
+- `src/srs/blockExistence.ts`：通用三态 `resolveBlockExistence` / `BlockExistenceCache` / timeout / 身份校验（cleanup 复用，复习 UI 不耦合 cleanup 业务）。
+- `src/srs/reviewSessionBlockLoad.ts`：`decideRequiredBlocksOutcome` / `shouldApplyBlockLoadResult` / `decidePrefetchBlockOutcome`（全检后：任一 unknown 优先保留；无 unknown 且任一 missing 才剔除）。
+
+#### Again/Hard 短期重新入队（F2-04）
+
+正式评分成功且 action token 仍有效后，若 `grade` 为 again/hard 且 FSRS `due` 在 5 分钟内，调用 `trackPendingDueCard`（纯模块 `src/srs/pendingDueRequeue.ts`）。
+
+| 要点 | 行为 |
+| ---- | ---- |
+| 与 action gate | 旧 token 不得 track/覆盖 pending；须 `canCommitSessionAction` 通过后才 upsert |
+| 入队位置 | 到期后**追加队尾**；去重只看未处理尾部，历史副本不挡重入 |
+| Timer | 唯一 `scheduledToken`；更新 due 必重排；完成按钮 / 关闭 / 卸载 / 新轮次 deactivate（**到达队尾不清**） |
+| 完成摘要 | 完成态下实际追加后 `reopenSessionFinalizeIfNeeded` + 清 `sessionStats`；progress 累计；notify 以真实 appended 数为准 |
+| 额度 | 已接纳 `cardKey` 重入不二次消耗；拒绝时 notify 并保留 pending |
+| 非正式路径 | `repeat_grade` / `auxiliary_grade` early-return，不创建正式 pending |
+| 持久化 | F2-04 pending 仅内存。过早 `finishSession` 后重入会 `resumeSessionPersistence` 恢复**当前挂载** sessionStorage autosave，**不是** F2-09 跨重启断点 |
+
+详见 `模块文档/SRS 动态复习队列.md`「短期重学 pending」一节。
 
 #### 返回上一张与只读回看（FC-06）
 
@@ -76,15 +157,51 @@ flowchart TD
 - UI：只读时隐藏评分/推迟/暂停；跳过按钮切换为「继续」语义，**不得**把继续记成 skip 覆盖原 outcome。
 - 快捷键：`useReviewShortcuts({ readOnly })` + `reviewShortcutRules.resolveReviewShortcut`；数字键/Enter/B/S/空格（评分）不得绕过。
 - Choice 只读：揭晓正确答案，单选 150ms timer、重复点击与快捷键不能提交/评分；只读时 **不** 传 / 不调用 `onAnswer`，不写统计。
-- Choice 正式答题统计（FC-08）：`SrsCardDemo` 在非只读时通过 `createChoiceAnswerHandler` 向 `ChoiceCardReviewRenderer` 传 `onAnswer`；提交时写入 `srs.choice.statistics`（见 `模块文档/SRS_数据存储.md`）。防重复依赖 `choiceSubmitGate`，保存失败 `orca.notify("warn")` 且不阻断 FSRS 评分。
+- Choice 正式答题统计（FC-08）：`SrsCardDemo` 在非只读时通过 `createChoiceAnswerHandler` 向 `ChoiceCardReviewRenderer` 传 `onAnswer`；提交时写入 `srs.choice.statistics`（见 `模块文档/SRS_数据存储.md`）。答案提交防重复依赖 `choiceSubmitGate`；**正式 FSRS 评分防重复依赖 `reviewSessionActionGate`（F2-05）**，二者分工见上表。保存失败 `orca.notify("warn")` 且不阻断 FSRS 评分。
+
+#### FSRS 预览与正式评分同参（F2-08）
+
+- `SrsCardDemo` 的 basic 预览：`previewIntervals` / `previewDueDates` 传入 `pluginName`，`useMemo` 依赖含 `pluginName`。
+- Cloze / Direction：已有 `pluginName` prop，预览调用同样传入。
+- List / Choice：新增 `pluginName` prop，由 `SrsCardDemo` 传入；预览调用传入。
+- `IRMixedReviewPane` 已向 `SrsCardDemo` 传入正确 `pluginName`（不得依赖硬编码 `orca-srs` 假设）。
+- 正式评分路径（`nextReviewState(..., pluginName)` / `reviewCardGrading`）与预览共用 `getFsrsInstance(pluginName)` → 同一 validated 配置。
+- 非法设置：用户可见 `orca.notify("warn")`（按配置指纹去重）；算法侧回退安全默认。恢复默认见命令 `SRS: 恢复 FSRS 默认设置`。
+
+#### 会话描述加载（F2-01）
+
+`SrsReviewSessionRenderer` **只**依赖当前 `blockId` 上的 `ReviewSessionDescriptor`：
+
+1. `resolveReviewSessionBlock(blockId)` → `readReviewSessionDescriptorFromBlock`。
+2. 描述缺失、损坏、未知版本、未知 kind → **错误 UI**，不回退 all、不用 `getReviewDeckFilter()`。
+3. `kind=custom`：类型可解析，但显示「自定义学习尚未实现」，无成功加载路径。`scheduled` 固定 `updatesSrs/consumesDailyQuota=true`，`practice` 固定两者 `false`；不一致 parse 失败。
+4. `kind=normal`：由 descriptor 得到 deckFilter/scope，再 `collectReviewCards` + 额度 + 建队。
+5. `kind=fixed` + `mode=repeat`：`getRepeatReviewSessionById(sessionId)` 后 **retain**；无载荷或 source 不一致 → 明确错误。
+
+##### 异步 load latest-wins（generation gate）
+
+- 纯模块：`src/srs/asyncLoadGeneration.ts`（`createLoadGenerationGate`）。
+- 每次 `blockId` effect 启动或「重试」调用 `begin()` 得到单调 generation；effect cleanup 调用 `invalidate()`。
+- 任意 `await` 之后仅当 `isCurrent(generation)` 才可 `setState` / 写 `boundSessionId` / `setIsLoading(false)` / `setError`。
+- **场景**：Deck A 先 load、同一 panel 导航到 Deck B：B 后 start；无论 A/B 谁先完成，最终只允许 B commit。旧 A 失败也不得覆盖 B 成功态。
+
+##### 同 sessionId 多 Renderer 引用（retain/release）
+
+- `createRepeatReviewSession` **不**增加引用计数。
+- 每个成功绑定 fixed/repeat 的 Renderer **retain 一次**；effect cleanup（换 block / 卸载）**release 一次**。
+- 关面板 **不**在 `beforeFlush` 再 release，避免与 cleanup 双重 release。
+- 同一会话块在两面板打开：retain=2；关一个 panel → release 后仍 1，另一面板载荷仍在；两面板都关后才删 payload。
+- **normal 会话不参与** retain/release。
+
+**同一块重复打开**：再次挂载同一 `blockId` 复用块上描述（同 sessionId）并各 retain。**新启动**总是新建块。详见 `模块文档/SRS_复习队列管理.md`。
 
 #### 普通会话每日额度（FC-01，跨会话）
 
-`SrsReviewSessionRenderer.loadReviewQueue` 在**非** fixed/重复模式下：
+`SrsReviewSessionRenderer.loadReviewQueue` 在**非** fixed/重复模式下（descriptor.kind=normal）：
 
 1. `resolveDailyQueueLimits` 校验设置（无效则 warn + notify，告警展示 **configured** 回退默认 30/200）。
 2. `getLocalTodayBounds()` + `getReviewLogs(plugin, todayStart, now)` 读取本地时区「今天 00:00 → 当前」日志（内部先 flush）。
-3. `remainingDailyLimitsFromLogs(configured, logs, { deckName })`：按 `cardKey` 去重统计今日 used；deck 会话只计同名 `deckName`，all 计全部；`remaining = max(0, configured − used)`。
+3. `remainingDailyLimitsFromLogs(configured, logs, { deckName })`：按 `cardKey` 去重统计今日 used；deck 会话只计同名 `deckName`，all 计全部；`remaining = max(0, configured − used)`。（F2-02 将改为全局额度统计，不按 deck 过滤 used。）
 4. **remaining** 同时 `setSessionDailyLimits` 并传入 `buildSessionReviewQueue`；Demo 会话 budget 与动态追加共用该冻结值，**不得**再读全局设置或绕过剩余额度。
 5. 读取/flush 日志失败 → 加载失败（错误 UI + notify），**禁止** used=0 兜底。
 6. fixed / 重复 / 专项：`sessionDailyLimits = null`，不读今日日志做限额。
@@ -110,7 +227,7 @@ flowchart TD
 | 其他专项/重复 | `fixed/<sourceType>/<sourceBlockId>` | `…:v2:fixed/<enc type>/<enc id>` |
 
 - 纯模块：`src/srs/sessionProgressStorage.ts`（key 编码、StorageLike 安全读写、严格 parse、进程内 key registry）。
-- Renderer 在 `loadReviewQueue` 时冻结 `progressDescriptor` / `progressStorageKey` 并传入 Demo；**Demo 不得**重读 `getReviewDeckFilter` 或 `getRepeatReviewSession` 自行拼 key。
+- Renderer 在 `loadReviewQueue` 时根据**本块 descriptor** 冻结 `progressDescriptor` / `progressStorageKey` 并传入 Demo；**Demo 不得**重读 `getReviewDeckFilter` 或无 id 的 `getRepeatReviewSession` 自行拼 key。
 - 重复复习的「再复习一轮」属于**同一**专项 scope（key 不变），但 `resetSession` 仍把本轮统计归零。
 
 ##### Hook 行为（`useSessionProgressTracker`）
@@ -430,7 +547,7 @@ stateDiagram-v2
 
 - 快捷键仅在复习界面激活时生效
 - 在输入框、文本区域中不会触发快捷键
-- 评分中（isGrading=true）快捷键被禁用，防止重复触发
+- 评分中（isGrading=true）快捷键被禁用（UI 层）；**真正防重复持久化**依赖 `reviewSessionActionGate` 同步 acquire（F2-05）
 - **只读回看（readOnly=true）**：禁用评分、推迟、暂停、选择题选择/提交；仍可空格显示答案以便回看
 
 ### 卡片管理功能（2025-12-11 新增）

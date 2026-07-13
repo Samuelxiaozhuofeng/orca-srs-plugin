@@ -26,6 +26,7 @@ import {
 import {
   createSessionFinalizeController,
   ensureSessionFinalized,
+  reopenSessionFinalizeIfNeeded,
   resetSessionFinalizeController
 } from "../srs/sessionProgressFinalize"
 import { useSessionProgressTracker } from "../hooks/useSessionProgressTracker"
@@ -35,7 +36,6 @@ import {
   FIXED_SCOPE_NO_DYNAMIC_SCAN_MESSAGE,
   isCardInSessionScope,
   selectNewDueCardsForSession,
-  selectPendingDueCardsForRequeue,
   type ReviewSessionScope
 } from "../srs/reviewSessionScope"
 import {
@@ -57,6 +57,42 @@ import {
   type ReviewHistoryActionKind,
   type ReviewSessionHistoryState
 } from "../srs/reviewSessionHistory"
+/**
+ * F2-05 会话动作 gate：grade / postpone / suspend / 切卡 timer。
+ * 与 choiceSubmitGate（仅选择题答案提交）分工，不得互相替代。
+ * isGrading 仅 UI/快捷键展示，并发正确性以本 gate 为准。
+ */
+import {
+  canCommitSessionAction,
+  createReviewSessionActionGate,
+  decideAdvanceAfterDelay,
+  type SessionActionKind,
+  type SessionActionToken
+} from "../srs/reviewSessionActionGate"
+import {
+  activateEmptyPendingDueState,
+  createEmptyPendingDueState,
+  deactivateAndClearPending,
+  isPendingWakeTokenCurrent,
+  planNextPendingWake,
+  processPendingWake,
+  shouldTrackFormalShortRelearn,
+  upsertPendingDueCard,
+  type PendingDueState,
+  type ProcessPendingWakeResult
+} from "../srs/pendingDueRequeue"
+import {
+  resolveBlockExistence,
+  writeBlockToOrcaState
+} from "../srs/blockExistence"
+import {
+  decidePrefetchBlockOutcome,
+  decidePrefetchWhenStateHit,
+  decideRequiredBlocksOutcome,
+  requiredBlocksForCard,
+  shouldApplyBlockLoadResult,
+  type RequiredBlocksOutcome
+} from "../srs/reviewSessionBlockLoad"
 import SrsCardDemo from "./SrsCardDemo"
 import GradeDistributionBar from "./GradeDistributionBar"
 
@@ -166,6 +202,13 @@ export default function SrsReviewSession({
    * 保证从未完成→完成只调用 finishProgressSession 一次；render 禁止 finish。
    */
   const sessionFinalizeRef = useRef(createSessionFinalizeController<SessionStatsSummary>())
+  /**
+   * F2-05：会话动作同步门闩（ref 持有，同步 acquire，不依赖 isGrading 重渲染）。
+   * choiceSubmitGate 只管 Choice 答案提交，见 reviewSessionActionGate 模块头注释。
+   */
+  const actionGateRef = useRef(createReviewSessionActionGate())
+  /** 成功动作后 250ms 切卡 timer；导航/卸载必须清理 */
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 使用会话进度追踪 Hook（FC-09：scoped key，不自动恢复；FC-10：有效时长由评分同源传入）
   const {
@@ -175,6 +218,7 @@ export default function SrsReviewSession({
     resetSession: resetProgressSession,
     finishSession: finishProgressSession,
     abandonSession: abandonProgressSession,
+    resumeSessionPersistence: resumeProgressPersistence,
   } = useSessionProgressTracker({
     autoSave: true,
     storageKey: progressStorageKey
@@ -184,8 +228,10 @@ export default function SrsReviewSession({
    * 统一关闭入口：先清理 scoped 会话进度，再走 Renderer async onClose flush。
    * 完成 / 主动关闭 / Modal overlay / 卡片关闭按钮均走此路径。
    * 清理失败仅 warn，不阻断 flush / close。
+   * F2-04：关闭时停用 pending 并清 timer，避免卸载后 setState。
    */
   const handleRequestClose = () => {
+    clearPendingDueSession("close")
     try {
       abandonProgressSession()
     } catch (error) {
@@ -204,6 +250,9 @@ export default function SrsReviewSession({
         sessionDailyLimits,
         sessionFormalRootCards
       )
+      // F2-04：新轮次作废旧 pending timer，清空内存 pending（不持久化）
+      clearPendingDueTimer()
+      pendingDueStateRef.current = activateEmptyPendingDueState()
       setQueue([...cards])
       setCurrentIndex(0)
       setSessionHistory(createEmptyHistory())
@@ -361,6 +410,11 @@ export default function SrsReviewSession({
   /**
    * 会话完成结算：在 effect 中一次性 finish + setSessionStats。
    * render 保持纯函数，绝不 fallback 调用 finishProgressSession。
+   *
+   * F2-04 注意：到达队尾时 **不** 清 pending——最后一张 Again/Hard 的短期
+   * 重学到期后仍应追加队尾并使 isSessionComplete 回到 false。
+   * pending 实际追加后会 reopen finalize（见 checkPendingDueCards），使第二次
+   * 完成摘要包含重入评分；仅在明确完成按钮/关闭/卸载/新轮次时 deactivate pending。
    */
   useEffect(() => {
     if (!isSessionComplete) return
@@ -385,6 +439,62 @@ export default function SrsReviewSession({
       : isCurrentReadOnly
         ? "只读回看"
         : undefined
+
+  const clearAdvanceTimer = () => {
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current)
+      advanceTimerRef.current = null
+    }
+  }
+
+  /**
+   * 成功动作后延迟切卡：token 仍有效才推进 index。
+   * 锁保持到身份真正变化（bindCard effect 作废旧 token），满足
+   * 「250ms 动画窗口内不得二次持久化」；失效则安静停止，不推进新卡。
+   * isGrading 亦在身份变化时清零。
+   */
+  const scheduleAdvance = (token: SessionActionToken) => {
+    clearAdvanceTimer()
+    advanceTimerRef.current = setTimeout(() => {
+      advanceTimerRef.current = null
+      if (decideAdvanceAfterDelay(actionGateRef.current, token) !== "advance") {
+        return
+      }
+      // 仍持锁推进 index；render 后 bindCard(新 key) 同步作废旧 token
+      setCurrentIndex((prev: number) => prev + 1)
+    }, 250)
+  }
+
+  /** 导航 / 身份变化：作废 in-flight token 并取消切卡 timer */
+  const invalidateSessionAction = () => {
+    clearAdvanceTimer()
+    actionGateRef.current.invalidate()
+    setIsGrading(false)
+  }
+
+  // F2-05：卡片身份变化时绑定 gate（同 key 不误清 in-flight 锁）
+  useEffect(() => {
+    const gate = actionGateRef.current
+    const previousKey = gate.boundCardKey
+    gate.bindCard(currentCardKey)
+    // 身份真正变化（跳过/返回/自动剔除/成功切卡）时：
+    // 清理悬挂 timer，并结束 isGrading（UI 仅展示，正确性靠 gate）
+    if (previousKey !== null && previousKey !== currentCardKey) {
+      clearAdvanceTimer()
+      setIsGrading(false)
+    }
+  }, [currentCardKey])
+
+  // F2-05：卸载时作废 token，避免旧 Promise/timer 写已卸载组件
+  useEffect(() => {
+    return () => {
+      if (advanceTimerRef.current) {
+        clearTimeout(advanceTimerRef.current)
+        advanceTimerRef.current = null
+      }
+      actionGateRef.current.invalidate()
+    }
+  }, [])
 
   const buildCardLabel = (card: ReviewCard): string => {
     if (card.clozeNumber) return ` [c${card.clozeNumber}]`
@@ -429,13 +539,53 @@ export default function SrsReviewSession({
     : null
 
   /**
-   * 确保当前卡片相关的块已加载
-   * - 如果只是未加载：尝试从后端拉取并写入 orca.state.blocks，避免被误判为“已删除”
-   * - 如果确实不存在（被删除）：从队列中剔除，不再推送到复习界面
+   * F2-06：当前卡片块三态加载
+   * - exists：必要时写 orca.state.blocks，继续
+   * - missing（仅明确 null/undefined）：安全剔除并记 auto-dropped
+   * - unknown（throw/不可判定）：保留队列，用户可见可重试错误
+   * List：父 + 条目都验证；任一 unknown 不得误删；须检查完所有 required 再决策
    */
   const autoDroppedCardKeysRef = useRef<Set<string>>(new Set())
+  /** 块加载 unknown 错误（按 cardKey）；显式重试靠 blockLoadRetryNonce */
+  const [blockLoadError, setBlockLoadError] = useState<{
+    cardKey: string
+    message: string
+  } | null>(null)
+  const [blockLoadRetryNonce, setBlockLoadRetryNonce] = useState(0)
+  const currentCardKeyForLoad = currentCard ? getReviewCardKey(currentCard) : null
+  const currentCardKeyRef = useRef<string | null>(currentCardKeyForLoad)
+  currentCardKeyRef.current = currentCardKeyForLoad
+
+  const applyMissingCardDrop = (outcome: Extract<RequiredBlocksOutcome, { action: "drop_missing" }>) => {
+    autoDroppedCardKeysRef.current.add(outcome.cardKey)
+    console.log(
+      `[${pluginName}] 卡片对应块 missing，自动剔除: ${outcome.diagnostic}`
+    )
+
+    // F2-05：身份即将变化 — 作废 in-flight 动作与切卡 timer
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current)
+      advanceTimerRef.current = null
+    }
+    actionGateRef.current.invalidate()
+    setIsGrading(false)
+    setBlockLoadError(null)
+
+    setQueue((prevQueue: ReviewCard[]) => {
+      if (currentIndex < 0 || currentIndex >= prevQueue.length) return prevQueue
+      const keyAtIndex = getReviewCardKey(prevQueue[currentIndex]!)
+      if (keyAtIndex !== outcome.cardKey) return prevQueue
+      return [...prevQueue.slice(0, currentIndex), ...prevQueue.slice(currentIndex + 1)]
+    })
+
+    setLastLog(outcome.userMessage)
+  }
+
   useEffect(() => {
-    if (!currentCard) return
+    if (!currentCard) {
+      setBlockLoadError(null)
+      return
+    }
 
     const currentCardKey = getReviewCardKey(currentCard)
     if (autoDroppedCardKeysRef.current.has(currentCardKey)) {
@@ -444,54 +594,62 @@ export default function SrsReviewSession({
 
     let cancelled = false
 
-    const ensureBlockLoaded = async (id: DbId): Promise<boolean> => {
-      const existing = orca.state.blocks?.[id]
-      if (existing) return true
-
-      try {
-        const fetched = await orca.invokeBackend("get-block", id)
-        if (cancelled) return false
-        if (!fetched) return false
-
-        // 将拉取到的块写回 state，供各渲染器复用
-        const stateAny = orca.state as any
-        if (!stateAny.blocks) stateAny.blocks = {}
-        stateAny.blocks[id] = fetched
-        return true
-      } catch (e) {
-        console.warn(`[${pluginName}] 拉取块失败: ${id}`, e)
-        return false
-      }
-    }
-
     void (async () => {
-      const requiredIds: DbId[] = [currentCard.id]
-      if (currentCard.listItemId) {
-        requiredIds.push(currentCard.listItemId)
-      }
-
-      for (const id of requiredIds) {
-        const ok = await ensureBlockLoaded(id)
-        if (cancelled) return
-        if (!ok) {
-          autoDroppedCardKeysRef.current.add(currentCardKey)
-          console.log(`[${pluginName}] 卡片对应块不存在，自动剔除: ${currentCardKey}`)
-
-          // 从队列中移除当前卡片，让下一张卡片顶上来（不要求用户手动“跳过”）
-          setQueue((prevQueue: ReviewCard[]) => {
-            if (currentIndex < 0 || currentIndex >= prevQueue.length) return prevQueue
-            const keyAtIndex = getReviewCardKey(prevQueue[currentIndex]!)
-            if (keyAtIndex !== currentCardKey) return prevQueue
-            return [...prevQueue.slice(0, currentIndex), ...prevQueue.slice(currentIndex + 1)]
+      const specs = requiredBlocksForCard(currentCard)
+      // 必须检查完所有 required 再决策，避免「父 missing 先返回、子 unknown 未检」误删
+      const results = []
+      for (const spec of specs) {
+        const result = await resolveBlockExistence(spec.blockId, {
+          writeToState: true
+        })
+        if (
+          !shouldApplyBlockLoadResult({
+            cancelled,
+            expectedCardKey: currentCardKey,
+            currentCardKey: currentCardKeyRef.current
           })
-
-          // FC-06：历史按 cardKey 定位，删除队列项后无需改写索引；
-          // 返回时若 key 已不在队列会 warn 并安全跳过。
-
-          setLastLog("已自动跳过不存在的卡片")
+        ) {
           return
         }
+        results.push(result)
       }
+
+      if (
+        !shouldApplyBlockLoadResult({
+          cancelled,
+          expectedCardKey: currentCardKey,
+          currentCardKey: currentCardKeyRef.current
+        })
+      ) {
+        return
+      }
+
+      const outcome = decideRequiredBlocksOutcome(currentCardKey, results)
+
+      if (outcome.action === "ready") {
+        setBlockLoadError(
+          (prev: { cardKey: string; message: string } | null) =>
+            prev?.cardKey === currentCardKey ? null : prev
+        )
+        return
+      }
+
+      if (outcome.action === "drop_missing") {
+        applyMissingCardDrop(outcome)
+        return
+      }
+
+      // retain_unknown：不写 auto-dropped，不改队列
+      console.error(
+        `[${pluginName}] 卡片块状态 unknown，保留队列: ${outcome.diagnostic}`,
+        outcome.unknowns.map(u => u.error)
+      )
+      setBlockLoadError({
+        cardKey: outcome.cardKey,
+        message: outcome.userMessage
+      })
+      setLastLog(outcome.userMessage)
+      orca.notify("error", outcome.userMessage, { title: "SRS 复习" })
     })()
 
     return () => {
@@ -503,30 +661,55 @@ export default function SrsReviewSession({
     currentIndex,
     pluginName,
     currentCardBlock,
-    currentListItemBlock
+    currentListItemBlock,
+    blockLoadRetryNonce
   ])
 
-  // 预缓存下一张卡片的块数据，防止切换时闪烁
+  const handleRetryBlockLoad = () => {
+    if (!currentCardKeyForLoad) return
+    setBlockLoadError(null)
+    // 递增 nonce 强制 effect 重新请求（依赖未变时也能真实重试）
+    setBlockLoadRetryNonce((n: number) => n + 1)
+  }
+
+  // 预缓存下一张：成功可写 cache；null/throw 只诊断日志，不改队列/auto-dropped/当前卡
   useEffect(() => {
-    if (nextCard?.id) {
-      // 触发 Orca 加载下一张卡片的块数据
-      // 通过访问 orca.state.blocks[nextCard.id] 来预加载
-      const block = orca.state.blocks?.[nextCard.id]
-      if (!block) {
-        // 如果块数据不存在，尝试通过 API 预加载
-        void (async () => {
-          try {
-            const fetched = await orca.invokeBackend("get-block", nextCard.id)
-            if (!fetched) return
-            const stateAny = orca.state as any
-            if (!stateAny.blocks) stateAny.blocks = {}
-            stateAny.blocks[nextCard.id] = fetched
-            console.log(`[SRS Review Session] 已预缓存下一张卡片: ${nextCard.id}`)
-          } catch (e) {
-            console.warn(`[SRS Review Session] 预缓存失败: ${nextCard.id}`, e)
-          }
-        })()
+    if (!nextCard?.id) return
+
+    const nextId = nextCard.id
+    const stateHit = Boolean(orca.state.blocks?.[nextId])
+    const early = decidePrefetchWhenStateHit(nextId, stateHit)
+    if (early) return
+
+    let cancelled = false
+    void (async () => {
+      // 预缓存不 writeToState 在 resolve 内盲目写入前先判定；exists 时由 outcome 写
+      const result = await resolveBlockExistence(nextId, { writeToState: false })
+      if (cancelled) return
+      const outcome = decidePrefetchBlockOutcome(result)
+      if (outcome.action === "write_cache") {
+        writeBlockToOrcaState(outcome.block)
+        console.log(
+          `[SRS Review Session] 已预缓存下一张卡片: ${outcome.blockId}`
+        )
+        return
       }
+      if (outcome.action === "log_null") {
+        console.warn(
+          `[SRS Review Session] 预缓存：块明确不存在（不影响当前队列）: ${outcome.diagnostic}`
+        )
+        return
+      }
+      if (outcome.action === "log_throw") {
+        console.warn(
+          `[SRS Review Session] 预缓存失败（不影响当前队列）: ${outcome.diagnostic}`,
+          outcome.error
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
     }
   }, [nextCard?.id])
 
@@ -549,113 +732,232 @@ export default function SrsReviewSession({
     return { due, fresh }
   }, [queue])
 
-  // 追踪即将到期的卡片（评分为 Again 后 1 分钟内到期的卡片）
-  const pendingDueCardsRef = useRef<Map<string, { card: ReviewCard, dueTime: number }>>(new Map())
-  // 短期卡片检查定时器 ID
+  /**
+   * F2-04：Again/Hard 短期 pending 状态（纯模块 pendingDueRequeue；内存，不持久化）。
+   * generation/token 由 pure 层维护；Demo 只持有 ref + 唯一 timer。
+   */
+  const pendingDueStateRef = useRef<PendingDueState>(createEmptyPendingDueState())
   const pendingCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 当前索引的 ref（用于在定时器回调中获取最新值）
+  /** 当前索引 / 队列 ref：timer 回调读取最新值，避免闭包陈旧 */
   const currentIndexRef = useRef(currentIndex)
   currentIndexRef.current = currentIndex
+  const queueRef = useRef(queue)
+  queueRef.current = queue
 
-  // 检查待到期卡片的函数
-  const checkPendingDueCards = () => {
-    const now = Date.now()
-    const pendingCards = pendingDueCardsRef.current
-    const dueCards: ReviewCard[] = []
-    const scope = sessionScopeRef.current
-    
-    console.log(`[${pluginName}] 检查待到期卡片，当前追踪 ${pendingCards.size} 张`)
-    
-    // 检查哪些卡片已经到期
-    for (const [cardKey, { card, dueTime }] of pendingCards.entries()) {
-      console.log(`[${pluginName}] 检查卡片 ${cardKey}: dueTime=${dueTime}, now=${now}, diff=${dueTime - now}ms`)
-      if (now >= dueTime) {
-        dueCards.push(card)
-        pendingCards.delete(cardKey)
-        console.log(`[${pluginName}] 卡片 ${cardKey} 已到期，准备加入队列`)
-      }
-    }
-    
-    // 防御性：scope + 已接纳额度（短期重学同一身份不重复消耗）
-    const budget = sessionBudgetRef.current
-    const inScopeDueCards = selectPendingDueCardsForRequeue(dueCards, scope, budget)
-    if (dueCards.length > 0 && inScopeDueCards.length < dueCards.length) {
-      console.warn(
-        `[${pluginName}] ${dueCards.length - inScopeDueCards.length} 张短期到期卡因 scope/额度被跳过`
-      )
-    }
-
-    if (inScopeDueCards.length > 0) {
-      console.log(`[${pluginName}] ${inScopeDueCards.length} 张短期卡片已到期，添加到复习队列`)
-      
-      // 检查是否已在**整个队列**中（防止同一张卡片在一次会话中被多次添加）
-      setQueue((prevQueue: ReviewCard[]) => {
-        // 检查整个队列，而不仅仅是 currentIndex 之后的部分
-        // 这样可以防止同一张卡片在一次会话中被多次复习
-        const existingKeys = new Set(prevQueue.map((c: ReviewCard) => getReviewCardKey(c)))
-        
-        const newCards = inScopeDueCards.filter((c: ReviewCard) => !existingKeys.has(getReviewCardKey(c)))
-        
-        if (newCards.length > 0) {
-          setNewCardsAdded((prev: number) => prev + newCards.length)
-          setLastLog(`${newCards.length} 张卡片已到期，加入队列`)
-          orca.notify("info", `${newCards.length} 张卡片已到期`, { title: "SRS 复习" })
-          console.log(`[${pluginName}] 成功添加 ${newCards.length} 张卡片到队列末尾`)
-          return [...prevQueue, ...newCards]
-        }
-        console.log(`[${pluginName}] 卡片已在队列中，跳过添加`)
-        return prevQueue
-      })
-    }
-    
-    // 如果还有待检查的卡片，继续定时检查
-    if (pendingCards.size > 0) {
-      // 找到最近的到期时间
-      let nearestDue = Infinity
-      for (const { dueTime } of pendingCards.values()) {
-        if (dueTime < nearestDue) nearestDue = dueTime
-      }
-      const delay = Math.max(1000, nearestDue - now + 500) // 至少 1 秒，到期后多等 500ms
-      console.log(`[${pluginName}] 还有 ${pendingCards.size} 张待检查卡片，${delay}ms 后再次检查`)
-      pendingCheckTimeoutRef.current = setTimeout(checkPendingDueCards, delay)
-    } else {
+  const clearPendingDueTimer = () => {
+    if (pendingCheckTimeoutRef.current != null) {
+      clearTimeout(pendingCheckTimeoutRef.current)
       pendingCheckTimeoutRef.current = null
     }
   }
-  
-  // 当评分为 Again 时，将卡片添加到待检查列表
-  const trackPendingDueCard = (card: ReviewCard, dueTime: Date) => {
-    // 防御性：不在会话 scope 内的卡不进入 pending 追踪
-    if (!isCardInSessionScope(card, sessionScopeRef.current)) {
+
+  /**
+   * 停用并清空 pending（完成 / 关闭 / 卸载 / 新轮次）。
+   * 递增 token 使已调度 timer 全部 stale，避免卸载后 setState。
+   */
+  const clearPendingDueSession = (reason: string) => {
+    clearPendingDueTimer()
+    pendingDueStateRef.current = deactivateAndClearPending(
+      pendingDueStateRef.current
+    )
+    console.log(`[${pluginName}] F2-04 pending 已清理（${reason}）`)
+  }
+
+  /**
+   * 按 pure 规划重排唯一有效 timer；旧 token 回调一律忽略。
+   */
+  const reschedulePendingDueTimer = () => {
+    clearPendingDueTimer()
+    const now = Date.now()
+    try {
+      const planned = planNextPendingWake(pendingDueStateRef.current, now)
+      pendingDueStateRef.current = planned.state
+      if (!planned.plan) {
+        return
+      }
+      const { token, delayMs } = planned.plan
+      console.log(
+        `[${pluginName}] F2-04 调度 pending wake token=${token} delay=${delayMs}ms ` +
+          `pending=${pendingDueStateRef.current.entries.size}`
+      )
+      pendingCheckTimeoutRef.current = setTimeout(() => {
+        pendingCheckTimeoutRef.current = null
+        checkPendingDueCards(token)
+      }, delayMs)
+    } catch (error) {
+      console.error(`[${pluginName}] F2-04 pending timer 调度异常:`, error)
+      orca.notify("error", `短期重学定时器调度失败: ${error}`, {
+        title: "SRS 复习"
+      })
+    }
+  }
+
+  /**
+   * Timer wake：token 校验 → 在最新 queueRef 上 process 一次 → 再 setQueue。
+   * 不在 setState updater 内 process，避免 Strict Mode 双调用二次消耗 budget。
+   * scope/budget 拒绝保留 pending 并诊断；异常时不删 pending，可重试。
+   */
+  const checkPendingDueCards = (wakeToken: number) => {
+    const scope = sessionScopeRef.current
+    const budget = sessionBudgetRef.current
+
+    console.log(
+      `[${pluginName}] F2-04 检查 pending wake token=${wakeToken} ` +
+        `entries=${pendingDueStateRef.current.entries.size}`
+    )
+
+    if (!pendingDueStateRef.current.active) {
+      console.warn(`[${pluginName}] F2-04 pending wake ignored: session inactive`)
+      return
+    }
+    if (!isPendingWakeTokenCurrent(pendingDueStateRef.current, wakeToken)) {
       console.warn(
-        `[${pluginName}] 跳过追踪 scope 外的短期到期卡: ${getReviewCardKey(card)}`
+        `[${pluginName}] F2-04 pending wake ignored: stale token ${wakeToken} ` +
+          `(current ${pendingDueStateRef.current.scheduledToken})`
       )
       return
     }
 
-    const cardKey = getReviewCardKey(card)
-    const dueTimestamp = dueTime.getTime()
-    const now = Date.now()
-    
-    // 只追踪 5 分钟内到期的卡片
-    if (dueTimestamp - now <= 5 * 60 * 1000) {
-      pendingDueCardsRef.current.set(cardKey, { card, dueTime: dueTimestamp })
-      const delaySeconds = Math.round((dueTimestamp - now) / 1000)
-      console.log(`[${pluginName}] 追踪短期到期卡片: ${cardKey}, 将在 ${delaySeconds} 秒后到期`)
-      setLastLog(`卡片将在 ${delaySeconds} 秒后重新加入队列`)
-      
-      // 如果没有正在运行的检查定时器，启动一个
-      if (!pendingCheckTimeoutRef.current) {
-        const delay = Math.max(1000, dueTimestamp - now + 500)
-        console.log(`[${pluginName}] 启动定时器，${delay}ms 后检查`)
-        pendingCheckTimeoutRef.current = setTimeout(checkPendingDueCards, delay)
+    // 快照：仅成功 path 才写回 pendingDueStateRef，提交异常时保留原 pending
+    const stateSnapshot = pendingDueStateRef.current
+
+    try {
+      const wakeResult: ProcessPendingWakeResult = processPendingWake({
+        state: stateSnapshot,
+        wakeToken,
+        nowMs: Date.now(),
+        queue: queueRef.current,
+        currentIndex: currentIndexRef.current,
+        scope,
+        budget
+      })
+
+      for (const d of wakeResult.diagnostics) {
+        console.warn(`[${pluginName}] ${d}`)
+      }
+      if (wakeResult.stale || wakeResult.inactive) {
+        return
+      }
+
+      // 追加前是否已「到队尾完成态」（含已 finalize 的完成屏）
+      const wasSessionComplete =
+        queueRef.current.length > 0 &&
+        currentIndexRef.current >= queueRef.current.length
+
+      // processPendingWake 已基于同一 queueRef 快照完成尾部去重。
+      // 直接提交它的纯结果，避免依赖 React updater 何时执行来回填数量。
+      const actuallyAppended = wakeResult.appended.length
+      if (actuallyAppended > 0) {
+        queueRef.current = wakeResult.queue
+        setQueue(wakeResult.queue)
+      }
+
+      pendingDueStateRef.current = wakeResult.state
+
+      if (actuallyAppended > 0) {
+        setNewCardsAdded((prev: number) => prev + actuallyAppended)
+        setLastLog(`${actuallyAppended} 张卡片已到期，加入队列`)
+        orca.notify("info", `${actuallyAppended} 张卡片已到期`, {
+          title: "SRS 复习"
+        })
+        console.log(
+          `[${pluginName}] F2-04 成功追加 ${actuallyAppended} 张短期重学卡到队尾`
+        )
+
+        // F2-04 review：完成态下实际重入后 reopen finalize；progress 不清零
+        const reopened = reopenSessionFinalizeIfNeeded(
+          sessionFinalizeRef.current,
+          {
+            wasSessionComplete,
+            actuallyAppendedCount: actuallyAppended
+          }
+        )
+        if (reopened) {
+          setSessionStats(null)
+          resumeProgressPersistence()
+          console.log(
+            `[${pluginName}] F2-04 pending 重入：已 reopen 完成摘要并恢复进度 autosave`
+          )
+        }
+      }
+
+      if (wakeResult.retainedRejected.length > 0) {
+        orca.notify(
+          "error",
+          `${wakeResult.retainedRejected.length} 张短期到期卡未接纳（scope/额度），已保留待重试`,
+          { title: "SRS 复习" }
+        )
+      }
+
+      if (
+        pendingDueStateRef.current.active &&
+        pendingDueStateRef.current.entries.size > 0
+      ) {
+        reschedulePendingDueTimer()
+      }
+    } catch (error) {
+      // 不写 wakeResult.state：pending 保持 stateSnapshot（可重试）
+      console.error(`[${pluginName}] F2-04 pending 到期处理失败（pending 保留）:`, error)
+      orca.notify("error", `短期重学入队失败: ${error}`, { title: "SRS 复习" })
+      if (stateSnapshot.active && stateSnapshot.entries.size > 0) {
+        pendingDueStateRef.current = stateSnapshot
+        reschedulePendingDueTimer()
       }
     }
   }
 
+  /**
+   * 正式 Again/Hard 且 FSRS due 在窗口内才追踪。
+   * 须在评分成功且 action token 仍有效后调用；repeat/auxiliary 不得进入。
+   */
+  const trackPendingDueCard = (card: ReviewCard, dueTime: Date) => {
+    if (!isCardInSessionScope(card, sessionScopeRef.current)) {
+      console.warn(
+        `[${pluginName}] F2-04 跳过追踪 scope 外的短期到期卡: ${getReviewCardKey(card)}`
+      )
+      return
+    }
+
+    const now = Date.now()
+    const dueTimestamp = dueTime.getTime()
+    const upsert = upsertPendingDueCard(
+      pendingDueStateRef.current,
+      card,
+      dueTimestamp,
+      now
+    )
+    pendingDueStateRef.current = upsert.state
+
+    if (upsert.status === "out_of_window") {
+      return
+    }
+    if (upsert.status !== "tracked" || !upsert.entry) {
+      if (upsert.status === "inactive") {
+        console.warn(`[${pluginName}] F2-04 会话已停用，忽略 track pending`)
+      } else if (upsert.status === "invalid_due") {
+        console.error(`[${pluginName}] F2-04 无效 due，无法追踪短期重学`)
+        orca.notify("error", "短期重学追踪失败：无效到期时间", {
+          title: "SRS 复习"
+        })
+      }
+      return
+    }
+
+    const delaySeconds = Math.round((upsert.entry.dueTime - now) / 1000)
+    console.log(
+      `[${pluginName}] F2-04 追踪短期到期: ${upsert.cardKey} ` +
+        `gen=${upsert.entry.generation} in ${delaySeconds}s`
+    )
+    setLastLog(`卡片将在 ${delaySeconds} 秒后重新加入队列`)
+
+    if (upsert.needsReschedule) {
+      reschedulePendingDueTimer()
+    }
+  }
+
   // 动态更新复习队列：定期检查是否有新的到期卡片（受 sessionScope 约束）
-  // FC-13：评估过「仅扫描初始收集中的短期将到期候选」——pendingDueCardsRef 已覆盖
-  // Again 短期重学；新到期/他处变更无完整失效事件，不能可靠替代全库扫描。
+  // FC-13：评估过「仅扫描初始收集中的短期将到期候选」——F2-04 pendingDueStateRef 已覆盖
+  // Again/Hard 短期重学；新到期/他处变更无完整失效事件，不能可靠替代全库扫描。
   // 故保留 60s 全量 collect；调用成本由 cardCollector 预热/批量牌组预取降低。fixed 仍跳过。
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -713,15 +1015,12 @@ export default function SrsReviewSession({
     // 启动第一次检查（延迟1分钟，避免初始化时立即执行）
     timeoutId = setTimeout(checkForNewCards, 60000)
 
-    // 组件卸载时清理定时器
+    // 组件卸载：清理全库扫描 + F2-04 pending timer/状态（避免卸载后 setState）
     return () => {
       if (timeoutId) {
         clearTimeout(timeoutId)
       }
-      if (pendingCheckTimeoutRef.current) {
-        clearTimeout(pendingCheckTimeoutRef.current)
-        pendingCheckTimeoutRef.current = null
-      }
+      clearPendingDueSession("unmount")
     }
   }, [pluginName]) // 移除 queue 依赖；scope 经 ref 读取，避免每次重置定时器
 
@@ -736,6 +1035,23 @@ export default function SrsReviewSession({
       return
     }
 
+    const isListCard =
+      !!currentCard.listItemId &&
+      !!currentCard.listItemIndex &&
+      !!currentCard.listItemIds
+
+    // F2-05：同步 acquire；同 tick 双击 / 快捷键重复 / 与 postpone·suspend 交叉 → 第二次失败
+    const actionKind: SessionActionKind = isRepeatMode
+      ? "repeat_grade"
+      : isListCard && currentCard.isAuxiliaryPreview
+        ? "auxiliary_grade"
+        : "grade"
+    const token = actionGateRef.current.acquire(gradeKey, actionKind)
+    if (!token) {
+      // 重复触发：忽略，绝不第二次持久化
+      return
+    }
+
     setIsGrading(true)
 
     console.log(`[SRS Card Demo] 用户选择评分: ${grade}${isRepeatMode ? ' (专项训练模式，不更新SRS)' : ''}`)
@@ -743,7 +1059,6 @@ export default function SrsReviewSession({
     let nextQueue = [...queue]
     let updatedCard = currentCard
     let cardLabel = ""
-    const isListCard = !!currentCard.listItemId && !!currentCard.listItemIndex && !!currentCard.listItemIds
 
     if (currentCard.clozeNumber) {
       cardLabel = ` [c${currentCard.clozeNumber}]`
@@ -753,16 +1068,23 @@ export default function SrsReviewSession({
       cardLabel = ` [L${currentCard.listItemIndex}/${currentCard.listItemIds!.length}]`
     }
 
+    const releaseGradeToken = () => {
+      if (canCommitSessionAction(actionGateRef.current, token)) {
+        actionGateRef.current.release(token)
+      }
+      setIsGrading(false)
+    }
+
     // 重复复习模式（专项训练）：不更新 SRS 状态，只是单纯刷题
     // FC-10：不经 gradeReviewCard，但仍用统一 helper 基于 cardStartTime/单次 now 计有效时长
     if (isRepeatMode) {
+      if (!canCommitSessionAction(actionGateRef.current, token)) return
       const repeatNow = Date.now()
       const repeatTiming = computeReviewTiming(cardStartTime, repeatNow)
       setLastLog(`评分 ${grade.toUpperCase()}${cardLabel} (专项训练，不影响复习进度)`)
       setReviewedCount((prev: number) => prev + 1)
       recordProgressEffectiveGrade(grade, repeatTiming.effectiveDuration)
 
-      // 标记父卡片为已处理
       markParentCardProcessed(
         currentCard.id,
         currentCard.clozeNumber,
@@ -770,18 +1092,16 @@ export default function SrsReviewSession({
         currentCard.listItemId
       )
 
-      // 更新队列
       setQueue(nextQueue)
-
-      setIsGrading(false)
-      // 记录历史并前进（repeat_grade 锁定只读，虽不写 SRS）
+      // 记录历史；锁保持至 250ms 切卡（勿提前 release）
       pushHistory("repeat_grade", { grade })
-      setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+      scheduleAdvance(token)
       return
     }
 
     // 列表卡辅助预览：允许评分，但不计入统计/不更新 SRS/不写日志
     if (isListCard && currentCard.isAuxiliaryPreview) {
+      if (!canCommitSessionAction(actionGateRef.current, token)) return
       setLastLog(`评分 ${grade.toUpperCase()}${cardLabel}（辅助预览，不计入统计）`)
 
       markParentCardProcessed(
@@ -792,9 +1112,8 @@ export default function SrsReviewSession({
       )
 
       setQueue(nextQueue)
-      setIsGrading(false)
       pushHistory("auxiliary_grade", { grade })
-      setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+      scheduleAdvance(token)
       return
     }
 
@@ -805,13 +1124,20 @@ export default function SrsReviewSession({
       cardStartTime,
       { updateListProgression: false }
     )
-    if (!gradeResult.ok) {
-      console.error("[SRS Review Session] 评分失败:", gradeResult.error)
-      orca.notify("error", `评分失败: ${gradeResult.error}`, { title: "SRS 复习" })
-      setIsGrading(false)
+
+    // await 后：token 失效则安静停止，不得写新卡状态
+    if (!canCommitSessionAction(actionGateRef.current, token)) {
       return
     }
 
+    if (!gradeResult.ok) {
+      console.error("[SRS Review Session] 评分失败:", gradeResult.error)
+      orca.notify("error", `评分失败: ${gradeResult.error}`, { title: "SRS 复习" })
+      releaseGradeToken()
+      return
+    }
+
+    // —— 评分已成功写入：后续 List 失败不得回滚评分，也不得靠 gate 吞错 ——
     updatedCard = gradeResult.updatedCard
     nextQueue[currentIndex] = updatedCard
     setLastLog(
@@ -828,12 +1154,7 @@ export default function SrsReviewSession({
     // 日志失败时 gradeResult 仍含 timing，会话进度仍记录已成功评分时长
     recordProgressEffectiveGrade(grade, gradeResult.timing.effectiveDuration)
 
-    // 子卡片处理说明：
-    // 初始队列已经通过 buildReviewQueueWithChildren 展开了子卡片链
-    // 例如：[A1, B, C, D, A2, B, C, D]
-    // 
-    // 这里只需要标记当前卡片为已处理，防止 Again 按钮导致的重复处理
-    // 不再需要动态插入子卡片
+    // 子卡片：初始队列已展开；此处只标记已处理，防止 Again 重复处理
     markParentCardProcessed(
       currentCard.id,
       currentCard.clozeNumber,
@@ -843,112 +1164,141 @@ export default function SrsReviewSession({
 
     // 列表卡规则：Good/Easy 才解锁下一条；Again/Hard 将后续条目安排到明天，并当日以辅助预览继续
     if (isListCard) {
-      const itemIds = currentCard.listItemIds ?? []
-      const currentIdx0 = (currentCard.listItemIndex ?? 1) - 1
-      const tomorrow = getTomorrowMidnight()
+      try {
+        const itemIds = currentCard.listItemIds ?? []
+        const currentIdx0 = (currentCard.listItemIndex ?? 1) - 1
+        const tomorrow = getTomorrowMidnight()
 
-      // 工具：写入 due（仅改 due，不改其他参数）
-      const setDue = async (itemId: DbId, due: Date) => {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.setProperties",
-          null,
-          [itemId],
-          [{ name: "srs.due", type: 5, value: due }]
-        )
-        invalidateBlockCache(itemId)
-      }
-
-      // 工具：构建列表条目卡片
-      const buildListItemCard = async (
-        itemId: DbId,
-        index1: number,
-        isAux: boolean
-      ): Promise<ReviewCard> => {
-        // 初始化缺失的 SRS（第 1 条今天，其余明天）
-        const initialDue = index1 === 1 ? getTodayMidnight() : tomorrow
-        await ensureCardSrsStateWithInitialDue(itemId, initialDue)
-        const srsState = await loadCardSrsState(itemId)
-        return {
-          id: currentCard.id,
-          front: currentCard.front,
-          back: currentCard.back,
-          srs: srsState,
-          isNew: !srsState.lastReviewed || srsState.reps === 0,
-          deck: currentCard.deck,
-          // FC-02 fixed List 规则依赖 cardType:"list"；动态构造必须显式带上
-          cardType: "list" as const,
-          tags: currentCard.tags,
-          listItemId: itemId,
-          listItemIndex: index1,
-          listItemIds: itemIds,
-          isAuxiliaryPreview: isAux
+        const setDue = async (itemId: DbId, due: Date) => {
+          await orca.commands.invokeEditorCommand(
+            "core.editor.setProperties",
+            null,
+            [itemId],
+            [{ name: "srs.due", type: 5, value: due }]
+          )
+          invalidateBlockCache(itemId)
         }
-      }
 
-      const existingKeys = new Set(nextQueue.slice(currentIndex + 1).map(getReviewCardKey))
-
-      if (grade === "good" || grade === "easy") {
-        const nextIdx0 = currentIdx0 + 1
-        if (nextIdx0 < itemIds.length) {
-          const nextItemId = itemIds[nextIdx0]
-          // 解锁下一条：将 due 调整为现在，使其当天进入正式复习
-          await ensureCardSrsStateWithInitialDue(nextItemId, tomorrow)
-          await setDue(nextItemId, new Date())
-
-          const nextCard = await buildListItemCard(nextItemId, nextIdx0 + 1, false)
-          // 同根 List 条目：scope helper 应允许 fixed 根卡后续 listItemId
-          if (
-            isCardInSessionScope(nextCard, sessionScopeRef.current) &&
-            !existingKeys.has(getReviewCardKey(nextCard))
-          ) {
-            nextQueue.push(nextCard)
-          }
-        }
-      } else if (grade === "again" || grade === "hard") {
-        // 后续条目：若 due 早于明天零点，则推迟到明天零点
-        for (let i = currentIdx0 + 1; i < itemIds.length; i++) {
-          const itemId = itemIds[i]
-          await ensureCardSrsStateWithInitialDue(itemId, tomorrow)
+        const buildListItemCard = async (
+          itemId: DbId,
+          index1: number,
+          isAux: boolean
+        ): Promise<ReviewCard> => {
+          const initialDue = index1 === 1 ? getTodayMidnight() : tomorrow
+          await ensureCardSrsStateWithInitialDue(itemId, initialDue)
           const srsState = await loadCardSrsState(itemId)
-          if (srsState.due.getTime() < tomorrow.getTime()) {
-            await setDue(itemId, tomorrow)
-          }
-
-          const auxCard = await buildListItemCard(itemId, i + 1, true)
-          if (
-            isCardInSessionScope(auxCard, sessionScopeRef.current) &&
-            !existingKeys.has(getReviewCardKey(auxCard))
-          ) {
-            nextQueue.push(auxCard)
-            existingKeys.add(getReviewCardKey(auxCard))
+          return {
+            id: currentCard.id,
+            front: currentCard.front,
+            back: currentCard.back,
+            srs: srsState,
+            isNew: !srsState.lastReviewed || srsState.reps === 0,
+            deck: currentCard.deck,
+            cardType: "list" as const,
+            tags: currentCard.tags,
+            listItemId: itemId,
+            listItemIndex: index1,
+            listItemIds: itemIds,
+            isAuxiliaryPreview: isAux
           }
         }
 
-        setLastLog(`评分 ${grade.toUpperCase()}${cardLabel} -> 后续条目已安排明天，今日以辅助预览继续`)
+        const existingKeys = new Set(
+          nextQueue.slice(currentIndex + 1).map(getReviewCardKey)
+        )
+
+        if (grade === "good" || grade === "easy") {
+          const nextIdx0 = currentIdx0 + 1
+          if (nextIdx0 < itemIds.length) {
+            const nextItemId = itemIds[nextIdx0]
+            await ensureCardSrsStateWithInitialDue(nextItemId, tomorrow)
+            if (!canCommitSessionAction(actionGateRef.current, token)) return
+            await setDue(nextItemId, new Date())
+            if (!canCommitSessionAction(actionGateRef.current, token)) return
+
+            const nextCard = await buildListItemCard(nextItemId, nextIdx0 + 1, false)
+            if (!canCommitSessionAction(actionGateRef.current, token)) return
+            if (
+              isCardInSessionScope(nextCard, sessionScopeRef.current) &&
+              !existingKeys.has(getReviewCardKey(nextCard))
+            ) {
+              nextQueue.push(nextCard)
+            }
+          }
+        } else if (grade === "again" || grade === "hard") {
+          for (let i = currentIdx0 + 1; i < itemIds.length; i++) {
+            const itemId = itemIds[i]
+            await ensureCardSrsStateWithInitialDue(itemId, tomorrow)
+            if (!canCommitSessionAction(actionGateRef.current, token)) return
+            const srsState = await loadCardSrsState(itemId)
+            if (!canCommitSessionAction(actionGateRef.current, token)) return
+            if (srsState.due.getTime() < tomorrow.getTime()) {
+              await setDue(itemId, tomorrow)
+              if (!canCommitSessionAction(actionGateRef.current, token)) return
+            }
+
+            const auxCard = await buildListItemCard(itemId, i + 1, true)
+            if (!canCommitSessionAction(actionGateRef.current, token)) return
+            if (
+              isCardInSessionScope(auxCard, sessionScopeRef.current) &&
+              !existingKeys.has(getReviewCardKey(auxCard))
+            ) {
+              nextQueue.push(auxCard)
+              existingKeys.add(getReviewCardKey(auxCard))
+            }
+          }
+
+          if (canCommitSessionAction(actionGateRef.current, token)) {
+            setLastLog(
+              `评分 ${grade.toUpperCase()}${cardLabel} -> 后续条目已安排明天，今日以辅助预览继续`
+            )
+          }
+        }
+      } catch (listError) {
+        // 评分已保存；List 后续处理部分失败 — 可见错误，不回滚评分
+        console.error("[SRS Review Session] 评分已保存，但 List 后续处理失败:", listError)
+        if (canCommitSessionAction(actionGateRef.current, token)) {
+          const msg = `评分已保存，但后续处理失败: ${listError}`
+          setLastLog(msg)
+          orca.notify("error", msg, { title: "SRS 复习" })
+        }
       }
     }
-    
-    // 更新队列
+
+    // 最终提交前再校验：身份已变则不得推进 queue / history / index
+    if (!canCommitSessionAction(actionGateRef.current, token)) {
+      return
+    }
+
     setQueue(nextQueue)
-    
-    // 如果评分为 Again 或 Hard，且卡片在 5 分钟内到期，追踪它以便自动加入队列
+
+    // F2-04：仅正式 again/hard + 窗口内 + token 仍有效才 track（repeat/auxiliary 已 early-return）
     const dueTime = updatedCard.srs.due.getTime()
     const now = Date.now()
-    if ((grade === "again" || grade === "hard") && dueTime - now <= 5 * 60 * 1000) {
+    if (
+      canCommitSessionAction(actionGateRef.current, token) &&
+      shouldTrackFormalShortRelearn({
+        grade,
+        dueTimeMs: dueTime,
+        nowMs: now,
+        isRepeatMode: false,
+        isAuxiliaryPreview: false
+      })
+    ) {
       trackPendingDueCard(updatedCard, updatedCard.srs.due)
     }
-    
-    setIsGrading(false)
-    // 记录历史并前进（正式评分锁定只读）
+
+    // 正式评分锁定只读；锁保持至 250ms 切卡完成
     pushHistory("grade", { grade })
-    setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+    scheduleAdvance(token)
   }
 
   /**
    * 推迟卡片：将 due 时间设置为明天，不改变 SRS 状态
+   * F2-05：与 grade 共享同步 gate，禁止并行写同一卡
    */
   const handlePostpone = async () => {
-    if (!currentCard || isGrading) return
+    if (!currentCard) return
 
     const postponeKey = getReviewCardKey(currentCard)
     const postponeGuard = guardSideEffectAction(postponeKey, sessionHistory)
@@ -956,6 +1306,9 @@ export default function SrsReviewSession({
       notifyReadOnlyBlocked(postponeGuard.message)
       return
     }
+
+    const token = actionGateRef.current.acquire(postponeKey, "postpone")
+    if (!token) return
 
     setIsGrading(true)
 
@@ -967,29 +1320,35 @@ export default function SrsReviewSession({
         currentCard.directionType
       )
 
+      if (!canCommitSessionAction(actionGateRef.current, token)) {
+        return
+      }
+
       const cardLabel = buildCardLabel(currentCard)
 
       setLastLog(`已推迟${cardLabel}，明天再复习`)
       showNotification("orca-srs", "info", "卡片已推迟，明天再复习", { title: "SRS 复习" })
 
-      // 通知其他组件静默刷新
       emitCardPostponed(postponeBlockId)
 
-      setIsGrading(false)
       pushHistory("postpone")
-      setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+      scheduleAdvance(token)
     } catch (error) {
       console.error("[SRS Review Session] 推迟卡片失败:", error)
-      orca.notify("error", `推迟失败: ${error}`, { title: "SRS 复习" })
-      setIsGrading(false)
+      if (canCommitSessionAction(actionGateRef.current, token)) {
+        orca.notify("error", `推迟失败: ${error}`, { title: "SRS 复习" })
+        actionGateRef.current.release(token)
+        setIsGrading(false)
+      }
     }
   }
 
   /**
    * 暂停卡片：标记为 suspend 状态，不再出现在复习队列
+   * F2-05：与 grade 共享同步 gate
    */
   const handleSuspend = async () => {
-    if (!currentCard || isGrading) return
+    if (!currentCard) return
 
     const suspendKey = getReviewCardKey(currentCard)
     const suspendGuard = guardSideEffectAction(suspendKey, sessionHistory)
@@ -998,34 +1357,43 @@ export default function SrsReviewSession({
       return
     }
 
+    const token = actionGateRef.current.acquire(suspendKey, "suspend")
+    if (!token) return
+
     setIsGrading(true)
 
     try {
       await suspendCard(currentCard.id)
+
+      if (!canCommitSessionAction(actionGateRef.current, token)) {
+        return
+      }
 
       const cardLabel = buildCardLabel(currentCard)
 
       setLastLog(`已暂停${cardLabel}`)
       showNotification("orca-srs", "info", "卡片已暂停，可在卡片浏览器中取消暂停", { title: "SRS 复习" })
 
-      // 通知其他组件静默刷新
       emitCardSuspended(currentCard.id)
 
-      setIsGrading(false)
       pushHistory("suspend")
-      setTimeout(() => setCurrentIndex((prev: number) => prev + 1), 250)
+      scheduleAdvance(token)
     } catch (error) {
       console.error("[SRS Review Session] 暂停卡片失败:", error)
-      orca.notify("error", `暂停失败: ${error}`, { title: "SRS 复习" })
-      setIsGrading(false)
+      if (canCommitSessionAction(actionGateRef.current, token)) {
+        orca.notify("error", `暂停失败: ${error}`, { title: "SRS 复习" })
+        actionGateRef.current.release(token)
+        setIsGrading(false)
+      }
     }
   }
 
   /**
    * 跳过卡片：不评分，不改变 SRS/进度；返回后仍允许评分
+   * F2-05：作废 in-flight 动作 token 与切卡 timer
    */
   const handleSkip = () => {
-    if (!currentCard || isGrading) return
+    if (!currentCard || isGrading || actionGateRef.current.locked) return
     // 只读回看应走 handleContinue，不应把 continue 记成 skip
     if (isCurrentReadOnly) {
       handleContinue()
@@ -1035,15 +1403,20 @@ export default function SrsReviewSession({
     const cardLabel = buildCardLabel(currentCard)
     setLastLog(`已跳过${cardLabel}`)
 
+    invalidateSessionAction()
     pushHistory("skip")
     setCurrentIndex((prev: number) => prev + 1)
   }
 
   /**
    * FC-06 只读回看中的「继续」：回到后续流程，不覆盖 locking outcome
+   * F2-05：作废旧 token / timer
    */
   const handleContinue = () => {
-    if (!currentCard || isGrading || !currentCardKey) return
+    if (!currentCard || isGrading || actionGateRef.current.locked || !currentCardKey) {
+      return
+    }
+    invalidateSessionAction()
     const result = continueFromReadOnly(sessionHistory, currentCardKey, currentIndex)
     setSessionHistory(result.state)
     setLastLog("继续复习")
@@ -1113,9 +1486,18 @@ export default function SrsReviewSession({
 
   /**
    * 回到上一张卡片（按 cardKey 定位；缺失则 warn 并安全跳过该项）
+   * F2-05：作废 in-flight token 与切卡 timer，防止旧 Promise 改新卡
    */
   const handlePrevious = () => {
-    if (!historyCanGoPrevious(sessionHistory) || isGrading) return
+    if (
+      !historyCanGoPrevious(sessionHistory) ||
+      isGrading ||
+      actionGateRef.current.locked
+    ) {
+      return
+    }
+
+    invalidateSessionAction()
 
     const result = navigatePrevious(sessionHistory, queue, getReviewCardKey)
     setSessionHistory(result.state)
@@ -1145,8 +1527,11 @@ export default function SrsReviewSession({
     }
   }
 
-  // 是否可以回到上一张
-  const canGoPrevious = historyCanGoPrevious(sessionHistory) && !isGrading
+  // 是否可以回到上一张（isGrading 仅 UI；锁住时也禁用）
+  const canGoPrevious =
+    historyCanGoPrevious(sessionHistory) &&
+    !isGrading &&
+    !actionGateRef.current.locked
 
   const handleJumpToCard = (blockId: DbId, shiftKey?: boolean) => {
     if (onJumpToCard) {
@@ -1164,6 +1549,8 @@ export default function SrsReviewSession({
   }
 
   const handleFinishSession = () => {
+    // F2-04：明确完成时先停用 pending，再关会话
+    clearPendingDueSession("finish")
     // 优先用已生成的 sessionStats；极端早于 effect 的点击走一次性 finalize（仍只 finish 一次）
     const stats =
       sessionStats ??
@@ -1586,6 +1973,35 @@ export default function SrsReviewSession({
                 {lastLog}
               </div>
             )}
+            {blockLoadError &&
+              currentCardKeyForLoad &&
+              blockLoadError.cardKey === currentCardKeyForLoad && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: "6px",
+                  fontSize: "12px",
+                  color: "var(--orca-color-danger-6, var(--orca-color-warning-6))",
+                  backgroundColor: "var(--orca-color-danger-1, var(--orca-color-warning-1))",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  maxWidth: "480px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}
+              >
+                <span style={{ flex: 1 }}>{blockLoadError.message}</span>
+                <Button
+                  variant="plain"
+                  onClick={handleRetryBlockLoad}
+                  title="重试加载卡片块"
+                  style={{ flexShrink: 0, fontSize: "12px" }}
+                >
+                  重试
+                </Button>
+              </div>
+            )}
             {childExpandWarning && (
               <div
                 role="status"
@@ -1754,6 +2170,43 @@ export default function SrsReviewSession({
         </div>
       )}
 
+      {/* F2-06：块 unknown 可重试错误 */}
+      {blockLoadError &&
+        currentCardKeyForLoad &&
+        blockLoadError.cardKey === currentCardKeyForLoad && (
+        <div
+          role="alert"
+          contentEditable={false}
+          style={{
+            position: "fixed",
+            top: lastLog ? "80px" : "48px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "6px 12px",
+            backgroundColor: "var(--orca-color-danger-1, var(--orca-color-warning-1))",
+            borderRadius: "12px",
+            fontSize: "12px",
+            color: "var(--orca-color-danger-6, var(--orca-color-warning-6))",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+            zIndex: 10001,
+            maxWidth: "90vw",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}
+        >
+          <span>{blockLoadError.message}</span>
+          <Button
+            variant="plain"
+            onClick={handleRetryBlockLoad}
+            title="重试加载卡片块"
+            style={{ flexShrink: 0, fontSize: "12px" }}
+          >
+            重试
+          </Button>
+        </div>
+      )}
+
       {/* FC-12：子卡展开截断提示 */}
       {childExpandWarning && (
         <div
@@ -1762,7 +2215,13 @@ export default function SrsReviewSession({
           title={childExpandWarning}
           style={{
             position: "fixed",
-            top: lastLog ? "80px" : "48px",
+            top:
+              lastLog ||
+              (blockLoadError &&
+                currentCardKeyForLoad &&
+                blockLoadError.cardKey === currentCardKeyForLoad)
+                ? "112px"
+                : "48px",
             left: "50%",
             transform: "translateX(-50%)",
             padding: "6px 12px",

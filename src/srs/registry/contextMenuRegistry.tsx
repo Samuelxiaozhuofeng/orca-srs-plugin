@@ -15,6 +15,10 @@ import {
   estimateCardCount
 } from "../blockCardCollector"
 import { createRepeatReviewSession } from "../repeatReviewManager"
+import {
+  createFixedRepeatSessionDescriptor,
+  type FixedRepeatSessionDescriptor
+} from "../reviewSessionDescriptor"
 import { getChapterBlockIds, getChapterBlockIdsAsync } from "../bookIRCreator"
 import { showIRBookDialog } from "../../components/IRBookDialogMount"
 import { classifyTopicIRBlockMenu, advanceTopicDueToToday } from "../topicIRMenu"
@@ -357,11 +361,19 @@ function QueryBlockMenuItem({
         return
       }
 
-      // 创建重复复习会话
-      createRepeatReviewSession(cards, blockId, 'query')
-
-      // 启动复习会话
-      await startRepeatReviewFromContextMenu(pluginName)
+      // F2-01：descriptor + sessionId 绑定后再开面板
+      const descriptor = createFixedRepeatSessionDescriptor({
+        cards,
+        sourceBlockId: blockId,
+        sourceType: "query"
+      })
+      createRepeatReviewSession(
+        cards,
+        blockId,
+        "query",
+        descriptor.sessionId
+      )
+      await startRepeatReviewFromContextMenu(pluginName, descriptor)
 
       orca.notify("success", `已开始复习 ${cards.length} 张卡片`, { title: "SRS 复习" })
     } catch (error) {
@@ -454,11 +466,19 @@ function ChildrenBlockMenuItem({
         return
       }
 
-      // 创建重复复习会话
-      createRepeatReviewSession(cards, blockId, 'children')
-
-      // 启动复习会话
-      await startRepeatReviewFromContextMenu(pluginName)
+      // F2-01：descriptor + sessionId 绑定后再开面板
+      const descriptor = createFixedRepeatSessionDescriptor({
+        cards,
+        sourceBlockId: blockId,
+        sourceType: "children"
+      })
+      createRepeatReviewSession(
+        cards,
+        blockId,
+        "children",
+        descriptor.sessionId
+      )
+      await startRepeatReviewFromContextMenu(pluginName, descriptor)
 
       orca.notify("success", `已开始复习 ${cards.length} 张卡片`, { title: "SRS 复习" })
     } catch (error) {
@@ -682,12 +702,18 @@ function ReadTopicTodayMenuItem({
 
 /**
  * 从右键菜单启动重复复习会话
- * 
+ *
  * @param pluginName - 插件名称
+ * @param descriptor - 已创建并绑定卡片载荷的 fixed/repeat 描述
  */
-async function startRepeatReviewFromContextMenu(pluginName: string): Promise<void> {
+async function startRepeatReviewFromContextMenu(
+  pluginName: string,
+  descriptor: FixedRepeatSessionDescriptor
+): Promise<void> {
   // 动态导入以避免循环依赖
-  const { getOrCreateReviewSessionBlock } = await import("../reviewSessionManager")
+  const { createReviewSessionBlockWithDescriptor } = await import(
+    "../reviewSessionManager"
+  )
 
   const activePanelId = orca.state.activePanel
 
@@ -696,8 +722,11 @@ async function startRepeatReviewFromContextMenu(pluginName: string): Promise<voi
     return
   }
 
-  // 获取或创建复习会话块
-  const blockId = await getOrCreateReviewSessionBlock(pluginName)
+  // 每次启动新建会话块并写入 descriptor
+  const blockId = await createReviewSessionBlockWithDescriptor(
+    pluginName,
+    descriptor
+  )
 
   // 查找或创建右侧面板
   const panels = orca.state.panels

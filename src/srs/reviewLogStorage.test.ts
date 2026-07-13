@@ -286,10 +286,21 @@ describe('reviewLogStorage', () => {
         min: new Date('2021-01-01').getTime(), 
         max: new Date('2029-12-31').getTime() 
       }).map(ts => new Date(ts))
+
+      // 唯一 id，避免同 id 后写覆盖导致期望条数与存储语义不一致
+      const uniqueLogsArbitraryForCleanup = fc.array(reviewLogEntryArbitrary, {
+        minLength: 1,
+        maxLength: 20
+      }).map((logs) =>
+        logs.map((log, index) => ({
+          ...log,
+          id: `log-${index}-${log.timestamp}`
+        }))
+      )
       
       await fc.assert(
         fc.asyncProperty(
-          fc.array(reviewLogEntryArbitrary, { minLength: 1, maxLength: 20 }),
+          uniqueLogsArbitraryForCleanup,
           validDateArbitrary,
           async (logs, cleanupDate) => {
             // 清理存储

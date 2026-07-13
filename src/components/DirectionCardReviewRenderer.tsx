@@ -145,8 +145,9 @@ export default function DirectionCardReviewRenderer({
           state: srsInfo.state,
         }
       : null
-    return previewIntervals(fullState)
-  }, [srsInfo])
+    // F2-08：与正式 nextReviewState 共用 pluginName → validated 配置
+    return previewIntervals(fullState, undefined, pluginName)
+  }, [srsInfo, pluginName])
 
   // 预览到期日期
   const dueDates = useMemo(() => {
@@ -162,8 +163,8 @@ export default function DirectionCardReviewRenderer({
           state: srsInfo.state,
         }
       : null
-    return previewDueDates(fullState)
-  }, [srsInfo])
+    return previewDueDates(fullState, undefined, pluginName)
+  }, [srsInfo, pluginName])
 
   // 块数据可能只是尚未加载；不要误判为“已删除”
   if (!block) {
