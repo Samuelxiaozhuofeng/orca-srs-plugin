@@ -142,6 +142,14 @@ type SrsReviewSessionProps = {
   currentRound?: number
   /** 再复习一轮回调（仅重复复习模式） */
   onRepeatRound?: () => void
+  /**
+   * 是否允许操作宿主 `.orca-block-editor` 的 maximize / 隐藏 chrome。
+   * 仅当本复习会话块是指定 panel 的主 block 视图时为 true。
+   * 嵌入 Journal「当日创建的」、引用预览、查询结果等场景必须为 false，
+   * 否则会误伤外层 Journal 的 query tabs（引用 / 当日创建的 / 同标签等）。
+   * 默认 false（安全默认：不触碰宿主 DOM）。
+   */
+  manageHostEditorChrome?: boolean
 }
 
 function getTodayMidnight(): Date {
@@ -170,7 +178,8 @@ export default function SrsReviewSession({
   pluginName = "orca-srs",
   isRepeatMode = false,
   currentRound = 1,
-  onRepeatRound
+  onRepeatRound,
+  manageHostEditorChrome = false
 }: SrsReviewSessionProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [queue, setQueue] = useState<ReviewCard[]>(cards)
@@ -287,8 +296,13 @@ export default function SrsReviewSession({
     console.log("[SRS Review Session] 会话开始，重置已处理父卡片集合与正式根卡额度")
   }, [])
 
-  // 当最大化状态变化时，设置父级 .orca-block-editor 的 maximize 属性并隐藏 query tabs
+  // 当最大化状态变化时，设置父级 .orca-block-editor 的 maximize 属性并隐藏 query tabs。
+  // 仅 manageHostEditorChrome=true（本块为 panel 主 block 视图）时才触碰宿主 DOM；
+  // 嵌入 Journal / 查询结果时 prop 为 false，绝不查询或修改外层编辑器。
+  // prop true→false 或卸载时由 cleanup 恢复此前实际改过的宿主 DOM。
   useEffect(() => {
+    if (!manageHostEditorChrome) return
+
     const container = containerRef.current
     if (!container) return
 
@@ -367,7 +381,7 @@ export default function SrsReviewSession({
       })
     }
 
-    // 清理函数：组件卸载时恢复原状
+    // 清理函数：prop 变为 false 或组件卸载时恢复原状
     return () => {
       blockEditor.removeAttribute('maximize')
       if (noneEditableEl) noneEditableEl.style.display = ''
@@ -397,7 +411,7 @@ export default function SrsReviewSession({
         (el as HTMLElement).style.display = ''
       })
     }
-  }, [isMaximized])
+  }, [isMaximized, manageHostEditorChrome])
 
   const totalCards = queue.length
   const currentCard = currentIndex < totalCards ? queue[currentIndex] : null

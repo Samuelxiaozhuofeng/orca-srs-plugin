@@ -363,6 +363,7 @@ stateDiagram-v2
 - 可跳转到卡片原始位置
 - 支持编辑卡片内容
 - **支持最大化显示**：点击工具栏最大化按钮，通过设置父级 `.orca-block-editor[maximize="1"]` 属性隐藏 query tabs 并铺满面板
+- **宿主 DOM 操作边界**：仅当 `srs.review-session` 块本身是指定 `panelId` 的主 block 视图（`view === "block"` 且 `viewArgs.blockId === blockId`）时，`SrsReviewSessionDemo` 才允许设置宿主 maximize / 隐藏 query tabs、go buttons、sidetools 等。嵌入 Journal「当日创建的」、引用预览、查询结果等场景只渲染内容，**不得**修改外层 `.orca-block-editor` 的属性或子节点样式（否则会把 Journal 的「引用 / 当日创建的 / 同标签 / 候选引用」区域藏成 0×0）。判定见 `shouldManageHostEditorChrome`（`panelTreeUtils.ts`），由 Renderer 传入 `manageHostEditorChrome` prop；**不**仅依赖 `renderingMode`。
 
 ### 同级子块显示设置（2025-12-11 新增）
 
@@ -582,14 +583,22 @@ stateDiagram-v2
 - `isMaximized` 默认值改为 `true`，复习界面启动即为最大化状态
 - 最大化按钮已隐藏（用户无需手动切换）
 
-#### 全屏实现方式（2025-12-15 更新）
+#### 全屏实现方式（2025-12-15 更新；2026-07 宿主边界补充）
 
 **已移除动态 CSS 注入**：
 
 - ~~之前通过动态注入 CSS 样式来让复习界面撑满整个 `block-editor`~~（已删除）
 - 现在仅通过 JavaScript 控制 DOM 元素的显示/隐藏来实现最大化效果
 
-**当前实现方式**：
+**前置条件（宿主 chrome 闸门）**：
+
+- `SrsReviewSessionRenderer` 用 `orca.nav.findViewPanel(panelId, orca.state.panels)` 取得面板，再经 `shouldManageHostEditorChrome(panel, panelId, blockId)` 判定。
+- 仅当面板主视图为 `view === "block"` 且 `viewArgs.blockId === blockId` 时，向 Demo 传入 `manageHostEditorChrome={true}`。
+- 独立右侧复习面板：会话块即 panel 主块 → 允许最大化宿主 DOM，默认沉浸体验不变。
+- Journal / 引用 / 查询嵌入：`manageHostEditorChrome={false}` → 宿主 DOM effect **直接 return**，不做任何 `closest('.orca-block-editor')` 查询或样式修改。
+- `manageHostEditorChrome` 从 true→false 或组件卸载时，既有 cleanup 仍会恢复此前改过的宿主 DOM。
+
+**当前实现方式**（仅 `manageHostEditorChrome === true` 时）：
 
 1. **设置 maximize 属性**：`blockEditor.setAttribute('maximize', '1')`
 2. **隐藏编辑器 UI 元素**（通过 JavaScript 设置 `display: 'none'`）：
@@ -613,6 +622,7 @@ stateDiagram-v2
 - 避免全局 CSS 污染
 - 更容易调试和维护
 - 精确匹配避免错误隐藏内容
+- 嵌入场景不会误伤 Journal 外层 UI
 
 #### 面板宽度 50/50 分割
 

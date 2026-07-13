@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { findPanelIdByBlockView } from "./panelTreeUtils"
+import {
+  findPanelIdByBlockView,
+  isPanelMainBlockView,
+  shouldManageHostEditorChrome
+} from "./panelTreeUtils"
 
 describe("findPanelIdByBlockView", () => {
   it("finds a block view inside a nested panel tree", () => {
@@ -33,5 +37,113 @@ describe("findPanelIdByBlockView", () => {
     }
 
     expect(findPanelIdByBlockView(panels, 42)).toBeNull()
+  })
+})
+
+describe("isPanelMainBlockView", () => {
+  it("returns true when panel view is block and viewArgs.blockId matches", () => {
+    expect(
+      isPanelMainBlockView(
+        { id: "review-panel", view: "block", viewArgs: { blockId: 14878 } },
+        14878
+      )
+    ).toBe(true)
+  })
+
+  it("returns false for null/undefined panel", () => {
+    expect(isPanelMainBlockView(null, 14878)).toBe(false)
+    expect(isPanelMainBlockView(undefined, 14878)).toBe(false)
+  })
+
+  it("returns false when view is not block (e.g. Journal embedding host)", () => {
+    // Journal「当日创建的」embeds srs.review-session; outer panel is still journal
+    expect(
+      isPanelMainBlockView(
+        { id: "journal-panel", view: "journal", viewArgs: { date: "2026-07-13" } },
+        14878
+      )
+    ).toBe(false)
+  })
+
+  it("returns false when blockId does not match panel main view", () => {
+    expect(
+      isPanelMainBlockView(
+        { id: "page-panel", view: "block", viewArgs: { blockId: 100 } },
+        14878
+      )
+    ).toBe(false)
+  })
+
+  it("returns false when viewArgs.blockId is missing", () => {
+    expect(
+      isPanelMainBlockView({ id: "panel", view: "block", viewArgs: {} }, 14878)
+    ).toBe(false)
+    expect(
+      isPanelMainBlockView({ id: "panel", view: "block" }, 14878)
+    ).toBe(false)
+  })
+})
+
+describe("shouldManageHostEditorChrome", () => {
+  const reviewBlockId = 14878
+  const reviewPanel = {
+    id: "side-review",
+    view: "block" as const,
+    viewArgs: { blockId: reviewBlockId }
+  }
+
+  it("allows host chrome only for the panel whose main view is the review session block", () => {
+    expect(
+      shouldManageHostEditorChrome(reviewPanel, "side-review", reviewBlockId)
+    ).toBe(true)
+  })
+
+  it("denies host chrome when panelId is missing", () => {
+    expect(shouldManageHostEditorChrome(reviewPanel, undefined, reviewBlockId)).toBe(false)
+    expect(shouldManageHostEditorChrome(reviewPanel, null, reviewBlockId)).toBe(false)
+    expect(shouldManageHostEditorChrome(reviewPanel, "", reviewBlockId)).toBe(false)
+  })
+
+  it("denies host chrome when panel lookup returned null (not found)", () => {
+    expect(shouldManageHostEditorChrome(null, "side-review", reviewBlockId)).toBe(false)
+  })
+
+  it("denies host chrome when looked-up panel id does not match panelId", () => {
+    expect(
+      shouldManageHostEditorChrome(reviewPanel, "other-panel", reviewBlockId)
+    ).toBe(false)
+  })
+
+  it("denies host chrome when panel.id is missing (fail-closed)", () => {
+    const panelWithoutId = {
+      view: "block" as const,
+      viewArgs: { blockId: reviewBlockId }
+    }
+    expect(
+      shouldManageHostEditorChrome(panelWithoutId, "side-review", reviewBlockId)
+    ).toBe(false)
+  })
+
+  it("denies host chrome for Journal panel even if panelId is present", () => {
+    const journalPanel = {
+      id: "journal-panel",
+      view: "journal" as const,
+      viewArgs: { date: "2026-07-13" }
+    }
+    expect(
+      shouldManageHostEditorChrome(journalPanel, "journal-panel", reviewBlockId)
+    ).toBe(false)
+  })
+
+  it("denies host chrome when main block is a different page that embeds the session", () => {
+    // Review session appears inside page block 100 as query/ref embed
+    const pagePanel = {
+      id: "page-panel",
+      view: "block" as const,
+      viewArgs: { blockId: 100 }
+    }
+    expect(
+      shouldManageHostEditorChrome(pagePanel, "page-panel", reviewBlockId)
+    ).toBe(false)
   })
 })

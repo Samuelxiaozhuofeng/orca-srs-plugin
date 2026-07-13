@@ -45,6 +45,7 @@ import {
 } from "../srs/reviewSessionDescriptor"
 import { resolveReviewSessionBlock } from "../srs/reviewSessionManager"
 import { createLoadGenerationGate } from "../srs/asyncLoadGeneration"
+import { shouldManageHostEditorChrome } from "../srs/registry/panelTreeUtils"
 
 const { useEffect, useState, useMemo, useRef, useCallback } = window.React
 const { BlockShell, Button } = orca.components
@@ -490,6 +491,21 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
     }
   }
 
+  /**
+   * 仅当本 panel 的主视图就是此 review-session 块时，才允许 Demo 操作宿主
+   * `.orca-block-editor`（maximize / 隐藏 query tabs 等）。
+   * Journal「当日创建的」、引用预览、查询嵌入等场景 panel 主视图不是本块，
+   * 必须为 false，避免把外层 Journal 的 none-editable 区域藏成 0×0。
+   * 判定依赖 panel 主视图关系，不依赖 renderingMode。
+   * 每次 render 重读 orca.state.panels，避免 useMemo 缓存陈旧 gate。
+   */
+  const panel = orca.nav.findViewPanel(panelId, orca.state.panels)
+  const manageHostEditorChrome = shouldManageHostEditorChrome(
+    panel,
+    panelId,
+    blockId
+  )
+
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -543,6 +559,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
           isRepeatMode={isRepeatMode}
           currentRound={currentRound}
           onRepeatRound={isRepeatMode ? handleRepeatRound : undefined}
+          manageHostEditorChrome={manageHostEditorChrome}
         />
       </SrsErrorBoundary>
     )
