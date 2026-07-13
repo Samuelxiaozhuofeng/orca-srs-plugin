@@ -3,6 +3,7 @@
  *
  * - Enter / Shift+Enter / Alt+P / Esc 仅在此处理（不走 Orca 全局 assign）
  * - Alt+X / Alt+Z 交给 Orca 编辑器命令（可重绑定），避免与 React 双重触发
+ * - 阅读/编辑模式切换交给 Orca 命令与原生可重绑定快捷键
  * - 弹窗、输入框、contenteditable、IME 组合输入期间停用
  * - 多面板：事件须发生在本会话 DOM 树内
  */

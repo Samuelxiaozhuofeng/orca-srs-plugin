@@ -94,6 +94,8 @@ export default function IRSessionShell({
   const [postponeOpen, setPostponeOpen] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
   const [breakpointError, setBreakpointError] = useState<string | null>(null)
+  /** 阅读模式（默认）压平大纲视觉；编辑模式恢复原生结构操作。仅作用于本会话阅读条目。 */
+  const [viewMode, setViewMode] = useState<"reading" | "edit">("reading")
 
   const sessionRootRef = useRef<HTMLDivElement | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
@@ -160,6 +162,7 @@ export default function IRSessionShell({
     setShowSummary(false)
     setMoreOpen(false)
     setPostponeOpen(false)
+    setViewMode("reading")
     if (!startedRef.current && nextEntries.length > 0) {
       startedRef.current = true
       metricsRef.current.record("session.start", nextEntries.length)
@@ -188,6 +191,7 @@ export default function IRSessionShell({
       if (detail.action === "next") void handleNext()
       if (detail.action === "postpone") setPostponeOpen(true)
       if (detail.action === "priority") setMoreOpen(true)
+      if (detail.action === "toggleViewMode") toggleViewMode()
       if (detail.action === "skipChapter") {
         event.preventDefault()
         void handleSkipChapter()
@@ -419,6 +423,10 @@ export default function IRSessionShell({
     return () => onCloseHandlerChange(null)
   }, [onCloseHandlerChange, handleClose])
 
+  const toggleViewMode = () => {
+    setViewMode((prev: "reading" | "edit") => (prev === "reading" ? "edit" : "reading"))
+  }
+
   useIRShortcuts({
     enabled: !showSummary && !loadFailed && !isReviewEntry,
     panelId,
@@ -512,6 +520,7 @@ export default function IRSessionShell({
     <div
       ref={sessionRootRef}
       className="ir-reading"
+      data-ir-view-mode={viewMode}
       onMouseUp={breakpoint.scheduleCapture}
       onKeyUp={breakpoint.scheduleCapture}
     >
@@ -575,6 +584,15 @@ export default function IRSessionShell({
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("low")}>低</Button>
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("medium")}>中</Button>
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
+          <Button
+            tabIndex={0}
+            variant="plain"
+            onClick={toggleViewMode}
+            aria-label={viewMode === "reading" ? "编辑模式" : "阅读模式"}
+            title={viewMode === "reading" ? "编辑模式" : "阅读模式"}
+          >
+            {viewMode === "reading" ? "编辑模式" : "阅读模式"}
+          </Button>
           <ConfirmBox
             text="确认完成本章/归档？将清除 IR 身份并保留正文。若为顺序解锁书籍，将尝试解锁下一章。"
             onConfirm={async (_e: unknown, close: () => void) => {

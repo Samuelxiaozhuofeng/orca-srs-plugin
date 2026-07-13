@@ -1,21 +1,24 @@
 /**
  * 通过 Orca shortcuts API 注册默认可重绑定快捷键
  *
- * 故意不注册 Enter / Shift+Enter：
+ * Enter / Shift+Enter 故意不注册：
  * 会话动作快捷键必须经过 React Hook 的焦点/IME 冲突保护，
  * 全局 assign 会绕过保护并影响所有面板。
+ * 阅读/编辑模式则注册为 Orca 普通命令，使其能在原生快捷键设置中搜索和改绑。
  */
 
 export const IR_DEFAULT_SHORTCUTS = {
   createExtract: "alt+x",
-  createCloze: "alt+z"
-  // session next / postpone / priority：仅由 useIRShortcuts 处理
+  createCloze: "alt+z",
+  toggleViewMode: "alt+r"
+  // session next / postpone / priority：仅由 useIRShortcuts 或用户手动绑定处理
 } as const
 
 export async function registerIRDefaultShortcuts(pluginName: string): Promise<void> {
   const pairs: Array<[string, string]> = [
     [IR_DEFAULT_SHORTCUTS.createExtract, `${pluginName}.createExtract`],
-    [IR_DEFAULT_SHORTCUTS.createCloze, `${pluginName}.createCloze`]
+    [IR_DEFAULT_SHORTCUTS.createCloze, `${pluginName}.createCloze`],
+    [IR_DEFAULT_SHORTCUTS.toggleViewMode, `${pluginName}.irToggleViewMode`]
   ]
 
   // 若历史版本误绑了 Enter，主动解除

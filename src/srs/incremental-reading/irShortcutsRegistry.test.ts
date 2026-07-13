@@ -21,11 +21,24 @@ describe("IR default shortcut registration", () => {
     await registerIRDefaultShortcuts("orca-srs")
     expect(assign).not.toHaveBeenCalledWith("alt+x", "orca-srs.createExtract")
     expect(assign).toHaveBeenCalledWith("alt+z", "orca-srs.createCloze")
+    expect(assign).toHaveBeenCalledWith("alt+r", "orca-srs.irToggleViewMode")
   })
 
   it("never overwrites an occupied default shortcut", async () => {
     orca.state.shortcuts = { "alt+x": "other-plugin.command" }
     await registerIRDefaultShortcuts("orca-srs")
     expect(assign).not.toHaveBeenCalledWith("alt+x", "orca-srs.createExtract")
+  })
+
+  it("preserves a user-rebound reading mode command", async () => {
+    orca.state.shortcuts = { "ctrl+shift+r": "orca-srs.irToggleViewMode" }
+    await registerIRDefaultShortcuts("orca-srs")
+    expect(assign).not.toHaveBeenCalledWith("alt+r", "orca-srs.irToggleViewMode")
+  })
+
+  it("does not overwrite Alt+R when another command already uses it", async () => {
+    orca.state.shortcuts = { "alt+r": "other-plugin.command" }
+    await registerIRDefaultShortcuts("orca-srs")
+    expect(assign).not.toHaveBeenCalledWith("alt+r", "orca-srs.irToggleViewMode")
   })
 })

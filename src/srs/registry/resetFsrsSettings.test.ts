@@ -121,6 +121,7 @@ describe("resetFsrsSettings command register/unregister", () => {
     const entry = commands.get(id)
     expect(entry).toBeDefined()
     expect(entry!.label).toBe("SRS: 恢复 FSRS 默认设置")
+    expect(commands.get(`${PLUGIN}.irToggleViewMode`)?.label).toBe("IR: 切换到编辑模式")
 
     await entry!.fn()
     expect(setSettings).toHaveBeenCalled()
@@ -154,5 +155,6 @@ describe("resetFsrsSettings command register/unregister", () => {
     expect(commands.has(id)).toBe(true)
     unregisterCommands(PLUGIN)
     expect(commands.has(id)).toBe(false)
+    expect(commands.has(`${PLUGIN}.irToggleViewMode`)).toBe(false)
   })
 })

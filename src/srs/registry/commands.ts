@@ -509,6 +509,17 @@ export function registerCommands(
     },
     "IR: 调整重要性"
   )
+  orca.commands.registerCommand(
+    `${pluginName}.irToggleViewMode`,
+    () => {
+      const panelId = orca.state.activePanel
+      if (!panelId) return
+      window.dispatchEvent(new CustomEvent("orca-srs:ir-session-action", {
+        detail: { action: "toggleViewMode", panelId }
+      }))
+    },
+    "IR: 切换到编辑模式"
+  )
 
   // 渐进阅读：记录当前阅读进度（用于下次自动跳转继续阅读）
   orca.commands.registerEditorCommand(
@@ -702,6 +713,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.irSessionNext`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPostpone`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPriority`)
+  orca.commands.unregisterCommand(`${pluginName}.irToggleViewMode`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
   
