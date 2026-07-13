@@ -780,7 +780,9 @@
   width: 100%;
   max-width: 820px;
   margin: 0 auto;
+  /* medium/narrow: --ir-content-safe-right keeps body clear of the fixed action bar */
   padding: 24px 24px 96px;
+  padding-right: max(24px, var(--ir-content-safe-right, 24px));
   box-sizing: border-box;
 }
 
@@ -1060,12 +1062,18 @@
   overflow: auto;
 }
 
+/*
+ * IR reading chrome stacking (controlled):
+ *   action bar 40 → secondary menus 41 → Orca selection toolbar 10000 !important
+ * Drawer overlay (200) still covers IR reading chrome when open;
+ * Orca toolbar uses 10000 so it stays above IR chrome across Orca cascade/stacking.
+ */
 .ir-reading__footer {
   position: fixed;
-  top: 50%;
-  right: max(24px, calc(50vw - 410px - 80px));
+  top: var(--ir-action-bar-top, 50%);
+  right: var(--ir-action-bar-right, 16px);
   transform: translateY(-50%);
-  z-index: 100;
+  z-index: 40;
   background: var(--orca-color-bg-1, #ffffff);
   border: 1px solid var(--orca-color-border-1, #e2e8f0);
   border-radius: 8px;
@@ -1073,6 +1081,7 @@
   box-shadow: var(--orca-shadow-2, 0 4px 12px rgba(0, 0, 0, 0.08));
   width: auto;
   height: auto;
+  box-sizing: border-box;
 }
 
 .ir-reading__footer-inner {
@@ -1085,15 +1094,63 @@
   width: 100%;
   justify-content: center;
   margin: 0;
+  box-sizing: border-box;
+}
+
+/* medium: ~58px bar, 46×30 buttons, 12px type, inset handled in JS */
+.ir-reading[data-ir-action-bar-tier="medium"] .ir-reading__footer,
+.ir-reading__footer[data-ir-action-bar-tier="medium"] {
+  width: 58px;
+  padding: 6px;
+}
+
+.ir-reading[data-ir-action-bar-tier="medium"] .ir-reading__footer-inner,
+.ir-reading__footer[data-ir-action-bar-tier="medium"] .ir-reading__footer-inner {
+  gap: 6px;
+}
+
+.ir-reading[data-ir-action-bar-tier="medium"] .ir-reading__footer-inner > button,
+.ir-reading__footer[data-ir-action-bar-tier="medium"] .ir-reading__footer-inner > button {
+  width: 46px;
+  min-width: 46px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+/* narrow: ~38px bar, 30×30 icon buttons, compact symbols from React */
+.ir-reading[data-ir-action-bar-tier="narrow"] .ir-reading__footer,
+.ir-reading__footer[data-ir-action-bar-tier="narrow"] {
+  width: 38px;
+  padding: 4px;
+}
+
+.ir-reading[data-ir-action-bar-tier="narrow"] .ir-reading__footer-inner,
+.ir-reading__footer[data-ir-action-bar-tier="narrow"] .ir-reading__footer-inner {
+  gap: 4px;
+}
+
+.ir-reading[data-ir-action-bar-tier="narrow"] .ir-reading__footer-inner > button,
+.ir-reading__footer[data-ir-action-bar-tier="narrow"] .ir-reading__footer-inner > button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .ir-reading__postpone,
 .ir-reading__more {
   position: fixed;
-  top: 50%;
-  right: calc(max(24px, calc(50vw - 410px - 80px)) + 80px);
+  top: var(--ir-action-bar-top, 50%);
+  /* sit just left of the action bar */
+  right: calc(var(--ir-action-bar-right, 16px) + var(--ir-action-bar-width, 80px) + 8px);
   transform: translateY(-50%);
-  z-index: 99;
+  z-index: 41;
   background: var(--orca-color-bg-1, #ffffff);
   border: 1px solid var(--orca-color-border-1, #e2e8f0);
   border-radius: 8px;
@@ -1102,6 +1159,11 @@
   width: 180px;
   height: auto;
   box-sizing: border-box;
+}
+
+/* Orca selection toolbar must paint above the IR reading action bar (Console-verified) */
+.orca-editor-toolbar-bar {
+  z-index: 10000 !important;
 }
 
 .ir-reading__postpone {
