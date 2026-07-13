@@ -1,82 +1,117 @@
 # SRS 列表卡
 
-## 功能概述
+> **文档同步日期**：2026-07-13  
+> **变更说明**：对照 `listCardCreator` / `cardCollector` / `SrsReviewSessionDemo` / `reviewCardGrading` 校正；补充身份、评分路径与相关文件。
 
-“列表卡”用于把一个列表按条目顺序逐条推送复习，每个条目都有独立的记忆评分与调度。
+---
+
+## 概述
+
+列表卡把一个列表按**直接子块**顺序逐条推送复习。每条条目在**子块自身**上保存独立 FSRS 状态。
 
 核心规则：
-- 条目来源只取父块的**直接子块**（children）。
-- **Good / Easy** 才会解锁并继续推送下一条（正式复习）。
-- 若某条评分为 **Again / Hard**：
-  - 后续条目会在正式调度上被安排到**明天**再推送；
-  - 但当日仍会继续展示后续条目作为**辅助预览**，其评分**不计入统计**，也**不会更新记忆状态**。
+
+- 条目来源：父块 `children`（直接子块）
+- **Good / Easy**：解锁并继续推送下一条（正式复习）
+- **Again / Hard**：
+  - 正式调度：将后续条目中 due 早于「明天零点」的统一推到明天零点
+  - 当日会话：仍可把后续条目加入队列作为**辅助预览**（`isAuxiliaryPreview`），评分不写日志、不更新 SRS、不计入统计
+
+---
 
 ## 创建方式
 
-在编辑器中将列表写为“父块 + 子块条目”（也可以先不写子块，后面再补），然后：
-- 通过斜杠命令：`创建列表卡（子块作为条目）`
+- 斜杠命令：`列表卡（子块作为条目）` → `${pluginName}.createListCard`
+- 实现：`createListCardFromBlock(cursor, pluginName)`（`listCardCreator.ts`）
 
-创建后父块会带上标签：
-- `#card(type=list)`
+创建后：
+
+- 父块：`#card(type=list)`，`srs.isCard = true`
+- 子块：若尚无任何 `srs.*` 属性，第 1 条 due=今天零点，其余=明天零点
+- 无子块也可先创建，提示用户添加子块；收集时再 `ensureCardSrsStateWithInitialDue`
+
+`scanCardsFromTags` **跳过** list（不转换 `_repr`）。
+
+---
 
 ## 数据结构与存储
 
-### 父块（列表卡容器）
+### 父块（容器）
 
-- 负责结构与渲染：`#card(type=list)`
-- 条目顺序以 `children` 当前顺序为准
+| 项 | 说明 |
+| -- | ---- |
+| 标签 | `#card(type=list)` |
+| 顺序 | `children` 当前顺序 |
+| 身份中的 blockId | 父列表根块 |
 
-### 子块（条目卡）
+### 子块（条目）
 
-- 每个条目子块自身存储普通卡的 SRS 属性：`srs.*`
-- 这样可以保证“条目身份”稳定：
-  - 编辑条目文本不会丢进度
-  - 重排子块顺序不会导致进度错位
-  - 新增子块视为新条目（新卡）
+| 项 | 说明 |
+| -- | ---- |
+| SRS | 普通 `srs.*` 属性（与 basic 相同前缀） |
+| 身份 | `listItemId` = 子块 ID |
+| 进度稳定性 | 改文本/重排不丢进度；新增子块视为新条目 |
 
-### 初始化规则
+### ReviewCard 字段
 
-创建列表卡时：
-- 第 1 条默认“今天到期”
-- 其余条目默认“明天到期”（需要通过 Good/Easy 逐次解锁）
+```typescript
+{
+  id: blockId,              // 父块
+  cardType: "list",
+  listItemId,               // 当前条目
+  listItemIndex,            // 1-based 序号
+  listItemIds,              // 当前 children 快照
+  isAuxiliaryPreview?,      // 辅助预览
+  srs: /* 来自 listItemId 的状态 */
+}
+```
 
-如果创建时还没有子块：
-- 仍然可以先创建列表卡
-- 后续添加子块后，系统会在收集/复习时自动按规则初始化条目的 SRS 状态
+### 身份（cardIdentity）
+
+- `cardKey`：`list:{blockId}:item:{listItemId}`
+- 复习日志 v2 写 `blockId` + `listItemId` + `cardKey`；兼容字段 `cardId` 仍可为 `listItemId`
+
+---
+
+## 收集行为
+
+`collectReviewCards` 在 `cardType === "list"` 时：
+
+1. 无 children → 跳过
+2. 按顺序找**第一个** `due <= now` 的条目作为正式可复习项
+3. 只为该条目生成**一张** ReviewCard（不是一次展开全部条目）
+4. 后续条目由评分后的会话逻辑追加（见下）
+
+收集阶段会对 list 子块做 `get-blocks` 预取（性能优化）。
+
+---
 
 ## 复习行为
 
-### 正式复习
+### 正式评分路径
 
-复习队列会为每张列表卡选择一个“正式可复习条目”：
-- 按当前条目顺序从前到后查找第一个 `due <= now` 的条目
+主路径在 `SrsReviewSessionDemo`：
 
-评分行为：
-- **Good / Easy**：解锁下一条，将其 `due` 调整为“现在”，并加入本次会话队列
-- **Again / Hard**：
-  - 将后续条目中 `due < 明天零点` 的条目统一推迟到“明天零点”
-  - 同时把后续条目加入本次会话作为“辅助预览”
+1. `gradeReviewCard(..., { updateListProgression: false })`  
+   - List 条目用 `updateSrsState(listItemId, grade)` 写 FSRS  
+   - 会话内自行处理解锁/推迟，避免与 `reviewCardGrading.updateListProgression` 双重追加冲突
+2. **Good / Easy**：将下一条 `srs.due` 设为现在，并 `push` 正式 `ReviewCard` 到队列
+3. **Again / Hard**：后续条目 due 提到明天零点；当日把后续条目以 `isAuxiliaryPreview: true` 入队
+
+`reviewCardGrading.updateListProgression` 仍保留：在 `updateListProgression !== false`（如混合会话固定快照）时只改 due、**不**往队列塞卡。
 
 ### 辅助预览
 
-- 允许评分（便于自我反馈）
-- 但评分不会：
-  - 写入复习日志
-  - 更新条目的 SRS 状态
-  - 计入任何正式统计
+- UI：`ListCardReviewRenderer` 显示「辅助预览，不计入统计」
+- 会话：`isAuxiliaryPreview` 时 early-return：不写日志、不更新 SRS、不 track 正式进度
+- 历史动作类型：`auxiliary_grade`
 
-复习界面会显示明确提示：“辅助预览，不计入统计”。
+### 渲染
 
-## 常见问题
+- `ListCardReviewRenderer`：展示父块题干上下文 + 当前条目内容；支持显示答案与评分
+- `SrsCardDemo`：`listItemId` 等齐全时路由到 List 渲染器
 
-### 重排条目会怎么样？
-
-条目进度跟随子块 `blockId`，重排只会改变“下一条要推送的顺序”，不会重置已存在的条目进度。
-
-### 删除/新增条目会怎么样？
-
-- 删除子块：对应条目不再存在
-- 新增子块：视为新条目（新卡），将按初始化规则进入解锁流程
+---
 
 ## 复习日志与启动清理（FC-04 / FC-05）
 
@@ -84,7 +119,7 @@
 
 - `blockId`：父列表根块
 - `listItemId`：条目子块
-- `cardKey`：`list:{blockId}:item:{listItemId}`（由 `cardIdentity` 统一生成）
+- `cardKey`：`list:{blockId}:item:{listItemId}`
 - `cardId`：兼容字段，仍为 `listItemId`
 
 ### 启动清理如何判定 List 日志是否有效
@@ -114,3 +149,34 @@
 - **不**因缺少 `#card` 标签删除
 
 若日志已有任一结构化痕迹（如 `legacy: false`、`blockId`、`cardType`、`listItemId`）但字段不完整（例如缺 `cardKey`），**不得**按 legacy 用 `cardId`（可能是子条目 ID）删除；应按结构化不完整处理：父块 exists/unknown 时保留并记错误，仅父块明确 missing 时可删。
+
+---
+
+## 常见问题
+
+### 重排条目会怎么样？
+
+条目进度跟随子块 `blockId`，重排只改变推送顺序，不重置已有进度。
+
+### 删除/新增条目会怎么样？
+
+- 删除子块：对应条目不再存在；清理逻辑可删关联日志
+- 新增子块：新卡，按初始化规则进入解锁流程
+
+---
+
+## 相关文件
+
+| 路径 | 说明 |
+| ---- | ---- |
+| `src/srs/listCardCreator.ts` | 创建列表卡 |
+| `src/srs/listCard.test.ts` | 测试 |
+| `src/srs/cardCollector.ts` | 收集正式 due 条目 |
+| `src/srs/reviewCardGrading.ts` | 评分 + List progression（可选） |
+| `src/srs/cardIdentity.ts` | list cardKey |
+| `src/srs/deletedCardCleanup.ts` | 日志清理 |
+| `src/srs/storage.ts` | 条目 `srs.*` / ensure with initial due |
+| `src/srs/registry/commands.ts` / `uiComponents.tsx` | 命令与斜杠 |
+| `src/components/ListCardReviewRenderer.tsx` | 复习 UI |
+| `src/components/SrsCardDemo.tsx` | 路由 |
+| `src/components/SrsReviewSessionDemo.tsx` | 解锁/辅助预览会话逻辑 |

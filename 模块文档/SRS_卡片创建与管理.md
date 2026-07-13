@@ -1,275 +1,195 @@
 # SRS 卡片创建与管理模块
 
+> **文档同步日期**：2026-07-13  
+> **变更说明**：按当前代码校正卡种、`_repr` 规则、最近牌组与相关文件路径；去掉失效的绝对 `file://` 链接。
+
+---
+
 ## 概述
 
-本模块负责卡片的创建、标签识别和 Deck 分组管理，是将 Orca 块转换为 SRS 卡片的核心逻辑。
+本模块负责将 Orca 块识别/转换为 SRS（及 IR）卡片：标签、`type`、牌组、初始状态与批量扫描。
 
 ### 核心价值
 
-- 通过 `#card` 标签自动识别卡片
-- 支持 Deck 分组管理
-- 提供手动和批量转换功能
+- 通过 **`#card`** 发现/扫描卡片；`#choice` 等只在已发现块上覆盖**类型**
+- 多卡种：basic / cloze / direction / list / choice / topic / extracts 等
+- Deck 分组与「最近默认牌组」
+- 手动转换 + 批量扫描
+
+---
 
 ## 技术实现
 
 ### 核心文件
 
-- [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)（卡片创建与识别函数）
-
-### 卡片结构
-
-```
-父块（#card 标签）→ 题目
-└── 第一个子块 → 答案
-```
-
-### 卡片识别规则
-
-1. 块必须带有 `#card` 标签
-2. 父块文本作为题目（front）
-3. 第一个子块文本作为答案（back）
-4. 从 `#card` 标签的属性中读取牌组名称（通过块引用）
-5. **【新增】从 `#card` 标签的 `type` 属性识别卡片类型（basic 或 cloze）**
-
-### 核心函数
-
-#### `scanCardsFromTags()`
-
-批量扫描所有带 `#card` 标签的块并转换为卡片：
-
-```mermaid
-flowchart TD
-    A[开始扫描] --> B[获取所有带 #card 标签的块]
-    B --> C{遍历每个块}
-    C --> D[识别卡片类型]
-    D --> E{type = cloze?}
-    E -->|是| F[设置 _repr.type = srs.cloze-card]
-    E -->|否| G[设置 _repr.type = srs.card]
-    F --> H[已是该类型?]
-    G --> H
-    H -->|是| I[跳过]
-    H -->|否| J[提取题目和答案]
-    J --> K[读取 Deck 属性]
-    K --> L[写入初始 SRS 状态]
-    L --> C
-    C --> M[显示结果通知]
-```
-
-#### `makeCardFromBlock(cursor)`
-
-将当前光标所在块转换为 SRS 卡片（一步到位）：
-
-**实现逻辑**：
-
-1. 检查块是否已有 `#card` 标签引用
-2. 如无标签，使用 `core.editor.insertTag` 命令添加
-   - 创建真正的标签引用和 DOM 元素
-   - 利用 Orca 官方 API 确保标签正确渲染
-3. 设置 `_repr.type = "srs.card"` 完成转换
-4. 初始化 SRS 状态
-
-**关键技术**：
-
-```typescript
-// 使用 Orca 官方命令添加标签
-await orca.commands.invokeEditorCommand(
-  "core.editor.insertTag",
-  cursor,
-  blockId,
-  "card"
-);
-```
-
-**特性**：
-
-- ✓ 自动添加真正的 #card 标签（可交互 DOM 元素）
-- ✓ 支持撤销操作
-- ✓ 作为编辑器命令注册
-- ✓ **新创建卡片时自动清理残留的旧 SRS 属性**（解决删除标签后重新创建卡片沿用旧数据的问题）
-
-#### `extractCardType(block): "basic" | "cloze"`
-
-**【新增】** 从块的标签属性中提取卡片类型：
-
-```typescript
-// 标签属性结构
-block.refs[].data[].name === "type"
-block.refs[].data[].value // "basic" 或 "cloze"
-```
-
-**工作原理**：
-
-1. 查找 `#card` 标签引用（`ref.type === 2 && ref.alias === "card"`）
-2. 从 `ref.data` 中读取 `name === "type"` 的属性
-3. 支持单选文本和多选文本两种属性类型
-4. 如果值为 `"cloze"`（不区分大小写），返回 `"cloze"`
-5. 其他情况默认返回 `"basic"`
-
-**应用场景**：
-
-- 区分填空卡（cloze）和普通卡片（basic）
-- 在复习界面使用不同的渲染方式
-- 使用 cloze 按钮创建填空时自动设置为 `"cloze"`
-
-#### `extractDeckName(block): Promise<string>`
-
-从块的标签属性中提取牌组名称（无迁移，直接替换旧的 `deck` 多选方案）：
-
-```typescript
-// 标签属性结构
-block.refs[].data[].name === "牌组"
-block.refs[].data[].type === 2  // PropType.BlockRefs
-block.refs[].data[].value // 引用 ID 数组（ref.id），通常只取第一个
-```
-
-### 卡片类型管理
-
-**【新增】** 插件支持两种卡片类型：
-
-| 类型      | \_repr.type      | 标签属性                 | 用途         |
-| --------- | ---------------- | ------------------------ | ------------ |
-| **Basic** | `srs.card`       | `type: "basic"` 或未设置 | 普通问答卡片 |
-| **Cloze** | `srs.cloze-card` | `type: "cloze"`          | 填空卡片     |
-
-#### 用户操作流程
-
-1. 在 Orca 标签页面为 `#card` 标签定义 `type` 属性（类型：单选/多选文本）
-2. 添加可选值：`"basic"` 和 `"cloze"`
-3. 给块打 `#card` 标签后，从下拉菜单选择类型
-4. 或者使用 Cloze 按钮创建填空时自动设置为 `"cloze"`
-
-#### 技术实现
-
-```typescript
-// 1. 识别卡片类型
-const cardType = extractCardType(block); // "basic" 或 "cloze"
-
-// 2. 设置对应的 _repr.type
-const reprType = cardType === "cloze" ? "srs.cloze-card" : "srs.card";
-
-// 3. 更新块的 _repr
-block._repr = {
-  type: reprType,
-  front: front,
-  back: back,
-  cardType: cardType, // 方便后续使用
-};
-```
-
-#### 自动识别流程
-
-- **扫描时**：`scanCardsFromTags()` 自动读取每个块的 `type` 属性
-- **创建时**：`makeCardFromBlock()` 在添加标签后检查 `type` 属性
-- **复习时**：复习队列同时收集 `srs.card` 和 `srs.cloze-card` 两种类型
-
-### Deck 管理
-
-#### 用户操作流程
-
-1. 创建一个普通块，块文本为牌组名称（如“测试牌组”）
-2. 在 Orca 标签页面为 `#card` 标签定义 `牌组` 属性（类型：块引用）
-3. 给块打 `#card` 标签后，在 `牌组` 属性里引用该牌组块
-
-#### 默认行为
-
-- 未设置 `牌组` 属性时，归入 "Default" 分组
-- 暂不支持多牌组：若配置了多个引用，仅取第一个引用对应的牌组块
-- 不再识别旧的 `deck` 属性（无迁移，直接替换）
-
-#### 最近牌组自动默认
-
-插件会监听用户对卡片 `#card` 标签中 `牌组` 属性的修改：
-
-1. 默认情况下，新卡未命中任何最近牌组时仍归入 `"Default"`。
-2. 当用户手动把某张卡的 `牌组` 改为非 `"Default"` 的牌组（如“阅读”“西班牙语”）后，插件会记录该牌组块作为“最近默认牌组”。
-3. 后续通过普通卡、Cloze、方向卡、列表卡、Topic/Extract、AI 制卡等入口创建的新卡，会自动在 `#card.牌组` 中引用这个最近牌组块。
-4. 新卡创建时不会写入牌组名字符串，而是先通过 `core.editor.createRef` 创建从卡片块到牌组块的引用，再把返回的引用 ID 写入 `牌组` 属性值数组，保持与 `extractDeckName()` 的读取模型一致。
-5. 当用户手动清空或重置某张卡的 `牌组` 属性时，插件会同步清除“最近默认牌组”，后续新卡回到 `"Default"` 行为。
-6. 也可通过命令面板执行 `SRS: 清除最近默认牌组` 主动清除最近默认牌组。
-
-实现模块：
-
 | 文件 | 职责 |
 | ---- | ---- |
-| `src/srs/recentDeckManager.ts` | 监听卡片牌组变化、保存/清除最近牌组、为新卡创建牌组引用 |
-| `src/srs/cardTagDataBuilder.ts` | 统一生成 `core.editor.insertTag` 使用的 `#card` 标签数据 |
+| `src/srs/cardCreator.ts` | `scanCardsFromTags`、`makeCardFromBlock` |
+| `src/srs/clozeUtils.ts` | 填空创建 |
+| `src/srs/directionUtils.ts` | 方向标记插入 |
+| `src/srs/listCardCreator.ts` | 列表卡创建 |
+| `src/srs/topicCardCreator.ts` | Topic IR |
+| `src/srs/extractUtils.ts` | 摘录（Extract）创建 |
+| `src/srs/cardTagDataBuilder.ts` | 统一 `#card` 标签 data（type / 牌组 / status） |
+| `src/srs/cardTagRefData.ts` | `setRefData` / IR priority 同步 |
+| `src/srs/tagPropertyInit.ts` | `#card` 标签块属性定义初始化 |
+| `src/srs/tagUtils.ts` | card/choice/correct/ordered 匹配 |
+| `src/srs/tagCleanup.ts` | 新卡清理残留 `srs.*` |
+| `src/srs/recentDeckManager.ts` | 最近默认牌组 |
+| `src/srs/deckUtils.ts` | `extractCardType` / `extractDeckName` |
+| `src/srs/cardIdentity.ts` | 稳定 `cardKey` |
+| `src/srs/storage.ts` | 初始 SRS 状态 |
+| `src/srs/registry/commands.ts` / `uiComponents.tsx` | 命令与 UI 入口 |
 
-### 块渲染表示（\_repr）
+---
 
-转换后的块 `_repr` 结构：
+## 卡片类型一览
+
+| CardType | 识别 | 创建入口 | `_repr` / 扫描 |
+| -------- | ---- | -------- | -------------- |
+| **basic** | `#card` 且 type 缺省或 basic | 斜杠「转换为记忆卡片」`makeCardFromBlock` | `srs.card`；扫描转换 |
+| **cloze** | `type=cloze` 或 cloze fragment 创建时写入 | 工具栏 Cloze / `createCloze` | `srs.cloze-card` |
+| **direction** | `type=direction` | 斜杠正向/反向方向卡 | **不**强制 `_repr`；扫描**跳过** |
+| **list** | `type=list` | 斜杠「列表卡」 | 扫描**跳过**；容器 + 子块 SRS |
+| **choice** | 须有 **`#card`**；类型上 `#choice` **优先**，或 `type=choice` | 无专用命令：`#card` + `#choice`（或 type）+ 子块选项 | `srs.choice-card`（扫描时写入；**仅** `_repr` 无 `#card` 仍进不了收集） |
+| **topic** | `type=topic` | 斜杠 IR Topic / 右键 | 扫描跳过；走 IR 状态 |
+| **extracts** | `type=extracts` | `createExtract` 等 | 扫描跳过；IR 摘录 |
+| **excerpt** | `type=excerpt` | 标签 type | 收集时无子块可当摘录展示 |
+
+> **`extractCardType`**：先看 `#choice`，再读 `#card.type`——只决定类型字符串。  
+> **发现入口**：`scanCardsFromTags` / `collectSrsBlocks` 只查 `#card`；state 合并不含独立 `srs.choice-card`。因此 **不能**只打 `#choice`。  
+> 真实收集路径还必须在 `ReviewCard.cardType` 显式填入（Basic 与 Choice 仅靠变体字段无法区分）。
+
+### Basic 结构
+
+```
+父块（#card）→ 题目 front
+└── 第一个子块 → 答案 back
+```
+
+无子块的 basic 在收集时按「摘录式」处理（只显示 front，back 空）。
+
+---
+
+## 核心函数
+
+### `scanCardsFromTags(pluginName)`
+
+1. `get-blocks-with-tags(["card"])`，失败则备用全量过滤
+2. 对每块 `extractCardType`
+3. **跳过** conversion：`direction` / `list` / `extracts` / `topic`
+4. 其余：按类型设 `_repr`（cloze → `srs.cloze-card`，choice → `srs.choice-card`，else `srs.card`）
+5. `ensureCardSrsState`（不误重置已有进度）
+
+### `makeCardFromBlock(cursor, pluginName)`
+
+1. 无 `#card`：`insertTag` + `buildCardTagData(..., "basic")` + `ensureCardTagProperties`
+2. `resolveFrontBack`；`extractCardType` 决定 repr
+3. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有标签：`ensureCardSrsState`
+
+### 其它创建
+
+| 函数 | 默认 type |
+| ---- | --------- |
+| `createCloze` | cloze + 分天 cloze SRS |
+| `insertDirection` | direction + 方向 SRS |
+| `createListCardFromBlock` | list + 子块初始 due |
+| `createTopicCard` / `createTopicCardByBlockId` | topic + IR 状态（默认优先级 50，不强制今天） |
+| `createExtract` | extracts 摘录子块 + IR |
+
+### `buildCardTagData(pluginName, blockId, cardType)`
+
+返回：
 
 ```typescript
-{
-  type: "srs.card",
-  front: string,  // 题目
-  back: string,   // 答案
-  deck: string    // Deck 名称
-}
+[
+  { name: "type", value: cardType },
+  { name: "牌组", value: deckRefId ? [deckRefId] : [] },  // 最近牌组引用
+  { name: "status", value: "" }
+]
 ```
+
+### `extractCardType` / `extractDeckName`
+
+见 `deckUtils.ts`。牌组：`#card` 上 `牌组` 属性（BlockRefs）→ 目标块 `text`，失败默认 `"Default"`。
+
+---
+
+## 标签属性自动初始化
+
+`ensureCardTagProperties` 在 `#card` 标签块上补齐：
+
+| 属性 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `type` | Text | basic/cloze/direction/list/choice/topic/… |
+| `牌组` | BlockRefs | 初始 `undefined`（**勿**用 `[]`，会被 Orca 静默忽略） |
+| `status` | Text | 如 suspend |
+| `priority` | Number | IR 默认 50 |
+
+---
+
+## 最近牌组自动默认
+
+`recentDeckManager.ts`：
+
+1. 监听用户将非 Default 牌组写入卡片
+2. 后续 `buildCardTagData` 创建引用到该牌组块
+3. 清空牌组或命令「SRS: 清除最近默认牌组」后恢复 Default
+
+---
+
+## 卡片身份（`cardIdentity`）
+
+| 类型 | cardKey |
+| ---- | ------- |
+| basic / choice / excerpt / … | `{type}:{blockId}` |
+| cloze | `cloze:{blockId}:c{N}` |
+| direction | `direction:{blockId}:forward\|backward` |
+| list | `list:{blockId}:item:{listItemId}` |
+
+队列 tie-break 用结构化 `orderTuple`，避免字符串字典序。
+
+---
 
 ## 使用场景
 
-### 1. 手动创建卡片（推荐）
+### 1. 手动 basic
 
-1. 在块中输入题目
-2. 创建子块输入答案
-3. 使用斜杠命令"转换为记忆卡片"
-   - 自动添加 `#card` 标签
-   - 立即完成转换
+题目 + 子块答案 → 斜杠「转换为记忆卡片」。
 
 ### 2. 批量扫描
 
-1. 手动为多个块添加 `#card` 标签
-2. 使用命令 "SRS: 扫描带标签的卡片"
-3. 自动转换所有带标签的块
+手动打 `#card` → 命令扫描转换 `_repr` 与初始状态。
 
-## 技术要点
+### 3. 专用卡种
 
-### 标签添加最佳实践
+- Cloze 按钮 / 方向斜杠 / 列表斜杠 / IR Topic  
+- 选择题：标签 + 正确选项（见 `SRS_选择题卡.md`）
 
-- **推荐方式**：使用 `core.editor.insertTag` 命令
-  - 创建真正的标签引用（`block.refs`）
-  - 自动渲染为可交互的 DOM 元素
-  - Orca 官方支持的标准方法
-- **不推荐**：直接修改 `block.text` 添加 "#card" 文本
-  - 不会创建标签引用
-  - 界面无法渲染为标签
-
-### 标签属性自动创建
-
-**【2024-12 新增】** 首次创建卡片时，插件会自动为 `#card` 标签块添加属性定义：
-
-| 属性     | 类型                            | 说明                            |
-| -------- | ------------------------------- | ------------------------------- |
-| `type`   | 文本 (PropType.Text = 1)        | 卡片类型：basic/cloze/direction |
-| `牌组`   | 块引用 (PropType.BlockRefs = 2) | 牌组块引用                      |
-| `status` | 文本 (PropType.Text = 1)        | 卡片状态：空/suspend            |
-
-**实现文件**：[tagPropertyInit.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/tagPropertyInit.ts)
-
-**关键经验**：
-
-> [!CAUTION]
-> 使用 `core.editor.setProperties` 为标签块添加 BlockRefs 类型属性时，**空数组 `[]` 会被 Orca 静默忽略**。必须使用 `undefined` 作为初始值：
->
-> ```typescript
-> { name: "牌组", type: 2, value: undefined }  // ✓ 正确
-> { name: "牌组", type: 2, value: [] }         // ✗ 会被忽略
-> ```
+---
 
 ## 扩展点
 
-1. **多答案支持**：可扩展支持多个子块作为答案
-2. **富文本题目**：可扩展支持图片等富媒体内容
-3. **模板系统**：可扩展卡片模板功能
+1. 多答案子块策略（basic 目前首子块为 back）
+2. 选择题专用创建命令（当前靠标签约定）
+3. 模板系统
+
+---
 
 ## 相关文件
 
-| 文件                                                                                     | 说明                |
-| ---------------------------------------------------------------------------------------- | ------------------- |
-| [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)                           | 卡片创建核心函数    |
-| [cardCreator.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/cardCreator.ts)         | Basic 卡片创建      |
-| [tagCleanup.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/tagCleanup.ts)           | SRS 属性清理        |
-| [tagPropertyInit.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/tagPropertyInit.ts) | 标签属性自动初始化  |
-| [storage.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/storage.ts)                 | 状态初始化          |
-| [types.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/types.ts)                     | ReviewCard 类型定义 |
+| 文件 | 说明 |
+| ---- | ---- |
+| `src/srs/cardCreator.ts` | 扫描与 basic 转换 |
+| `src/srs/cardTagDataBuilder.ts` | 标签 data |
+| `src/srs/cardTagRefData.ts` | ref 数据写入 |
+| `src/srs/cardIdentity.ts` | 身份键 |
+| `src/srs/tagCleanup.ts` | 属性清理 |
+| `src/srs/tagPropertyInit.ts` | 标签属性定义 |
+| `src/srs/tagUtils.ts` | 标签匹配 |
+| `src/srs/recentDeckManager.ts` | 最近牌组 |
+| `src/srs/deckUtils.ts` | 类型与牌组提取 |
+| `src/srs/storage.ts` | 状态初始化 |
+| `src/srs/types.ts` | CardType / ReviewCard |
+| `src/main.ts` | 打开 Flash Home 等入口（创建逻辑已下沉） |
+| `模块文档/SRS_填空卡.md` 等 | 各卡种实现文档 |

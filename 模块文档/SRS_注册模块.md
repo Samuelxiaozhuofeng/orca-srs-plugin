@@ -2,606 +2,309 @@
 
 ## 概述
 
-注册模块负责将插件的功能（命令、UI 组件、渲染器、转换器）注册到 Orca 系统中。
+`src/srs/registry/` 将插件能力注册到 Orca（命令、Headbar/工具栏/斜杠、块与 inline 渲染器、plain 转换器、块右键菜单）。`main.ts` 在 `load` 中调用各 `register*`，在 `unload` 经 `runPluginUnloadSequence` 调用各 `unregister*`（及额外清理步骤）。
 
-> [!NOTE]
-> **2025-12-10 重构**：将 `main.ts` 中的注册逻辑拆分到 4 个独立模块，使 `main.ts` 从 402 行精简至 145 行（**-64%**）。
+### 设计要点
 
-### 核心价值
-
-- **职责分离**：每个模块负责一类注册，边界清晰
-- **易于维护**：新增功能时只需修改对应模块
-- **对称性良好**：每个 register 函数都有对应的 unregister 函数
-- **类型安全**：TypeScript 编译时检查，避免运行时错误
+- **职责分离**：一类能力一个文件
+- **对称注册**：register / unregister 成对
+- **命令解耦**：`registerCommands(pluginName)` 不注入 main 回调；需要会话入口时动态 `import("../../main")`
+- **闭包捕获 `pluginName`**：编辑器命令 undo 使用 `_pluginName`
 
 ## 技术实现
 
-### 模块架构
+### 目录结构
 
 ```
 src/srs/registry/
-├── commands.ts        (134 行) - 命令注册
-├── uiComponents.tsx    (40 行)  - UI 组件注册
-├── renderers.ts       (49 行)  - 渲染器注册
-└── converters.ts      (57 行)  - 转换器注册
+├── commands.ts              # 命令 + 编辑器命令
+├── uiComponents.tsx         # Headbar / Toolbar / Slash
+├── renderers.ts             # 块 + inline 渲染器
+├── converters.ts            # plain 转换器
+├── contextMenuRegistry.tsx  # 块右键菜单
+├── panelTreeUtils.ts        # 面板树工具（host chrome 门控等）
+└── *.test.ts                # 单元测试
 ```
 
-### 调用流程
+### load 中的注册调用（`main.ts`）
 
-```mermaid
-flowchart TD
-    A[main.ts: load] --> B[registerCommands]
-    A --> C[registerUIComponents]
-    A --> D[registerRenderers]
-    A --> E[registerConverters]
-
-    F[main.ts: unload] --> G[unregisterConverters]
-    F --> H[unregisterRenderers]
-    F --> I[unregisterUIComponents]
-    F --> J[unregisterCommands]
-
-    style A fill:#e1f5e1
-    style F fill:#ffe1e1
-    style G fill:#ffe1e1
-    style H fill:#ffe1e1
-    style I fill:#ffe1e1
-    style J fill:#ffe1e1
+```
+registerCommands(pluginName)
+registerUIComponents(pluginName)
+registerRenderers(pluginName)
+registerConverters(pluginName)
+registerContextMenu(pluginName)
+// 另：startRecentDeckWatcher、IR shortcuts、可选 autoMark（非 registry 文件）
 ```
 
-> [!IMPORTANT]
-> unload 时采用**倒序清理**（converters → renderers → ui → commands），确保高层依赖先清理。
+### unload 中的注销（节选 cleanupSteps）
+
+顺序见 [SRS_插件入口与命令.md](./SRS_插件入口与命令.md) 的 unload 表。与 registry 相关的步骤：
+
+```
+unregisterCommands → unregisterUIComponents → unregisterRenderers
+→ unregisterConverters → unregisterContextMenu
+```
+
+> 旧文档「converters 最先注销」与现行 `main.ts` 不一致；以 `cleanupSteps` 为准。
 
 ---
 
-## 模块 1：commands.ts
+## 模块 1：`commands.ts`
 
-### 职责
-
-注册和注销所有命令（普通命令 + 编辑器命令）。
-
-### 文件路径
-
-- [src/srs/registry/commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts)
-
-### 导出接口
+### 导出
 
 ```typescript
-export function registerCommands(
-  pluginName: string,
-  openFlashcardHome: () => Promise<void>
-): void
-
+export const RESET_FSRS_SETTINGS_COMMAND = "resetFsrsSettings"
+export function getResetFsrsSettingsCommandId(pluginName: string): string
+export async function resetFsrsSettingsToDefaults(pluginName: string): Promise<void>
+export function registerCommands(pluginName: string): void
 export function unregisterCommands(pluginName: string): void
 ```
 
 ### 注册的命令
 
-| 命令 ID | 类型 | 说明 | 关联函数 |
-|---------|------|------|----------|
-| `${pluginName}.scanCardsFromTags` | 普通命令 | 扫描带标签的块 | `scanCardsFromTags` (从 cardCreator 导入) |
-| `${pluginName}.openFlashcardHome` | 普通命令 | 打开 Flashcard Home 面板 | `openFlashcardHome`（从 main.ts 传入） |
-| `${pluginName}.makeCardFromBlock` | 编辑器命令 | 将块转为卡片 | `makeCardFromBlock` (从 cardCreator 导入) |
-| `${pluginName}.createCloze` | 编辑器命令 | 创建 Cloze 填空 | `createCloze` (从 clozeUtils 导入) |
-| `${pluginName}.createDirectionForward` | 编辑器命令 | 创建正向方向卡 → | `insertDirection` (从 directionUtils 导入) |
-| `${pluginName}.createDirectionBackward` | 编辑器命令 | 创建反向方向卡 ← | `insertDirection` (从 directionUtils 导入) |
-| `${pluginName}.makeAICard` | 编辑器命令 | AI 生成记忆卡片 | `makeAICardFromBlock` (从 ai/aiCardCreator 导入) |
-| `${pluginName}.testAIConnection` | 普通命令 | 测试 AI 连接 | `testAIConnection` (从 ai/aiService 导入) |
-| `${pluginName}.openOldReviewPanel` | 普通命令 | 打开旧复习面板（块渲染器模式） | `startReviewSession()`（从 main.ts 动态导入） |
+#### 普通命令
 
-> 说明：复习入口提供为命令面板项（`SRS: 打开旧复习面板`），也可从 Flashcard Home 进入；当前编辑器工具栏不提供复习按钮。
+| 命令 ID | Label | 实现要点 |
+|---------|-------|----------|
+| `${pluginName}.scanCardsFromTags` | SRS: 扫描带标签的卡片 | `scanCardsFromTags` |
+| `${pluginName}.openFlashcardHome` | SRS: 打开 Flash Home | 动态 import `openFlashcardHome` |
+| `${pluginName}.openOldReviewPanel` | SRS: 打开旧复习面板 | 动态 import `startReviewSession` |
+| `${pluginName}.startIncrementalReadingSession` | SRS: 打开渐进阅读面板 | 动态 import |
+| `${pluginName}.openIRManager` | SRS: 渐进阅读（资料库） | 动态 import `openIRManager` |
+| `${pluginName}.toggleAutoExtractMark` | SRS: 切换渐进阅读自动标签 | 写 IR 设置 + start/stop |
+| `${pluginName}.clearRecentDeckPreference` | SRS: 清除最近默认牌组 | `clearRecentDeckPreference` |
+| `${pluginName}.resetFsrsSettings` | SRS: 恢复 FSRS 默认设置 | `resetFsrsSettingsToDefaults`（F2-08） |
+| `${pluginName}.testAIConnection` | SRS: 测试 AI 连接 | `testAIConfigWithDetails` |
+| `${pluginName}.importEpub` | 导入 EPUB | `showEpubImportDialog` |
+| `${pluginName}.resumeEpubImport` | 继续导入 EPUB | `resumeEpubImport(bookBlockId)` |
+| `${pluginName}.removeBookFromIR` | IR: 将整本书移出渐进阅读 | `confirmAndRemoveBookFromIR` |
+| `${pluginName}.skipSequentialChapter` | IR: 跳过本章并继续 | IR session CustomEvent |
+| `${pluginName}.irSessionNext` | IR: 下一篇 | `orca-srs:ir-session-action` |
+| `${pluginName}.irSessionPostpone` | IR: 推后 | 同上 |
+| `${pluginName}.irSessionPriority` | IR: 调整重要性 | 同上 |
 
-### 依赖关系
+#### 编辑器命令
 
-```typescript
-import type { Block } from "../../orca.d.ts"
-import { BlockWithRepr } from "../blockUtils"
-import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
-import { createCloze } from "../clozeUtils"
-```
+| 命令 ID | Label | 实现 |
+|---------|-------|------|
+| `${pluginName}.makeCardFromBlock` | SRS: 将块转换为记忆卡片 | `makeCardFromBlock` + undo 恢复 `_repr`/text |
+| `${pluginName}.createCloze` | SRS: 创建 Cloze 填空 | 可先发 `ir-session-action` itemize；`createClozeFromEditorCommand` |
+| `${pluginName}.createTopicCard` | SRS: 创建 Topic 卡片 | `createTopicCard` |
+| `${pluginName}.createExtract` | SRS: 创建摘录（Extract） | `createExtract`；undo 删摘录块 |
+| `${pluginName}.createListCard` | SRS: 创建列表卡 | `createListCardFromBlock` |
+| `${pluginName}.createDirectionForward` | SRS: 创建正向方向卡 → | `insertDirection(..., "forward")` |
+| `${pluginName}.createDirectionBackward` | SRS: 创建反向方向卡 ← | `insertDirection(..., "backward")` |
+| `${pluginName}.makeAICard` | SRS: AI 生成记忆卡片 | `makeAICardFromBlock` |
+| `${pluginName}.interactiveAICard` | SRS: AI 智能制卡（交互式） | `startInteractiveCardCreationNew` |
+| `${pluginName}.irRecordProgress` | IR: 记录阅读进度（ir_record） | `updateReadingBreakpoint` / undo 回写 |
 
-### 关键实现细节
+#### 编辑器命令 do/undo 模式
 
-#### 1. 闭包捕获 pluginName
-
-为了让 undo 函数能正确访问 `pluginName`，在函数开头使用闭包捕获：
-
-```typescript
-export function registerCommands(
-  pluginName: string,
-  openFlashcardHome: () => Promise<void>
-): void {
-  // 在闭包中捕获 pluginName，供 undo 函数使用
-  const _pluginName = pluginName
-
-  // 后续代码中使用 _pluginName
-}
-```
-
-> [!WARNING]
-> 不使用闭包捕获会导致 undo 函数报错 `ReferenceError: pluginName is not defined`。
-
-#### 2. 编辑器命令的 do/undo 函数
-
-每个编辑器命令都包含：
-- **do 函数**：执行操作，返回 `{ ret: result, undoArgs: result }`
-- **undo 函数**：撤销操作，接收 `undoArgs` 恢复状态
-
-示例：
 ```typescript
 orca.commands.registerEditorCommand(
-  `${pluginName}.makeCardFromBlock`,
-  // do 函数
+  id,
   async (editor, ...args) => {
-    const result = await makeCardFromBlock(cursor, _pluginName)
-    return result ? { ret: result, undoArgs: result } : null
+    // do：返回 { ret, undoArgs } 或 null
   },
-  // undo 函数
-  async undoArgs => {
-    if (!undoArgs?.blockId) return
-    const block = orca.state.blocks[undoArgs.blockId] as BlockWithRepr
-    if (!block) return
-
-    // 恢复原始状态
-    block._repr = undoArgs.originalRepr || { type: "text" }
-    if (undoArgs.originalText !== undefined) {
-      block.text = undoArgs.originalText
-    }
-  },
-  { label: "SRS: 将块转换为记忆卡片", hasArgs: false }
+  async undoArgs => { /* undo */ },
+  { label: "...", hasArgs: false }
 )
 ```
 
-### 使用方式
+Cloze 创建：先 `CustomEvent("orca-srs:ir-session-action", { action: "itemize", ... })`；若被 `preventDefault` 则由 IR Shell 接管。
 
-在 `main.ts` 中调用：
+### 主要依赖
 
-```typescript
-import { registerCommands, unregisterCommands } from "./srs/registry/commands"
-
-export async function load(_name: string) {
-  registerCommands(_name, openFlashcardHome)
-}
-
-export async function unload() {
-  unregisterCommands(pluginName)
-}
-```
+`cardCreator`、`irClozeCommandService`、`directionUtils`、`listCardCreator`、`topicCardCreator`、`extractUtils`、AI 模块、`incrementalReadingStorage`、`reviewSettingsSchema` / `algorithm`、`recentDeckManager` 等。
 
 ---
 
-## 模块 2：uiComponents.tsx
+## 模块 2：`uiComponents.tsx`
 
-### 职责
-
-注册和注销工具栏按钮和斜杠命令。
-
-### 文件路径
-
-- [src/srs/registry/uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx)
-
-### 导出接口
+### 导出
 
 ```typescript
 export function registerUIComponents(pluginName: string): void
 export function unregisterUIComponents(pluginName: string): void
 ```
 
-### 注册的 UI 组件
+### Headbar
 
-#### 工具栏按钮（1 个）
+| ID | 说明 |
+|----|------|
+| `${pluginName}.aiDialogMount` | `AIDialogMount` |
+| `${pluginName}.irBookDialogMount` | `IRBookDialogMount` |
+| `${pluginName}.epubImportDialogMount` | `EpubImportDialogMount` |
+| `${pluginName}.reviewButton` | 脑图标 → `openOldReviewPanel` |
+| `${pluginName}.flashHomeButton` | 主页图标 → `openFlashcardHome` |
+| `${pluginName}.incrementalReadingButton` | 书图标 → `startIncrementalReadingSession` |
 
-| 按钮 ID | 图标 | 提示文本 | 关联命令 |
-|---------|------|----------|----------|
-| `${pluginName}.clozeButton` | `ti ti-braces` | 创建 Cloze 填空 | `${pluginName}.createCloze` |
+### 工具栏
 
-> 说明：根据当前设计，编辑器工具栏仅保留“填空卡”入口；其它功能通过斜杠命令或面板入口触发。
+| ID | 图标 | 命令 |
+|----|------|------|
+| `${pluginName}.clozeButton` | `ti ti-braces` | `createCloze` |
+| `${pluginName}.importEpubButton` | `ti ti-book-upload` | `importEpub` |
 
-#### 斜杠命令（4 个）
+### 斜杠命令（group: `SRS`）
 
-| 命令 ID | 图标 | 分组 | 标题 | 关联命令 |
-|---------|------|------|------|----------|
-| `${pluginName}.makeCard` | `ti ti-card-plus` | SRS | 转换为记忆卡片 | `${pluginName}.makeCardFromBlock` |
-| `${pluginName}.directionForward` | `ti ti-arrow-right` | SRS | 创建正向方向卡 → (光标位置分隔问答) | `${pluginName}.createDirectionForward` |
-| `${pluginName}.directionBackward` | `ti ti-arrow-left` | SRS | 创建反向方向卡 ← (光标位置分隔问答) | `${pluginName}.createDirectionBackward` |
-| `${pluginName}.aiCard` | `ti ti-robot` | SRS | AI 生成记忆卡片 | `${pluginName}.makeAICard` |
+| ID | title | command |
+|----|-------|---------|
+| `makeCard` | 转换为记忆卡片 | `makeCardFromBlock` |
+| `listCard` | 列表卡（子块作为条目） | `createListCard` |
+| `directionForward` / `directionBackward` | 方向卡 | 对应命令 |
+| `aiCard` | AI 生成记忆卡片 | `makeAICard` |
+| `interactiveAI` | AI 智能制卡（交互式） | `interactiveAICard` |
+| `ir` | IR：创建 Topic 卡片 | `createTopicCard` |
+| `incrementalReading` | 渐进阅读 | `startIncrementalReadingSession` |
+| `ir_record` | ir_record | `irRecordProgress` |
+| `importEpub` | 导入 EPUB | `importEpub` |
 
-### 依赖关系
-
-无外部依赖（纯 UI 注册）。
-
-### 使用方式
-
-在 `main.ts` 中调用：
-
-```typescript
-import { registerUIComponents, unregisterUIComponents } from "./srs/registry/uiComponents"
-
-export async function load(_name: string) {
-  registerUIComponents(_name)
-}
-
-export async function unload() {
-  unregisterUIComponents(pluginName)
-}
-```
+> Orca 当前版本不支持在本模块注册自定义快捷键；工具栏以 Cloze / EPUB 为主，其余走斜杠或命令面板。
 
 ---
 
-## 模块 3：renderers.ts
+## 模块 3：`renderers.ts`
 
-### 职责
-
-注册和注销自定义块渲染器和 inline 渲染器。
-
-### 文件路径
-
-- [src/srs/registry/renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts)
-
-### 导出接口
+### 导出
 
 ```typescript
 export function registerRenderers(pluginName: string): void
 export function unregisterRenderers(pluginName: string): void
 ```
 
-### 注册的渲染器
+### 块渲染器
 
-#### 块渲染器（4 个）
+| 类型 | 组件 | 可编辑 |
+|------|------|--------|
+| `srs.card` | `SrsCardBlockRenderer` | 否 |
+| `srs.cloze-card` | `SrsCardBlockRenderer` | 否 |
+| `srs.direction-card` | `SrsCardBlockRenderer` | 否 |
+| `srs.choice-card` | `ChoiceCardBlockRenderer` | 否 |
+| `srs.review-session` | `SrsReviewSessionRenderer` | 否 |
+| `srs.flashcard-home` | `SrsFlashcardHomeRenderer` | 否 |
+| `srs.ir-session` | `IncrementalReadingSessionRenderer` | 否 |
+| `srs.ir-manager` | `IncrementalReadingManagerPanel` | 否 |
 
-| 类型 | 组件 | 可编辑 | 说明 |
-|------|------|--------|------|
-| `srs.card` | `SrsCardBlockRenderer` | 否 | SRS 卡片块渲染 |
-| `srs.cloze-card` | `SrsCardBlockRenderer` | 否 | Cloze 卡片块渲染（复用同一组件） |
-| `srs.review-session` | `SrsReviewSessionRenderer` | 否 | 复习会话块渲染 |
-| `srs.flashcard-home` | `SrsFlashcardHomeRenderer` | 否 | Flashcard Home 面板渲染 |
+注册形态：`orca.renderers.registerBlock(type, false, Component, [], false)`。
 
-#### Inline 渲染器（1 个）
+### Inline 渲染器
 
-| 类型 | 组件 | 可编辑 | 说明 |
-|------|------|--------|------|
-| `${pluginName}.cloze` | `ClozeInlineRenderer` | 否 | Cloze 填空 inline 渲染 |
-
-### 依赖关系
-
-```typescript
-import SrsReviewSessionRenderer from "../../components/SrsReviewSessionRenderer"
-import SrsCardBlockRenderer from "../../components/SrsCardBlockRenderer"
-import ClozeInlineRenderer from "../../components/ClozeInlineRenderer"
-import SrsFlashcardHomeRenderer from "../../components/SrsFlashcardHomeRenderer"
-```
-
-### 关键实现细节
-
-#### 块渲染器注册
-
-```typescript
-orca.renderers.registerBlock(
-  "srs.card",           // 类型名称
-  false,                // 不可编辑
-  SrsCardBlockRenderer, // React 组件
-  [],                   // 资源字段（空数组表示无）
-  false                 // 不使用子块
-)
-```
-
-#### Inline 渲染器注册
-
-```typescript
-orca.renderers.registerInline(
-  `${pluginName}.cloze`, // 类型名称（使用插件名前缀）
-  false,                 // 不可编辑
-  ClozeInlineRenderer    // React 组件
-)
-```
-
-### 使用方式
-
-在 `main.ts` 中调用：
-
-```typescript
-import { registerRenderers, unregisterRenderers } from "./srs/registry/renderers"
-
-export async function load(_name: string) {
-  registerRenderers(_name)
-}
-
-export async function unload() {
-  unregisterRenderers(pluginName)
-}
-```
+| 类型 | 组件 |
+|------|------|
+| `${pluginName}.cloze` | `ClozeInlineRenderer` |
+| `${pluginName}.direction` | `DirectionInlineRenderer` |
 
 ---
 
-## 模块 4：converters.ts
+## 模块 4：`converters.ts`
 
-### 职责
-
-注册和注销块和 inline 的 plain 格式转换器（用于导出为纯文本）。
-
-### 文件路径
-
-- [src/srs/registry/converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts)
-
-### 导出接口
+### 导出
 
 ```typescript
 export function registerConverters(pluginName: string): void
 export function unregisterConverters(pluginName: string): void
 ```
 
-### 注册的转换器
+### 块 → plain
 
-#### 块转换器（4 个）
+| 源类型 | 输出摘要 |
+|--------|----------|
+| `srs.card` | `[SRS 卡片]\n题目: …\n答案: …` |
+| `srs.cloze-card` | `[SRS 填空卡片]\n…` |
+| `srs.direction-card` | `[SRS 方向卡片]\nfront ->|<-|<-> back` |
+| `srs.choice-card` | `[SRS 选择题卡片]\n题目: …` |
+| `srs.review-session` | `[SRS 复习会话面板块]` |
+| `srs.flashcard-home` | `[SRS Flashcard Home 面板块]` |
+| `srs.ir-session` | `[SRS 渐进阅读面板块]` |
+| `srs.ir-manager` | `[SRS 渐进阅读管理面板块]` |
 
-| 源格式 | 目标类型 | 输出格式 |
-|--------|----------|----------|
-| `plain` | `srs.card` | `[SRS 卡片]\n题目: ${front}\n答案: ${back}` |
-| `plain` | `srs.cloze-card` | `[SRS 填空卡片]\n题目: ${front}\n答案: ${back}` |
-| `plain` | `srs.review-session` | `[SRS 复习会话面板块]` |
-| `plain` | `srs.flashcard-home` | `[SRS Flashcard Home 面板块]` |
+### Inline → plain
 
-#### Inline 转换器（1 个）
+| 源类型 | 输出 |
+|--------|------|
+| `${pluginName}.cloze` | 仅 `fragment.v`（无 `{cN::}` 包装） |
+| `${pluginName}.direction` | ` -> ` / ` <- ` / ` <-> `（两侧空格） |
 
-| 源格式 | 目标类型 | 输出格式 |
-|--------|----------|----------|
-| `plain` | `${pluginName}.cloze` | `{c${clozeNumber}:: ${content}}` |
-
-### 依赖关系
-
-```typescript
-import type {
-  BlockForConversion,
-  Repr,
-  ContentFragment
-} from "../../orca.d.ts"
-```
-
-### 关键实现细节
-
-#### 块转换器注册
-
-```typescript
-orca.converters.registerBlock(
-  "plain",      // 目标格式
-  "srs.card",   // 源块类型
-  (blockContent: BlockForConversion, repr: Repr) => {
-    const front = repr.front || "（无题目）"
-    const back = repr.back || "（无答案）"
-    return `[SRS 卡片]\n题目: ${front}\n答案: ${back}`
-  }
-)
-```
-
-#### Inline 转换器注册
-
-```typescript
-orca.converters.registerInline(
-  "plain",                // 目标格式
-  `${pluginName}.cloze`,  // 源 inline 类型
-  (fragment: ContentFragment) => {
-    const clozeNumber = fragment.clozeNumber || 1
-    const content = fragment.v || ""
-    return `{c${clozeNumber}:: ${content}}`
-  }
-)
-```
-
-### 使用方式
-
-在 `main.ts` 中调用：
-
-```typescript
-import { registerConverters, unregisterConverters } from "./srs/registry/converters"
-
-export async function load(_name: string) {
-  registerConverters(_name)
-}
-
-export async function unload() {
-  unregisterConverters(pluginName)
-}
-```
+注销：`unregisterBlock("plain", type)` / `unregisterInline("plain", type)`。
 
 ---
 
-## 整体使用示例
+## 模块 5：`contextMenuRegistry.tsx`
 
-### main.ts 完整示例
+### 导出
 
 ```typescript
-import { registerCommands, unregisterCommands } from "./srs/registry/commands"
-import { registerUIComponents, unregisterUIComponents } from "./srs/registry/uiComponents"
-import { registerRenderers, unregisterRenderers } from "./srs/registry/renderers"
-import { registerConverters, unregisterConverters } from "./srs/registry/converters"
-import { cleanupReviewSessionBlock } from "./srs/reviewSessionManager"
-import { cleanupFlashcardHomeBlock } from "./srs/flashcardHomeManager"
-
-let pluginName: string
-
-export async function load(_name: string) {
-  pluginName = _name
-  setupL10N(orca.state.locale, { "zh-CN": zhCN })
-
-  // 委托给注册模块
-  registerCommands(pluginName, startReviewSession, openFlashcardHome)
-  registerUIComponents(pluginName)
-  registerRenderers(pluginName)
-  registerConverters(pluginName)
-}
-
-export async function unload() {
-  await cleanupReviewSessionBlock(pluginName)
-  await cleanupFlashcardHomeBlock(pluginName)
-
-  // 倒序清理（高层依赖先清理）
-  unregisterConverters(pluginName)
-  unregisterRenderers(pluginName)
-  unregisterUIComponents(pluginName)
-  unregisterCommands(pluginName)
-}
+export function registerContextMenu(pluginName: string): void
+export function unregisterContextMenu(pluginName: string): void
 ```
 
----
+注销时遍历 `registeredMenuIds` 调用 `unregisterBlockMenuCommand`。
 
-## 设计原则
+### 菜单项
 
-### 1. 单一职责原则
+| 菜单 ID | 条件 / 行为 |
+|---------|-------------|
+| `${pluginName}.reviewQueryResults` | 查询块：收集结果卡 → 固定重复复习会话 |
+| `${pluginName}.reviewChildrenCards` | 非查询块且估计有卡：子树复习 |
+| `${pluginName}.createBookIR` | 非查询块：书籍 IR 创建 UI |
+| `${pluginName}.removeBookFromIRMenu` | 含属性 `ir.bookPlan`：invoke `removeBookFromIR` |
+| `${pluginName}.resumeEpubImportMenu` | `epub.importStatus` ∈ {partial, importing} |
+| `${pluginName}.joinTopicIR` | `classifyTopicIRBlockMenu === "join"` |
+| `${pluginName}.readTopicToday` | `classifyTopicIRBlockMenu === "readToday"` |
 
-每个模块只负责一类注册：
-- ✅ `commands.ts` 只管命令
-- ✅ `uiComponents.tsx` 只管 UI
-- ✅ `renderers.ts` 只管渲染器
-- ✅ `converters.ts` 只管转换器
-
-### 2. 对称性原则
-
-每个 register 函数都有对应的 unregister 函数：
-- ✅ `registerCommands` ↔ `unregisterCommands`
-- ✅ `registerUIComponents` ↔ `unregisterUIComponents`
-- ✅ `registerRenderers` ↔ `unregisterRenderers`
-- ✅ `registerConverters` ↔ `unregisterConverters`
-
-### 3. 依赖倒置原则
-
-注册模块依赖抽象（函数参数），而非具体实现：
-- ✅ `registerCommands` 接收 `startReviewSession` 函数作为参数
-- ✅ 不直接引用 `main.ts` 中的全局状态
-
-### 4. 清理顺序原则
-
-unload 时采用倒序清理：
-1. 先清理转换器（最高层）
-2. 再清理渲染器
-3. 然后清理 UI 组件
-4. 最后清理命令（最底层）
-
-这样确保高层依赖先清理，避免清理顺序导致的问题。
+重复复习路径使用 `createFixedRepeatSessionDescriptor` + `createRepeatReviewSession`，与 `main.startRepeatReviewSession` 一致（F2-01 sessionId 绑定）。
 
 ---
+
+## 模块 6：`panelTreeUtils.ts`
+
+工具模块（非 Orca register API），供复习面板判断是否应改 host 编辑器 chrome：
+
+| 函数 | 作用 |
+|------|------|
+| `findPanelIdByBlockView` | 树中查找主视图为某 block 的 panel id |
+| `isPanelMainBlockView` | panel 主视图是否为该 block |
+| `shouldManageHostEditorChrome` | 仅当 `panelId` 匹配且主视图为该块时允许 maximize/hide 等 |
+
+嵌入渲染（Journal、反链、查询结果）不得改外层编辑器。
+
+---
+
+## 设计原则（现行）
+
+1. **单一职责**：commands / ui / renderers / converters / contextMenu 分离
+2. **成对注销**：每个 register 对应 unregister
+3. **动态 import 入口**：避免 registry ↔ main 循环依赖
+4. **卸载容错**：`runPluginUnloadSequence` 单步失败不中断整链
 
 ## 扩展点
 
-### 1. 添加新命令
-
-在 `commands.ts` 中添加新的命令注册和注销逻辑：
-
-```typescript
-export function registerCommands(pluginName: string, ...) {
-  // 现有命令...
-
-  // 新命令
-  orca.commands.registerCommand(
-    `${pluginName}.newCommand`,
-    () => { /* 实现 */ },
-    "新命令"
-  )
-}
-
-export function unregisterCommands(pluginName: string) {
-  // 现有命令注销...
-
-  orca.commands.unregisterCommand(`${pluginName}.newCommand`)
-}
-```
-
-### 2. 添加新工具栏按钮
-
-在 `uiComponents.tsx` 中添加：
-
-```typescript
-export function registerUIComponents(pluginName: string) {
-  // 现有按钮...
-
-  orca.toolbar.registerToolbarButton(`${pluginName}.newButton`, {
-    icon: "ti ti-icon",
-    tooltip: "新按钮",
-    command: `${pluginName}.newCommand`
-  })
-}
-```
-
-### 3. 添加新渲染器
-
-在 `renderers.ts` 中添加：
-
-```typescript
-import NewRenderer from "../../components/NewRenderer"
-
-export function registerRenderers(pluginName: string) {
-  // 现有渲染器...
-
-  orca.renderers.registerBlock(
-    "srs.new-type",
-    false,
-    NewRenderer,
-    [],
-    false
-  )
-}
-```
-
----
-
-## 常见问题
-
-### Q1: 为什么要使用闭包捕获 pluginName？
-
-**A**: 编辑器命令的 undo 函数是异步执行的，直接引用参数 `pluginName` 会导致作用域问题。使用 `const _pluginName = pluginName` 捕获到闭包中可以确保 undo 函数能正确访问。
-
-### Q2: 为什么 unload 要倒序清理？
-
-**A**: 因为高层依赖低层，例如转换器可能依赖渲染器的类型信息。倒序清理确保依赖关系正确，避免清理过程中出错。
-
-### Q3: 如何调试注册失败的问题？
-
-**A**:
-1. 检查 TypeScript 编译错误
-2. 查看浏览器控制台的错误信息
-3. 确认 `pluginName` 已正确传递
-4. 验证所有导入路径正确
-
-### Q4: 可以在运行时动态注册吗？
-
-**A**: 可以，但不推荐。Orca 插件系统设计为在 load 时一次性注册所有组件。动态注册可能导致状态不一致。
-
----
-
-## 性能考虑
-
-### 注册性能
-
-所有注册操作都是同步的，性能影响极小：
-- ✅ 注册 5 个命令：< 1ms
-- ✅ 注册 4 个 UI 组件：< 1ms
-- ✅ 注册 4 个渲染器：< 1ms
-- ✅ 注册 4 个转换器：< 1ms
-- ✅ 总计：< 5ms
-
-### 内存占用
-
-每个注册模块的内存占用：
-- `commands.ts`: ~10KB（包含 undo 函数）
-- `uiComponents.tsx`: ~2KB
-- `renderers.ts`: ~3KB（组件引用）
-- `converters.ts`: ~2KB
-- **总计**: ~17KB
-
----
+1. 新命令：在 `registerCommands` / `unregisterCommands` 同时添加
+2. 新 UI：`uiComponents.tsx`
+3. 新块类型：`renderers.ts` + `converters.ts` 成对
+4. 新右键：`contextMenuRegistry.tsx` 并 `registeredMenuIds.push`
 
 ## 相关文件
 
-| 文件 | 说明 |
+| 路径 | 说明 |
 |------|------|
-| [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts) | 插件入口（调用注册模块） |
-| [commands.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/commands.ts) | 命令注册模块 |
-| [uiComponents.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/uiComponents.tsx) | UI 组件注册模块 |
-| [renderers.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/renderers.ts) | 渲染器注册模块 |
-| [converters.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/registry/converters.ts) | 转换器注册模块 |
+| `src/main.ts` | 调用 register / unload cleanupSteps |
+| `src/srs/pluginUnloadSequence.ts` | 卸载顺序 |
+| `src/srs/registry/commands.ts` | 命令 |
+| `src/srs/registry/uiComponents.tsx` | UI |
+| `src/srs/registry/renderers.ts` | 渲染器 |
+| `src/srs/registry/converters.ts` | 转换器 |
+| `src/srs/registry/contextMenuRegistry.tsx` | 右键菜单 |
+| `src/srs/registry/panelTreeUtils.ts` | 面板树工具 |
+| `src/srs/registry/panelTreeUtils.test.ts` | 面板工具测试 |
+| `src/srs/registry/resetFsrsSettings.test.ts` | F2-08 相关测试 |
+| `src/components/SrsCardBlockRenderer.tsx` 等 | 渲染器组件 |
+| `src/srs/srsEvents.ts` | 跨组件广播（非 registry，见事件文档） |
 
----
+## 文档同步
 
-## 更新历史
-
-| 日期 | 版本 | 说明 |
-|------|------|------|
-| 2025-12-10 | 1.0.0 | 初始版本，拆分自 main.ts |
+- **文档同步日期：2026-07-13**
+- 补全 contextMenu / panelTreeUtils / 选择题与 IR 渲染与转换、完整命令表；修正 `registerCommands` 签名与卸载顺序；去掉过时行数与错误本机绝对路径。

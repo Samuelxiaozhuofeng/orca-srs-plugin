@@ -1,226 +1,77 @@
-# SRS 卡组备注模块
+# SRS 卡组备注
+
+> **文档同步日期：2026-07-13**  
+> **权威文档**。历史实现总结见 [SRS 卡组备注功能.md](SRS%20卡组备注功能.md)（已降级为摘要）。
 
 ## 概述
 
-卡组备注模块提供了为每个卡组添加、编辑和管理备注的功能。备注信息存储在插件数据中，与卡组名称关联。
+为每个卡组（Deck）保存一段文本备注，持久化在插件数据中，并在 Flash Home 卡组列表中展示与编辑。
 
-## 功能特性
+## 功能
 
-### 1. 备注管理
+- 添加 / 编辑 / 清空备注（空字符串保存 = 删除）
+- 卡组行内展示备注预览，支持搜索高亮（见卡组搜索）
+- 加载时批量 `getAllDeckNotes` 合并进 `DeckInfo.note`
 
-- **添加备注**：为卡组添加文本备注
-- **编辑备注**：修改现有的卡组备注
-- **删除备注**：清空卡组备注
-- **查看备注**：在卡组列表中显示备注信息
+## 数据存储
 
-### 2. 数据存储
+- 键：`deckNotes`（`orca.plugins.getData` / `setData`）
+- 值：JSON 字符串，解析为 `{ [deckName: string]: string }`
+- 写入前 `trim`；空内容则 `delete` 该 key 再写回
 
-备注数据使用 `orca.plugins.getData/setData` API 存储，存储结构如下：
+## API（`src/srs/deckNoteManager.ts`）
 
-```typescript
-{
-  "deckNotes": {
-    "卡组名称1": "备注内容1",
-    "卡组名称2": "备注内容2",
-    ...
-  }
-}
-```
+| 函数 | 说明 |
+| ---- | ---- |
+| `getDeckNote(pluginName, deckName)` | 单卡组备注，失败/缺失 → `""` |
+| `setDeckNote(pluginName, deckName, note)` | 设置或删除；失败 throw |
+| `deleteDeckNote(pluginName, deckName)` | 等价于 `setDeckNote(..., "")` |
+| `getAllDeckNotes(pluginName)` | 全量 map，失败 → `{}` |
+| `renameDeckNote(pluginName, old, new)` | 改名时迁移备注（若旧 key 存在） |
 
-### 3. UI 交互
+## 类型
 
-#### 卡组列表视图（表格模式）
+`DeckInfo.note?: string`（`src/srs/types.ts`）
 
-- 在每个卡组行中显示备注按钮（笔记图标）
-- 点击备注按钮展开编辑区域
-- 编辑区域包含：
-  - 输入框（单行文本）
-  - 取消按钮
-  - 保存按钮
-- 如果卡组有备注，在卡组名称下方显示备注内容（灰色小字）
-- 点击备注内容可以快速进入编辑模式
+## UI 集成（Flash Home）
 
-#### 卡组卡片视图（卡片模式）
+实现文件：`src/components/SrsFlashcardHome.tsx`。
 
-- 如果卡组有备注，在卡片中显示备注区域
-- 备注区域样式：
-  - 浅色背景
-  - 圆角边框
-  - 可点击编辑
-- 编辑模式：
-  - 多行文本框
-  - 取消和保存按钮
-- 如果没有备注，显示"添加备注"按钮
+### 数据流
 
-## API 文档
+1. `loadData`：`getAllDeckNotes` → 映射到 `deckStats.decks[].note`
+2. 保存：动态 `import("../srs/deckNoteManager")` → `setDeckNote` → `onNoteChange` 更新本地 state
+3. 取消：还原 `noteText` 为 `deck.note`
 
-### `getDeckNote(pluginName, deckName)`
+### 现行主路径：`DeckRow`（表格）
 
-获取指定卡组的备注。
+卡组列表 **当前只渲染 `DeckRow`**：
 
-**参数：**
-- `pluginName: string` - 插件名称
-- `deckName: string` - 卡组名称
+- 有备注时在名称下方灰色小字展示；点击进入编辑
+- 编辑：单行 `input` + 取消 / 保存
+- 备注按钮（笔记图标）也可进入编辑
+- 搜索时备注走 `HighlightText`
 
-**返回：**
-- `Promise<string>` - 备注内容，如果没有则返回空字符串
+### 仍保留但未挂载的 `DeckCard`
 
-**示例：**
-```typescript
-const note = await getDeckNote("my-plugin", "Default")
-console.log(note) // "这是默认卡组的备注"
-```
-
-### `setDeckNote(pluginName, deckName, note)`
-
-设置指定卡组的备注。
-
-**参数：**
-- `pluginName: string` - 插件名称
-- `deckName: string` - 卡组名称
-- `note: string` - 备注内容（会自动 trim，如果为空则删除备注）
-
-**返回：**
-- `Promise<void>`
-
-**示例：**
-```typescript
-await setDeckNote("my-plugin", "Default", "这是一个重要的卡组")
-```
-
-### `deleteDeckNote(pluginName, deckName)`
-
-删除指定卡组的备注。
-
-**参数：**
-- `pluginName: string` - 插件名称
-- `deckName: string` - 卡组名称
-
-**返回：**
-- `Promise<void>`
-
-**示例：**
-```typescript
-await deleteDeckNote("my-plugin", "Default")
-```
-
-### `getAllDeckNotes(pluginName)`
-
-获取所有卡组的备注。
-
-**参数：**
-- `pluginName: string` - 插件名称
-
-**返回：**
-- `Promise<DeckNotesData>` - 卡组名称到备注的映射对象
-
-**示例：**
-```typescript
-const allNotes = await getAllDeckNotes("my-plugin")
-console.log(allNotes)
-// {
-//   "Default": "默认卡组备注",
-//   "英语": "英语学习卡组"
-// }
-```
-
-### `renameDeckNote(pluginName, oldDeckName, newDeckName)`
-
-重命名卡组时更新备注的关联。
-
-**参数：**
-- `pluginName: string` - 插件名称
-- `oldDeckName: string` - 旧卡组名称
-- `newDeckName: string` - 新卡组名称
-
-**返回：**
-- `Promise<void>`
-
-**示例：**
-```typescript
-await renameDeckNote("my-plugin", "旧名称", "新名称")
-```
-
-## 数据类型
-
-### `DeckInfo` 扩展
-
-在 `src/srs/types.ts` 中，`DeckInfo` 类型已扩展以包含备注字段：
-
-```typescript
-export type DeckInfo = {
-  name: string              // deck 名称
-  totalCount: number        // 总卡片数
-  newCount: number          // 新卡数
-  overdueCount: number      // 已到期数
-  todayCount: number        // 今天到期数
-  futureCount: number       // 未来到期数
-  note?: string             // 卡组备注（新增）
-}
-```
-
-## 实现细节
-
-### 1. 数据加载
-
-在 `SrsFlashcardHome` 组件的 `loadData` 函数中：
-
-1. 调用 `calculateDeckStats(cards)` 计算卡组统计
-2. 调用 `getAllDeckNotes(pluginName)` 获取所有备注
-3. 将备注数据合并到卡组统计中
-
-```typescript
-const stats = calculateDeckStats(cards)
-const deckNotes = await getAllDeckNotes(pluginName)
-const enhancedStats = {
-  ...stats,
-  decks: stats.decks.map(deck => ({
-    ...deck,
-    note: deckNotes[deck.name] || ""
-  }))
-}
-```
-
-### 2. 状态管理
-
-使用 React 的 `useState` 管理备注编辑状态：
-
-- `isEditingNote: boolean` - 是否处于编辑模式
-- `noteText: string` - 当前编辑的备注文本
-
-### 3. 保存流程
-
-1. 用户点击保存按钮
-2. 调用 `setDeckNote` 保存到插件数据
-3. 调用 `onNoteChange` 回调更新父组件状态
-4. 退出编辑模式
-
-### 4. 取消流程
-
-1. 用户点击取消按钮
-2. 恢复 `noteText` 为原始值
-3. 退出编辑模式
-
-## 使用场景
-
-1. **学习计划**：记录卡组的学习目标和计划
-2. **进度追踪**：记录学习进度和里程碑
-3. **内容说明**：描述卡组的内容范围和特点
-4. **提醒事项**：记录需要注意的事项
-5. **学习心得**：记录学习过程中的感悟
+同文件内的 `DeckCard` 支持多行 `textarea` 与「添加备注」按钮；**DeckListView 未使用该组件**。  
+独立文件 `DeckCardCompact.tsx` 亦无备注能力且未在 Home 引用。  
+演示：`src/components/DeckNoteDemo.tsx`。
 
 ## 注意事项
 
-1. **备注长度**：建议备注内容不要过长，以保持界面整洁
-2. **特殊字符**：备注支持任意 Unicode 字符，包括换行符
-3. **数据持久化**：备注数据存储在插件数据中，卸载插件会丢失
-4. **卡组重命名**：如果需要重命名卡组，应使用 `renameDeckNote` 函数同步更新备注
-5. **性能考虑**：所有备注在加载时一次性获取，避免频繁的数据库查询
+1. 备注与 **卡组名称字符串** 绑定；改 Deck 标签名需调用 `renameDeckNote`，否则备注 orphan。
+2. 随插件数据存，卸载/清数据会丢。
+3. 支持 Unicode 与多行内容；表格行编辑以单行控件为主。
+4. 全量加载一次，避免按 Deck 反复 getData。
 
-## 未来改进
+## 相关文件
 
-1. **富文本支持**：支持 Markdown 格式的备注
-2. **备注模板**：提供常用备注模板
-3. **备注搜索**：支持按备注内容搜索卡组
-4. **备注历史**：记录备注的修改历史
-5. **备注导出**：支持导出所有卡组备注
+| 文件 | 说明 |
+| ---- | ---- |
+| `src/srs/deckNoteManager.ts` | 存储与 API |
+| `src/srs/types.ts` | `DeckInfo.note` |
+| `src/components/SrsFlashcardHome.tsx` | UI 与合并逻辑 |
+| `src/components/DeckNoteDemo.tsx` | 演示 |
+| [SRS_卡组搜索.md](SRS_卡组搜索.md) | 按备注搜索 |
+| [SRS_卡片浏览器.md](SRS_卡片浏览器.md) | Flash Home |

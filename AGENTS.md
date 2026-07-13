@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-The plugin entry point is `src/main.ts`. Keep scheduling, storage, card collection, and other domain logic in `src/srs/`; React UI belongs in `src/components/` or `src/panels/`, reusable behavior in `src/hooks/`, and CSS in `src/styles/`. Translation resources live in `src/translations/`. Place tests beside the code they cover as `*.test.ts` or `*.test.tsx`. Orca API references are under `plugin-docs/`, feature specifications under `openspec/`, and maintained Chinese feature documentation under `模块文档/`. Treat `dist/` and `coverage/` as generated output.
+The plugin entry point is `src/main.ts`. Keep scheduling, storage, card collection, and other domain logic in `src/srs/`; React UI belongs in `src/components/` or `src/panels/`, reusable behavior in `src/hooks/`, and CSS in `src/styles/`. Translation resources live in `src/translations/`. Place tests beside the code they cover as `*.test.ts` or `*.test.tsx`. Orca API references are under `plugin-docs/`, and maintained Chinese feature documentation under `模块文档/`. Treat `dist/` and `coverage/` as generated output.
 
 ## Orca Note Reference Policy
      8 +
@@ -34,4 +34,4 @@ Vitest runs in the Node environment with global test APIs. Use `describe`/`it`, 
 
 ## Commit & Pull Request Guidelines
 
-Follow the history's conventional prefixes, such as `feat:`, `fix:`, `refactor:`, and `docs:`, followed by a concise imperative summary. Keep commits scoped. Pull requests should explain behavior changes, list verification commands, link relevant issues or OpenSpec changes, and include screenshots for UI changes. Update the matching file in `模块文档/` and its README index whenever behavior or workflows change.
+Follow the history's conventional prefixes, such as `feat:`, `fix:`, `refactor:`, and `docs:`, followed by a concise imperative summary. Keep commits scoped. Pull requests should explain behavior changes, list verification commands, link relevant issues, and include screenshots for UI changes. Update the matching file in `模块文档/` and its README index whenever behavior or workflows change.

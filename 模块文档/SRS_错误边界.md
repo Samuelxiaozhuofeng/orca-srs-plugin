@@ -1,143 +1,147 @@
 # SRS 错误边界组件
 
+> 文档同步日期：2026-07-13  
+> 变更说明：对齐 `SrsErrorBoundary` 现行 Props/行为；补全项目中全部挂载点（含 Choice / List / Direction / IR / 面板）；注明 `_isMounted` 与通知失败静默。
+
 ## 概述
 
-`SrsErrorBoundary` 是一个 React 错误边界组件，用于捕获子组件树中的运行时错误，防止错误导致整个应用崩溃。当子组件发生错误时，会显示友好的错误提示界面，并提供恢复选项。
+`SrsErrorBoundary` 是 React **类组件**错误边界，用于捕获子树运行时错误，避免整页或整块插件 UI 崩溃。出错时展示可重试的友好界面，并可选复制错误报告。
 
-## 文件位置
+**文件**：`src/components/SrsErrorBoundary.tsx`
 
-- **组件文件**: `src/components/SrsErrorBoundary.tsx`
+## 技术实现
 
-## 组件特性
+### 为何用类组件
 
-### 1. 错误捕获
+React 错误边界依赖 `getDerivedStateFromError` / `componentDidCatch`，**不能**用 Hooks 函数组件实现。本组件：
 
-- 使用 React 的 `getDerivedStateFromError` 和 `componentDidCatch` 生命周期方法
-- 捕获子组件树中的所有运行时错误
-- 防止错误冒泡导致整个应用崩溃
+```typescript
+class SrsErrorBoundary extends (Component as React.ComponentClass<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+>) { ... }
+```
 
-### 2. 错误日志
+`Component` 来自 `window.React`（Orca 插件约定）。
 
-- 将错误信息、堆栈和组件堆栈记录到控制台
-- 可选的错误回调函数 `onError`，用于自定义错误处理逻辑
-
-### 3. 用户通知
-
-- 发生错误时自动发送 Orca 通知
-- 显示友好的错误提示界面
-
-### 4. 恢复机制
-
-- 提供"重试"按钮，允许用户重新渲染组件
-- 提供"复制错误信息"按钮，方便用户报告问题
-
-## Props 接口
+### Props
 
 ```typescript
 interface ErrorBoundaryProps {
-  children: React.ReactNode;
-  /** 可选的自定义错误提示文本 */
-  errorTitle?: string;
-  /** 可选的组件名称，用于日志记录 */
-  componentName?: string;
-  /** 可选的错误回调函数 */
-  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
-  /** 可选的自定义错误渲染函数 */
-  renderError?: (error: Error | null, retry: () => void) => React.ReactNode;
+  children: React.ReactNode
+  /** 自定义错误标题（默认「组件加载出错」） */
+  errorTitle?: string
+  /** 日志与通知标题前缀用的组件名 */
+  componentName?: string
+  /** 捕获后可选回调（回调自身抛错会被 catch 并打日志） */
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void
+  /** 完全自定义错误 UI；retry 为重置 hasError 的函数 */
+  renderError?: (error: Error | null, retry: () => void) => React.ReactNode
 }
 ```
+
+### 状态
+
+```typescript
+interface ErrorBoundaryState {
+  hasError: boolean
+  error: Error | null
+  errorInfo: React.ErrorInfo | null
+}
+```
+
+### 行为细节
+
+| 步骤 | 行为 |
+| ---- | ---- |
+| `getDerivedStateFromError` | 置 `hasError` + `error` |
+| `componentDidCatch` | `console.error` 前缀 `[SRS Error Boundary - ${componentName}]`；若 `_isMounted` 则写入 `errorInfo`；调用 `onError`；`orca.notify("error", …)` |
+| 通知失败 | `try/catch` 后 `console.warn`，不二次抛错 |
+| 「重试」 | 仅 `_isMounted` 时清空 `hasError/error/errorInfo`，重新渲染 `children` |
+| 「复制错误信息」 | 拼装组件名、时间、message、stack、componentStack → `navigator.clipboard`；成功/失败均 `orca.notify` |
+
+默认错误 UI：警告图标、标题、`error.message`、主色「重试」与 plain「复制错误信息」；边框用 `var(--orca-color-danger-6)`。
+
+## 用户交互
+
+1. 子组件抛错 → 该边界内替换为错误卡片，**外层其它面板/块继续工作**。
+2. 用户可「重试」恢复；或「复制错误信息」便于反馈。
+3. 同时收到 Orca 错误通知（标题形如「复习会话 错误」）。
+
+## 在项目中的挂载点
+
+以代码中 `componentName` / `errorTitle` 为准：
+
+| 位置 | componentName | errorTitle |
+| ---- | ------------- | ---------- |
+| `SrsReviewSessionRenderer` | 复习会话 | 复习会话加载出错 |
+| `SrsFlashcardHomeRenderer` | Flash Home | Flash Home 加载出错 |
+| `SrsFlashcardHomePanel` | 闪卡主页 | 闪卡主页加载出错 |
+| `SrsCardBlockRenderer` | SRS卡片 | 卡片加载出错 |
+| `ChoiceCardBlockRenderer` | 选择题卡片 | 选择题卡片加载出错 |
+| `SrsCardDemo` → Basic 路径 | 复习卡片 | 卡片加载出错 |
+| `SrsCardDemo` → Cloze | 填空卡片 | 填空卡片加载出错 |
+| `SrsCardDemo` → Direction | 方向卡片 | 方向卡片加载出错 |
+| `SrsCardDemo` → List | 列表卡片 | 列表卡片加载出错 |
+| `SrsCardDemo` → Choice | 选择题卡片 | 选择题卡片加载出错 |
+| `IncrementalReadingSessionRenderer` | 渐进阅读工作区 | 渐进阅读工作区加载出错 |
+| `IncrementalReadingManagerPanel` | 渐进阅读工作区 | 渐进阅读工作区加载出错 |
+
+层次示意：会话块外层边界包住 `SrsReviewSessionDemo`；单卡再在各 `*ReviewRenderer` 外包一层，避免一张卡的渲染错误拖垮整场会话 UI。
 
 ## 使用示例
 
-### 基本用法
+### 基本
 
 ```tsx
-import SrsErrorBoundary from "./SrsErrorBoundary";
+import SrsErrorBoundary from "./SrsErrorBoundary"
 
-function MyComponent() {
-  return (
-    <SrsErrorBoundary componentName="我的组件" errorTitle="组件加载出错">
-      <RiskyComponent />
-    </SrsErrorBoundary>
-  );
-}
-```
-
-### 自定义错误回调
-
-```tsx
-<SrsErrorBoundary
-  componentName="复习卡片"
-  onError={(error, errorInfo) => {
-    // 发送错误报告到服务器
-    reportError(error, errorInfo);
-  }}
->
-  <SrsCardDemo {...props} />
+<SrsErrorBoundary componentName="复习会话" errorTitle="复习会话加载出错">
+  <SrsReviewSessionDemo {...props} />
 </SrsErrorBoundary>
 ```
 
-### 自定义错误渲染
+### 自定义错误 UI
 
 ```tsx
 <SrsErrorBoundary
   componentName="复习会话"
   renderError={(error, retry) => (
-    <div className="custom-error">
-      <p>出错了：{error?.message}</p>
-      <button onClick={retry}>重新加载</button>
+    <div>
+      <p>{error?.message}</p>
+      <button type="button" onClick={retry}>重新加载</button>
     </div>
   )}
 >
-  <SrsReviewSessionDemo {...props} />
+  {children}
 </SrsErrorBoundary>
 ```
 
-## 在项目中的应用
+## 配置
 
-错误边界已应用于以下关键组件：
+无独立插件设置项；行为完全由 Props 与 Orca `notify` / clipboard API 可用性决定。
 
-| 组件                       | 保护范围 | 错误标题           |
-| -------------------------- | -------- | ------------------ |
-| `SrsFlashcardHomeRenderer` | 闪卡主页 | "闪卡主页加载出错" |
-| `SrsReviewSessionRenderer` | 复习会话 | "复习会话加载出错" |
-| `SrsCardBlockRenderer`     | 卡片块   | "卡片加载出错"     |
-| `SrsCardDemo` (basic)      | 复习卡片 | "卡片加载出错"     |
-| `SrsCardDemo` (cloze)      | 填空卡片 | "填空卡片加载出错" |
+## 扩展点
 
-## 错误 UI 说明
+1. `onError`：接入遥测 / 远程上报（回调内勿抛未捕获异常）。
+2. `renderError`：与某面板视觉统一的错误页。
+3. 更细粒度边界：可在列表单项、图表等再包一层（当前未强制）。
 
-默认错误 UI 包含：
+## 相关文件
 
-1. **错误图标** - 警告图标 ⚠️
-2. **错误标题** - 可自定义的错误提示标题
-3. **错误详情** - 显示具体的错误信息
-4. **操作按钮**：
-   - **重试** - 重置错误状态，尝试重新渲染
-   - **复制错误信息** - 将完整错误报告复制到剪贴板
-
-## 技术实现
-
-### 类组件实现
-
-由于 React 的错误边界必须使用类组件（无法通过 Hooks 实现），该组件使用类组件语法：
-
-```typescript
-class SrsErrorBoundary extends (Component as React.ComponentClass<...>) {
-  // ...
-}
-```
-
-### 状态管理
-
-```typescript
-interface ErrorBoundaryState {
-  hasError: boolean; // 是否发生错误
-  error: Error | null; // 错误对象
-  errorInfo: React.ErrorInfo | null; // 组件堆栈信息
-}
-```
+| 文件 | 说明 |
+| ---- | ---- |
+| `src/components/SrsErrorBoundary.tsx` | 组件实现 |
+| `src/components/SrsReviewSessionRenderer.tsx` | 会话外层 |
+| `src/components/SrsCardDemo.tsx` | 各卡种边界 |
+| `src/components/SrsCardBlockRenderer.tsx` | 编辑器卡片块 |
+| `src/components/ChoiceCardBlockRenderer.tsx` | 编辑器选择题块 |
+| `src/components/SrsFlashcardHomeRenderer.tsx` | 闪卡主页块 |
+| `src/panels/SrsFlashcardHomePanel.tsx` | 闪卡主页面板 |
+| `src/components/IncrementalReadingSessionRenderer.tsx` | IR 会话块 |
+| `src/components/IncrementalReadingManagerPanel.tsx` | IR 管理面板 |
 
 ## 更新历史
 
-- **2025-12-10**: 初始创建，添加所有关键渲染器的错误边界保护
+- **2025-12-10**：初始创建并接入主要渲染器  
+- **2026-07-13**：文档同步——补全挂载点与实现细节；明确无 `SrsCardBrowser` 依赖  

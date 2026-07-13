@@ -1,138 +1,148 @@
 # SRS 块渲染器模块
 
+> 文档同步日期：2026-07-13  
+> 变更说明：对齐 `registry/renderers.ts` 注册表；区分编辑器内块渲染（`SrsCardBlockRenderer` / `ChoiceCardBlockRenderer`）与复习会话内卡种渲染器；修正路径；SRS 详情已隐藏。
+
 ## 概述
 
-本模块实现 SRS 卡片在 Orca 编辑器中的自定义渲染，将带有 `_repr.type = "srs.card"` 的块以卡片样式展示。
+本模块在 Orca 编辑器中为带特定 `_repr.type` 的块提供自定义渲染：
+
+| `_repr.type` / 块类型 | 渲染组件 | 场景 |
+| --------------------- | -------- | ---- |
+| `srs.card` | `SrsCardBlockRenderer` | 编辑器内 Basic（及同类 front/back）卡片块 |
+| `srs.cloze-card` | `SrsCardBlockRenderer`（复用） | 编辑器内 Cloze 块（仍用 front/back 展示壳） |
+| `srs.direction-card` | `SrsCardBlockRenderer`（复用） | 编辑器内 Direction 块 |
+| `srs.choice-card` | `ChoiceCardBlockRenderer` | 编辑器内选择题（选项 + 统计指示） |
+| `srs.review-session` | `SrsReviewSessionRenderer` | **复习会话**（见 `模块文档/SRS_卡片复习窗口.md`） |
+| `srs.flashcard-home` | `SrsFlashcardHomeRenderer` | 闪卡主页 / 浏览（非 `SrsCardBrowser`） |
+| `srs.ir-session` / `srs.ir-manager` | IR 渲染器 | 渐进阅读（见 `模块文档/渐进阅读.md`） |
+
+**注意**：复习过程中的 Cloze / Direction / List / Choice **专用 UI** 由 `SrsCardDemo` 路由到 `*ReviewRenderer`，**不是**本表中的编辑器块渲染器。不要把编辑器内 `SrsCardBlockRenderer` 与复习窗口内的卡种 ReviewRenderer 混为一谈。
 
 ### 核心价值
 
-- 编辑器内直接显示卡片
-- 支持快速评分
-- 可在原位编辑题目和答案
+- 编辑器内以卡片样式展示 SRS 块
+- Basic 类：题目/答案内联编辑、快速评分
+- Choice：选项列表与答题统计指示
+- 外层 `SrsErrorBoundary` 隔离渲染崩溃
 
 ## 技术实现
 
-### 核心文件
+### 注册
 
-- [SrsCardBlockRenderer.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsCardBlockRenderer.tsx)
-
-### 渲染器注册
+注册位置：`src/srs/registry/renderers.ts`（由插件入口调用 `registerRenderers` / `unregisterRenderers`）。
 
 ```typescript
-orca.renderers.registerBlock(
-  "srs.card", // 块类型
-  false, // 不可作为纯文本编辑
-  SrsCardBlockRenderer, // 渲染器组件
-  [], // 无需 asset 字段
-  false // 不使用自定义子块布局
-);
+orca.renderers.registerBlock("srs.card", false, SrsCardBlockRenderer, [], false)
+orca.renderers.registerBlock("srs.cloze-card", false, SrsCardBlockRenderer, [], false)
+orca.renderers.registerBlock("srs.direction-card", false, SrsCardBlockRenderer, [], false)
+orca.renderers.registerBlock("srs.choice-card", false, ChoiceCardBlockRenderer, [], false)
+// 另有 srs.review-session / srs.flashcard-home / srs.ir-* 等
 ```
 
-### 组件 Props
+Inline 渲染器（非块级）：
 
-| 属性        | 类型   | 说明     |
-| ----------- | ------ | -------- |
-| panelId     | string | 面板 ID  |
-| blockId     | DbId   | 块 ID    |
-| rndId       | string | 渲染 ID  |
-| blockLevel  | number | 块层级   |
-| indentLevel | number | 缩进层级 |
-| mirrorId    | DbId   | 镜像 ID  |
-| front       | string | 题目文本 |
-| back        | string | 答案文本 |
+- `${pluginName}.cloze` → `ClozeInlineRenderer`
+- `${pluginName}.direction` → `DirectionInlineRenderer`
 
-### 界面结构
+### SrsCardBlockRenderer
+
+**文件**：`src/components/SrsCardBlockRenderer.tsx`
+
+#### Props（Orca 块渲染约定 + repr 字段）
+
+| 属性 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `panelId` | `string` | 面板 ID |
+| `blockId` | `DbId` | 块 ID |
+| `rndId` | `string` | 渲染实例 ID |
+| `blockLevel` / `indentLevel` | `number` | 层级 / 缩进 |
+| `mirrorId?` | `DbId` | 镜像块时用其数据 |
+| `initiallyCollapsed?` | `boolean` | 初始折叠 |
+| `renderingMode?` | `"normal" \| "simple" \| "simple-children"` | 渲染模式 |
+| `front` | `string` | 题目（来自 `_repr`） |
+| `back` | `string` | 答案（来自 `_repr`） |
+
+数据源：`useSnapshot(orca.state)` → `blocks[mirrorId ?? blockId]`。
+
+#### 功能
+
+1. **答案揭示**：有子块时先「显示答案」再展示答案与评分；无子块时直接可评（摘录类场景）。
+2. **内联编辑**：题目/答案 textarea；保存走 `core.editor.setBlocksContent`；答案写第一个子块。
+3. **快速评分**：Again / Hard / Good / Easy → `updateSrsState(blockId, grade, "orca-srs")`；成功后 `showNotification`（简化日期 `M-D` + 间隔天数）。
+4. **SRS 详细信息**：**已隐藏**（不在 UI 显示完整 due/stability/reps 等）。
+5. **BlockShell**：`contentAttrs={{ contentEditable: false }}`，内容由自定义 JSX 承担；子块仍由 `BlockChildren` 渲染。
+6. **错误边界**：`contentJsx` 外包 `SrsErrorBoundary`（`componentName="SRS卡片"`，`errorTitle="卡片加载出错"`）。
+
+#### 界面结构（示意）
 
 ```
 ┌─────────────────────────────────────────┐
 │ 🎴 SRS 记忆卡片                         │
 ├─────────────────────────────────────────┤
-│ 题目：                          [编辑]  │
+│ 面包屑 + 题目：                  [编辑] │
 │ ┌─────────────────────────────────────┐ │
-│ │ What is the capital of France?     │ │
+│ │ front 文本                          │ │
 │ └─────────────────────────────────────┘ │
-│                                         │
-│            [ 显示答案 ]                 │
-│                                         │
-├─────────────────────────────────────────┤
-│ 下次复习：2024-01-15 10:00              │
-│ 间隔：5 天，稳定度：8.5，难度：4.2      │
-│ 复习次数：12，遗忘：1                   │
+│            [ 显示答案 ] / 答案区        │
+│    [Again] [Hard] [Good] [Easy]         │
 └─────────────────────────────────────────┘
+  （无完整 SRS 状态栏）
 ```
 
-### 功能特性
+#### 状态
 
-#### 1. 答案揭示
+- `showAnswer`、`isEditingFront` / `isEditingBack`
+- `editedFront` / `editedBack`、`frontDisplay` / `backDisplay`
+- `isSavingFront` / `isSavingBack`
+- `blockId` / `front` / `back` 变化时重置编辑与揭示状态
 
-- 初始隐藏答案
-- 点击"显示答案"揭示
-- 揭示后显示评分按钮
+### ChoiceCardBlockRenderer
 
-#### 2. 内联编辑
+**文件**：`src/components/ChoiceCardBlockRenderer.tsx`
 
-- 题目和答案支持点击编辑
-- 使用 textarea 编辑
-- 保存/取消按钮
+- 注册类型：`srs.choice-card`。
+- 从块解析选项：`extractChoiceOptions` / `detectChoiceMode`（`src/srs/choiceUtils.ts`）。
+- 展示模式文案（单选/多选/未设正确答案）、选项列表；编辑场景可挂 `ChoiceStatisticsIndicator`。
+- 同样用 `BlockShell` + `SrsErrorBoundary`（`componentName="选择题卡片"`）。
 
-#### 3. 快速评分
+**不在本组件内完成 FSRS 评分流程**；正式复习走 `ChoiceCardReviewRenderer`（会话内）。
 
-- 四个评分按钮：Again / Hard / Good / Easy
-- 评分后自动隐藏答案
-- 显示通知提示下次复习时间
+### 复习会话内卡种渲染器（对照）
 
-#### 4. 状态显示
+由 `SrsCardDemo` 在会话中按卡类型挂载，共用 `useReviewShortcuts`、只读回看、评分回调等：
 
-- 下次复习时间
-- 间隔天数
-- 稳定度和难度
-- 复习次数和遗忘次数
+| 组件 | 文件 |
+| ---- | ---- |
+| `ClozeCardReviewRenderer` | `src/components/ClozeCardReviewRenderer.tsx` |
+| `DirectionCardReviewRenderer` | `src/components/DirectionCardReviewRenderer.tsx` |
+| `ListCardReviewRenderer` | `src/components/ListCardReviewRenderer.tsx` |
+| `ChoiceCardReviewRenderer` | `src/components/ChoiceCardReviewRenderer.tsx` |
+| Cloze 块内容辅助 | `src/components/ClozeReviewBlockContent.tsx` |
 
-### 状态管理
+## 样式要点
 
-```typescript
-const [showAnswer, setShowAnswer] = useState(false);
-const [isEditingFront, setIsEditingFront] = useState(false);
-const [isEditingBack, setIsEditingBack] = useState(false);
-```
-
-### 评分处理
-
-```typescript
-const handleGrade = async (grade: Grade) => {
-  const result = await updateSrsState(blockId, grade);
-  setShowAnswer(false);
-  orca.notify("success", `评分已记录：${grade}`);
-};
-```
-
-## 样式设计
-
-### 颜色使用
-
-- 背景：`var(--orca-color-bg-1)` / `var(--orca-color-bg-2)`
-- 边框：`var(--orca-color-border-1)`
-- 答案区左边框：`var(--orca-color-primary-5)`
-
-### 按钮样式
-
-| 按钮  | variant   | 说明     |
-| ----- | --------- | -------- |
-| Again | dangerous | 红色警告 |
-| Hard  | soft      | 柔和灰   |
-| Good  | solid     | 主色实心 |
-| Easy  | solid     | 主色高亮 |
+- 背景 / 边框：`var(--orca-color-bg-1)` / `bg-2` / `border-1`
+- 评分按钮：Again 偏危险、Hard soft、Good/Easy solid / 主色
+- 手柄与折叠：局部 CSS 默认隐藏，hover 对应块时显示
 
 ## 扩展点
 
-1. **折叠模式**：可扩展紧凑显示模式
-2. **预览悬停**：可扩展鼠标悬停预览答案
-3. **键盘操作**：可扩展快捷键支持
+1. Cloze/Direction 编辑器内块若需与 ReviewRenderer 一致的交互，可改为专用块渲染器（当前复用 Basic 壳）。
+2. 键盘快捷键：编辑器块内未挂 `useReviewShortcuts`（会话内才有）。
+3. List 卡若有独立 `_repr.type`，需在 `registerRenderers` 单独注册（当前列表复习主要走会话队列 identity，而非本表编辑器块类型）。
 
 ## 相关文件
 
-| 文件                                                                                                        | 说明       |
-| ----------------------------------------------------------------------------------------------------------- | ---------- |
-| [SrsCardBlockRenderer.tsx](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/components/SrsCardBlockRenderer.tsx) | 渲染器组件 |
-| [storage.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/srs/storage.ts)                                    | 状态更新   |
-| [main.ts](file:///d:/orca插件/虎鲸标记%20内置闪卡/src/main.ts)                                              | 渲染器注册 |
+| 文件 | 说明 |
+| ---- | ---- |
+| `src/components/SrsCardBlockRenderer.tsx` | Basic/cloze/direction 编辑器块 |
+| `src/components/ChoiceCardBlockRenderer.tsx` | 选择题编辑器块 |
+| `src/components/SrsErrorBoundary.tsx` | 错误边界 |
+| `src/components/ChoiceStatisticsIndicator.tsx` | 选择题统计指示 |
+| `src/srs/registry/renderers.ts` | 注册 / 注销 |
+| `src/srs/storage.ts` | `updateSrsState` |
+| `src/srs/choiceUtils.ts` | 选项解析 |
+| `src/srs/settings/reviewSettingsSchema.ts` | `showNotification` 等 |
+| `src/components/SrsCardDemo.tsx` | 会话内卡种路由 |
+| `src/components/*ReviewRenderer.tsx` | 各卡种复习 UI |

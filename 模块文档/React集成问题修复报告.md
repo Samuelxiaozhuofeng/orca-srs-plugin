@@ -1,6 +1,10 @@
 # React 集成问题修复报告
 
-## 🐛 问题描述
+> **历史文档**（排查/修复报告，非现行模块规格）  
+> **文档同步日期：2026-07-13**：仅校正说明与示例路径；不扩写为完整模块文档。  
+> 原则仍有效：Orca 插件运行时从 **`window.React` / `window.ReactDOM`** 取 React，勿对运行时使用 `import … from "react"`（类型可用 `import type`）。
+
+## 问题描述
 
 **错误信息**：
 ```
@@ -8,267 +12,114 @@
 ```
 
 **根本原因**：
-在 Orca 插件环境中，React 不是通过 ES6 `import` 语句导入的，而是通过 `window.React` 全局对象访问的。
+在 Orca 插件环境中，React 不是通过 ES6 `import` 语句作为运行时模块导入，而是通过 `window.React` 全局对象访问。
 
-## 🔍 问题分析
+## 问题分析
 
 ### 错误的做法
 
 ```typescript
-// ❌ 错误：使用 ES6 import
+// ❌ 错误：使用 ES6 import 获取运行时
 import React, { useState, useMemo } from "react"
 
-// ❌ 错误：尝试从 window 获取但类型不对
+// ❌ 错误：仅 as any 取 window 且缺少防护
 const React = (window as any).React
 ```
 
 ### 正确的做法
 
 ```typescript
-// ✅ 正确：从 window.React 解构
+// ✅ 从 window.React 解构 hooks
 const { useState, useMemo } = window.React
 
-// ✅ 正确：直接使用 window.React
+// ✅ 或直接持有引用
 const React = window.React
 const ReactDOM = window.ReactDOM as any
 ```
 
-## 🛠️ 已修复的文件
+## 当时修复的文件
 
 ### 1. `src/components/AICardGenerationDialog.tsx`
 
-**修改前**：
-```typescript
-import React, { useState, useMemo } from "react"
-```
-
-**修改后**：
-```typescript
-import type { KnowledgePoint } from "../srs/ai/aiKnowledgeExtractor"
-
-const { useState, useMemo } = window.React
-```
-
-**关键点**：
-- ✅ 只保留 `type` import（类型导入）
-- ✅ 从 `window.React` 解构 hooks
-- ✅ 组件内部直接使用 `useState`、`useMemo` 等
+- 仅保留 `type` import
+- 从 `window.React` 解构 hooks
 
 ### 2. `src/srs/ai/aiInteractiveCardCreator.ts`
 
-**修改前**：
-```typescript
-const React = (window as any).React
-const ReactDOM = (window as any).ReactDOM
+- 使用 `window.React` / `window.ReactDOM`
+- 调试日志与友好 notify
+- 兼容 `createRoot` 与旧版 `ReactDOM.render`
 
-if (!React || !ReactDOM) {
-  console.error("[AI Interactive Card Creator] React or ReactDOM not found")
-  orca.notify("error", "无法加载对话框组件")
-  return
-}
-```
+> 仓库中可能另有 `aiInteractiveCardCreatorNew.ts` / `aiInteractiveCardCreatorSimple.ts` 等变体；挂载入口以实际 `main`/命令注册为准，本文不声称唯一路径。
 
-**修改后**：
-```typescript
-const React = window.React
-const ReactDOM = window.ReactDOM as any
-
-if (!React || !ReactDOM) {
-  console.error("[AI Interactive Card Creator] React or ReactDOM not found")
-  console.error("[AI Interactive Card Creator] window.React:", typeof window.React)
-  console.error("[AI Interactive Card Creator] window.ReactDOM:", typeof window.ReactDOM)
-  orca.notify("error", "无法加载对话框组件，请刷新页面重试")
-  return
-}
-
-// 兼容新旧版本的 ReactDOM
-if (!dialogRoot) {
-  if (ReactDOM.createRoot) {
-    dialogRoot = ReactDOM.createRoot(container)
-  } else {
-    console.warn("[AI Interactive Card Creator] 使用旧版 ReactDOM.render")
-    dialogRoot = {
-      render: (element: any) => ReactDOM.render(element, container)
-    }
-  }
-}
-```
-
-**关键点**：
-- ✅ 使用 `window.React` 而不是 `(window as any).React`
-- ✅ 添加详细的调试日志
-- ✅ 兼容新旧版本的 ReactDOM API
-- ✅ 提供更友好的错误提示
-
-## 📚 Orca 插件中的 React 使用规范
+## Orca 插件中的 React 使用规范
 
 ### 规则 1: 使用 window.React
-
-在 Orca 插件中，React 是全局对象，通过 `window.React` 访问：
 
 ```typescript
 // ✅ 正确
 const { useState, useEffect, useMemo } = window.React
 
-// ❌ 错误
+// ❌ 错误（运行时）
 import React, { useState, useEffect } from "react"
 ```
 
-### 规则 2: 类型导入仍然使用 import
-
-类型导入不会影响运行时，可以正常使用：
+### 规则 2: 类型导入仍可用 import
 
 ```typescript
-// ✅ 正确
-import type { KnowledgePoint } from "../types"
-
-// ✅ 也可以
-import { type KnowledgePoint } from "../types"
+import type { KnowledgePoint } from "../srs/ai/aiKnowledgeExtractor"
 ```
 
-### 规则 3: 使用 React.createElement
-
-创建元素时使用 `React.createElement`：
+### 规则 3: createElement
 
 ```typescript
 const React = window.React
-
-const element = React.createElement(MyComponent, {
-  prop1: value1,
-  prop2: value2
-})
+const element = React.createElement(MyComponent, { prop1: value1 })
 ```
 
-### 规则 4: 兼容新旧 ReactDOM API
+### 规则 4: 兼容 ReactDOM API
 
 ```typescript
 const ReactDOM = window.ReactDOM as any
-
 if (ReactDOM.createRoot) {
-  // React 18+
-  const root = ReactDOM.createRoot(container)
-  root.render(element)
+  ReactDOM.createRoot(container).render(element)
 } else {
-  // React 17-
   ReactDOM.render(element, container)
 }
 ```
 
-## 🎯 参考示例
+## 参考示例（仓库内常见写法）
 
-查看项目中其他组件的正确用法：
-
-### 示例 1: `src/components/SrsFlashcardHome.tsx`
+### `src/components/SrsFlashcardHome.tsx`
 
 ```typescript
 const { useState, useEffect, useCallback, useMemo, useRef } = window.React
-
-export function SrsFlashcardHome(props: SrsFlashcardHomeProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("dashboard")
-  // ...
-}
 ```
 
-### 示例 2: `src/components/StatisticsView.tsx`
+### `src/components/StatisticsView.tsx`
 
 ```typescript
 const { useState, useEffect, useCallback, useMemo } = window.React
-
-export function StatisticsView(props: StatisticsViewProps) {
-  const [timeRange, setTimeRange] = useState<TimeRange>("1month")
-  // ...
-}
 ```
 
-### 示例 3: `src/srs/registry/contextMenuRegistry.tsx`
+### `src/srs/registry/contextMenuRegistry.tsx`
 
-```typescript
-import React from "react"
+部分注册代码可能使用 `import React from "react"` 并由构建/宿主解析；**UI 组件主路径仍以 `window.React` 为准**。遇到运行时缺失时优先对照 Flash Home / Statistics 等组件。
 
-// 在函数内部使用
-const [cardCount, setCardCount] = React.useState<number | null>(null)
-React.useEffect(() => {
-  // ...
-}, [])
-```
+## 验证思路
 
-## ✅ 验证步骤
+1. `npm run build` 通过
+2. Orca 中打开 AI 交互制卡等对话框
+3. 控制台无 `React or ReactDOM not found`
+4. 控制台检查 `window.React` / `window.ReactDOM` 为对象
 
-1. **构建成功**
-   ```bash
-   npm run build
-   # ✓ 99 modules transformed
-   # ✓ built in 537ms
-   ```
+## 经验教训
 
-2. **在 Orca 中测试**
-   - 加载插件
-   - 执行 `/AI 智能制卡（交互式）`
-   - 弹窗应该正常显示
-
-3. **检查控制台**
-   - 不应该有 "React or ReactDOM not found" 错误
-   - 弹窗应该正常渲染
-
-## 🔧 故障排除
-
-如果仍然遇到问题：
-
-### 问题 1: 弹窗不显示
-
-**检查**：
-```javascript
-// 在浏览器控制台执行
-console.log(window.React)
-console.log(window.ReactDOM)
-```
-
-**预期输出**：
-```
-Object { ... } // React 对象
-Object { ... } // ReactDOM 对象
-```
-
-### 问题 2: 组件渲染错误
-
-**检查**：
-- 确认所有组件都使用 `window.React`
-- 确认没有使用 ES6 import React
-- 查看浏览器控制台的详细错误信息
-
-### 问题 3: 类型错误
-
-**解决**：
-```typescript
-// 使用 as any 绕过类型检查
-const ReactDOM = window.ReactDOM as any
-```
-
-## 📝 总结
-
-**修复内容**：
-- ✅ 修改 `AICardGenerationDialog.tsx` 使用 `window.React`
-- ✅ 修改 `aiInteractiveCardCreator.ts` 的 React 访问方式
-- ✅ 添加详细的调试日志
-- ✅ 兼容新旧版本的 ReactDOM API
-- ✅ 提供更友好的错误提示
-
-**构建状态**：
-- ✅ TypeScript 编译通过
-- ✅ Vite 构建成功
-- ✅ 无错误和警告
-
-**下一步**：
-1. 在 Orca 中测试弹窗功能
-2. 验证知识点选择和卡片生成
-3. 确认用户体验流畅
+1. 宿主环境模块加载方式可能与标准 Vite SPA 不同
+2. 类型导入与运行时导入分离
+3. 优先对照项目内已稳定的组件写法
+4. 缺失全局对象时输出明确调试日志
 
 ---
 
-## 🎓 经验教训
-
-1. **环境差异**：不同的运行环境有不同的模块加载方式
-2. **全局对象**：Orca 使用全局 React 对象而不是模块导入
-3. **类型 vs 运行时**：类型导入不影响运行时，可以正常使用
-4. **参考现有代码**：遇到问题时先查看项目中其他组件的实现方式
-5. **详细日志**：添加详细的调试日志有助于快速定位问题
+**状态**：历史修复记录；若 AI 对话框架构已迁移到其他 mount 文件，以当前 `src/components/AI*.tsx` / `src/srs/ai/*` 源码为准。

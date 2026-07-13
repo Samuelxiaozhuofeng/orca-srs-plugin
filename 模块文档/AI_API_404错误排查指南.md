@@ -1,218 +1,178 @@
 # AI API 404 错误排查指南
 
-## 🔍 错误现象
+> 文档类型：排查类（不扩写为完整模块文档）  
+> 文档同步日期：2026-07-13  
+> 变更说明：与 `aiConfigValidator.ts` / `aiService.ts` / `aiKnowledgeExtractor.ts` 中的端点示例与诊断逻辑对齐。
 
+## 错误现象
+
+控制台或通知中可能出现类似：
+
+```text
+[AI Knowledge Extractor] API 错误: …
+AI API 错误 (HTTP_404): …
+请求失败: 404
 ```
-[AI Knowledge Extractor] API 错误: 请求失败: 404
-```
 
-## 📋 快速诊断步骤
+简单制卡、知识点提取、Basic/Cloze 生成与「测试连接」均 `POST` 到设置中的 **`ai.apiUrl` 完整字符串**；URL 少路径时最常见表现是 **HTTP 404**。
 
-### 步骤 1: 测试 AI 连接
+## 快速诊断
 
-1. 按 `Ctrl+P` / `Cmd+P` 打开命令面板
-2. 搜索 "SRS: 测试 AI 连接"
-3. 执行命令，查看详细错误信息
+### 步骤 1：测试 AI 连接
 
-新版本会显示：
-- 当前配置（API URL、模型、API Key 状态）
-- 可能的原因分析
-- 具体的解决建议
-- 常见 AI 服务的正确配置示例
+1. `Ctrl+P` / `Cmd+P`  
+2. 搜索 **「SRS: 测试 AI 连接」**（命令 ID：`${pluginName}.testAIConnection`）  
+3. 执行  
 
-### 步骤 2: 检查 API URL 配置
+实现：`testAIConfigWithDetails`（`aiConfigValidator.ts`）：
 
-打开 **设置 → 插件 → 虎鲸标记 → AI 设置**，检查 API URL 是否正确。
+1. 本地 `validateAIConfig`（Key、URL 可解析、协议、常见服务路径警告）  
+2. 向配置 URL 发最小 `POST`（`messages: [{ role: "user", content: "Hi" }]`，`max_tokens: 5`）  
+3. 失败时 `formatAIConfigError` 输出：当前 URL / 模型 / Key 是否配置、原因与示例端点  
 
-## 🛠️ 常见 AI 服务的正确配置
+### 步骤 2：核对设置
 
-### 1. OpenAI 官方 API
+**设置 → 插件 → AI 相关项**：`ai.apiKey`、`ai.apiUrl`、`ai.model`。
 
-```
+默认 URL：`https://api.openai.com/v1/chat/completions`。
+
+## 代码内置示例端点（`getAIServiceExamples`）
+
+以下与源码一致，排查时以此为准。
+
+### 1. OpenAI
+
+```text
 API URL: https://api.openai.com/v1/chat/completions
 模型: gpt-3.5-turbo 或 gpt-4
-API Key: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+API Key: sk-…
 ```
 
-**注意事项**：
-- ✅ URL 必须包含 `/v1/chat/completions`
-- ✅ API Key 以 `sk-` 开头
-- ❌ 不要使用 `https://api.openai.com` （缺少路径）
-- ❌ 不要使用 `https://api.openai.com/v1` （缺少端点）
+- 必须包含路径 `/v1/chat/completions`  
+- 仅 `https://api.openai.com` 或 `…/v1` 会 404 或无法 chat  
 
-### 2. DeepSeek API
+校验器：URL 含 `api.openai.com` 但不含 `/v1/chat/completions` → 警告。
 
-```
+### 2. DeepSeek
+
+```text
 API URL: https://api.deepseek.com/chat/completions
 模型: deepseek-chat
-API Key: 你的 DeepSeek API Key
 ```
 
-**注意事项**：
-- ✅ DeepSeek 的路径是 `/chat/completions`（没有 `/v1`）
-- ✅ 模型名称通常是 `deepseek-chat`
+- 示例路径为 **`/chat/completions`（无 `/v1`）**  
+- 校验器：含 `api.deepseek.com` 但不含 `/chat/completions` → 警告  
 
-### 3. Ollama 本地服务
+若你方文档要求带 `/v1`，以服务商当前文档为准；插件示例与校验按**无 `/v1`** 的 URL 编写。
 
-```
+### 3. Ollama（本地）
+
+```text
 API URL: http://localhost:11434/v1/chat/completions
-模型: llama2 或 mistral
-API Key: 留空或任意值
+模型: llama2（或本机已 pull 的名称）
+API Key: 可填任意非空值（当前请求仍会带 Authorization 头；Key 为空会直接报未配置）
 ```
 
-**注意事项**：
-- ✅ 确保 Ollama 服务已启动（运行 `ollama serve`）
-- ✅ 端口默认是 11434
-- ✅ 需要先下载模型（`ollama pull llama2`）
-- ❌ 不要使用 HTTPS（本地服务用 HTTP）
+- 默认 HTTP + 端口 `11434`  
+- 校验器对 localhost：路径宜含 `/v1/chat/completions` 或 `/api/chat`  
+- 需本机 `ollama serve` 且模型已下载  
 
-### 4. Azure OpenAI
+### 4. Azure OpenAI（有限兼容）
 
-```
+`getAIServiceExamples` 提供 URL 模板，但实现与其它服务相同：
+
+- 请求头固定：`Authorization: Bearer <API Key>`（**没有** `api-key` 头分支）
+- 响应需含 `choices[0].message.content`
+
+```text
 API URL: https://YOUR-RESOURCE-NAME.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT-NAME/chat/completions?api-version=2023-05-15
-模型: gpt-35-turbo
-API Key: 你的 Azure API Key
+模型: gpt-35-turbo（或部署名对应值）
+API Key: 必须是可走 Bearer 的密钥；纯 Azure「api-key 头」模式当前不可用
 ```
 
-**注意事项**：
-- ✅ 替换 `YOUR-RESOURCE-NAME` 为你的资源名称
-- ✅ 替换 `YOUR-DEPLOYMENT-NAME` 为你的部署名称
-- ✅ 包含 `api-version` 参数
+替换资源名、部署名与 `api-version`。若 401/403，优先怀疑认证形态不匹配，而非仅 URL。
 
 ### 5. 其他 OpenAI 兼容服务
 
-如果使用其他兼容 OpenAI API 的服务（如 LM Studio、LocalAI 等），URL 格式通常是：
+常见形态：
 
-```
+```text
 http://localhost:PORT/v1/chat/completions
 ```
 
-## 🐛 常见错误及解决方案
+LM Studio、LocalAI 等以各自文档为准；插件只要求可 `POST` 且响应含 `choices[0].message.content`。
 
-### 错误 1: 404 Not Found
+## 常见错误
 
-**可能原因**：
-1. API URL 路径不完整或错误
-2. 使用了错误的端点
-3. 服务不支持该端点
+### HTTP 404
 
-**解决方案**：
-1. 检查 URL 是否包含完整路径（如 `/v1/chat/completions`）
-2. 参考上面的正确配置示例
-3. 如果使用第三方服务，查阅其官方文档
+**可能原因**：端点路径错误/不完整；服务不支持该路径；代理改写 URL。
 
-### 错误 2: 401 Unauthorized
+**处理**：对照上表补全路径；用 curl 复现；跑「测试 AI 连接」。
 
-**可能原因**：
-1. API Key 无效或已过期
-2. API Key 格式错误
-3. API Key 权限不足
+### HTTP 401 / 403
 
-**解决方案**：
-1. 重新生成 API Key
-2. 检查 API Key 是否完整复制（没有多余空格）
-3. 确认 API Key 有访问该模型的权限
+`formatAIConfigError` 会提示 Key 无效、过期或权限不足。检查完整复制、空格、模型权限。
 
-### 错误 3: 网络错误 (NETWORK_ERROR)
+### NETWORK_ERROR
 
-**可能原因**：
-1. 网络连接问题
-2. 本地服务未启动（如 Ollama）
-3. 防火墙或代理阻止
+网络不可达、本地服务未起、防火墙/CORS（浏览器插件环境）等。提取器与生成器会把详细文案放进 `error.message`。
 
-**解决方案**：
-1. 检查网络连接
-2. 如果使用本地服务，确认服务已启动
-3. 检查防火墙设置
-4. 如果在公司网络，可能需要配置代理
+### NO_API_KEY
 
-## 📝 调试技巧
+`ai.apiKey` 为空时各生成函数直接失败，不发起请求。Ollama 若 Key 必填逻辑触发，可填占位字符串。
 
-### 1. 查看浏览器控制台
+## 调试技巧
 
-按 `F12` 打开开发者工具，查看 Console 标签页，会显示详细的错误信息和配置。
+### 浏览器控制台
 
-### 2. 使用 curl 测试
+日志前缀示例：
 
-在终端中测试 API 是否可用：
+- `[AI Service]`  
+- `[AI Config]`  
+- `[AI Knowledge Extractor]`  
+- `[AI Card Generator]`  
+
+### curl 冒烟
 
 ```bash
 # OpenAI
 curl https://api.openai.com/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{
-    "model": "gpt-3.5-turbo",
-    "messages": [{"role": "user", "content": "Hi"}],
-    "max_tokens": 5
-  }'
+  -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"Hi"}],"max_tokens":5}'
 
 # Ollama
 curl http://localhost:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama2",
-    "messages": [{"role": "user", "content": "Hi"}],
-    "max_tokens": 5
-  }'
+  -d '{"model":"llama2","messages":[{"role":"user","content":"Hi"}],"max_tokens":5}'
 ```
 
-如果 curl 也返回 404，说明 URL 确实有问题。
+curl 也 404 → 问题在 URL/服务侧，而非插件业务逻辑。
 
-### 3. 检查 Ollama 服务状态
+### Ollama
 
 ```bash
-# 检查 Ollama 是否运行
 ollama list
-
-# 启动 Ollama 服务
 ollama serve
-
-# 测试模型
 ollama run llama2 "Hi"
 ```
 
-## 🔄 更新后的改进
+## 与代码的对应关系
 
-新版本添加了以下改进：
+| 能力 | 文件 / 符号 |
+| --- | --- |
+| 设置默认 URL / Key | `src/srs/ai/aiSettingsSchema.ts` |
+| 简单生成 + 轻量 `testAIConnection` | `src/srs/ai/aiService.ts` |
+| 校验、示例、详细测试、404 文案 | `src/srs/ai/aiConfigValidator.ts` |
+| 提取路径上的详细错误 | `src/srs/ai/aiKnowledgeExtractor.ts`（`formatAIConfigError`） |
+| 命令注册 | `src/srs/registry/commands.ts` → `testAIConfigWithDetails` |
 
-1. **详细的错误信息**
-   - 显示当前配置
-   - 分析可能的原因
-   - 提供具体的解决建议
-   - 列出常见服务的正确配置
+完整模块说明：[SRS_AI模块.md](./SRS_AI模块.md)。
 
-2. **配置验证**
-   - 自动检查 URL 格式
-   - 验证协议（http/https）
-   - 识别常见服务并提示正确格式
+## 仍无法解决时请提供
 
-3. **更好的测试命令**
-   - 使用 "SRS: 测试 AI 连接" 命令
-   - 显示详细的诊断信息
-   - 在控制台输出完整的错误详情
-
-## 💡 推荐配置流程
-
-1. **首次配置**：
-   - 先使用 OpenAI 官方 API 测试（最稳定）
-   - 确认功能正常后再切换到其他服务
-
-2. **切换服务**：
-   - 修改配置后，立即运行 "测试 AI 连接"
-   - 确认连接成功后再使用智能制卡功能
-
-3. **本地服务**：
-   - 先在终端测试服务是否正常
-   - 再配置到插件中
-
-## 📞 仍然无法解决？
-
-如果按照上述步骤仍然无法解决，请提供以下信息：
-
-1. 使用的 AI 服务（OpenAI / DeepSeek / Ollama / 其他）
-2. 完整的 API URL（隐藏敏感信息）
-3. 浏览器控制台的完整错误信息
-4. "测试 AI 连接" 命令的输出
-
-在 GitHub Issues 中提交问题，我们会尽快帮助解决。
+1. 服务商（OpenAI / DeepSeek / Ollama / 其他）  
+2. API URL（可打码域名敏感段，保留路径）  
+3. 控制台完整错误  
+4. 「SRS: 测试 AI 连接」通知/控制台输出  

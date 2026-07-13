@@ -1,110 +1,136 @@
-# 困难卡片集合功能
+# 困难卡片
 
-## 功能概述
+> **文档同步日期：2026-07-13**  
+> 以 `difficultCardsManager.ts` + `DifficultCardsView.tsx` 为准。
 
-困难卡片集合功能可以自动识别和收集经常遗忘的卡片，帮助用户集中攻克学习难点。
+## 概述
 
-## 困难卡片判定标准
+自动识别经常遗忘或算法难度偏高的卡片，在 Flash Home 中集中展示，并支持以固定队列方式专项复习。
 
-系统会根据以下三个维度自动识别困难卡片：
+## 入口
 
-### 1. 频繁遗忘 (high_again_rate)
-- 最近 10 次复习中按了 3 次以上 Again
-- 表示短期内记忆不稳定
+- **主页 Dashboard** 顶栏：「困难卡片」
+- **卡组列表** 工具栏：「困难卡片」
+- 切换 `viewMode` → `"difficult-cards"`，渲染 `DifficultCardsView`
+- 「返回」→ `handleBack` → `deck-list`
 
-### 2. 遗忘次数多 (high_lapses)
-- 总遗忘次数（lapses）达到 3 次以上
-- 表示长期记忆困难
+## 判定标准
 
-### 3. 难度较高 (high_difficulty)
-- FSRS 算法计算的难度值达到 7 以上（满分 10）
-- 表示卡片本身较难掌握
+阈值在 `src/srs/difficultCardsManager.ts` 顶部常量（非用户设置）：
 
-### 4. 多重困难 (multiple)
-- 同时满足以上多个条件
-- 需要重点关注
+| 常量 | 默认 | 含义 |
+| ---- | ---- | ---- |
+| `RECENT_REVIEW_WINDOW` | 10 | 最近复习窗口 |
+| `AGAIN_COUNT_THRESHOLD` | 3 | 窗口内 Again 次数 ≥ 此值 → `high_again_rate` |
+| `LAPSES_THRESHOLD` | 3 | `srs.lapses` ≥ 此值 → `high_lapses` |
+| `DIFFICULTY_THRESHOLD` | 7 | `srs.difficulty` ≥ 此值 → `high_difficulty` |
+| `REVIEW_LOG_DAYS` | 30 | 拉取复习日志的回溯天数 |
 
-## 使用方式
+规则：
 
-### 入口
-在 Flashcard Home 顶部工具栏点击「困难卡片」按钮
+1. **新卡**（`isNew`）永不计入。
+2. 满足任一条件即困难；满足多项 → `reason = "multiple"`。
+3. Again 次数来自 `analyzeRecentReviews` + 日志身份匹配（见下）。
 
-### 功能
-1. **查看困难卡片列表**：按困难原因分类显示
-2. **筛选**：可按困难类型筛选（全部/频繁遗忘/遗忘次数多/难度较高）
-3. **一键复习**：点击「复习困难卡片」开始专项复习
-4. **查看详情**：点击卡片可跳转到原始位置
+## 日志身份匹配（FC-05）
 
-## 技术实现
+`analyzeRecentReviews` **必须**用 `cardIdentity` 精确匹配，禁止 `includes`。
 
-### 核心模块
-- `src/srs/difficultCardsManager.ts` - 困难卡片管理器
-- `src/components/DifficultCardsView.tsx` - 困难卡片视图组件
+### 新日志（结构化 / non-legacy）
 
-### 主要 API
+- 按 `cardKey` 等身份字段完全匹配。
+- Cloze c1 的 Again 不计 c2；Direction / List 变体彼此独立。
+
+### 旧日志（legacy）
+
+- v1 或缺字段日志标记 `legacy: true`。
+- 兼容：父 `blockId` 相同可匹配；List 旧日志曾用条目 ID 作 `cardId`，额外允许 `cardId === listItemId`。
+- **限制**：同父块下变体可能共享 legacy Again 计数；新日志无此问题。
+
+相关：`src/srs/cardIdentity.ts`、`src/srs/reviewLogStorage.ts`。
+
+## API
 
 ```typescript
-// 获取困难卡片列表
 getDifficultCards(pluginName: string, deckName?: string): Promise<DifficultCardInfo[]>
-
-// 获取困难卡片统计
 getDifficultCardsStats(pluginName: string): Promise<DifficultCardsStats>
-
-// 获取困难卡片用于复习
 getDifficultCardsForReview(pluginName: string, deckName?: string, limit?: number): Promise<ReviewCard[]>
+getDifficultReasonText(reason: DifficultReason): string
+// + 颜色等展示辅助（manager 内导出）
 ```
 
 ### 数据结构
 
 ```typescript
 interface DifficultCardInfo {
-  card: ReviewCard           // 卡片信息
-  reason: DifficultReason    // 困难原因
-  recentAgainCount: number   // 最近 Again 次数
-  totalLapses: number        // 总遗忘次数
-  difficulty: number         // 难度值
-  lastReviewDate: Date | null // 最后复习时间
+  card: ReviewCard
+  reason: DifficultReason
+  recentAgainCount: number
+  totalLapses: number
+  difficulty: number
+  lastReviewDate: Date | null
 }
 
-type DifficultReason = 
-  | "high_again_rate"    // Again 比例高
-  | "high_lapses"        // 遗忘次数多
-  | "high_difficulty"    // 难度值高
-  | "multiple"           // 多重原因
+type DifficultReason =
+  | "high_again_rate"
+  | "high_lapses"
+  | "high_difficulty"
+  | "multiple"
+
+interface DifficultCardsStats {
+  totalCount: number
+  byReason: {
+    highAgainRate: number
+    highLapses: number
+    highDifficulty: number
+  }
+  byDeck: Map<string, number>
+}
 ```
 
-## 配置常量
+`getDifficultCardsStats` 对 `multiple` 会按阈值再拆入各类 `byReason`。
 
-可在 `difficultCardsManager.ts` 中调整以下阈值：
+## 排序
 
-| 常量 | 默认值 | 说明 |
-|------|--------|------|
-| RECENT_REVIEW_WINDOW | 10 | 最近复习次数窗口 |
-| AGAIN_COUNT_THRESHOLD | 3 | Again 次数阈值 |
-| LAPSES_THRESHOLD | 3 | 遗忘次数阈值 |
-| DIFFICULTY_THRESHOLD | 7 | 难度值阈值 |
-| REVIEW_LOG_DAYS | 30 | 复习记录查询天数 |
+1. 原因优先级：`multiple` > `high_again_rate` > `high_lapses` > `high_difficulty`
+2. 同原因：`totalLapses` 降序
 
-## 日志身份匹配（FC-05）
+## UI（DifficultCardsView）
 
-困难卡分析通过 `analyzeRecentReviews` 统计最近 Again 次数，**必须**使用 `cardIdentity` 的精确匹配，禁止 `includes` 字符串包含。
+1. 头部：返回、标题与总数、「复习困难卡片」（当前筛选非空时）
+2. 说明文案：三类困难定义
+3. 筛选标签：全部 / 频繁遗忘 / 遗忘次数多 / 难度较高  
+   - 选某一类时 **包含** `reason === "multiple"` 且满足该类条件的卡（UI 用 reason 或 multiple 计数）
+4. 列表项：原因徽章、Deck 名、`SafeBlockPreview`、Again / 遗忘 / 难度、Cloze/Direction 标记
+5. 点击卡片：`orca.nav.openInLastPanel("block", { blockId })`
+6. 空状态：全部空时「太棒了！没有困难卡片」
 
-### 新日志（结构化 / non-legacy）
+列表 key 含 `id / clozeNumber / directionType / listItemId`，避免变体冲突。
 
-- 按 `cardKey` 完全相等匹配。
-- Cloze c1 的 Again **不会**计入 c2。
-- Direction forward / backward、List 不同 `listItemId` 彼此独立。
+## 专项复习流程
 
-### 旧日志（legacy）
+`SrsFlashcardHome.handleDifficultCardsReview`：
 
-- version 1 或缺字段日志读取后标记 `legacy: true`。
-- 兼容规则：父 `blockId` 相同即可匹配；List 旧日志 `cardId` 曾为条目 ID，额外允许 `cardId === listItemId`。
-- **限制**：旧日志无法区分同父块下的变体（例如 c1/c2 会共享同一批 legacy Again 计数）。新产生的日志不再有此问题。
+1. `createFixedRepeatSessionDescriptor({ cards, sourceBlockId: 0, sourceType: "children" })`（F2-01 约定）
+2. `createRepeatReviewSession(...)`
+3. `createReviewSessionBlockWithDescriptor(pluginName, descriptor)`
+4. `orca.nav.openInLastPanel("block", { blockId: reviewBlockId })`
 
-相关实现：`src/srs/cardIdentity.ts`、`src/srs/difficultCardsManager.ts`。
+即走 **重复复习 / 固定队列** 会话，而非普通 `startReviewSession(deckName)`。
 
-## 排序规则
+## 测试
 
-困难卡片按以下优先级排序：
-1. 多重困难 > 频繁遗忘 > 遗忘次数多 > 难度较高
-2. 同类型按遗忘次数降序排列
+- `src/srs/difficultCardsManager.test.ts`（含身份匹配与判定回归）
+
+## 相关文件
+
+| 文件 | 说明 |
+| ---- | ---- |
+| `src/srs/difficultCardsManager.ts` | 判定、列表、统计、复习抽取 |
+| `src/components/DifficultCardsView.tsx` | UI |
+| `src/components/SrsFlashcardHome.tsx` | 入口与复习启动 |
+| `src/srs/cardIdentity.ts` | 日志匹配 |
+| `src/srs/reviewLogStorage.ts` | 日志读写 |
+| `src/srs/repeatReviewManager.ts` | 固定队列会话 |
+| `src/srs/reviewSessionDescriptor.ts` | 会话描述符 |
+| [SRS_卡片浏览器.md](SRS_卡片浏览器.md) | Flash Home 总览 |
