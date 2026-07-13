@@ -3,9 +3,9 @@
  */
 
 import type { IRTimeBudgetMinutes } from "../srs/incremental-reading/irTypes"
-import { calculateElapsedSeconds } from "./irSessionTimerUtils"
+import { calculateElapsedSeconds, shouldFireExpire } from "./irSessionTimerUtils"
 
-const { useEffect, useMemo, useState, useCallback } = window.React
+const { useEffect, useMemo, useState, useCallback, useRef } = window.React
 
 export type UseIRSessionTimerOptions = {
   budgetMinutes: IRTimeBudgetMinutes | number
@@ -34,6 +34,9 @@ export function useIRSessionTimer(options: UseIRSessionTimerOptions): UseIRSessi
   const running = options.running !== false
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [startedAt, setStartedAt] = useState(() => Date.now())
+  const expireFiredRef = useRef(false)
+  const onExpireRef = useRef(options.onExpire)
+  onExpireRef.current = options.onExpire
 
   useEffect(() => {
     if (!running) return
@@ -45,16 +48,16 @@ export function useIRSessionTimer(options: UseIRSessionTimerOptions): UseIRSessi
   }, [running, startedAt])
 
   useEffect(() => {
-    if (elapsedSeconds >= budgetSeconds) {
-      options.onExpire?.()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!shouldFireExpire(elapsedSeconds, budgetSeconds, expireFiredRef.current)) return
+    expireFiredRef.current = true
+    onExpireRef.current?.()
   }, [elapsedSeconds, budgetSeconds])
 
   const remainingSeconds = Math.max(0, budgetSeconds - elapsedSeconds)
   const isExpired = remainingSeconds <= 0
 
   const reset = useCallback(() => {
+    expireFiredRef.current = false
     setStartedAt(Date.now())
     setElapsedSeconds(0)
   }, [])

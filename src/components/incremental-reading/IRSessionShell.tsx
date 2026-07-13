@@ -115,7 +115,14 @@ export default function IRSessionShell({
   const timer = useIRSessionTimer({
     budgetMinutes: timeBudgetMinutes,
     running: !showSummary && !loadFailed && queue.length > 0,
-    onExpire: () => setShowSummary(true)
+    onExpire: () => {
+      // 时间盒到期：仅通知一次，不打断阅读（摘要页仅在队列读完时展示）
+      orca.notify(
+        "info",
+        `本次专注阅读已达到 ${timeBudgetMinutes} 分钟，你可以继续阅读`,
+        { title: "渐进阅读" }
+      )
+    }
   })
 
   const breakpoint = useIRReadingBreakpoint({
