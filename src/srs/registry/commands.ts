@@ -12,9 +12,6 @@ import { insertDirection } from "../directionUtils"
 import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
 import { createExtract } from "../extractUtils"
-import { makeAICardFromBlock } from "../ai/aiCardCreator"
-import { testAIConnection } from "../ai/aiService"
-import { startInteractiveCardCreation } from "../ai/aiInteractiveCardCreator"
 import { testAIConfigWithDetails } from "../ai/aiConfigValidator"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../incrementalReadingAutoMark"
 import { loadIRState, updateReadingBreakpoint, updateResumeBlockId } from "../incrementalReadingStorage"
@@ -292,37 +289,41 @@ export function registerCommands(
     }
   )
 
-  // ============ AI 卡片命令 ============
+  // ============ AI 卡片命令（Plan B：单一流程） ============
 
-  // AI 生成卡片命令
+  const runAIFlashcardCommand = async (editor: any) => {
+    const [_panelId, _rootBlockId, cursor] = editor
+    if (!cursor) {
+      orca.notify("error", "无法获取光标位置")
+      return null
+    }
+    // 动态 import，避免 commands 静态加载 Valtio 弹窗状态（Node 测试环境无 window）
+    const { startAIFlashcardFlow } = await import("../ai/aiFlashcardFlow")
+    await startAIFlashcardFlow(cursor, _pluginName)
+    // 写入在弹窗确认时通过 invokeGroup 完成，命令本身不写块
+    return null
+  }
+
+  // 主命令：AI 生成闪卡
   orca.commands.registerEditorCommand(
     `${pluginName}.makeAICard`,
-    async (editor, ...args) => {
-      const [panelId, rootBlockId, cursor] = editor
-      if (!cursor) {
-        orca.notify("error", "无法获取光标位置")
-        return null
-      }
-      const result = await makeAICardFromBlock(cursor, _pluginName)
-      return result ? { ret: result, undoArgs: result } : null
-    },
-    async undoArgs => {
-      // 撤销：删除创建的子块（答案孙子块会一起被删除）
-      if (!undoArgs || !undoArgs.blockId) return
-
-      try {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.deleteBlocks",
-          null,
-          [undoArgs.blockId]
-        )
-        console.log(`[${_pluginName}] 已撤销 AI 卡片：删除块 #${undoArgs.blockId}`)
-      } catch (error) {
-        console.error(`[${_pluginName}] 撤销 AI 卡片失败:`, error)
-      }
+    runAIFlashcardCommand,
+    async () => {
+      // 实际写卡在弹窗内 invokeGroup；此处无撤销参数
     },
     {
-      label: "SRS: AI 生成记忆卡片",
+      label: "SRS: AI 生成闪卡",
+      hasArgs: false
+    }
+  )
+
+  // 兼容旧命令 ID / 快捷键：同一流程
+  orca.commands.registerEditorCommand(
+    `${pluginName}.interactiveAICard`,
+    runAIFlashcardCommand,
+    async () => {},
+    {
+      label: "SRS: AI 生成闪卡",
       hasArgs: false
     }
   )
@@ -331,41 +332,17 @@ export function registerCommands(
   orca.commands.registerCommand(
     `${pluginName}.testAIConnection`,
     async () => {
-      console.log(`[${_pluginName}] 测试 AI 连接`)
       orca.notify("info", "正在测试 AI 连接...", { title: "AI 连接测试" })
-      
+
       const result = await testAIConfigWithDetails(_pluginName)
-      
+
       if (result.success) {
         orca.notify("success", result.message, { title: "AI 连接测试" })
       } else {
         orca.notify("error", result.message, { title: "AI 连接测试失败" })
-        console.error("[AI 连接测试] 详细信息:", result.details)
       }
     },
     "SRS: 测试 AI 连接"
-  )
-
-  orca.commands.registerEditorCommand(
-    `${pluginName}.interactiveAICard`,
-    async (editor, ...args) => {
-      const [panelId, rootBlockId, cursor] = editor
-      if (!cursor) {
-        orca.notify("error", "无法获取光标位置")
-        return null
-      }
-      
-      const { startInteractiveCardCreationNew } = await import("../ai/aiInteractiveCardCreatorNew")
-      await startInteractiveCardCreationNew(cursor, _pluginName)
-      return null
-    },
-    async undoArgs => {
-      console.log(`[${_pluginName}] AI 智能制卡撤销（暂不支持批量撤销）`)
-    },
-    {
-      label: "SRS: AI 智能制卡（交互式）",
-      hasArgs: false
-    }
   )
 
   // 打开旧复习面板命令（块渲染器模式）

@@ -115,8 +115,8 @@ Orca 启用插件
 | `createExtract` | SRS: 创建摘录（Extract） |
 | `createListCard` | SRS: 创建列表卡 |
 | `createDirectionForward` / `createDirectionBackward` | 正向 / 反向方向卡 |
-| `makeAICard` | SRS: AI 生成记忆卡片 |
-| `interactiveAICard` | SRS: AI 智能制卡（交互式） |
+| `makeAICard` | SRS: AI 生成闪卡 |
+| `interactiveAICard` | SRS: AI 生成闪卡（兼容别名，同流程） |
 | `irRecordProgress` | IR: 记录阅读进度（ir_record） |
 
 #### F2-08：`resetFsrsSettings`
@@ -149,7 +149,7 @@ Orca 启用插件
 | `makeCard` | 转换为记忆卡片 | `makeCardFromBlock` |
 | `listCard` | 列表卡（子块作为条目） | `createListCard` |
 | `directionForward` / `directionBackward` | 方向卡 | 对应编辑器命令 |
-| `aiCard` / `interactiveAI` | AI 制卡 | 对应编辑器命令 |
+| `aiCard` | AI 生成闪卡 | `makeAICard`（`interactiveAICard` 仅为编辑器兼容别名，无重复斜杠） |
 | `ir` | IR：创建 Topic 卡片 | `createTopicCard` |
 | `incrementalReading` | 渐进阅读 | `startIncrementalReadingSession` |
 | `ir_record` | ir_record | `irRecordProgress` |

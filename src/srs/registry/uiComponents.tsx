@@ -2,7 +2,7 @@
  * UI 组件注册模块
  *
  * 负责注册工具栏按钮、斜杠命令和顶部栏按钮
- * 
+ *
  * 注意：Orca 当前版本不支持自定义快捷键注册，
  * 当前编辑器工具栏仅保留"填空卡"入口，其它命令通过斜杠命令触发。
  */
@@ -24,7 +24,7 @@ export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.epubImportDialogMount`, () => (
     <EpubImportDialogMount pluginName={pluginName} />
   ))
-  
+
   // 复习按钮 - 开始复习会话
   orca.headbar.registerHeadbarButton(`${pluginName}.reviewButton`, () => (
     <orca.components.Button
@@ -62,7 +62,7 @@ export function registerUIComponents(pluginName: string): void {
   ))
 
   // ============ 工具栏按钮 ============
-  
+
   orca.toolbar.registerToolbarButton(`${pluginName}.clozeButton`, {
     icon: "ti ti-braces",
     tooltip: "创建 Cloze 填空",
@@ -70,7 +70,7 @@ export function registerUIComponents(pluginName: string): void {
   })
 
   // ============ 斜杠命令 ============
-  
+
   orca.slashCommands.registerSlashCommand(`${pluginName}.makeCard`, {
     icon: "ti ti-card-plus",
     group: "SRS",
@@ -99,20 +99,13 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.createDirectionBackward`
   })
 
-  // ============ AI 卡片斜杠命令 ============
+  // ============ AI 卡片斜杠命令（仅一条可见体验） ============
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.aiCard`, {
-    icon: "ti ti-robot",
+    icon: "ti ti-cards",
     group: "SRS",
-    title: "AI 生成记忆卡片",
+    title: "AI 生成闪卡",
     command: `${pluginName}.makeAICard`
-  })
-
-  orca.slashCommands.registerSlashCommand(`${pluginName}.interactiveAI`, {
-    icon: "ti ti-sparkles",
-    group: "SRS",
-    title: "AI 智能制卡（交互式）",
-    command: `${pluginName}.interactiveAICard`
   })
 
   // ============ 渐进阅读斜杠命令 ============
@@ -156,22 +149,27 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.irBookDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.epubImportDialogMount`)
-  
+
   orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.incrementalReadingButton`)
-  
+
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
   orca.toolbar.unregisterToolbarButton(`${pluginName}.importEpubButton`)
-  
+
   // 斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.listCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionForward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionBackward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.aiCard`)
-  orca.slashCommands.unregisterSlashCommand(`${pluginName}.interactiveAI`)
+  // Legacy slash id (if previously registered on older builds)
+  try {
+    orca.slashCommands.unregisterSlashCommand(`${pluginName}.interactiveAI`)
+  } catch (error) {
+    console.warn(`[${pluginName}] 清理旧 AI 斜杠命令失败:`, error)
+  }
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)

@@ -96,8 +96,8 @@ export function unregisterCommands(pluginName: string): void
 | `${pluginName}.createListCard` | SRS: 创建列表卡 | `createListCardFromBlock` |
 | `${pluginName}.createDirectionForward` | SRS: 创建正向方向卡 → | `insertDirection(..., "forward")` |
 | `${pluginName}.createDirectionBackward` | SRS: 创建反向方向卡 ← | `insertDirection(..., "backward")` |
-| `${pluginName}.makeAICard` | SRS: AI 生成记忆卡片 | `makeAICardFromBlock` |
-| `${pluginName}.interactiveAICard` | SRS: AI 智能制卡（交互式） | `startInteractiveCardCreationNew` |
+| `${pluginName}.makeAICard` | SRS: AI 生成闪卡 | `startAIFlashcardFlow`（Plan B 弹窗） |
+| `${pluginName}.interactiveAICard` | SRS: AI 生成闪卡（兼容别名） | 同上 `startAIFlashcardFlow` |
 | `${pluginName}.irRecordProgress` | IR: 记录阅读进度（ir_record） | `updateReadingBreakpoint` / undo 回写 |
 
 #### 编辑器命令 do/undo 模式
@@ -155,8 +155,7 @@ export function unregisterUIComponents(pluginName: string): void
 | `makeCard` | 转换为记忆卡片 | `makeCardFromBlock` |
 | `listCard` | 列表卡（子块作为条目） | `createListCard` |
 | `directionForward` / `directionBackward` | 方向卡 | 对应命令 |
-| `aiCard` | AI 生成记忆卡片 | `makeAICard` |
-| `interactiveAI` | AI 智能制卡（交互式） | `interactiveAICard` |
+| `aiCard` | AI 生成闪卡 | `makeAICard` |
 | `ir` | IR：创建 Topic 卡片 | `createTopicCard` |
 | `incrementalReading` | 渐进阅读 | `startIncrementalReadingSession` |
 | `ir_record` | ir_record | `irRecordProgress` |

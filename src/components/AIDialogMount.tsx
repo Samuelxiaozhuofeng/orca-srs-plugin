@@ -1,251 +1,218 @@
 /**
- * AI 智能制卡弹窗挂载组件
- * 
- * 这个组件被注册到 Headbar，作为"特洛伊木马"将弹窗注入到 Orca 的 React 树中
- * 平时渲染为 null，当状态变化时渲染弹窗
+ * AI 闪卡弹窗挂载：Headbar 特洛伊木马 + 生成 / 保存编排
+ *
+ * Generation uses a request-token guard so cancelled/stale responses
+ * cannot overwrite a newer request's state.
  */
 
-import { aiDialogState, closeAIDialog } from "../srs/ai/aiDialogState"
-import { AICardGenerationDialog, type GenerationConfig } from "./AICardGenerationDialog"
-import type { Block } from "../orca.d.ts"
-import { generateBasicCards, generateClozeCards, type BasicCardData, type ClozeCardData } from "../srs/ai/aiCardGenerators"
-import { ensureCardSrsState, writeInitialClozeSrsState } from "../srs/storage"
-import { ensureCardTagProperties } from "../srs/tagPropertyInit"
-import { getMaxClozeNumberFromContent } from "../srs/clozeUtils"
-import { buildCardTagData } from "../srs/cardTagDataBuilder"
-import type { ContentFragment } from "../orca.d.ts"
+import {
+  aiDialogState,
+  closeAIDialog,
+  applyGenerationSuccess,
+  setDialogError,
+  setDialogInfo,
+  setGenerating,
+  setSaving,
+  updateDraft,
+  removeDraft,
+  setDraftSelected,
+  backToConfig
+} from "../srs/ai/aiDialogState"
+import { AICardGenerationDialog } from "./AICardGenerationDialog"
+import { generateFlashcardDrafts } from "../srs/ai/aiService"
+import { writeAICardDrafts } from "../srs/ai/aiCardWriter"
+import { createRequestTokenGuard } from "../srs/ai/aiRequestToken"
+import type { AICardDraft, AICardType, MaxCardsOption } from "../srs/ai/aiDraftTypes"
+import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
 
-const { React, Valtio } = window
+const { Valtio } = window
 const { useSnapshot } = Valtio
+const { useRef } = window.React
 
 interface AIDialogMountProps {
   pluginName: string
 }
 
 export function AIDialogMount({ pluginName }: AIDialogMountProps) {
-  // 订阅状态变化
   const snap = useSnapshot(aiDialogState)
+  const abortRef = useRef<AbortController | null>(null)
+  const tokenGuardRef = useRef(createRequestTokenGuard())
 
-  // 处理生成卡片
-  const handleGenerate = async (config: GenerationConfig) => {
-    if (!snap.sourceBlockId) {
-      orca.notify("error", "无法找到源块")
+  const handleGenerate = async () => {
+    if (!snap.sourceBlockId || !snap.sourceText.trim()) {
+      setDialogError("缺少源文本，请关闭后重试")
       return
     }
 
-    const sourceBlock = orca.state.blocks[snap.sourceBlockId] as Block
-    if (!sourceBlock) {
-      orca.notify("error", "源块不存在")
-      return
-    }
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const token = tokenGuardRef.current.next()
 
-    // 获取选中的知识点文本
-    const selectedKnowledgePoints = snap.knowledgePoints
-      .filter((kp: any) => config.selectedKnowledgePoints.includes(kp.id))
-      .map((kp: any) => kp.text)
-
-    // 如果有自定义输入，添加到知识点列表
-    if (config.customInput) {
-      selectedKnowledgePoints.push(config.customInput)
-    }
-
-    if (selectedKnowledgePoints.length === 0) {
-      orca.notify("warn", "请至少选择一个知识点")
-      return
-    }
-
-    orca.notify("info", `正在生成 ${selectedKnowledgePoints.length} 个知识点的卡片...`, { title: "智能制卡" })
+    setGenerating(true)
+    setDialogError(null)
+    setDialogInfo(null)
 
     try {
-      let cards: BasicCardData[] | ClozeCardData[]
+      const result = await generateFlashcardDrafts({
+        pluginName,
+        sourceText: snap.sourceText,
+        cardType: snap.cardType,
+        maxCards: snap.maxCards,
+        signal: controller.signal
+      })
 
-      if (config.cardType === "basic") {
-        const result = await generateBasicCards(pluginName, selectedKnowledgePoints, snap.originalContent)
-        if (!result.success) {
-          orca.notify("error", result.error.message, { title: "生成失败" })
-          return
-        }
-        cards = result.cards
-      } else {
-        const result = await generateClozeCards(pluginName, selectedKnowledgePoints, snap.originalContent)
-        if (!result.success) {
-          orca.notify("error", result.error.message, { title: "生成失败" })
-          return
-        }
-        cards = result.cards
-      }
-
-      if (cards.length === 0) {
-        orca.notify("warn", "AI 未生成任何卡片", { title: "智能制卡" })
+      if (!tokenGuardRef.current.isCurrent(token)) {
         return
       }
 
-      await ensureCardTagProperties(pluginName)
+      if (controller.signal.aborted) {
+        setDialogInfo("已取消生成")
+        return
+      }
 
-      let successCount = 0
-
-      for (const card of cards) {
-        try {
-          if (config.cardType === "basic") {
-            await insertBasicCard(sourceBlock, card as BasicCardData, pluginName)
-            successCount++
-          } else {
-            await insertClozeCard(sourceBlock, card as ClozeCardData, pluginName)
-            successCount++
-          }
-        } catch (error) {
-          console.error("[AI Dialog Mount] 插入卡片失败:", error)
+      if (!result.success) {
+        if (result.error.code === "CANCELLED") {
+          setDialogInfo(result.error.message)
+          return
         }
+        setDialogError(result.error.message)
+        orca.notify("error", result.error.message, { title: "AI 生成闪卡" })
+        return
       }
 
-      if (successCount > 0) {
-        orca.notify("success", `成功生成 ${successCount} 张卡片`, { title: "智能制卡" })
-      } else {
-        orca.notify("error", "所有卡片插入失败", { title: "智能制卡" })
-      }
+      applyGenerationSuccess(
+        result.cards,
+        result.rejected,
+        result.truncatedCount
+      )
     } catch (error) {
-      console.error("[AI Dialog Mount] 生成卡片失败:", error)
-      orca.notify("error", "生成卡片失败，请重试", { title: "智能制卡" })
+      if (!tokenGuardRef.current.isCurrent(token)) {
+        return
+      }
+      const message =
+        error instanceof Error ? error.message : "生成失败，请重试"
+      setDialogError(message)
+      orca.notify("error", message, { title: "AI 生成闪卡" })
+    } finally {
+      if (tokenGuardRef.current.isCurrent(token)) {
+        if (abortRef.current === controller) {
+          abortRef.current = null
+        }
+        setGenerating(false)
+      }
     }
   }
 
-  // 如果弹窗未打开，不渲染任何内容
+  const handleCancelGenerate = () => {
+    tokenGuardRef.current.invalidate()
+    abortRef.current?.abort()
+    abortRef.current = null
+    setDialogInfo("已取消生成")
+    setGenerating(false)
+  }
+
+  const handleSave = async () => {
+    if (!snap.sourceBlockId) {
+      setDialogError("源块丢失，无法保存")
+      return
+    }
+
+    const sourceText = aiDialogState.sourceText
+    const selected = (aiDialogState.drafts as AICardDraft[]).filter(d =>
+      aiDialogState.selectedIds.includes(d.id)
+    )
+
+    if (selected.length === 0) {
+      setDialogError("请至少选择一张卡片")
+      return
+    }
+
+    const invalid = selected
+      .map(d => ({ id: d.id, err: validateEditableDraft(d, sourceText) }))
+      .filter(x => x.err != null)
+
+    if (invalid.length > 0) {
+      setDialogError(
+        `有 ${invalid.length} 张已选草稿未通过校验，请修正后再保存`
+      )
+      return
+    }
+
+    setSaving(true)
+    setDialogError(null)
+
+    try {
+      const result = await writeAICardDrafts({
+        pluginName,
+        sourceBlockId: snap.sourceBlockId,
+        drafts: selected
+      })
+
+      if (!result.success) {
+        let msg = result.error.message
+        if (result.orphanBlockIds && result.orphanBlockIds.length > 0) {
+          msg += `\n\n残留块 ID（请手动检查并删除）: ${result.orphanBlockIds.join(", ")}`
+        }
+        setDialogError(msg)
+        orca.notify("error", msg, { title: "AI 生成闪卡" })
+        return
+      }
+
+      orca.notify("success", `已保存 ${result.createdBlockIds.length} 张卡片`, {
+        title: "AI 生成闪卡"
+      })
+      closeAIDialog()
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "保存失败"
+      setDialogError(message)
+      orca.notify("error", message, { title: "AI 生成闪卡" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!snap.isOpen) return null
 
   return (
     <AICardGenerationDialog
       visible={snap.isOpen}
-      onClose={closeAIDialog}
-      knowledgePoints={snap.knowledgePoints}
-      originalContent={snap.originalContent}
+      phase={snap.phase}
+      sourceText={snap.sourceText}
+      cardType={snap.cardType}
+      maxCards={snap.maxCards}
+      drafts={snap.drafts as AICardDraft[]}
+      selectedIds={snap.selectedIds as string[]}
+      errorMessage={snap.errorMessage}
+      infoMessage={snap.infoMessage}
+      isGenerating={snap.isGenerating}
+      isSaving={snap.isSaving}
+      onClose={() => {
+        if (snap.isGenerating) {
+          handleCancelGenerate()
+        }
+        if (!snap.isSaving) {
+          closeAIDialog()
+        }
+      }}
+      onCardTypeChange={(type: AICardType) => {
+        if (!aiDialogState.isGenerating) {
+          aiDialogState.cardType = type
+        }
+      }}
+      onMaxCardsChange={(n: MaxCardsOption) => {
+        if (!aiDialogState.isGenerating) {
+          aiDialogState.maxCards = n
+        }
+      }}
       onGenerate={handleGenerate}
+      onCancelGenerate={handleCancelGenerate}
+      onBack={backToConfig}
+      onToggleSelect={setDraftSelected}
+      onUpdateDraft={(id, patch) => updateDraft(id, patch)}
+      onRemoveDraft={removeDraft}
+      onSave={handleSave}
     />
   )
-}
-
-// ========================================
-// 卡片插入辅助函数
-// ========================================
-
-async function insertBasicCard(
-  parentBlock: Block,
-  cardData: BasicCardData,
-  pluginName: string
-): Promise<void> {
-  const questionBlockId = await orca.commands.invokeEditorCommand(
-    "core.editor.insertBlock",
-    null,
-    parentBlock,
-    "lastChild",
-    [{ t: "t", v: cardData.question }]
-  )
-
-  if (!questionBlockId) {
-    throw new Error("创建问题块失败")
-  }
-
-  const questionBlock = orca.state.blocks[questionBlockId] as Block
-  if (!questionBlock) {
-    throw new Error("无法获取问题块")
-  }
-
-  const answerBlockId = await orca.commands.invokeEditorCommand(
-    "core.editor.insertBlock",
-    null,
-    questionBlock,
-    "lastChild",
-    [{ t: "t", v: cardData.answer }]
-  )
-
-  if (!answerBlockId) {
-    await orca.commands.invokeEditorCommand(
-      "core.editor.deleteBlocks",
-      null,
-      [questionBlockId]
-    )
-    throw new Error("创建答案块失败")
-  }
-
-  await orca.commands.invokeEditorCommand(
-    "core.editor.insertTag",
-    null,
-    questionBlockId,
-    "card",
-    await buildCardTagData(pluginName, questionBlockId, "basic")
-  )
-
-  await ensureCardSrsState(questionBlockId)
-}
-
-async function insertClozeCard(
-  parentBlock: Block,
-  cardData: ClozeCardData,
-  pluginName: string
-): Promise<void> {
-  const blockId = await orca.commands.invokeEditorCommand(
-    "core.editor.insertBlock",
-    null,
-    parentBlock,
-    "lastChild",
-    [{ t: "t", v: cardData.text }]
-  )
-
-  if (!blockId) {
-    throw new Error("创建填空卡块失败")
-  }
-
-  const block = orca.state.blocks[blockId] as Block
-  if (!block) {
-    throw new Error("无法获取填空卡块")
-  }
-
-  const clozeIndex = cardData.text.indexOf(cardData.clozeText)
-  if (clozeIndex === -1) {
-    console.warn(`[AI Dialog Mount] 无法在文本中找到挖空词: "${cardData.clozeText}"`)
-    await orca.commands.invokeEditorCommand(
-      "core.editor.deleteBlocks",
-      null,
-      [blockId]
-    )
-    throw new Error("无法定位挖空位置")
-  }
-
-  const maxClozeNumber = getMaxClozeNumberFromContent(block.content, pluginName)
-  const newClozeNumber = maxClozeNumber + 1
-
-  const beforeText = cardData.text.substring(0, clozeIndex)
-  const afterText = cardData.text.substring(clozeIndex + cardData.clozeText.length)
-
-  const newContent: ContentFragment[] = []
-
-  if (beforeText) {
-    newContent.push({ t: "t", v: beforeText })
-  }
-
-  newContent.push({
-    t: `${pluginName}.cloze`,
-    v: cardData.clozeText,
-    clozeNumber: newClozeNumber
-  } as any)
-
-  if (afterText) {
-    newContent.push({ t: "t", v: afterText })
-  }
-
-  await orca.commands.invokeEditorCommand(
-    "core.editor.setBlockContent",
-    null,
-    blockId,
-    newContent
-  )
-
-  await orca.commands.invokeEditorCommand(
-    "core.editor.insertTag",
-    null,
-    blockId,
-    "card",
-    await buildCardTagData(pluginName, blockId, "cloze")
-  )
-
-  await writeInitialClozeSrsState(blockId, newClozeNumber, 0)
 }

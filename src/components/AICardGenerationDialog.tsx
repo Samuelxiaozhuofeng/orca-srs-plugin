@@ -1,275 +1,406 @@
-import type { KnowledgePoint } from "../srs/ai/aiKnowledgeExtractor"
+/**
+ * AI 生成闪卡对话框（Plan B）
+ *
+ * 配置 → 单次生成 → 预览/编辑/选择 → 确认写入
+ */
 
-const { useState, useMemo } = window.React
+import type {
+  AICardDraft,
+  AICardType,
+  MaxCardsOption
+} from "../srs/ai/aiDraftTypes"
+import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
+import { AICardDraftCard } from "./AICardDraftCard"
 
-export interface GenerationConfig {
-  selectedKnowledgePoints: string[]
-  customInput: string
-  cardType: "basic" | "cloze"
-}
+const { useMemo } = window.React
 
-interface AICardGenerationDialogProps {
+export interface AICardGenerationDialogProps {
   visible: boolean
+  phase: "config" | "review"
+  sourceText: string
+  cardType: AICardType
+  maxCards: MaxCardsOption
+  drafts: AICardDraft[]
+  selectedIds: string[]
+  errorMessage: string | null
+  infoMessage: string | null
+  isGenerating: boolean
+  isSaving: boolean
   onClose: () => void
-  knowledgePoints: KnowledgePoint[]
-  originalContent: string
-  onGenerate: (config: GenerationConfig) => Promise<void>
+  onCardTypeChange: (type: AICardType) => void
+  onMaxCardsChange: (n: MaxCardsOption) => void
+  onGenerate: () => void
+  onCancelGenerate: () => void
+  onBack: () => void
+  onToggleSelect: (id: string, selected: boolean) => void
+  onUpdateDraft: (id: string, patch: Partial<AICardDraft>) => void
+  onRemoveDraft: (id: string) => void
+  onSave: () => void
 }
+
+const MAX_OPTIONS: MaxCardsOption[] = [1, 3, 5]
 
 export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
-  const { visible, onClose, knowledgePoints, originalContent, onGenerate } = props
-  const { ModalOverlay, Checkbox, Button } = orca.components
-  
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    new Set(knowledgePoints.filter(kp => kp.recommended).map(kp => kp.id))
+  const {
+    visible,
+    phase,
+    sourceText,
+    cardType,
+    maxCards,
+    drafts,
+    selectedIds,
+    errorMessage,
+    infoMessage,
+    isGenerating,
+    isSaving,
+    onClose,
+    onCardTypeChange,
+    onMaxCardsChange,
+    onGenerate,
+    onCancelGenerate,
+    onBack,
+    onToggleSelect,
+    onUpdateDraft,
+    onRemoveDraft,
+    onSave
+  } = props
+
+  const { ModalOverlay } = orca.components
+  const busy = isGenerating || isSaving
+  const selectedCount = useMemo(
+    () => drafts.filter(d => selectedIds.includes(d.id)).length,
+    [drafts, selectedIds]
   )
-  const [customInput, setCustomInput] = useState("")
-  const [cardType, setCardType] = useState<"basic" | "cloze">("basic")
-  const [isGenerating, setIsGenerating] = useState(false)
-  
-  const handleToggle = (id: string, checked: boolean) => {
-    const newSet = new Set(selectedIds)
-    if (checked) {
-      newSet.add(id)
-    } else {
-      newSet.delete(id)
+
+  const draftErrors = useMemo(() => {
+    const map: Record<string, string | null> = {}
+    for (const d of drafts) {
+      if (selectedIds.includes(d.id)) {
+        map[d.id] = validateEditableDraft(d, sourceText)
+      } else {
+        map[d.id] = null
+      }
     }
-    setSelectedIds(newSet)
-  }
-  
-  const estimatedCardCount = useMemo(() => {
-    let count = selectedIds.size
-    if (customInput.trim()) {
-      count += 1
-    }
-    return count
-  }, [selectedIds, customInput])
-  
-  const handleGenerate = async () => {
-    if (selectedIds.size === 0 && !customInput.trim()) {
-      orca.notify("warn", "请至少选择一个知识点或输入自定义内容")
-      return
-    }
-    
-    setIsGenerating(true)
-    
-    try {
-      await onGenerate({
-        selectedKnowledgePoints: Array.from(selectedIds),
-        customInput: customInput.trim(),
-        cardType
-      })
-      onClose()
-    } catch (error) {
-      console.error("[AI Card Generation Dialog] 生成失败:", error)
-      orca.notify("error", "生成卡片失败，请重试")
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-  
+    return map
+  }, [drafts, selectedIds, sourceText])
+
+  const hasInvalidSelected = useMemo(
+    () =>
+      drafts.some(
+        d => selectedIds.includes(d.id) && draftErrors[d.id] != null
+      ),
+    [drafts, selectedIds, draftErrors]
+  )
+
+  const canSave = selectedCount > 0 && !hasInvalidSelected && !busy
+
   if (!visible) return null
-  
+
   return (
-    <ModalOverlay visible={visible} canClose={!isGenerating} onClose={onClose}>
-      <div
-        style={{
-          background: "var(--orca-bg-primary, #ffffff)",
-          borderRadius: "12px",
-          padding: "24px",
-          maxWidth: "600px",
-          maxHeight: "80vh",
-          overflowY: "auto",
-          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
-          border: "1px solid var(--orca-border, #e0e0e0)",
-          backdropFilter: "blur(10px)"
-        }}
-        className="ai-card-dialog"
-      >
-        <h2 style={{ 
-          margin: "0 0 20px 0", 
-          fontSize: "20px", 
-          fontWeight: 600,
-          color: "var(--orca-text-primary, #333)",
-          borderBottom: "2px solid var(--orca-border, #e0e0e0)",
-          paddingBottom: "12px"
-        }}>
-          🤖 AI 智能制卡
-        </h2>
-        
-        <div
-          style={{
-            background: "var(--orca-bg-secondary, #f5f5f5)",
-            padding: "12px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            border: "1px solid var(--orca-border, #e0e0e0)"
-          }}
-        >
-          <strong style={{ fontSize: "14px", color: "var(--orca-text-primary, #333)" }}>原始内容：</strong>
-          <p style={{ margin: "8px 0 0 0", fontSize: "14px", lineHeight: "1.5", color: "var(--orca-text-primary, #333)" }}>
-            {originalContent}
+    <ModalOverlay visible={visible} canClose={!busy} onClose={onClose}>
+      <div className="ai-card-dialog">
+        <header className="ai-card-dialog__header">
+          <h2 className="ai-card-dialog__title">
+            <i className="ti ti-cards" aria-hidden="true" />
+            <span>AI 生成闪卡</span>
+          </h2>
+          <p className="ai-card-dialog__hint">
+            下方源文本将发送到已配置的 AI 服务
           </p>
-        </div>
-        
-        <div style={{ marginBottom: "20px" }}>
-          <h3 style={{ 
-            margin: "0 0 12px 0", 
-            fontSize: "16px", 
-            fontWeight: 600,
-            color: "var(--orca-text-primary, #333)"
-          }}>
-            检测到的知识点：
-          </h3>
-          {knowledgePoints.length === 0 ? (
-            <p style={{ color: "var(--orca-text-secondary)", fontSize: "14px" }}>
-              未检测到知识点，请使用自定义输入
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {knowledgePoints.map(kp => (
-                <div
-                  key={kp.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "12px",
-                    padding: "12px",
-                    border: "1px solid var(--orca-border, #e0e0e0)",
-                    borderRadius: "8px",
-                    transition: "all 0.2s",
-                    cursor: "pointer",
-                    background: selectedIds.has(kp.id) 
-                      ? "var(--orca-bg-secondary, #f0f7ff)" 
-                      : "var(--orca-bg-primary, #ffffff)"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!selectedIds.has(kp.id)) {
-                      e.currentTarget.style.background = "var(--orca-bg-hover, #f5f5f5)"
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = selectedIds.has(kp.id) 
-                      ? "var(--orca-bg-secondary, #f0f7ff)" 
-                      : "var(--orca-bg-primary, #ffffff)"
-                  }}
-                  onClick={() => handleToggle(kp.id, !selectedIds.has(kp.id))}
-                >
-                  <Checkbox
-                    checked={selectedIds.has(kp.id)}
-                    onChange={({ checked }) => handleToggle(kp.id, checked)}
-                  />
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <span style={{ fontWeight: 500, fontSize: "14px", color: "var(--orca-text-primary, #333)" }}>
-                      {kp.text}
-                      {kp.recommended && (
-                        <span style={{ 
-                          marginLeft: "8px", 
-                          fontSize: "12px", 
-                          color: "var(--orca-color-primary, #0066cc)",
-                          fontWeight: 400
-                        }}>
-                          (推荐)
-                        </span>
-                      )}
-                    </span>
-                    {kp.description && (
-                      <span style={{ fontSize: "13px", color: "var(--orca-text-secondary, #666)" }}>
-                        {kp.description}
-                      </span>
-                    )}
-                    <span style={{ fontSize: "12px", color: "var(--orca-text-tertiary, #999)" }}>
-                      难度: {"⭐".repeat(kp.difficulty || 3)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        <div style={{ marginBottom: "20px" }}>
-          <h3 style={{ 
-            margin: "0 0 8px 0", 
-            fontSize: "16px", 
-            fontWeight: 600,
-            color: "var(--orca-text-primary, #333)"
-          }}>
-            自定义知识点：
-          </h3>
-          <input
-            type="text"
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
-            placeholder="输入其他想要学习的内容..."
-            style={{
-              width: "100%",
-              padding: "10px",
-              fontSize: "14px",
-              borderRadius: "6px",
-              border: "1px solid var(--orca-border, #d0d0d0)",
-              backgroundColor: "var(--orca-bg-primary, #ffffff)",
-              color: "var(--orca-text-primary, #333)",
-              outline: "none",
-              transition: "border-color 0.2s"
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "var(--orca-color-primary, #0066cc)"
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "var(--orca-border, #d0d0d0)"
-            }}
+        </header>
+
+        <section className="ai-card-dialog__source">
+          <div className="ai-card-dialog__section-label">源文本</div>
+          <div className="ai-card-dialog__source-body">{sourceText}</div>
+        </section>
+
+        {errorMessage && (
+          <div
+            className="ai-card-dialog__banner ai-card-dialog__banner--error"
+            role="alert"
+          >
+            {errorMessage}
+          </div>
+        )}
+        {infoMessage && !errorMessage && (
+          <div className="ai-card-dialog__banner ai-card-dialog__banner--info">
+            {infoMessage}
+          </div>
+        )}
+
+        {phase === "config" ? (
+          <ConfigPhase
+            cardType={cardType}
+            maxCards={maxCards}
+            isGenerating={isGenerating}
+            onCardTypeChange={onCardTypeChange}
+            onMaxCardsChange={onMaxCardsChange}
+            onGenerate={onGenerate}
+            onCancelGenerate={onCancelGenerate}
+            onClose={onClose}
           />
-        </div>
-        
-        <div style={{ marginBottom: "20px" }}>
-          <h3 style={{ 
-            margin: "0 0 12px 0", 
-            fontSize: "16px", 
-            fontWeight: 600,
-            color: "var(--orca-text-primary, #333)"
-          }}>
-            卡片类型：
-          </h3>
-          <div style={{ display: "flex", gap: "12px" }}>
+        ) : (
+          <ReviewPhase
+            drafts={drafts}
+            selectedIds={selectedIds}
+            draftErrors={draftErrors}
+            selectedCount={selectedCount}
+            canSave={canSave}
+            isSaving={isSaving}
+            isGenerating={isGenerating}
+            onToggleSelect={onToggleSelect}
+            onUpdateDraft={onUpdateDraft}
+            onRemoveDraft={onRemoveDraft}
+            onBack={onBack}
+            onGenerate={onGenerate}
+            onCancelGenerate={onCancelGenerate}
+            onSave={onSave}
+            onClose={onClose}
+          />
+        )}
+      </div>
+    </ModalOverlay>
+  )
+}
+
+function ConfigPhase(props: {
+  cardType: AICardType
+  maxCards: MaxCardsOption
+  isGenerating: boolean
+  onCardTypeChange: (type: AICardType) => void
+  onMaxCardsChange: (n: MaxCardsOption) => void
+  onGenerate: () => void
+  onCancelGenerate: () => void
+  onClose: () => void
+}) {
+  const { Button } = orca.components
+  const {
+    cardType,
+    maxCards,
+    isGenerating,
+    onCardTypeChange,
+    onMaxCardsChange,
+    onGenerate,
+    onCancelGenerate,
+    onClose
+  } = props
+
+  const lockStyle = isGenerating
+    ? { opacity: 0.5, pointerEvents: "none" as const }
+    : undefined
+
+  const guardType = (type: AICardType) => {
+    if (!isGenerating) onCardTypeChange(type)
+  }
+  const guardMax = (n: MaxCardsOption) => {
+    if (!isGenerating) onMaxCardsChange(n)
+  }
+
+  return (
+    <>
+      <section className="ai-card-dialog__controls">
+        <div className="ai-card-dialog__field">
+          <div className="ai-card-dialog__section-label" id="ai-card-type-label">
+            卡片类型
+          </div>
+          <div
+            className="ai-card-dialog__segmented"
+            style={lockStyle}
+            role="radiogroup"
+            aria-labelledby="ai-card-type-label"
+          >
             <Button
               variant={cardType === "basic" ? "solid" : "outline"}
-              onClick={() => setCardType("basic")}
-              style={{ flex: 1, fontSize: "14px" }}
+              onClick={() => guardType("basic")}
+              aria-pressed={cardType === "basic"}
+              tabIndex={isGenerating ? -1 : 0}
             >
-              📝 Basic Card（问答卡）
+              Basic
             </Button>
             <Button
               variant={cardType === "cloze" ? "solid" : "outline"}
-              onClick={() => setCardType("cloze")}
-              style={{ flex: 1, fontSize: "14px" }}
+              onClick={() => guardType("cloze")}
+              aria-pressed={cardType === "cloze"}
+              tabIndex={isGenerating ? -1 : 0}
             >
-              🔤 Cloze Card（填空卡）
+              Cloze
             </Button>
           </div>
         </div>
-        
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
-          <Button
-            variant="outline"
-            onClick={onClose}
-            style={{ fontSize: "14px", opacity: isGenerating ? 0.5 : 1, pointerEvents: isGenerating ? "none" : "auto" }}
+
+        <div className="ai-card-dialog__field">
+          <div className="ai-card-dialog__section-label" id="ai-max-cards-label">
+            最多生成
+          </div>
+          <div
+            className="ai-card-dialog__segmented"
+            style={lockStyle}
+            role="radiogroup"
+            aria-labelledby="ai-max-cards-label"
           >
-            取消
-          </Button>
-          <Button
-            variant="solid"
-            onClick={handleGenerate}
-            style={{ 
-              fontSize: "14px", 
-              opacity: (isGenerating || (selectedIds.size === 0 && !customInput.trim())) ? 0.5 : 1,
-              pointerEvents: (isGenerating || (selectedIds.size === 0 && !customInput.trim())) ? "none" : "auto"
-            }}
-          >
-            {isGenerating ? "生成中..." : `生成 ${estimatedCardCount} 张卡片`}
-          </Button>
+            {MAX_OPTIONS.map(n => (
+              <Button
+                key={n}
+                variant={maxCards === n ? "solid" : "outline"}
+                onClick={() => guardMax(n)}
+                aria-pressed={maxCards === n}
+                tabIndex={isGenerating ? -1 : 0}
+              >
+                {n}
+              </Button>
+            ))}
+          </div>
         </div>
-      </div>
-    </ModalOverlay>
+      </section>
+
+      <footer className="ai-card-dialog__footer">
+        {isGenerating ? (
+          <>
+            <span className="ai-card-dialog__status">
+              <i
+                className="ti ti-loader-2 ai-card-dialog__spin"
+                aria-hidden="true"
+              />
+              生成中…
+            </span>
+            <Button variant="outline" onClick={onCancelGenerate}>
+              取消生成
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" onClick={onClose}>
+              关闭
+            </Button>
+            <Button variant="solid" onClick={onGenerate}>
+              生成草稿
+            </Button>
+          </>
+        )}
+      </footer>
+    </>
+  )
+}
+
+function ReviewPhase(props: {
+  drafts: AICardDraft[]
+  selectedIds: string[]
+  draftErrors: Record<string, string | null>
+  selectedCount: number
+  canSave: boolean
+  isSaving: boolean
+  isGenerating: boolean
+  onToggleSelect: (id: string, selected: boolean) => void
+  onUpdateDraft: (id: string, patch: Partial<AICardDraft>) => void
+  onRemoveDraft: (id: string) => void
+  onBack: () => void
+  onGenerate: () => void
+  onCancelGenerate: () => void
+  onSave: () => void
+  onClose: () => void
+}) {
+  const { Button } = orca.components
+  const {
+    drafts,
+    selectedIds,
+    draftErrors,
+    selectedCount,
+    canSave,
+    isSaving,
+    isGenerating,
+    onToggleSelect,
+    onUpdateDraft,
+    onRemoveDraft,
+    onBack,
+    onGenerate,
+    onCancelGenerate,
+    onSave,
+    onClose
+  } = props
+
+  const busy = isSaving || isGenerating
+
+  return (
+    <>
+      <section className="ai-card-dialog__review">
+        <div className="ai-card-dialog__section-label">
+          草稿预览（已选 {selectedCount}/{drafts.length}）
+        </div>
+        {drafts.length === 0 ? (
+          <p className="ai-card-dialog__empty">暂无草稿，请返回重新生成</p>
+        ) : (
+          <ul className="ai-card-dialog__draft-list">
+            {drafts.map(draft => (
+              <AICardDraftCard
+                key={draft.id}
+                draft={draft}
+                selected={selectedIds.includes(draft.id)}
+                validationError={
+                  selectedIds.includes(draft.id)
+                    ? draftErrors[draft.id]
+                    : null
+                }
+                disabled={busy}
+                onToggleSelect={onToggleSelect}
+                onUpdateDraft={onUpdateDraft}
+                onRemoveDraft={onRemoveDraft}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <footer className="ai-card-dialog__footer">
+        {isGenerating ? (
+          <>
+            <span className="ai-card-dialog__status">
+              <i
+                className="ti ti-loader-2 ai-card-dialog__spin"
+                aria-hidden="true"
+              />
+              重新生成中…
+            </span>
+            <Button variant="outline" onClick={onCancelGenerate}>
+              取消生成
+            </Button>
+          </>
+        ) : isSaving ? (
+          <span className="ai-card-dialog__status">
+            <i
+              className="ti ti-loader-2 ai-card-dialog__spin"
+              aria-hidden="true"
+            />
+            保存中…
+          </span>
+        ) : (
+          <>
+            <Button variant="outline" onClick={onClose}>
+              关闭
+            </Button>
+            <Button variant="outline" onClick={onBack}>
+              返回设置
+            </Button>
+            <Button variant="outline" onClick={onGenerate}>
+              重新生成
+            </Button>
+            <Button
+              variant="solid"
+              onClick={() => {
+                if (canSave) onSave()
+              }}
+              aria-disabled={!canSave}
+              tabIndex={canSave ? 0 : -1}
+              style={
+                !canSave
+                  ? { opacity: 0.5, pointerEvents: "none" }
+                  : undefined
+              }
+            >
+              保存 {selectedCount} 张
+            </Button>
+          </>
+        )}
+      </footer>
+    </>
   )
 }
