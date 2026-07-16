@@ -173,7 +173,7 @@ export default function IRWorkspaceShell({
             isChapterExpanded={library.isChapterExpanded}
             selectedCardIds={library.selectedCardIds}
             advancingIds={reading.advancingIds}
-            sourceBooks={library.sourceBooks}
+            sourceOptions={library.sourceOptions}
             stages={library.stages}
             candidateBatchId={library.candidateBatchId}
             isBatchRemoving={library.isBatchRemoving}

@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import { getIRDateGroup } from "../../../srs/incrementalReadingManagerUtils"
 import {
-  collectIRSourceBookOptions,
+  collectIRSourceOptions,
   createDefaultIRLibraryFilters,
   filterAndSortIRCards,
+  formatIRCardSourceLabel,
   formatIRCardTypeLabel,
   formatIRDueDate,
   formatIRDueStatus,
@@ -32,8 +33,11 @@ function createCard(partial: Partial<IRCard> & { id: number }): IRCard {
     resumeBlockId: partial.resumeBlockId ?? null,
     sourceBookId: partial.sourceBookId ?? null,
     sourceBookTitle: partial.sourceBookTitle ?? null,
+    sourceWebUrl: partial.sourceWebUrl ?? null,
+    sourceWebSiteName: partial.sourceWebSiteName ?? null,
     batchId: partial.batchId ?? null,
-    batchCreatedAt: partial.batchCreatedAt ?? null
+    batchCreatedAt: partial.batchCreatedAt ?? null,
+    sourceTopicId: partial.sourceTopicId ?? null
   }
 }
 
@@ -156,11 +160,65 @@ describe("irLibraryFilters", () => {
   })
 
   it("collects source book options", () => {
-    const options = collectIRSourceBookOptions(cards)
+    const options = collectIRSourceOptions(cards)
     expect(options).toEqual([
-      { id: "10", title: "Book A", count: 2 },
-      { id: "20", title: "Book B", count: 1 }
+      { id: "10", title: "Book A", count: 2, sourceType: "book" },
+      { id: "20", title: "Book B", count: 1, sourceType: "book" }
     ])
+  })
+
+  it("collects and filters the virtual Web Import source, including child Extracts", () => {
+    const webCards = [
+      createCard({
+        id: 100,
+        cardType: "topic",
+        sourceWebUrl: "https://example.com/article",
+        sourceWebSiteName: "Example"
+      }),
+      createCard({
+        id: 101,
+        cardType: "extracts",
+        sourceTopicId: 100
+      }),
+      createCard({ id: 102, cardType: "topic" })
+    ]
+
+    expect(collectIRSourceOptions(webCards)).toEqual([
+      { id: "web", title: "网页", count: 2, sourceType: "web" }
+    ])
+
+    const filtered = filterAndSortIRCards(webCards, {
+      ...createDefaultIRLibraryFilters(),
+      sourceBook: "web"
+    }, { now })
+    expect(filtered.map(card => card.id)).toEqual([100, 101])
+
+    const unassigned = filterAndSortIRCards(webCards, {
+      ...createDefaultIRLibraryFilters(),
+      sourceBook: "none"
+    }, { now })
+    expect(unassigned.map(card => card.id)).toEqual([102])
+  })
+
+  it("searches Web Import cards by site name and URL", () => {
+    const webCard = createCard({
+      id: 200,
+      cardType: "topic",
+      sourceWebUrl: "https://example.com/deep-reading",
+      sourceWebSiteName: "Example Learning"
+    })
+
+    const bySite = filterAndSortIRCards([webCard], {
+      ...createDefaultIRLibraryFilters(),
+      query: "example learning"
+    }, { now })
+    expect(bySite.map(card => card.id)).toEqual([200])
+
+    const byUrl = filterAndSortIRCards([webCard], {
+      ...createDefaultIRLibraryFilters(),
+      query: "deep-reading"
+    }, { now })
+    expect(byUrl.map(card => card.id)).toEqual([200])
   })
 
   it("summarizes library totals", () => {
@@ -183,6 +241,12 @@ describe("irLibraryFilters", () => {
     expect(formatIRCardTypeLabel("extracts")).toBe("摘录")
     expect(formatIRStageLabel("topic.preview")).toBe("预览")
     expect(formatIRStageLabel("custom.stage")).toBe("custom.stage")
+    expect(formatIRCardSourceLabel(createCard({
+      id: 300,
+      cardType: "topic",
+      sourceWebUrl: "https://example.com/article",
+      sourceWebSiteName: "Example"
+    }))).toBe("网页 · Example")
   })
 
   it("maps due groups to stable visual tones", () => {

@@ -3,7 +3,7 @@
  */
 
 import type { IRSessionEntry } from "../../../srs/incremental-reading/irMixedQueuePolicy"
-import { formatIRCardTypeLabel } from "./irLibraryFilters"
+import { formatIRCardSourceLabel, formatIRCardTypeLabel } from "./irLibraryFilters"
 import { useIRDialogFocus } from "./useIRDialogFocus"
 
 type Props = {
@@ -86,8 +86,8 @@ export default function IRQueueDrawer({
                   </div>
                   <div className="ir-queue-item__meta">
                     {entryTypeLabel(entry)}
-                    {entry.kind === "reading" && entry.card.sourceBookTitle
-                      ? ` · ${entry.card.sourceBookTitle}`
+                    {entry.kind === "reading" && formatIRCardSourceLabel(entry.card) !== "—"
+                      ? ` · ${formatIRCardSourceLabel(entry.card)}`
                       : ""}
                     {entry.kind === "review" && entry.card.deck ? ` · ${entry.card.deck}` : ""}
                   </div>

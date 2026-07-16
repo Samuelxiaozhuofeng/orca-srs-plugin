@@ -84,7 +84,7 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)**
-    - 统一工作区、资料库、时间盒、只读/混合、断点、快捷键、过载、漏斗、会话服务
+    - 统一工作区、书籍/网页来源树、时间盒、只读/混合、断点、快捷键、过载、漏斗、会话服务
     - 关联：`src/components/incremental-reading/**`、`src/srs/incremental-reading/*`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)**
@@ -96,7 +96,7 @@
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
 27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-16 新建
-    - Firecrawl 抓取、清洗、去重、原子写入、可选 Topic / 今天阅读
+    - Firecrawl 抓取、清洗、去重、原子写入、可选 Topic / 今天阅读、资料库「网页」来源归类
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
 
 28. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)** — **计划文档**（顶部有落地对照）

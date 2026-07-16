@@ -6,6 +6,7 @@ import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import {
   formatIRCardTypeLabel,
+  formatIRCardSourceLabel,
   formatIRDueDateTime,
   formatIRDueStatus,
   formatIRImportanceLabel
@@ -87,8 +88,14 @@ export default function IRDetailsDrawer({
                 <dd>{card.readCount}</dd>
                 <dt>最近动作</dt>
                 <dd>{card.lastAction}</dd>
-                <dt>来源书籍</dt>
-                <dd>{card.sourceBookTitle || "—"}</dd>
+                <dt>来源</dt>
+                <dd>{formatIRCardSourceLabel(card)}</dd>
+                {card.sourceWebUrl ? (
+                  <>
+                    <dt>网页地址</dt>
+                    <dd>{card.sourceWebUrl}</dd>
+                  </>
+                ) : null}
                 <dt>批次</dt>
                 <dd>{card.batchId || "—"}</dd>
                 <dt>上次阅读</dt>

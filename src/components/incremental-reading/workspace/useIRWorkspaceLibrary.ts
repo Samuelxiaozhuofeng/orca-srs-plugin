@@ -11,7 +11,7 @@ import {
 } from "../../../srs/incrementalReadingCollector"
 import { completeIRCard } from "../../../srs/irSessionActions"
 import {
-  collectIRSourceBookOptions,
+  collectIRSourceOptions,
   collectIRStageOptions,
   createDefaultIRLibraryFilters,
   filterAndSortIRCards,
@@ -138,7 +138,7 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     () => summarizeIRLibrary(libraryCards, filteredCards),
     [libraryCards, filteredCards]
   )
-  const sourceBooks = useMemo(() => collectIRSourceBookOptions(libraryCards), [libraryCards])
+  const sourceOptions = useMemo(() => collectIRSourceOptions(libraryCards), [libraryCards])
   const stages = useMemo(() => collectIRStageOptions(libraryCards), [libraryCards])
   const selectedCards = useMemo(
     () => libraryCards.filter((card: IRCard) => selectedCardIds.has(card.id)),
@@ -338,7 +338,7 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     todayQueueInfo,
     filteredCards,
     summary,
-    sourceBooks,
+    sourceOptions,
     stages,
     selectedCards,
     candidateBatchId,

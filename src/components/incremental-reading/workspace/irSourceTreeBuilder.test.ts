@@ -27,6 +27,8 @@ function makeCard(partial: Partial<IRCard> & { id: number; cardType: "topic" | "
     readingBreakpoint: partial.readingBreakpoint ?? null,
     sourceBookId: partial.sourceBookId ?? null,
     sourceBookTitle: partial.sourceBookTitle ?? null,
+    sourceWebUrl: partial.sourceWebUrl ?? null,
+    sourceWebSiteName: partial.sourceWebSiteName ?? null,
     batchId: partial.batchId ?? null,
     batchCreatedAt: partial.batchCreatedAt ?? null,
     sourceTopicId: partial.sourceTopicId ?? null
@@ -276,5 +278,78 @@ describe("irSourceTreeBuilder", () => {
     expect(chapter.extracts.map(node => node.card.id)).toEqual([802])
     expect(result.sources[0].stats.matchedCardCount).toBe(1)
     expect(collectIRSourceMatchedCardIds(result.sources[0])).toEqual([802])
+  })
+
+  it("15. Web Import Topic 和其 Extract 聚合到统一网页来源", () => {
+    const cards = [
+      makeCard({
+        id: 901,
+        cardType: "topic",
+        sourceWebUrl: "https://example.com/one",
+        sourceWebSiteName: "Example"
+      }),
+      makeCard({
+        id: 902,
+        cardType: "topic",
+        sourceWebUrl: "https://news.example.org/two",
+        sourceWebSiteName: "Example News"
+      }),
+      makeCard({
+        id: 903,
+        cardType: "extracts",
+        sourceTopicId: 901
+      })
+    ]
+    const result = buildIRSourceTree(
+      cards,
+      createDefaultIRLibraryFilters(),
+      "all",
+      {
+        now,
+        titleMap: {
+          "901": "网页文章一",
+          "902": "网页文章二",
+          "903": "文章一的摘录"
+        }
+      }
+    )
+
+    expect(result.sources).toHaveLength(1)
+    expect(result.sources[0]).toMatchObject({
+      sourceType: "web",
+      sourceId: "web",
+      title: "网页"
+    })
+    expect(result.sources[0].chapters).toHaveLength(2)
+    const firstArticle = result.sources[0].chapters.find(chapter => chapter.chapterId === "901")
+    expect(firstArticle?.extracts.map(node => node.card.id)).toEqual([903])
+    expect(result.sources[0].stats).toMatchObject({
+      totalChapterCount: 2,
+      totalCardCount: 3,
+      matchedCardCount: 3
+    })
+  })
+
+  it("16. 网页来源筛选保留文章和通过父 Topic 继承来源的 Extract", () => {
+    const cards = [
+      makeCard({
+        id: 911,
+        cardType: "topic",
+        sourceWebUrl: "https://example.com/article"
+      }),
+      makeCard({ id: 912, cardType: "extracts", sourceTopicId: 911 }),
+      makeCard({ id: 913, cardType: "topic" })
+    ]
+    const filters = createDefaultIRLibraryFilters()
+    filters.sourceBook = "web"
+
+    const result = buildIRSourceTree(cards, filters, "all", {
+      now,
+      titleMap: { "911": "网页文章", "912": "网页摘录", "913": "普通主题" }
+    })
+
+    expect(result.sources).toHaveLength(1)
+    expect(result.sources[0].sourceType).toBe("web")
+    expect(collectIRSourceMatchedCardIds(result.sources[0])).toEqual([911, 912])
   })
 })

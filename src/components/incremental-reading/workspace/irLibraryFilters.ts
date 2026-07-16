@@ -24,10 +24,12 @@ export type IRImportanceFilter = "all" | "low" | "medium" | "high"
 export type IRLibrarySortBy = "due" | "priority" | "readCount" | "type" | "stage"
 export type IRSortDir = "asc" | "desc"
 
+export const IR_WEB_SOURCE_ID = "web"
+
 export type IRLibraryFilters = {
   query: string
   cardType: IRCardTypeFilter
-  /** "all" | "none" | sourceBookId 字符串 */
+  /** "all" | "none" | "web" | sourceBookId 字符串 */
   sourceBook: string
   stage: string
   dueStatus: IRDueStatusFilter
@@ -47,10 +49,11 @@ export const DEFAULT_IR_LIBRARY_FILTERS: IRLibraryFilters = {
   sortDir: "asc"
 }
 
-export type IRSourceBookOption = {
+export type IRSourceOption = {
   id: string
   title: string
   count: number
+  sourceType: "book" | "web"
 }
 
 export type IRLibrarySummary = {
@@ -89,23 +92,64 @@ export function hasActiveIRLibraryFilters(filters: IRLibraryFilters): boolean {
   )
 }
 
-export function collectIRSourceBookOptions(cards: IRCard[]): IRSourceBookOption[] {
-  const map = new Map<string, IRSourceBookOption>()
+export function buildIRTopicLookup(cards: IRCard[]): Map<string, IRCard> {
+  return new Map(
+    cards
+      .filter(card => card.cardType === "topic")
+      .map(card => [String(card.id), card] as const)
+  )
+}
+
+function getParentTopic(card: IRCard, topicsById: Map<string, IRCard>): IRCard | null {
+  if (card.cardType !== "extracts" || card.sourceTopicId == null) return null
+  return topicsById.get(String(card.sourceTopicId)) ?? null
+}
+
+export function isIRWebSourceCard(
+  card: IRCard,
+  topicsById: Map<string, IRCard> = new Map()
+): boolean {
+  if (card.sourceWebUrl) return true
+  return Boolean(getParentTopic(card, topicsById)?.sourceWebUrl)
+}
+
+function getEffectiveBook(card: IRCard, topicsById: Map<string, IRCard>): IRCard | null {
+  if (card.sourceBookId != null) return card
+  const parentTopic = getParentTopic(card, topicsById)
+  return parentTopic?.sourceBookId != null ? parentTopic : null
+}
+
+export function collectIRSourceOptions(cards: IRCard[]): IRSourceOption[] {
+  const topicsById = buildIRTopicLookup(cards)
+  const map = new Map<string, IRSourceOption>()
+  let webCount = 0
+
   for (const card of cards) {
-    if (card.sourceBookId == null) continue
-    const id = String(card.sourceBookId)
+    if (isIRWebSourceCard(card, topicsById)) {
+      webCount += 1
+      continue
+    }
+
+    const sourceBook = getEffectiveBook(card, topicsById)
+    if (!sourceBook || sourceBook.sourceBookId == null) continue
+    const id = String(sourceBook.sourceBookId)
     const existing = map.get(id)
     if (existing) {
       existing.count += 1
     } else {
       map.set(id, {
         id,
-        title: card.sourceBookTitle?.trim() || `书籍 #${id}`,
-        count: 1
+        title: sourceBook.sourceBookTitle?.trim() || `书籍 #${id}`,
+        count: 1,
+        sourceType: "book"
       })
     }
   }
-  return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title, "zh"))
+
+  const books = Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title, "zh"))
+  return webCount > 0
+    ? [{ id: IR_WEB_SOURCE_ID, title: "网页", count: webCount, sourceType: "web" }, ...books]
+    : books
 }
 
 export function collectIRStageOptions(cards: IRCard[]): string[] {
@@ -116,17 +160,28 @@ export function collectIRStageOptions(cards: IRCard[]): string[] {
   return Array.from(stages).sort()
 }
 
-function matchesQuery(card: IRCard, query: string, titleMap?: Record<string, string>): boolean {
+function matchesQuery(
+  card: IRCard,
+  query: string,
+  titleMap: Record<string, string> | undefined,
+  topicsById: Map<string, IRCard>
+): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
   const title = (titleMap?.[String(card.id)] ?? "").toLowerCase()
-  const book = (card.sourceBookTitle ?? "").toLowerCase()
+  const parentTopic = getParentTopic(card, topicsById)
+  const book = (card.sourceBookTitle ?? parentTopic?.sourceBookTitle ?? "").toLowerCase()
+  const webSite = (card.sourceWebSiteName ?? parentTopic?.sourceWebSiteName ?? "").toLowerCase()
+  const webUrl = (card.sourceWebUrl ?? parentTopic?.sourceWebUrl ?? "").toLowerCase()
   const stage = (card.stage ?? "").toLowerCase()
   const type = card.cardType.toLowerCase()
   const batch = (card.batchId ?? "").toLowerCase()
   return (
     title.includes(q) ||
     book.includes(q) ||
+    webSite.includes(q) ||
+    webUrl.includes(q) ||
+    (isIRWebSourceCard(card, topicsById) && "网页".includes(q)) ||
     stage.includes(q) ||
     type.includes(q) ||
     batch.includes(q) ||
@@ -142,10 +197,17 @@ function matchesDueStatus(card: IRCard, dueStatus: IRDueStatusFilter, now: Date)
   return group === expected
 }
 
-function matchesSourceBook(card: IRCard, sourceBook: string): boolean {
+export function matchesIRSourceFilter(
+  card: IRCard,
+  sourceBook: string,
+  topicsById: Map<string, IRCard> = new Map()
+): boolean {
   if (sourceBook === "all") return true
-  if (sourceBook === "none") return card.sourceBookId == null
-  return String(card.sourceBookId ?? "") === sourceBook
+  if (sourceBook === IR_WEB_SOURCE_ID) return isIRWebSourceCard(card, topicsById)
+  if (sourceBook === "none") {
+    return getEffectiveBook(card, topicsById) == null && !isIRWebSourceCard(card, topicsById)
+  }
+  return String(getEffectiveBook(card, topicsById)?.sourceBookId ?? "") === sourceBook
 }
 
 function compareCards(
@@ -193,11 +255,12 @@ export function filterAndSortIRCards(
 ): IRCard[] {
   const now = options.now ?? new Date()
   const titleMap = options.titleMap
+  const topicsById = buildIRTopicLookup(cards)
 
   const filtered = cards.filter(card => {
-    if (!matchesQuery(card, filters.query, titleMap)) return false
+    if (!matchesQuery(card, filters.query, titleMap, topicsById)) return false
     if (filters.cardType !== "all" && card.cardType !== filters.cardType) return false
-    if (!matchesSourceBook(card, filters.sourceBook)) return false
+    if (!matchesIRSourceFilter(card, filters.sourceBook, topicsById)) return false
     if (filters.stage !== "all" && card.stage !== filters.stage) return false
     if (!matchesDueStatus(card, filters.dueStatus, now)) return false
     if (filters.importance !== "all" && priorityToTier(card.priority) !== filters.importance) {
@@ -282,6 +345,16 @@ export function formatIRImportanceLabel(priority: number): string {
 
 export function formatIRCardTypeLabel(cardType: IRCard["cardType"]): string {
   return cardType === "topic" ? "主题" : "摘录"
+}
+
+export function formatIRCardSourceLabel(card: IRCard): string {
+  const book = card.sourceBookTitle?.trim()
+  if (book) return book
+  if (card.sourceWebUrl) {
+    const site = card.sourceWebSiteName?.trim()
+    return site ? `网页 · ${site}` : "网页"
+  }
+  return "—"
 }
 
 const IR_STAGE_LABELS: Record<string, string> = {
