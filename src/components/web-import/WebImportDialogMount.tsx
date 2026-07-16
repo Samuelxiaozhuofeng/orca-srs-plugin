@@ -169,12 +169,18 @@ export default function WebImportDialog({
   return (
     <div
       style={{
-        minWidth: 360,
-        maxWidth: 520,
+        width: "min(520px, 92vw)",
+        maxHeight: "90vh",
+        overflowY: "auto",
         padding: 20,
         display: "flex",
         flexDirection: "column",
-        gap: 14
+        gap: 14,
+        backgroundColor: "var(--orca-color-bg-1)",
+        border: "1px solid var(--orca-color-border-1)",
+        borderRadius: "12px",
+        color: "var(--orca-color-text-1)",
+        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)"
       }}
     >
       <div
@@ -185,7 +191,7 @@ export default function WebImportDialog({
           gap: 12
         }}
       >
-        <div style={{ fontSize: 16, fontWeight: 600 }}>导入网页</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "var(--orca-color-text-1)" }}>导入网页</div>
         <Button
           variant="plain"
           onClick={isWorking ? undefined : handleClose}
@@ -212,7 +218,7 @@ export default function WebImportDialog({
 
       {step === "url" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "var(--orca-color-text-1)" }}>
             网页地址
             <input
               type="url"
@@ -232,7 +238,10 @@ export default function WebImportDialog({
               style={{
                 padding: "10px 12px",
                 borderRadius: 8,
-                border: "1px solid var(--orca-color-border-1)"
+                border: "1px solid var(--orca-color-border-1)",
+                backgroundColor: "var(--orca-color-bg-2)",
+                color: "var(--orca-color-text-1)",
+                outline: "none"
               }}
             />
           </label>
@@ -267,13 +276,14 @@ export default function WebImportDialog({
               padding: 12,
               borderRadius: 8,
               border: "1px solid var(--orca-color-border-1)",
+              backgroundColor: "var(--orca-color-bg-2)",
               display: "flex",
               flexDirection: "column",
               gap: 6,
               fontSize: 13
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{article.title}</div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "var(--orca-color-text-1)" }}>{article.title}</div>
             <div style={{ color: "var(--orca-color-text-2)" }}>
               来源：{article.hostname}
             </div>
@@ -293,7 +303,8 @@ export default function WebImportDialog({
               display: "flex",
               alignItems: "center",
               gap: 8,
-              cursor: isWorking ? "default" : "pointer"
+              cursor: isWorking ? "default" : "pointer",
+              color: "var(--orca-color-text-1)"
             }}
           >
             <input
@@ -316,7 +327,8 @@ export default function WebImportDialog({
               alignItems: "center",
               gap: 8,
               opacity: joinIR ? 1 : 0.5,
-              cursor: joinIR && !isWorking ? "pointer" : "default"
+              cursor: joinIR && !isWorking ? "pointer" : "default",
+              color: "var(--orca-color-text-1)"
             }}
           >
             <input
