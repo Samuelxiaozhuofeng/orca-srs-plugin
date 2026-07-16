@@ -13,9 +13,11 @@ import {
   formatIRImportanceLabel,
   formatIRStageLabel
 } from "./irLibraryFilters"
+import { getIRChapterPresentation } from "./irChapterPresentation"
 import IRLibraryRow from "./IRLibraryRow"
 
 const React = (window as any).React || (globalThis as any).React
+const { useEffect, useRef } = React
 
 type Props = {
   chapter: IRChapterNode
@@ -55,62 +57,131 @@ export default function IRLibraryChapterItem({
   const allCardIdsInChapter = collectIRChapterMatchedCardIds(chapter)
   const selectedCount = allCardIdsInChapter.filter(id => selectedCardIds.has(id)).length
   const isFullySelected = allCardIdsInChapter.length > 0 && selectedCount === allCardIdsInChapter.length
+  const isPartiallySelected = selectedCount > 0 && !isFullySelected
+  const groupCheckboxRef = useRef(null) as { current: HTMLInputElement | null }
   const FUTURE_GROUPS = ["明天", "未来7天", "新卡", "7天后"]
+  const {
+    chapterCard,
+    isContextOnly,
+    canExpand,
+    extractCountLabel
+  } = getIRChapterPresentation(chapter)
   const dueLabel = chapter.due ? formatIRDueDate(chapter.due) : "无到期日"
   const stageLabel = formatIRStageLabel(chapter.stage)
   const importanceLabel = formatIRImportanceLabel(chapter.priority)
+  const canAdvanceLearn = chapterCard
+    ? FUTURE_GROUPS.includes(getIRDateGroup(chapterCard, now))
+    : false
+
+  useEffect(() => {
+    if (groupCheckboxRef.current) {
+      groupCheckboxRef.current.indeterminate = isPartiallySelected
+    }
+  }, [isPartiallySelected])
 
   return (
-    <div className="ir-library-chapter">
+    <div className={[
+      "ir-library-chapter",
+      isContextOnly ? "ir-library-chapter--context" : "",
+      chapterCard && selectedCount > 0 ? "ir-library-chapter--selected" : ""
+    ].filter(Boolean).join(" ")}>
       <div className="ir-library-chapter__header">
-        <button
-          type="button"
-          className="ir-library-chapter__toggle"
-          onClick={() => onToggleExpand(chapter.chapterId)}
-          aria-expanded={isExpanded}
-        >
-          <i
-            className={`ti ${isExpanded ? "ti-chevron-down" : "ti-chevron-right"} ir-library-chapter__toggle-icon`}
-            aria-hidden="true"
-          />
-          <i className="ti ti-bookmark ir-library-chapter__icon" aria-hidden="true" />
-          <span className="ir-library-chapter__title" title={chapter.title}>{chapter.title}</span>
-          <span className="ir-library-chapter__meta">{dueLabel}</span>
-          <span className="ir-library-chapter__meta">{stageLabel}</span>
-          <span className="ir-library-chapter__meta">重要 {importanceLabel}</span>
-          <span className="ir-library-chapter__badge" title={`该章节含 ${chapter.extracts.length} 个匹配摘录`}>
-            {chapter.extracts.length > 0 ? `${chapter.extracts.length} 摘录` : "主章节"}
-          </span>
-        </button>
+        <div className="ir-library-chapter__main">
+          {canExpand ? (
+            <button
+              type="button"
+              className="ir-library-chapter__expand"
+              onClick={() => onToggleExpand(chapter.chapterId)}
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? "收起章节摘录" : "展开章节摘录"}
+              title={isExpanded ? "收起章节摘录" : "展开章节摘录"}
+            >
+              <i
+                className={`ti ${isExpanded ? "ti-chevron-down" : "ti-chevron-right"} ir-library-chapter__toggle-icon`}
+                aria-hidden="true"
+              />
+            </button>
+          ) : (
+            <span className="ir-library-chapter__expand-placeholder" aria-hidden="true" />
+          )}
 
-        <div className="ir-library-chapter__actions">
+          {chapterCard ? (
+            <input
+              ref={groupCheckboxRef}
+              type="checkbox"
+              className="ir-library-chapter__check"
+              checked={isFullySelected}
+              onChange={() => onToggleGroupSelection(allCardIdsInChapter)}
+              aria-label={`选择章节 ${chapter.title} 及其可见摘录`}
+              title="选择本章节及其当前可见摘录"
+            />
+          ) : null}
+
+          <i className="ti ti-bookmark ir-library-chapter__icon" aria-hidden="true" />
+
           <button
             type="button"
-            className="ir-group-select-btn"
-            onClick={() => onToggleGroupSelection(allCardIdsInChapter)}
-            title={isFullySelected ? "取消该章节选择" : "全选该章节"}
+            className="ir-library-chapter__content"
+            onClick={() => canExpand ? onToggleExpand(chapter.chapterId) : chapterCard && onOpenDetails(chapterCard.id)}
+            aria-expanded={canExpand ? isExpanded : undefined}
+            title={canExpand ? (isExpanded ? "收起章节摘录" : "展开章节摘录") : "查看章节详情"}
           >
-            {isFullySelected ? "取消本章" : `选本章${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+            <span className="ir-library-chapter__title" title={chapter.title}>{chapter.title}</span>
+            <span className="ir-library-chapter__metadata">
+              {chapterCard ? (
+                <>
+                  <span className="ir-library-chapter__meta">{dueLabel}</span>
+                  <span className="ir-library-chapter__meta">{stageLabel}</span>
+                  <span className="ir-library-chapter__meta">重要 {importanceLabel}</span>
+                </>
+              ) : null}
+              {extractCountLabel ? (
+                <span
+                  className={`ir-library-chapter__badge${isContextOnly ? " ir-library-chapter__badge--context" : ""}`}
+                  title={`该章节含 ${chapter.extracts.length} 个匹配摘录`}
+                >
+                  {extractCountLabel}
+                </span>
+              ) : null}
+            </span>
           </button>
         </div>
-      </div>
 
-      {isExpanded && chapter.card && chapter.cardMatches ? (
-        <div className="ir-library-chapter__main-card">
-          <IRLibraryRow
-            card={chapter.card}
-            title={getCardTitle(chapter.card.id, titleMap)}
-            selected={selectedCardIds.has(chapter.card.id)}
-            canAdvanceLearn={FUTURE_GROUPS.includes(getIRDateGroup(chapter.card, now))}
-            isAdvancing={Boolean(advancingIds[String(chapter.card.id)])}
-            now={now}
-            onToggleSelect={onToggleCardSelection}
-            onOpenDetails={onOpenDetails}
-            onStartReading={onStartReading}
-            onAdvanceLearn={onAdvanceLearn}
-          />
-        </div>
-      ) : null}
+        {chapterCard ? (
+          <div className="ir-library-chapter__actions">
+            <button
+              type="button"
+              className="ir-library-chapter__icon-btn"
+              onClick={() => onOpenDetails(chapterCard.id)}
+              title="查看章节详情"
+              aria-label="查看章节详情"
+            >
+              <i className="ti ti-info-circle" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="ir-action-btn ir-action-btn--read ir-library-chapter__read-btn"
+              onClick={() => onStartReading(chapterCard.id)}
+              title={canAdvanceLearn ? "提前到今天并开始阅读" : "阅读该章节"}
+            >
+              <i className="ti ti-book-read" aria-hidden="true" />
+              <span>{canAdvanceLearn ? "提前阅读" : "开始阅读"}</span>
+            </button>
+            {canAdvanceLearn ? (
+              <button
+                type="button"
+                className="ir-library-chapter__icon-btn"
+                onClick={() => onAdvanceLearn(chapterCard.id)}
+                disabled={Boolean(advancingIds[String(chapterCard.id)])}
+                title="仅提前到期到今天"
+                aria-label="仅提前到期到今天"
+              >
+                <i className="ti ti-calendar-forward" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       {isExpanded && chapter.extracts.length > 0 ? (
         <div className="ir-library-chapter__extracts">
@@ -123,6 +194,7 @@ export default function IRLibraryChapterItem({
                 canAdvanceLearn={FUTURE_GROUPS.includes(getIRDateGroup(extractNode.card, now))}
                 isAdvancing={Boolean(advancingIds[String(extractNode.card.id)])}
                 now={now}
+                showSource={false}
                 onToggleSelect={onToggleCardSelection}
                 onOpenDetails={onOpenDetails}
                 onStartReading={onStartReading}

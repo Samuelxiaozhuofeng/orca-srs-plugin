@@ -84,7 +84,7 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)**
-    - 统一工作区、资料库、时间盒、只读/混合、断点、快捷键、过载、漏斗、会话服务
+    - 统一工作区、章节 Topic 与 Extract 层级、时间盒、只读/混合、断点、快捷键、过载、漏斗、会话服务
     - 关联：`src/components/incremental-reading/**`、`src/srs/incremental-reading/*`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)**

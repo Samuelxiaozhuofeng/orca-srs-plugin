@@ -1848,8 +1848,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 12px;
+  min-height: 58px;
+  padding: 9px 16px;
   background: var(--orca-color-bg-1, #ffffff);
 }
 
@@ -1857,21 +1858,50 @@
   background: var(--orca-color-bg-2, #f8fafc);
 }
 
-.ir-library-chapter__toggle {
+.ir-library-chapter--selected .ir-library-chapter__header {
+  background: var(--orca-color-primary-1, rgba(59, 130, 246, 0.08));
+}
+
+.ir-library-chapter--context .ir-library-chapter__header {
+  min-height: 48px;
+  background: var(--orca-color-bg-2, #f8fafc);
+}
+
+.ir-library-chapter__main {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 1;
   min-width: 0;
+}
+
+.ir-library-chapter__expand,
+.ir-library-chapter__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
   padding: 2px 0;
   border: none;
+  border-radius: 5px;
   background: transparent;
-  color: var(--orca-color-text-1, #0f172a);
+  color: var(--orca-color-text-3, #64748b);
   cursor: pointer;
-  text-align: left;
-  font-size: 13px;
-  font-weight: 600;
   font-family: inherit;
+}
+
+.ir-library-chapter__expand:hover,
+.ir-library-chapter__icon-btn:hover {
+  color: var(--orca-color-primary-6, #2563eb);
+  background: var(--orca-color-primary-1, rgba(59, 130, 246, 0.08));
+}
+
+.ir-library-chapter__expand-placeholder {
+  display: inline-block;
+  flex: 0 0 28px;
+  width: 28px;
 }
 
 .ir-library-chapter__toggle-icon {
@@ -1879,17 +1909,63 @@
   color: var(--orca-color-text-3, #64748b);
 }
 
+.ir-library-chapter__check {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--orca-color-primary-6, #2563eb);
+}
+
 .ir-library-chapter__icon {
+  flex: 0 0 auto;
   font-size: 14px;
   color: var(--orca-color-warning-6, #d97706);
 }
 
-.ir-library-chapter__title {
+.ir-library-chapter--context .ir-library-chapter__icon {
+  color: var(--orca-color-text-3, #64748b);
+}
+
+.ir-library-chapter__content {
+  display: flex;
   flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.ir-library-chapter__title {
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--orca-color-text-1, #0f172a);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.ir-library-chapter--context .ir-library-chapter__title {
+  color: var(--orca-color-text-2, #475569);
+  font-weight: 600;
+}
+
+.ir-library-chapter__metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
 }
 
 .ir-library-chapter__meta {
@@ -1897,6 +1973,12 @@
   font-size: 11px;
   font-weight: 500;
   color: var(--orca-color-text-3, #64748b);
+}
+
+.ir-library-chapter__meta + .ir-library-chapter__meta::before {
+  content: "·";
+  margin-right: 7px;
+  color: var(--orca-color-text-4, #94a3b8);
 }
 
 .ir-library-chapter__badge {
@@ -1908,15 +1990,29 @@
   border-radius: 10px;
 }
 
+.ir-library-chapter__badge--context {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--orca-color-text-3, #64748b);
+}
+
 .ir-library-chapter__actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
-.ir-library-chapter__main-card {
-  background: var(--orca-color-bg-1, #ffffff);
-  border-top: 1px dashed var(--orca-color-border-1, #e2e8f0);
+.ir-library-chapter__icon-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.ir-library-chapter__read-btn {
+  gap: 5px;
+  height: 32px;
+  padding-inline: 10px;
 }
 
 .ir-library-chapter__extracts {
@@ -1947,12 +2043,20 @@
     margin-left: 30px;
   }
 
-  .ir-library-chapter__toggle {
-    flex-wrap: wrap;
+  .ir-library-chapter__main {
+    flex: 1 1 100%;
   }
 
   .ir-library-chapter__title {
-    flex-basis: calc(100% - 52px);
+    max-width: 100%;
+  }
+
+  .ir-library-chapter__actions {
+    margin-left: 36px;
+  }
+
+  .ir-library-chapter__read-btn span {
+    display: none;
   }
 }
 
