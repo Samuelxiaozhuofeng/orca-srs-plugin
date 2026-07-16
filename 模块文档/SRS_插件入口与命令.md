@@ -21,6 +21,7 @@
 | `src/srs/registry/*` | 命令、UI、渲染器、转换器、右键菜单 |
 | `src/srs/settings/reviewSettingsSchema.ts` | 复习 / FSRS 设置 schema 与默认 patch |
 | `src/srs/settings/incrementalReadingSettingsSchema.ts` | 渐进阅读设置 |
+| `src/srs/settings/webImportSettingsSchema.ts` | 网页导入 / Firecrawl 设置 |
 | `src/srs/ai/aiSettingsSchema.ts` | AI 设置 |
 
 ### load 流程
@@ -29,7 +30,7 @@
 Orca 启用插件
   → inject CSS（PLUGIN_UI_STYLE_ROLE = "orca-srs-ui"）
   → setupL10N
-  → setSettingsSchema(AI + 复习 + 渐进阅读)
+  → setSettingsSchema(AI + 复习 + 渐进阅读 + 网页导入)
   → registerCommands / UI / Renderers / Converters / ContextMenu
   → startRecentDeckWatcher
   → registerIRDefaultShortcuts（动态 import，失败仅 warn）
@@ -40,7 +41,7 @@ Orca 启用插件
 要点：
 
 - `registerCommands(pluginName)` **不再**接收 `openFlashcardHome` 等回调；命令内动态 import `main` 导出函数。
-- 设置合并：`aiSettingsSchema` + `reviewSettingsSchema` + `incrementalReadingSettingsSchema`。
+- 设置合并：`aiSettingsSchema` + `reviewSettingsSchema` + `incrementalReadingSettingsSchema` + `webImportSettingsSchema`。
 
 ### unload 流程
 
@@ -100,6 +101,7 @@ Orca 启用插件
 | `resetFsrsSettings` | SRS: 恢复 FSRS 默认设置 | `resetFsrsSettingsToDefaults` + notify（F2-08） |
 | `testAIConnection` | SRS: 测试 AI 连接 | `testAIConfigWithDetails` |
 | `importEpub` | 导入 EPUB | 挂载导入对话框 |
+| `importWeb` | 导入网页 | 挂载 Firecrawl 网页导入对话框 |
 | `resumeEpubImport` | 继续导入 EPUB | 参数 `bookBlockId` |
 | `removeBookFromIR` | IR: 将整本书移出渐进阅读 | 参数 `bookBlockId` |
 | `skipSequentialChapter` | IR: 跳过本章并继续 | `orca-srs:ir-session-action` / 提示 |
@@ -130,7 +132,7 @@ Orca 启用插件
 
 | 按钮 ID 后缀 | 说明 |
 |--------------|------|
-| `aiDialogMount` / `irBookDialogMount` / `epubImportDialogMount` | 对话框挂载点（无可见图标业务按钮） |
+| `aiDialogMount` / `irBookDialogMount` / `epubImportDialogMount` / `webImportDialogMount` | 对话框挂载点（无可见图标业务按钮） |
 | `reviewButton` | 开始闪卡复习 → `openOldReviewPanel` |
 | `flashHomeButton` | 打开 Flash Home（图标 `ti-home`） |
 | `incrementalReadingButton` | 打开渐进阅读 |
@@ -141,6 +143,7 @@ Orca 启用插件
 |---------|------|
 | `clozeButton` | 创建 Cloze 填空 |
 | `importEpubButton` | 导入 EPUB |
+| `importWebButton` | 导入网页 |
 
 #### 斜杠命令（group: SRS）
 
@@ -154,6 +157,7 @@ Orca 启用插件
 | `incrementalReading` | 渐进阅读 | `startIncrementalReadingSession` |
 | `ir_record` | ir_record | `irRecordProgress` |
 | `importEpub` | 导入 EPUB | `importEpub` |
+| `importWeb` | 导入网页 | `importWeb` |
 
 ### 渲染器与转换器（摘要）
 
@@ -172,8 +176,8 @@ Orca 启用插件
 
 ## 用户交互
 
-1. 命令面板搜索「SRS」/「IR」/「EPUB」
-2. 编辑器 `/` 斜杠、工具栏 Cloze / EPUB
+1. 命令面板搜索「SRS」/「IR」/「EPUB」/「网页」
+2. 编辑器 `/` 斜杠、工具栏 Cloze / EPUB / 网页导入
 3. 顶部栏：复习、Flash Home、渐进阅读
 4. 块右键：查询/子树复习、书籍 IR、Topic 加入等
 

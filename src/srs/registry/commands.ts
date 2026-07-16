@@ -576,6 +576,16 @@ export function registerCommands(
     "导入 EPUB"
   )
 
+  // 网页文章导入（Firecrawl → 普通笔记 + 可选渐进阅读）
+  orca.commands.registerCommand(
+    `${pluginName}.importWeb`,
+    async () => {
+      const { showWebImportDialog } = await import("../../components/web-import/WebImportDialogMount")
+      showWebImportDialog(_pluginName)
+    },
+    "导入网页"
+  )
+
   // 顺序解锁：跳过本章并继续
   orca.commands.registerCommand(
     `${pluginName}.skipSequentialChapter`,
@@ -704,6 +714,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.clearRecentDeckPreference`)
   orca.commands.unregisterCommand(getResetFsrsSettingsCommandId(pluginName))
   orca.commands.unregisterCommand(`${pluginName}.importEpub`)
+  orca.commands.unregisterCommand(`${pluginName}.importWeb`)
   orca.commands.unregisterCommand(`${pluginName}.skipSequentialChapter`)
   orca.commands.unregisterCommand(`${pluginName}.removeBookFromIR`)
   orca.commands.unregisterCommand(`${pluginName}.resumeEpubImport`)

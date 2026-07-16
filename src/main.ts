@@ -29,6 +29,7 @@ import {
   getIncrementalReadingSettings,
   incrementalReadingSettingsSchema
 } from "./srs/settings/incrementalReadingSettingsSchema"
+import { webImportSettingsSchema } from "./srs/settings/webImportSettingsSchema"
 import { createReviewSessionBlockWithDescriptor } from "./srs/reviewSessionManager"
 import {
   createFixedRepeatSessionDescriptor,
@@ -72,14 +73,15 @@ export async function load(_name: string) {
   // 设置国际化
   setupL10N(orca.state.locale, { "zh-CN": zhCN })
 
-  // 注册插件设置（合并 AI 设置和复习设置）
+  // 注册插件设置（合并 AI / 复习 / 渐进阅读 / 网页导入）
   try {
     await orca.plugins.setSettingsSchema(pluginName, {
       ...aiSettingsSchema,
       ...reviewSettingsSchema,
-      ...incrementalReadingSettingsSchema
+      ...incrementalReadingSettingsSchema,
+      ...webImportSettingsSchema
     })
-    console.log(`[${pluginName}] 插件设置已注册（AI + 复习 + 渐进阅读）`)
+    console.log(`[${pluginName}] 插件设置已注册（AI + 复习 + 渐进阅读 + 网页导入）`)
   } catch (error) {
     console.warn(`[${pluginName}] 注册插件设置失败:`, error)
   }

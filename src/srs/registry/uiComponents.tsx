@@ -11,6 +11,7 @@ import React from "react"
 import { AIDialogMount } from "../../components/AIDialogMount"
 import { IRBookDialogMount } from "../../components/IRBookDialogMount"
 import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDialogMount"
+import { WebImportDialogMount } from "../../components/web-import/WebImportDialogMount"
 
 export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.aiDialogMount`, () => (
@@ -23,6 +24,10 @@ export function registerUIComponents(pluginName: string): void {
 
   orca.headbar.registerHeadbarButton(`${pluginName}.epubImportDialogMount`, () => (
     <EpubImportDialogMount pluginName={pluginName} />
+  ))
+
+  orca.headbar.registerHeadbarButton(`${pluginName}.webImportDialogMount`, () => (
+    <WebImportDialogMount pluginName={pluginName} />
   ))
 
   // 复习按钮 - 开始复习会话
@@ -143,12 +148,26 @@ export function registerUIComponents(pluginName: string): void {
     title: "导入 EPUB",
     command: `${pluginName}.importEpub`
   })
+
+  orca.toolbar.registerToolbarButton(`${pluginName}.importWebButton`, {
+    icon: "ti ti-world-download",
+    tooltip: "导入网页",
+    command: `${pluginName}.importWeb`
+  })
+
+  orca.slashCommands.registerSlashCommand(`${pluginName}.importWeb`, {
+    icon: "ti ti-world-download",
+    group: "SRS",
+    title: "导入网页",
+    command: `${pluginName}.importWeb`
+  })
 }
 
 export function unregisterUIComponents(pluginName: string): void {
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.irBookDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.epubImportDialogMount`)
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.webImportDialogMount`)
 
   orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
@@ -157,6 +176,7 @@ export function unregisterUIComponents(pluginName: string): void {
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
   orca.toolbar.unregisterToolbarButton(`${pluginName}.importEpubButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.importWebButton`)
 
   // 斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
@@ -174,4 +194,5 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importEpub`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.importWeb`)
 }
