@@ -18,18 +18,15 @@ import {
   resetProcessedParentCards,
   getCardKey as getReviewCardKey
 } from "../srs/childCardCollector"
-import {
-  formatDuration,
-  formatAccuracyRate,
-  computeReviewTiming
-} from "../srs/sessionProgressTracker"
+import { computeReviewTiming } from "../srs/sessionProgressTracker"
 import {
   createSessionFinalizeController,
   ensureSessionFinalized,
-  reopenSessionFinalizeIfNeeded,
   resetSessionFinalizeController
 } from "../srs/sessionProgressFinalize"
 import { useSessionProgressTracker } from "../hooks/useSessionProgressTracker"
+import { useHostEditorChrome } from "../hooks/useHostEditorChrome"
+import { usePendingDueQueue } from "../hooks/usePendingDueQueue"
 import {
   allowsFullLibraryDynamicScan,
   createAllScope,
@@ -69,37 +66,14 @@ import {
   type SessionActionKind,
   type SessionActionToken
 } from "../srs/reviewSessionActionGate"
-import {
-  activateEmptyPendingDueState,
-  createEmptyPendingDueState,
-  deactivateAndClearPending,
-  isPendingWakeTokenCurrent,
-  planNextPendingWake,
-  processPendingWake,
-  shouldTrackFormalShortRelearn,
-  upsertPendingDueCard,
-  type PendingDueState,
-  type ProcessPendingWakeResult
-} from "../srs/pendingDueRequeue"
-import {
-  resolveBlockExistence,
-  writeBlockToOrcaState
-} from "../srs/blockExistence"
-import {
-  decidePrefetchBlockOutcome,
-  decidePrefetchWhenStateHit,
-  decideRequiredBlocksOutcome,
-  requiredBlocksForCard,
-  shouldApplyBlockLoadResult,
-  type RequiredBlocksOutcome
-} from "../srs/reviewSessionBlockLoad"
-import SrsCardDemo from "./SrsCardDemo"
-import GradeDistributionBar from "./GradeDistributionBar"
+import { shouldTrackFormalShortRelearn } from "../srs/pendingDueRequeue"
+import { useReviewCardAvailability } from "../hooks/useReviewCardAvailability"
+import ReviewSessionActiveView from "./review-session/ReviewSessionActiveView"
+import ReviewSessionCompletedView from "./review-session/ReviewSessionCompletedView"
+import ReviewSessionEmptyView from "./review-session/ReviewSessionEmptyView"
 
 // 从全局 window 对象获取 React（Orca 插件约定）
 const { useEffect, useMemo, useRef, useState } = window.React
-const { useSnapshot } = window.Valtio
-const { Button, ModalOverlay } = orca.components
 
 type SrsReviewSessionProps = {
   cards: ReviewCard[]
@@ -151,7 +125,6 @@ type SrsReviewSessionProps = {
    */
   manageHostEditorChrome?: boolean
 }
-
 function getTodayMidnight(): Date {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -233,6 +206,24 @@ export default function SrsReviewSession({
     storageKey: progressStorageKey
   })
 
+  const {
+    clear: clearPendingDueSession,
+    reset: resetPendingDueSession,
+    track: trackPendingDueCard
+  } = usePendingDueQueue({
+    queue,
+    currentIndex,
+    pluginName,
+    scopeRef: sessionScopeRef,
+    budgetRef: sessionBudgetRef,
+    finalizeRef: sessionFinalizeRef,
+    setQueue,
+    setNewCardsAdded,
+    setLastLog,
+    setSessionStats,
+    resumeProgressPersistence
+  })
+
   /**
    * 统一关闭入口：先清理 scoped 会话进度，再走 Renderer async onClose flush。
    * 完成 / 主动关闭 / Modal overlay / 卡片关闭按钮均走此路径。
@@ -260,8 +251,7 @@ export default function SrsReviewSession({
         sessionFormalRootCards
       )
       // F2-04：新轮次作废旧 pending timer，清空内存 pending（不持久化）
-      clearPendingDueTimer()
-      pendingDueStateRef.current = activateEmptyPendingDueState()
+      resetPendingDueSession()
       setQueue([...cards])
       setCurrentIndex(0)
       setSessionHistory(createEmptyHistory())
@@ -296,122 +286,7 @@ export default function SrsReviewSession({
     console.log("[SRS Review Session] 会话开始，重置已处理父卡片集合与正式根卡额度")
   }, [])
 
-  // 当最大化状态变化时，设置父级 .orca-block-editor 的 maximize 属性并隐藏 query tabs。
-  // 仅 manageHostEditorChrome=true（本块为 panel 主 block 视图）时才触碰宿主 DOM；
-  // 嵌入 Journal / 查询结果时 prop 为 false，绝不查询或修改外层编辑器。
-  // prop true→false 或卸载时由 cleanup 恢复此前实际改过的宿主 DOM。
-  useEffect(() => {
-    if (!manageHostEditorChrome) return
-
-    const container = containerRef.current
-    if (!container) return
-
-    // 查找父级 .orca-block-editor 元素
-    const blockEditor = container.closest('.orca-block-editor') as HTMLElement | null
-    if (!blockEditor) return
-
-    // 查找需要隐藏的元素（编辑器级别）
-    const noneEditableEl = blockEditor.querySelector('.orca-block-editor-none-editable') as HTMLElement | null
-    const goBtns = blockEditor.querySelector('.orca-block-editor-go-btns') as HTMLElement | null
-    const sidetools = blockEditor.querySelector('.orca-block-editor-sidetools') as HTMLElement | null
-    // 注意：不隐藏 .orca-panel-drag-handle，保持面板拖拽手柄可见
-
-    // 查找 repr 级别需要隐藏的元素（块手柄、折叠按钮等）
-    const reprNoneEditable = blockEditor.querySelector('.orca-repr-main-none-editable') as HTMLElement | null
-    const breadcrumb = blockEditor.querySelector('.orca-breadcrumb') as HTMLElement | null
-
-    if (isMaximized) {
-      blockEditor.setAttribute('maximize', '1')
-      // 隐藏 query tabs 区域和其他工具栏
-      if (noneEditableEl) noneEditableEl.style.display = 'none'
-      if (goBtns) goBtns.style.display = 'none'
-      if (sidetools) sidetools.style.display = 'none'
-      // 隐藏块手柄和折叠按钮（在 repr 层级）
-      if (reprNoneEditable) reprNoneEditable.style.display = 'none'
-      if (breadcrumb) breadcrumb.style.display = 'none'
-      
-      // 修改 4：批量隐藏块手柄、bullet、拖拽手柄、折叠按钮
-      const blockHandles = blockEditor.querySelectorAll('.orca-block-handle, .orca-repr-handle')
-      blockHandles.forEach((el: Element) => {
-        (el as HTMLElement).style.display = 'none'
-      })
-      
-      const bullets = blockEditor.querySelectorAll('.orca-block-bullet, [data-role="bullet"]')
-      bullets.forEach((el: Element) => {
-        (el as HTMLElement).style.display = 'none'
-      })
-      
-      const dragHandles = blockEditor.querySelectorAll('.orca-block-drag-handle')
-      dragHandles.forEach((el: Element) => {
-        (el as HTMLElement).style.display = 'none'
-      })
-      
-      const collapseButtons = blockEditor.querySelectorAll('.orca-repr-collapse, [class*="collapse"]')
-      collapseButtons.forEach((el: Element) => {
-        (el as HTMLElement).style.display = 'none'
-      })
-    } else {
-      blockEditor.removeAttribute('maximize')
-      // 恢复显示所有被隐藏的元素
-      if (noneEditableEl) noneEditableEl.style.display = ''
-      if (goBtns) goBtns.style.display = ''
-      if (sidetools) sidetools.style.display = ''
-      if (reprNoneEditable) reprNoneEditable.style.display = ''
-      if (breadcrumb) breadcrumb.style.display = ''
-      
-      // 恢复所有被隐藏的块UI元素
-      const blockHandles = blockEditor.querySelectorAll('.orca-block-handle, .orca-repr-handle')
-      blockHandles.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-      
-      const bullets = blockEditor.querySelectorAll('.orca-block-bullet, [data-role="bullet"]')
-      bullets.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-      
-      const dragHandles = blockEditor.querySelectorAll('.orca-block-drag-handle')
-      dragHandles.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-      
-      const collapseButtons = blockEditor.querySelectorAll('.orca-repr-collapse, [class*="collapse"]')
-      collapseButtons.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-    }
-
-    // 清理函数：prop 变为 false 或组件卸载时恢复原状
-    return () => {
-      blockEditor.removeAttribute('maximize')
-      if (noneEditableEl) noneEditableEl.style.display = ''
-      if (goBtns) goBtns.style.display = ''
-      if (sidetools) sidetools.style.display = ''
-      if (reprNoneEditable) reprNoneEditable.style.display = ''
-      if (breadcrumb) breadcrumb.style.display = ''
-      
-      // 恢复所有被隐藏的块UI元素
-      const blockHandles = blockEditor.querySelectorAll('.orca-block-handle, .orca-repr-handle')
-      blockHandles.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-      
-      const bullets = blockEditor.querySelectorAll('.orca-block-bullet, [data-role="bullet"]')
-      bullets.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-      
-      const dragHandles = blockEditor.querySelectorAll('.orca-block-drag-handle')
-      dragHandles.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-      
-      const collapseButtons = blockEditor.querySelectorAll('.orca-repr-collapse, [class*="collapse"]')
-      collapseButtons.forEach((el: Element) => {
-        (el as HTMLElement).style.display = ''
-      })
-    }
-  }, [isMaximized, manageHostEditorChrome])
+  useHostEditorChrome(containerRef, manageHostEditorChrome, isMaximized)
 
   const totalCards = queue.length
   const currentCard = currentIndex < totalCards ? queue[currentIndex] : null
@@ -545,187 +420,20 @@ export default function SrsReviewSession({
     orca.notify("warn", message, { title: "SRS 复习" })
   }
 
-  // 订阅当前卡片相关的块，便于在“块被删除/卸载”时触发自动剔除逻辑
-  const snapshot = useSnapshot(orca.state)
-  const currentCardBlock = currentCard ? snapshot?.blocks?.[currentCard.id] : null
-  const currentListItemBlock = currentCard?.listItemId
-    ? snapshot?.blocks?.[currentCard.listItemId]
-    : null
-
-  /**
-   * F2-06：当前卡片块三态加载
-   * - exists：必要时写 orca.state.blocks，继续
-   * - missing（仅明确 null/undefined）：安全剔除并记 auto-dropped
-   * - unknown（throw/不可判定）：保留队列，用户可见可重试错误
-   * List：父 + 条目都验证；任一 unknown 不得误删；须检查完所有 required 再决策
-   */
-  const autoDroppedCardKeysRef = useRef<Set<string>>(new Set())
-  /** 块加载 unknown 错误（按 cardKey）；显式重试靠 blockLoadRetryNonce */
-  const [blockLoadError, setBlockLoadError] = useState<{
-    cardKey: string
-    message: string
-  } | null>(null)
-  const [blockLoadRetryNonce, setBlockLoadRetryNonce] = useState(0)
-  const currentCardKeyForLoad = currentCard ? getReviewCardKey(currentCard) : null
-  const currentCardKeyRef = useRef<string | null>(currentCardKeyForLoad)
-  currentCardKeyRef.current = currentCardKeyForLoad
-
-  const applyMissingCardDrop = (outcome: Extract<RequiredBlocksOutcome, { action: "drop_missing" }>) => {
-    autoDroppedCardKeysRef.current.add(outcome.cardKey)
-    console.log(
-      `[${pluginName}] 卡片对应块 missing，自动剔除: ${outcome.diagnostic}`
-    )
-
-    // F2-05：身份即将变化 — 作废 in-flight 动作与切卡 timer
-    if (advanceTimerRef.current) {
-      clearTimeout(advanceTimerRef.current)
-      advanceTimerRef.current = null
-    }
-    actionGateRef.current.invalidate()
-    setIsGrading(false)
-    setBlockLoadError(null)
-
-    setQueue((prevQueue: ReviewCard[]) => {
-      if (currentIndex < 0 || currentIndex >= prevQueue.length) return prevQueue
-      const keyAtIndex = getReviewCardKey(prevQueue[currentIndex]!)
-      if (keyAtIndex !== outcome.cardKey) return prevQueue
-      return [...prevQueue.slice(0, currentIndex), ...prevQueue.slice(currentIndex + 1)]
-    })
-
-    setLastLog(outcome.userMessage)
-  }
-
-  useEffect(() => {
-    if (!currentCard) {
-      setBlockLoadError(null)
-      return
-    }
-
-    const currentCardKey = getReviewCardKey(currentCard)
-    if (autoDroppedCardKeysRef.current.has(currentCardKey)) {
-      return
-    }
-
-    let cancelled = false
-
-    void (async () => {
-      const specs = requiredBlocksForCard(currentCard)
-      // 必须检查完所有 required 再决策，避免「父 missing 先返回、子 unknown 未检」误删
-      const results = []
-      for (const spec of specs) {
-        const result = await resolveBlockExistence(spec.blockId, {
-          writeToState: true
-        })
-        if (
-          !shouldApplyBlockLoadResult({
-            cancelled,
-            expectedCardKey: currentCardKey,
-            currentCardKey: currentCardKeyRef.current
-          })
-        ) {
-          return
-        }
-        results.push(result)
-      }
-
-      if (
-        !shouldApplyBlockLoadResult({
-          cancelled,
-          expectedCardKey: currentCardKey,
-          currentCardKey: currentCardKeyRef.current
-        })
-      ) {
-        return
-      }
-
-      const outcome = decideRequiredBlocksOutcome(currentCardKey, results)
-
-      if (outcome.action === "ready") {
-        setBlockLoadError(
-          (prev: { cardKey: string; message: string } | null) =>
-            prev?.cardKey === currentCardKey ? null : prev
-        )
-        return
-      }
-
-      if (outcome.action === "drop_missing") {
-        applyMissingCardDrop(outcome)
-        return
-      }
-
-      // retain_unknown：不写 auto-dropped，不改队列
-      console.error(
-        `[${pluginName}] 卡片块状态 unknown，保留队列: ${outcome.diagnostic}`,
-        outcome.unknowns.map(u => u.error)
-      )
-      setBlockLoadError({
-        cardKey: outcome.cardKey,
-        message: outcome.userMessage
-      })
-      setLastLog(outcome.userMessage)
-      orca.notify("error", outcome.userMessage, { title: "SRS 复习" })
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    currentCard?.id,
-    currentCard?.listItemId,
+  const {
+    blockLoadError,
+    currentCardKey: currentCardKeyForLoad,
+    retry: handleRetryBlockLoad
+  } = useReviewCardAvailability({
+    currentCard,
+    nextCard,
     currentIndex,
     pluginName,
-    currentCardBlock,
-    currentListItemBlock,
-    blockLoadRetryNonce
-  ])
+    setQueue,
+    setLastLog,
+    onBeforeDrop: invalidateSessionAction
+  })
 
-  const handleRetryBlockLoad = () => {
-    if (!currentCardKeyForLoad) return
-    setBlockLoadError(null)
-    // 递增 nonce 强制 effect 重新请求（依赖未变时也能真实重试）
-    setBlockLoadRetryNonce((n: number) => n + 1)
-  }
-
-  // 预缓存下一张：成功可写 cache；null/throw 只诊断日志，不改队列/auto-dropped/当前卡
-  useEffect(() => {
-    if (!nextCard?.id) return
-
-    const nextId = nextCard.id
-    const stateHit = Boolean(orca.state.blocks?.[nextId])
-    const early = decidePrefetchWhenStateHit(nextId, stateHit)
-    if (early) return
-
-    let cancelled = false
-    void (async () => {
-      // 预缓存不 writeToState 在 resolve 内盲目写入前先判定；exists 时由 outcome 写
-      const result = await resolveBlockExistence(nextId, { writeToState: false })
-      if (cancelled) return
-      const outcome = decidePrefetchBlockOutcome(result)
-      if (outcome.action === "write_cache") {
-        writeBlockToOrcaState(outcome.block)
-        console.log(
-          `[SRS Review Session] 已预缓存下一张卡片: ${outcome.blockId}`
-        )
-        return
-      }
-      if (outcome.action === "log_null") {
-        console.warn(
-          `[SRS Review Session] 预缓存：块明确不存在（不影响当前队列）: ${outcome.diagnostic}`
-        )
-        return
-      }
-      if (outcome.action === "log_throw") {
-        console.warn(
-          `[SRS Review Session] 预缓存失败（不影响当前队列）: ${outcome.diagnostic}`,
-          outcome.error
-        )
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [nextCard?.id])
 
   // 当切换到新卡片时，重置开始时间
   useEffect(() => {
@@ -746,228 +454,6 @@ export default function SrsReviewSession({
     return { due, fresh }
   }, [queue])
 
-  /**
-   * F2-04：Again/Hard 短期 pending 状态（纯模块 pendingDueRequeue；内存，不持久化）。
-   * generation/token 由 pure 层维护；Demo 只持有 ref + 唯一 timer。
-   */
-  const pendingDueStateRef = useRef<PendingDueState>(createEmptyPendingDueState())
-  const pendingCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** 当前索引 / 队列 ref：timer 回调读取最新值，避免闭包陈旧 */
-  const currentIndexRef = useRef(currentIndex)
-  currentIndexRef.current = currentIndex
-  const queueRef = useRef(queue)
-  queueRef.current = queue
-
-  const clearPendingDueTimer = () => {
-    if (pendingCheckTimeoutRef.current != null) {
-      clearTimeout(pendingCheckTimeoutRef.current)
-      pendingCheckTimeoutRef.current = null
-    }
-  }
-
-  /**
-   * 停用并清空 pending（完成 / 关闭 / 卸载 / 新轮次）。
-   * 递增 token 使已调度 timer 全部 stale，避免卸载后 setState。
-   */
-  const clearPendingDueSession = (reason: string) => {
-    clearPendingDueTimer()
-    pendingDueStateRef.current = deactivateAndClearPending(
-      pendingDueStateRef.current
-    )
-    console.log(`[${pluginName}] F2-04 pending 已清理（${reason}）`)
-  }
-
-  /**
-   * 按 pure 规划重排唯一有效 timer；旧 token 回调一律忽略。
-   */
-  const reschedulePendingDueTimer = () => {
-    clearPendingDueTimer()
-    const now = Date.now()
-    try {
-      const planned = planNextPendingWake(pendingDueStateRef.current, now)
-      pendingDueStateRef.current = planned.state
-      if (!planned.plan) {
-        return
-      }
-      const { token, delayMs } = planned.plan
-      console.log(
-        `[${pluginName}] F2-04 调度 pending wake token=${token} delay=${delayMs}ms ` +
-          `pending=${pendingDueStateRef.current.entries.size}`
-      )
-      pendingCheckTimeoutRef.current = setTimeout(() => {
-        pendingCheckTimeoutRef.current = null
-        checkPendingDueCards(token)
-      }, delayMs)
-    } catch (error) {
-      console.error(`[${pluginName}] F2-04 pending timer 调度异常:`, error)
-      orca.notify("error", `短期重学定时器调度失败: ${error}`, {
-        title: "SRS 复习"
-      })
-    }
-  }
-
-  /**
-   * Timer wake：token 校验 → 在最新 queueRef 上 process 一次 → 再 setQueue。
-   * 不在 setState updater 内 process，避免 Strict Mode 双调用二次消耗 budget。
-   * scope/budget 拒绝保留 pending 并诊断；异常时不删 pending，可重试。
-   */
-  const checkPendingDueCards = (wakeToken: number) => {
-    const scope = sessionScopeRef.current
-    const budget = sessionBudgetRef.current
-
-    console.log(
-      `[${pluginName}] F2-04 检查 pending wake token=${wakeToken} ` +
-        `entries=${pendingDueStateRef.current.entries.size}`
-    )
-
-    if (!pendingDueStateRef.current.active) {
-      console.warn(`[${pluginName}] F2-04 pending wake ignored: session inactive`)
-      return
-    }
-    if (!isPendingWakeTokenCurrent(pendingDueStateRef.current, wakeToken)) {
-      console.warn(
-        `[${pluginName}] F2-04 pending wake ignored: stale token ${wakeToken} ` +
-          `(current ${pendingDueStateRef.current.scheduledToken})`
-      )
-      return
-    }
-
-    // 快照：仅成功 path 才写回 pendingDueStateRef，提交异常时保留原 pending
-    const stateSnapshot = pendingDueStateRef.current
-
-    try {
-      const wakeResult: ProcessPendingWakeResult = processPendingWake({
-        state: stateSnapshot,
-        wakeToken,
-        nowMs: Date.now(),
-        queue: queueRef.current,
-        currentIndex: currentIndexRef.current,
-        scope,
-        budget
-      })
-
-      for (const d of wakeResult.diagnostics) {
-        console.warn(`[${pluginName}] ${d}`)
-      }
-      if (wakeResult.stale || wakeResult.inactive) {
-        return
-      }
-
-      // 追加前是否已「到队尾完成态」（含已 finalize 的完成屏）
-      const wasSessionComplete =
-        queueRef.current.length > 0 &&
-        currentIndexRef.current >= queueRef.current.length
-
-      // processPendingWake 已基于同一 queueRef 快照完成尾部去重。
-      // 直接提交它的纯结果，避免依赖 React updater 何时执行来回填数量。
-      const actuallyAppended = wakeResult.appended.length
-      if (actuallyAppended > 0) {
-        queueRef.current = wakeResult.queue
-        setQueue(wakeResult.queue)
-      }
-
-      pendingDueStateRef.current = wakeResult.state
-
-      if (actuallyAppended > 0) {
-        setNewCardsAdded((prev: number) => prev + actuallyAppended)
-        setLastLog(`${actuallyAppended} 张卡片已到期，加入队列`)
-        orca.notify("info", `${actuallyAppended} 张卡片已到期`, {
-          title: "SRS 复习"
-        })
-        console.log(
-          `[${pluginName}] F2-04 成功追加 ${actuallyAppended} 张短期重学卡到队尾`
-        )
-
-        // F2-04 review：完成态下实际重入后 reopen finalize；progress 不清零
-        const reopened = reopenSessionFinalizeIfNeeded(
-          sessionFinalizeRef.current,
-          {
-            wasSessionComplete,
-            actuallyAppendedCount: actuallyAppended
-          }
-        )
-        if (reopened) {
-          setSessionStats(null)
-          resumeProgressPersistence()
-          console.log(
-            `[${pluginName}] F2-04 pending 重入：已 reopen 完成摘要并恢复进度 autosave`
-          )
-        }
-      }
-
-      if (wakeResult.retainedRejected.length > 0) {
-        orca.notify(
-          "error",
-          `${wakeResult.retainedRejected.length} 张短期到期卡未接纳（scope/额度），已保留待重试`,
-          { title: "SRS 复习" }
-        )
-      }
-
-      if (
-        pendingDueStateRef.current.active &&
-        pendingDueStateRef.current.entries.size > 0
-      ) {
-        reschedulePendingDueTimer()
-      }
-    } catch (error) {
-      // 不写 wakeResult.state：pending 保持 stateSnapshot（可重试）
-      console.error(`[${pluginName}] F2-04 pending 到期处理失败（pending 保留）:`, error)
-      orca.notify("error", `短期重学入队失败: ${error}`, { title: "SRS 复习" })
-      if (stateSnapshot.active && stateSnapshot.entries.size > 0) {
-        pendingDueStateRef.current = stateSnapshot
-        reschedulePendingDueTimer()
-      }
-    }
-  }
-
-  /**
-   * 正式 Again/Hard 且 FSRS due 在窗口内才追踪。
-   * 须在评分成功且 action token 仍有效后调用；repeat/auxiliary 不得进入。
-   */
-  const trackPendingDueCard = (card: ReviewCard, dueTime: Date) => {
-    if (!isCardInSessionScope(card, sessionScopeRef.current)) {
-      console.warn(
-        `[${pluginName}] F2-04 跳过追踪 scope 外的短期到期卡: ${getReviewCardKey(card)}`
-      )
-      return
-    }
-
-    const now = Date.now()
-    const dueTimestamp = dueTime.getTime()
-    const upsert = upsertPendingDueCard(
-      pendingDueStateRef.current,
-      card,
-      dueTimestamp,
-      now
-    )
-    pendingDueStateRef.current = upsert.state
-
-    if (upsert.status === "out_of_window") {
-      return
-    }
-    if (upsert.status !== "tracked" || !upsert.entry) {
-      if (upsert.status === "inactive") {
-        console.warn(`[${pluginName}] F2-04 会话已停用，忽略 track pending`)
-      } else if (upsert.status === "invalid_due") {
-        console.error(`[${pluginName}] F2-04 无效 due，无法追踪短期重学`)
-        orca.notify("error", "短期重学追踪失败：无效到期时间", {
-          title: "SRS 复习"
-        })
-      }
-      return
-    }
-
-    const delaySeconds = Math.round((upsert.entry.dueTime - now) / 1000)
-    console.log(
-      `[${pluginName}] F2-04 追踪短期到期: ${upsert.cardKey} ` +
-        `gen=${upsert.entry.generation} in ${delaySeconds}s`
-    )
-    setLastLog(`卡片将在 ${delaySeconds} 秒后重新加入队列`)
-
-    if (upsert.needsReschedule) {
-      reschedulePendingDueTimer()
-    }
-  }
 
   // 动态更新复习队列：定期检查是否有新的到期卡片（受 sessionScope 约束）
   // FC-13：评估过「仅扫描初始收集中的短期将到期候选」——F2-04 pendingDueStateRef 已覆盖
@@ -1594,703 +1080,61 @@ export default function SrsReviewSession({
   }
 
   if (totalCards === 0) {
-    const emptyContent = (
-      <div style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "32px",
-        maxWidth: "480px",
-        width: "100%",
-        textAlign: "center",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.08)"
-      }}>
-        <h3 style={{ marginBottom: "12px" }}>今天没有到期或新卡</h3>
-        <div style={{ color: "var(--orca-color-text-2)", marginBottom: "20px" }}>
-          请先创建或等待卡片到期，然后再次开始复习
-        </div>
-        {onClose && (
-          <Button variant="solid" onClick={handleRequestClose}>关闭</Button>
-        )}
-      </div>
-    )
-
-    if (inSidePanel) {
-      return (
-        <div style={{
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px"
-        }}>
-          {emptyContent}
-        </div>
-      )
-    }
-
     return (
-      <ModalOverlay visible={true} canClose={true} onClose={handleRequestClose}>
-        {emptyContent}
-      </ModalOverlay>
-    )
-  }
-
-  // ========================================
-  // 渲染：复习结束界面（纯读取 sessionStats，不在 render 中 finish）
-  // ========================================
-  if (isSessionComplete) {
-    // 极短窗口：effect 尚未写入 sessionStats
-    if (sessionStats == null) {
-      const summarizingContent = (
-        <div className="srs-session-complete-container" style={{
-          backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "12px",
-          padding: "32px 48px",
-          maxWidth: "520px",
-          width: "100%",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-          textAlign: "center"
-        }}>
-          <div style={{
-            fontSize: "16px",
-            color: "var(--orca-color-text-2)"
-          }}>
-            正在汇总...
-          </div>
-        </div>
-      )
-
-      if (inSidePanel) {
-        return (
-          <div style={{
-            height: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px"
-          }}>
-            {summarizingContent}
-          </div>
-        )
-      }
-
-      return (
-        <ModalOverlay
-          visible={true}
-          canClose={true}
-          onClose={handleRequestClose}
-          className="srs-session-complete-modal"
-        >
-          {summarizingContent}
-        </ModalOverlay>
-      )
-    }
-
-    const stats = sessionStats
-
-    const completeContent = (
-      <div className="srs-session-complete-container" style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "32px 48px",
-        maxWidth: "520px",
-        width: "100%",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-        textAlign: "center"
-      }}>
-        <div style={{
-          fontSize: "56px",
-          marginBottom: "16px"
-        }}>
-          🎉
-        </div>
-
-        <h2 style={{
-          fontSize: "22px",
-          fontWeight: "600",
-          color: "var(--orca-color-text-1)",
-          marginBottom: "24px"
-        }}>
-          {isRepeatMode ? `第 ${currentRound} 轮复习结束！` : "本次复习结束！"}
-        </h2>
-
-        {/* 统计摘要 */}
-        <div style={{
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "8px",
-          padding: "20px",
-          marginBottom: "24px",
-          textAlign: "left"
-        }}>
-          {/* 核心统计数据 */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: "16px",
-            marginBottom: "20px"
-          }}>
-            {/* 复习卡片数 */}
-            <div style={{ textAlign: "center" }}>
-              <div style={{
-                fontSize: "28px",
-                fontWeight: "600",
-                color: "var(--orca-color-primary-5)"
-              }}>
-                {stats.totalReviewed}
-              </div>
-              <div style={{
-                fontSize: "12px",
-                color: "var(--orca-color-text-3)",
-                marginTop: "4px"
-              }}>
-                复习卡片
-              </div>
-            </div>
-
-            {/* 准确率 */}
-            <div style={{ textAlign: "center" }}>
-              <div style={{
-                fontSize: "28px",
-                fontWeight: "600",
-                color: stats.accuracyRate >= 0.8 
-                  ? "#22c55e" 
-                  : stats.accuracyRate >= 0.6 
-                    ? "#f59e0b" 
-                    : "#ef4444"
-              }}>
-                {formatAccuracyRate(stats.accuracyRate)}
-              </div>
-              <div style={{
-                fontSize: "12px",
-                color: "var(--orca-color-text-3)",
-                marginTop: "4px"
-              }}>
-                准确率
-              </div>
-            </div>
-
-            {/* 会话总时长 */}
-            <div style={{ textAlign: "center" }}>
-              <div style={{
-                fontSize: "28px",
-                fontWeight: "600",
-                color: "var(--orca-color-text-1)"
-              }}>
-                {formatDuration(stats.totalSessionTime)}
-              </div>
-              <div style={{
-                fontSize: "12px",
-                color: "var(--orca-color-text-3)",
-                marginTop: "4px"
-              }}>
-                总时长
-              </div>
-            </div>
-
-            {/* 平均每卡耗时 */}
-            <div style={{ textAlign: "center" }}>
-              <div style={{
-                fontSize: "28px",
-                fontWeight: "600",
-                color: "var(--orca-color-text-1)"
-              }}>
-                {stats.totalReviewed > 0 
-                  ? `${Math.round(stats.averageTimePerCard / 1000)}s`
-                  : "0s"
-                }
-              </div>
-              <div style={{
-                fontSize: "12px",
-                color: "var(--orca-color-text-3)",
-                marginTop: "4px"
-              }}>
-                平均每卡
-              </div>
-            </div>
-          </div>
-
-          {/* 有效复习时长（如果与总时长差异较大才显示） */}
-          {stats.totalSessionTime > 0 && 
-           stats.effectiveReviewTime < stats.totalSessionTime * 0.9 && (
-            <div style={{
-              fontSize: "12px",
-              color: "var(--orca-color-text-3)",
-              textAlign: "center",
-              marginBottom: "16px"
-            }}>
-              有效复习时长: {formatDuration(stats.effectiveReviewTime)}
-            </div>
-          )}
-
-          {/* 评分分布条 */}
-          <div>
-            <div style={{
-              fontSize: "13px",
-              color: "var(--orca-color-text-2)",
-              marginBottom: "8px",
-              textAlign: "center"
-            }}>
-              评分分布
-            </div>
-            <GradeDistributionBar 
-              distribution={stats.gradeDistribution} 
-              showLabels={true}
-              height={28}
-            />
-          </div>
-        </div>
-
-        <div style={{
-          fontSize: "14px",
-          color: "var(--orca-color-text-2)",
-          marginBottom: "24px"
-        }}>
-          坚持复习，持续进步！
-        </div>
-
-        <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-          {isRepeatMode && onRepeatRound && (
-            <Button
-              variant="outline"
-              onClick={onRepeatRound}
-              style={{
-                padding: "12px 24px",
-                fontSize: "16px"
-              }}
-            >
-              再复习一轮
-            </Button>
-          )}
-          <Button
-            variant="solid"
-            onClick={handleFinishSession}
-            style={{
-              padding: "12px 32px",
-              fontSize: "16px"
-            }}
-          >
-            完成
-          </Button>
-        </div>
-      </div>
-    )
-
-    if (inSidePanel) {
-      return (
-        <div style={{
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px"
-        }}>
-          {completeContent}
-        </div>
-      )
-    }
-
-    return (
-      <ModalOverlay
-        visible={true}
-        canClose={true}
+      <ReviewSessionEmptyView
+        inSidePanel={inSidePanel}
         onClose={handleRequestClose}
-        className="srs-session-complete-modal"
-      >
-        {completeContent}
-      </ModalOverlay>
+      />
     )
   }
 
-  // ========================================
-  // 渲染：正在进行的复习会话
-  // ========================================
-  if (inSidePanel) {
+  if (isSessionComplete) {
     return (
-      <div
-        ref={containerRef}
-        className={`srs-review-session-panel ${isMaximized ? 'orca-maximized' : ''}`}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-          backgroundColor: "var(--orca-color-bg-0)"
-        }}
-      >
-        <div 
-          className="srs-review-progress-bar"
-          contentEditable={false}
-          style={{
-            height: "4px",
-            backgroundColor: "var(--orca-color-bg-2)"
-          }}
-        >
-          <div style={{
-            height: "100%",
-            width: `${(currentIndex / totalCards) * 100}%`,
-            backgroundColor: "var(--orca-color-primary-5)",
-            transition: "width 0.3s ease"
-          }} />
-        </div>
-
-        <div 
-          className="srs-review-header"
-          contentEditable={false}
-          style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--orca-color-border-1)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between"
-          }}>
-          <div contentEditable={false} style={{ userSelect: 'none' }}>
-            <div style={{
-              fontSize: "14px",
-              color: "var(--orca-color-text-2)",
-              fontWeight: 500,
-              userSelect: 'none',
-              pointerEvents: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              {isRepeatMode && (
-                <span style={{
-                  backgroundColor: "var(--orca-color-warning-1)",
-                  color: "var(--orca-color-warning-6)",
-                  padding: "2px 8px",
-                  borderRadius: "4px",
-                  fontSize: "12px",
-                  fontWeight: 600
-                }}>
-                  重复复习 · 第 {currentRound} 轮
-                </span>
-              )}
-              <span>
-                卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
-              </span>
-              {newCardsAdded > 0 && (
-                <span style={{ 
-                  color: "var(--orca-color-primary-6)", 
-                  fontSize: "12px"
-                }}>
-                  +{newCardsAdded} 新增
-                </span>
-              )}
-            </div>
-            {lastLog && (
-              <div style={{
-                marginTop: "6px",
-                fontSize: "12px",
-                color: "var(--orca-color-text-2)",
-                opacity: 0.8
-              }}>
-                {lastLog}
-              </div>
-            )}
-            {blockLoadError &&
-              currentCardKeyForLoad &&
-              blockLoadError.cardKey === currentCardKeyForLoad && (
-              <div
-                role="alert"
-                style={{
-                  marginTop: "6px",
-                  fontSize: "12px",
-                  color: "var(--orca-color-danger-6, var(--orca-color-warning-6))",
-                  backgroundColor: "var(--orca-color-danger-1, var(--orca-color-warning-1))",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  maxWidth: "480px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}
-              >
-                <span style={{ flex: 1 }}>{blockLoadError.message}</span>
-                <Button
-                  variant="plain"
-                  onClick={handleRetryBlockLoad}
-                  title="重试加载卡片块"
-                  style={{ flexShrink: 0, fontSize: "12px" }}
-                >
-                  重试
-                </Button>
-              </div>
-            )}
-            {childExpandWarning && (
-              <div
-                role="status"
-                style={{
-                  marginTop: "6px",
-                  fontSize: "12px",
-                  color: "var(--orca-color-warning-6)",
-                  backgroundColor: "var(--orca-color-warning-1)",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  maxWidth: "420px"
-                }}
-                title={childExpandWarning}
-              >
-                {childExpandWarning}
-              </div>
-            )}
-          </div>
-          {/* 手动检查新卡片按钮 */}
-          <Button
-            variant="plain"
-            onClick={handleCheckNewCards}
-            title="检查新到期卡片"
-            style={{ marginLeft: "8px" }}
-          >
-            <i className="ti ti-refresh" />
-          </Button>
-          
-          {/* 最大化按钮已隐藏，默认最大化状态 */}
-          {false && (
-          <Button
-            variant="plain"
-            onClick={() => setIsMaximized(!isMaximized)}
-            title={isMaximized ? "还原" : "最大化"}
-            style={{ marginLeft: "8px" }}
-          >
-            <i className={`ti ${isMaximized ? 'ti-maximize-off' : 'ti-maximize'}`} />
-          </Button>
-          )}
-        </div>
-
-        {/* 修改 5：移除主内容区 padding，让卡片内容占满面板 */}
-        <div style={{ flex: 1, overflow: "auto", padding: "0" }}>
-          {currentCard ? (
-          <SrsCardDemo
-            front={currentCard.front}
-            back={currentCard.back}
-            onGrade={handleGrade}
-            onPostpone={isCurrentReadOnly ? undefined : handlePostpone}
-            onSuspend={isCurrentReadOnly ? undefined : handleSuspend}
-            onClose={handleRequestClose}
-            onSkip={isCurrentReadOnly ? handleContinue : handleSkip}
-            onPrevious={handlePrevious}
-            canGoPrevious={canGoPrevious}
-            srsInfo={currentCard.srs}
-            isGrading={isGrading}
-            blockId={currentCard.id}
-            nextBlockId={nextCard?.id}
-            onJumpToCard={handleJumpToCard}
-            inSidePanel={true}
-            panelId={panelId}
-            pluginName={pluginName}
-            clozeNumber={currentCard.clozeNumber}
-            directionType={currentCard.directionType}
-            listItemId={currentCard.listItemId}
-            listItemIndex={currentCard.listItemIndex}
-            listItemIds={currentCard.listItemIds}
-            isAuxiliaryPreview={currentCard.isAuxiliaryPreview}
-            readOnly={isCurrentReadOnly}
-            readOnlyStatusText={readOnlyStatusText}
-          />
-          ) : (
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "var(--orca-color-text-2)"
-            }}>
-              加载中...
-            </div>
-          )}
-        </div>
-      </div>
+      <ReviewSessionCompletedView
+        stats={sessionStats}
+        inSidePanel={inSidePanel}
+        isRepeatMode={isRepeatMode}
+        currentRound={currentRound}
+        onRepeatRound={onRepeatRound}
+        onFinish={handleFinishSession}
+        onClose={handleRequestClose}
+      />
     )
   }
 
   return (
-    <div className="srs-review-session">
-      {/* 复习进度条 */}
-      <div contentEditable={false} style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '4px',
-        backgroundColor: 'var(--orca-color-bg-2)',
-        zIndex: 10000
-      }}>
-        <div style={{
-          height: '100%',
-          width: `${(currentIndex / totalCards) * 100}%`,
-          backgroundColor: 'var(--orca-color-primary-5)',
-          transition: 'width 0.3s ease'
-        }} />
-      </div>
-
-      {/* 进度文字提示 */}
-      <div contentEditable={false} style={{
-        position: 'fixed',
-        top: '12px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        padding: '8px 16px',
-        backgroundColor: 'var(--orca-color-bg-1)',
-        borderRadius: '20px',
-        fontSize: '14px',
-        color: 'var(--orca-color-text-2)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        zIndex: 10001,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        {isRepeatMode && (
-          <span style={{
-            backgroundColor: "var(--orca-color-warning-1)",
-            color: "var(--orca-color-warning-6)",
-            padding: "2px 8px",
-            borderRadius: "4px",
-            fontSize: "12px",
-            fontWeight: 600
-          }}>
-            重复复习 · 第 {currentRound} 轮
-          </span>
-        )}
-        <span>
-          卡片 {currentIndex + 1} / {totalCards}（到期 {counters.due} | 新卡 {counters.fresh}）
-        </span>
-        {newCardsAdded > 0 && (
-          <span style={{ 
-            color: "var(--orca-color-primary-6)", 
-            fontSize: "12px"
-          }}>
-            +{newCardsAdded} 新增
-          </span>
-        )}
-      </div>
-
-      {/* 最近一次评分日志 */}
-      {lastLog && (
-        <div contentEditable={false} style={{
-          position: 'fixed',
-          top: '48px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          padding: '6px 12px',
-          backgroundColor: 'var(--orca-color-bg-2)',
-          borderRadius: '12px',
-          fontSize: '12px',
-          color: 'var(--orca-color-text-2)',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-          zIndex: 10001
-        }}>
-          {lastLog}
-        </div>
-      )}
-
-      {/* F2-06：块 unknown 可重试错误 */}
-      {blockLoadError &&
-        currentCardKeyForLoad &&
-        blockLoadError.cardKey === currentCardKeyForLoad && (
-        <div
-          role="alert"
-          contentEditable={false}
-          style={{
-            position: "fixed",
-            top: lastLog ? "80px" : "48px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            padding: "6px 12px",
-            backgroundColor: "var(--orca-color-danger-1, var(--orca-color-warning-1))",
-            borderRadius: "12px",
-            fontSize: "12px",
-            color: "var(--orca-color-danger-6, var(--orca-color-warning-6))",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-            zIndex: 10001,
-            maxWidth: "90vw",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px"
-          }}
-        >
-          <span>{blockLoadError.message}</span>
-          <Button
-            variant="plain"
-            onClick={handleRetryBlockLoad}
-            title="重试加载卡片块"
-            style={{ flexShrink: 0, fontSize: "12px" }}
-          >
-            重试
-          </Button>
-        </div>
-      )}
-
-      {/* FC-12：子卡展开截断提示 */}
-      {childExpandWarning && (
-        <div
-          role="status"
-          contentEditable={false}
-          title={childExpandWarning}
-          style={{
-            position: "fixed",
-            top:
-              lastLog ||
-              (blockLoadError &&
-                currentCardKeyForLoad &&
-                blockLoadError.cardKey === currentCardKeyForLoad)
-                ? "112px"
-                : "48px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            padding: "6px 12px",
-            backgroundColor: "var(--orca-color-warning-1)",
-            borderRadius: "12px",
-            fontSize: "12px",
-            color: "var(--orca-color-warning-6)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-            zIndex: 10001,
-            maxWidth: "90vw"
-          }}
-        >
-          {childExpandWarning}
-        </div>
-      )}
-
-      {/* 当前卡片（复用 SrsCardDemo 组件） */}
-      {currentCard ? (
-      <SrsCardDemo
-        front={currentCard.front}
-        back={currentCard.back}
-        onGrade={handleGrade}
-        onPostpone={isCurrentReadOnly ? undefined : handlePostpone}
-        onSuspend={isCurrentReadOnly ? undefined : handleSuspend}
-        onClose={handleRequestClose}
-        onSkip={isCurrentReadOnly ? handleContinue : handleSkip}
-        onPrevious={handlePrevious}
-        canGoPrevious={canGoPrevious}
-        srsInfo={currentCard.srs}
-        isGrading={isGrading}
-        blockId={currentCard.id}
-        nextBlockId={nextCard?.id}
-        onJumpToCard={handleJumpToCard}
-        panelId={panelId}
-        pluginName={pluginName}
-        clozeNumber={currentCard.clozeNumber}
-        directionType={currentCard.directionType}
-        listItemId={currentCard.listItemId}
-        listItemIndex={currentCard.listItemIndex}
-        listItemIds={currentCard.listItemIds}
-        isAuxiliaryPreview={currentCard.isAuxiliaryPreview}
-        readOnly={isCurrentReadOnly}
-        readOnlyStatusText={readOnlyStatusText}
-      />
-      ) : (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100vh",
-          color: "var(--orca-color-text-2)"
-        }}>
-          加载中...
-        </div>
-      )}
-    </div>
+    <ReviewSessionActiveView
+      containerRef={containerRef}
+      inSidePanel={inSidePanel}
+      isMaximized={isMaximized}
+      currentIndex={currentIndex}
+      totalCards={totalCards}
+      counters={counters}
+      newCardsAdded={newCardsAdded}
+      lastLog={lastLog}
+      blockLoadError={blockLoadError}
+      currentCardKey={currentCardKeyForLoad}
+      childExpandWarning={childExpandWarning}
+      currentCard={currentCard}
+      nextCard={nextCard}
+      isCurrentReadOnly={isCurrentReadOnly}
+      readOnlyStatusText={readOnlyStatusText}
+      isGrading={isGrading}
+      canGoPrevious={canGoPrevious}
+      isRepeatMode={isRepeatMode}
+      currentRound={currentRound}
+      panelId={panelId}
+      pluginName={pluginName}
+      onGrade={handleGrade}
+      onPostpone={handlePostpone}
+      onSuspend={handleSuspend}
+      onClose={handleRequestClose}
+      onSkip={handleSkip}
+      onContinue={handleContinue}
+      onPrevious={handlePrevious}
+      onJumpToCard={handleJumpToCard}
+      onRetryBlockLoad={handleRetryBlockLoad}
+      onCheckNewCards={handleCheckNewCards}
+    />
   )
 }

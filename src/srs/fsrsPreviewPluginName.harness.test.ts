@@ -94,7 +94,7 @@ describe("F2-08 preview pluginName harness", () => {
     const path = await import("node:path")
     const root = path.resolve(import.meta.dirname, "../components")
     const files = [
-      "SrsCardDemo.tsx",
+      "review-card/BasicCardReviewRenderer.tsx",
       "ClozeCardReviewRenderer.tsx",
       "DirectionCardReviewRenderer.tsx",
       "ListCardReviewRenderer.tsx",
