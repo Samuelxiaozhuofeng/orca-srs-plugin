@@ -28,7 +28,8 @@ Flashcard Home 是插件的闪卡管理主界面，以块类型 `srs.flashcard-h
 | ---- | ---- |
 | `src/components/SrsFlashcardHome.tsx` | 主界面：视图路由、数据加载、Deck/卡片列表、备注与搜索 |
 | `src/components/FlashcardDashboard.tsx` | 默认「主页」Dashboard（问候、热力图、未来预测） |
-| `src/components/StatisticsView.tsx` | 学习统计全页 |
+| `src/components/StatisticsView.tsx` | 学习统计全页（数据协调与页面编排） |
+| `src/components/statistics/*` | 统计子组件：筛选器、今日摘要、活动图表、分布图表 |
 | `src/components/DifficultCardsView.tsx` | 困难卡片列表与一键复习 |
 | `src/components/SrsFlashcardHomeRenderer.tsx` | `srs.flashcard-home` 块渲染器包装 |
 | `src/panels/SrsFlashcardHomePanel.tsx` | 面板入口（ErrorBoundary + hideable 布局） |
@@ -36,7 +37,7 @@ Flashcard Home 是插件的闪卡管理主界面，以块类型 `srs.flashcard-h
 | `src/srs/flashcardHomeManager.ts` | 特殊块创建、复用、清理（`flashcardHomeBlockId`） |
 | `src/srs/deckUtils.ts` | `calculateDeckStats` / `calculateHomeStats` |
 | `src/srs/deckNoteManager.ts` | 卡组备注 CRUD |
-| `src/srs/statisticsManager.ts` | 统计数据与缓存 |
+| `src/srs/statisticsManager.ts` | 统计数据兼容门面（实现见 `src/srs/statistics/*`） |
 | `src/srs/difficultCardsManager.ts` | 困难卡判定与列表 |
 | `src/srs/cardFilterUtils.ts` | 卡片筛选（全部/已到期/今天/未来/新卡） |
 | `src/srs/registry/renderers.ts` | 注册 `srs.flashcard-home` |
@@ -185,14 +186,16 @@ flowchart TD
 | ---- | ---- |
 | `src/components/SrsFlashcardHome.tsx` | 主界面与子视图 |
 | `src/components/FlashcardDashboard.tsx` | Dashboard |
-| `src/components/StatisticsView.tsx` | 学习统计 |
+| `src/components/StatisticsView.tsx` | 学习统计页协调器 |
+| `src/components/statistics/*` | 筛选器 / 摘要 / ReviewActivityCharts / CardDistributionCharts |
 | `src/components/DifficultCardsView.tsx` | 困难卡片 UI |
 | `src/components/SrsFlashcardHomeRenderer.tsx` | 块渲染器 |
 | `src/panels/SrsFlashcardHomePanel.tsx` | 面板封装 |
 | `src/srs/flashcardHomeManager.ts` | 块生命周期 |
 | `src/srs/deckUtils.ts` | Deck/首页统计 |
 | `src/srs/deckNoteManager.ts` | 卡组备注 |
-| `src/srs/statisticsManager.ts` | 统计后端 |
+| `src/srs/statisticsManager.ts` | 统计兼容门面 |
+| `src/srs/statistics/*` | 缓存 / 活动计算 / 分布计算 / 加载 / 偏好 |
 | `src/srs/difficultCardsManager.ts` | 困难卡后端 |
 | `src/srs/cardFilterUtils.ts` | 列表筛选 |
 | `src/srs/srsEvents.ts` | 广播事件名 |
