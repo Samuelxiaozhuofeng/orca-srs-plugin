@@ -62,3 +62,19 @@ export function shouldManageHostEditorChrome(
   if (panel.id !== panelId) return false
   return isPanelMainBlockView(panel, blockId)
 }
+
+/**
+ * Whether to invoke `core.panel.toggleWideView` for an IR (or similar) host panel.
+ *
+ * Requires host-chrome management permission, not already attempted this mount,
+ * and the real `ViewPanel.wide` must not already be true (toggle would narrow it).
+ * `panelWide` must come from `findViewPanel(...).wide`, not `isWide` / map lookup.
+ */
+export function shouldInvokePanelWideViewToggle(
+  allowHostChrome: boolean,
+  panelWide: boolean | undefined,
+  alreadyAttemptedThisMount: boolean
+): boolean {
+  if (!allowHostChrome || alreadyAttemptedThisMount) return false
+  return panelWide !== true
+}

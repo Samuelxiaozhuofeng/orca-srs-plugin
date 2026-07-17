@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   findPanelIdByBlockView,
   isPanelMainBlockView,
+  shouldInvokePanelWideViewToggle,
   shouldManageHostEditorChrome
 } from "./panelTreeUtils"
 
@@ -145,5 +146,26 @@ describe("shouldManageHostEditorChrome", () => {
     expect(
       shouldManageHostEditorChrome(pagePanel, "page-panel", reviewBlockId)
     ).toBe(false)
+  })
+})
+
+describe("shouldInvokePanelWideViewToggle", () => {
+  it("invokes only when host chrome is allowed and panel is not already wide", () => {
+    expect(shouldInvokePanelWideViewToggle(true, undefined, false)).toBe(true)
+    expect(shouldInvokePanelWideViewToggle(true, false, false)).toBe(true)
+  })
+
+  it("does not invoke when panel.wide is already true (would narrow on toggle)", () => {
+    expect(shouldInvokePanelWideViewToggle(true, true, false)).toBe(false)
+  })
+
+  it("does not invoke when host chrome management is denied (fail-closed)", () => {
+    expect(shouldInvokePanelWideViewToggle(false, false, false)).toBe(false)
+    expect(shouldInvokePanelWideViewToggle(false, undefined, false)).toBe(false)
+  })
+
+  it("does not invoke again during the same mount after already attempted", () => {
+    expect(shouldInvokePanelWideViewToggle(true, false, true)).toBe(false)
+    expect(shouldInvokePanelWideViewToggle(true, undefined, true)).toBe(false)
   })
 })

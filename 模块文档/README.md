@@ -84,7 +84,7 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)**
-    - 统一工作区、书籍/网页来源树、章节 Topic 与 Extract 层级、时间盒、只读/混合、断点、快捷键、过载、漏斗、会话服务
+    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、时间盒、只读/混合、断点、快捷键、过载、漏斗、会话服务
     - 关联：`src/components/incremental-reading/**`、`src/srs/incremental-reading/*`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)**
@@ -142,3 +142,4 @@
 - **2026-07-13**：按当前代码全量对照更新；新建选择题文档；Flash Home 取代不存在的 CardBrowser 表述；计划类文档加落地状态；压缩方向卡等过时「实现计划」长文；修正事件名、卸载顺序、队列 due 判定等偏差
 - **2026-07-13（审核修订）**：Choice 发现须 `#card`；删除不存在的 sibling 设置键；FSRS log 与 `ReviewLogEntry` 分列；Azure 认证限定；根文件名 `AGENTS.md`/`CLAUDE.md`；删除临时 `_doc_sync_brief.md`；Home 补 `hideableDisplayManager`
 - **2026-07-16**：新增 [网页导入.md](网页导入.md)（Firecrawl MVP）
+- **2026-07-17**：渐进阅读主面板默认启用 Wide View，并清理 Bullet、Query Tabs 与 Query Views 宿主 chrome

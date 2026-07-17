@@ -1,6 +1,10 @@
 import type { Block, DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import { getIRDateGroup } from "../../../srs/incrementalReadingManagerUtils"
+import {
+  shouldInvokePanelWideViewToggle,
+  shouldManageHostEditorChrome
+} from "../../../srs/registry/panelTreeUtils"
 import type { IRLibraryFilters } from "./irLibraryFilters"
 import type { IRSourceNode } from "./irSourceTreeBuilder"
 import type { IRWorkspaceDrawer, IRWorkspaceMode } from "./irWorkspaceTypes"
@@ -20,8 +24,13 @@ import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
 
+/** Host `.orca-block-editor` class applied only when IR is the panel main block view. */
+export const IR_HOST_PANEL_CHROME_CLASS = "srs-ir-host-panel-chrome-managed"
+
 export type IRWorkspaceShellProps = {
   panelId: string
+  /** IR virtual block id (session or manager). Required for fail-closed host chrome / wide view. */
+  blockId: DbId
   pluginName?: string
   initialMode?: IRWorkspaceMode
   onClose?: () => void
@@ -29,6 +38,7 @@ export type IRWorkspaceShellProps = {
 
 export default function IRWorkspaceShell({
   panelId,
+  blockId,
   pluginName: pluginNameProp,
   initialMode = "library",
   onClose
@@ -36,10 +46,13 @@ export default function IRWorkspaceShell({
   const [pluginName, setPluginName] = useState(pluginNameProp ?? "orca-srs")
   const [mode, setMode] = useState<IRWorkspaceMode>(initialMode)
   const [drawer, setDrawer] = useState<IRWorkspaceDrawer>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const savedScrollTopRef = useRef(0)
   const sessionCloseHandlerRef = useRef<(() => Promise<void>) | null>(null)
+  /** Prevents re-toggle when effect re-runs during the same mount. */
+  const wideViewAttemptedRef = useRef(false)
   const workspaceId = `ir-workspace-${panelId.replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
   const loadPluginName = useCallback(async () => {
@@ -88,6 +101,48 @@ export default function IRWorkspaceShell({
     window.addEventListener(IR_WORKSPACE_MODE_EVENT, handleModeRequest)
     return () => window.removeEventListener(IR_WORKSPACE_MODE_EVENT, handleModeRequest)
   }, [handleModeChange, panelId])
+
+  /**
+   * When IR is the panel main block view: default Wide View + hide host editor chrome.
+   * Fail-closed via shouldManageHostEditorChrome — never touch Journal embeds / query / ref previews.
+   * Uses Renderer panelId (not activePanel). Wide toggle only if panel.wide is not already true,
+   * and only once per mount.
+   */
+  useEffect(() => {
+    const panel = orca.nav.findViewPanel(panelId, orca.state.panels)
+    const manageHost = shouldManageHostEditorChrome(panel, panelId, blockId)
+    if (!manageHost) return
+
+    const blockEditor = rootRef.current?.closest<HTMLElement>(".orca-block-editor")
+    if (blockEditor) {
+      blockEditor.classList.add(IR_HOST_PANEL_CHROME_CLASS)
+    }
+
+    // Real field is ViewPanel.wide (not isWide / panels[panelId]).
+    // Mark attempted even when skipped so effect re-runs never re-toggle.
+    const shouldToggle = shouldInvokePanelWideViewToggle(
+      manageHost,
+      panel?.wide,
+      wideViewAttemptedRef.current
+    )
+    wideViewAttemptedRef.current = true
+    if (shouldToggle) {
+      void (async () => {
+        try {
+          await orca.commands.invokeCommand("core.panel.toggleWideView", panelId)
+        } catch (error) {
+          console.error("[渐进阅读] 启用 Wide View 失败:", error)
+          orca.notify("error", "启用宽屏视图失败", { title: "渐进阅读" })
+        }
+      })()
+    }
+
+    return () => {
+      if (blockEditor) {
+        blockEditor.classList.remove(IR_HOST_PANEL_CHROME_CLASS)
+      }
+    }
+  }, [panelId, blockId])
 
   const closePanel = useCallback(() => {
     if (onClose) onClose()
@@ -148,7 +203,7 @@ export default function IRWorkspaceShell({
     : ""
 
   return (
-    <div className="ir-workspace">
+    <div ref={rootRef} className="ir-workspace">
       <IRWorkspaceHeader
         workspaceId={workspaceId}
         mode={mode}

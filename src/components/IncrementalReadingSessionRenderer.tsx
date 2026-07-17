@@ -64,6 +64,7 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
         <SrsErrorBoundary componentName="渐进阅读工作区" errorTitle="渐进阅读工作区加载出错">
           <IRWorkspaceShell
             panelId={panelId}
+            blockId={blockId}
             pluginName={pluginName}
             initialMode={initialMode}
             onClose={() => orca.nav.close(panelId)}

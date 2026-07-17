@@ -3,6 +3,22 @@
  * 使用 Orca CSS tokens + 高级排版与微动效，空间通透、现代高密度设计
  */
 
+/* ---------- Host panel chrome (main block view only) ---------- */
+/*
+ * Applied only when IRWorkspaceShell confirms the panel main view is the IR
+ * virtual block (class on nearest .orca-block-editor). Never match bare
+ * selectors — embedded IR in Journal / query / ref previews must keep host chrome.
+ */
+.orca-block-editor.srs-ir-host-panel-chrome-managed .orca-block-bullet,
+.orca-block-editor.srs-ir-host-panel-chrome-managed [data-role="bullet"],
+.orca-block-editor.srs-ir-host-panel-chrome-managed .orca-repr-scope-line,
+.orca-block-editor.srs-ir-host-panel-chrome-managed .orca-block-handle,
+.orca-block-editor.srs-ir-host-panel-chrome-managed .orca-block-editor-query-tabs-container,
+.orca-block-editor.srs-ir-host-panel-chrome-managed .orca-block-editor-query-views,
+.orca-block-editor.srs-ir-host-panel-chrome-managed .orca-memoizedviews {
+  display: none !important;
+}
+
 /* ---------- Shell ---------- */
 
 .ir-workspace {
