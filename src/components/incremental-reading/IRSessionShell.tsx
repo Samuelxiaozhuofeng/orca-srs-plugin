@@ -38,6 +38,7 @@ import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
 import IRSessionSummary from "./IRSessionSummary"
+import { formatIRReadingSourceLabel } from "./irReadingLabels"
 
 const { useEffect, useMemo, useRef, useState } = window.React
 const { Button, ConfirmBox } = orca.components
@@ -444,11 +445,7 @@ export default function IRSessionShell({
 
   const sourceLabel = useMemo(() => {
     if (!currentCard) return null
-    const parts = [
-      currentCard.sourceBookTitle,
-      currentCard.cardType === "extracts" ? "Extract" : "Topic"
-    ].filter(Boolean)
-    return parts.join(" · ")
+    return formatIRReadingSourceLabel(currentCard)
   }, [currentCard])
 
   if (loadFailed) {

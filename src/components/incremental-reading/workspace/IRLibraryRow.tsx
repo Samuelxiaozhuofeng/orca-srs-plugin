@@ -19,6 +19,7 @@ type Props = {
   canAdvanceLearn: boolean
   isAdvancing: boolean
   now: Date
+  showSource?: boolean
   onToggleSelect: (cardId: DbId) => void
   onOpenDetails: (cardId: DbId) => void
   onStartReading: (cardId: DbId) => void
@@ -32,6 +33,7 @@ export default function IRLibraryRow({
   canAdvanceLearn,
   isAdvancing,
   now,
+  showSource = true,
   onToggleSelect,
   onOpenDetails,
   onStartReading,
@@ -80,7 +82,7 @@ export default function IRLibraryRow({
           <span className={`ir-tag ir-tag--importance ir-tag--importance-${importanceTone}`}>
             重要: {importanceLabel}
           </span>
-          {source !== "—" ? (
+          {showSource && source !== "—" ? (
             <span className="ir-tag ir-tag--source" title={source}>
               <i className="ti ti-book" aria-hidden="true" />
               {source}
