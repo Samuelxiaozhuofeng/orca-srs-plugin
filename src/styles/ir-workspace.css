@@ -2112,3 +2112,220 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==================== Theme Modes (主题模式) ==================== */
+
+/* --- 1. 清新绿茶 (mint, 默认) --- */
+.ir-reading[data-ir-theme="mint"] {
+  --orca-color-bg-1: #f4f8f6 !important;
+  --orca-color-bg-2: #ebf2ee !important;
+  --orca-color-bg-3: #cbdcd1 !important;
+  --orca-color-text-1: #1a2f23 !important;
+  --orca-color-text-2: #3a5745 !important;
+  --orca-color-text-3: #5a7866 !important;
+  --orca-color-border-1: #dbe7e1 !important;
+  background: #ebf2ee !important;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__scroll {
+  background: transparent !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__inner {
+  background: #f4f8f6 !important;
+  color: #1a2f23 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgba(26, 47, 35, 0.03) !important;
+  border: 1px solid #cbdcd1 !important;
+  margin-top: 16px !important;
+  margin-bottom: 24px !important;
+  padding: 40px 48px 96px !important;
+  padding-right: max(48px, var(--ir-content-safe-right, 48px)) !important;
+  max-width: 800px !important;
+  transition: all 0.25s ease;
+}
+.ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__body,
+.ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+  font-family: Georgia, Charter, "Times New Roman", "Songti SC", "Noto Serif SC", serif !important;
+  font-size: 19px !important;
+  line-height: 1.8 !important;
+  color: #1a2f23 !important;
+  letter-spacing: 0.015em !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__body .orca-block {
+  margin-block: 1.25em !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__body ::selection {
+  background-color: rgba(52, 211, 153, 0.25) !important;
+  color: inherit !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__meta {
+  border-bottom: 1px solid #dbe7e1 !important;
+  padding-bottom: 14px !important;
+  margin-bottom: 24px !important;
+  color: #5a7866 !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__context {
+  border-bottom: 1px dashed #cbdcd1 !important;
+  padding-bottom: 20px !important;
+  margin-bottom: 20px !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__context-toggle {
+  background: #ebf2ee !important;
+  border-color: #cbdcd1 !important;
+  color: #3a5745 !important;
+}
+.ir-reading[data-ir-theme="mint"] .ir-reading__context-toggle:hover {
+  background: #cbdcd1 !important;
+  color: #1a2f23 !important;
+}
+.ir-reading[data-ir-theme="mint"] mark,
+.ir-reading[data-ir-theme="mint"] [data-highlight="true"] {
+  background-color: rgba(52, 211, 153, 0.15) !important;
+  border-bottom: 2px solid #34d399 !important;
+  color: inherit !important;
+}
+
+/* --- 2. 雅致书卷 (sepia) --- */
+.ir-reading[data-ir-theme="sepia"] {
+  --orca-color-bg-1: #fcf8f2 !important;
+  --orca-color-bg-2: #f5ede2 !important;
+  --orca-color-bg-3: #ebdcb9 !important;
+  --orca-color-text-1: #2c251e !important;
+  --orca-color-text-2: #6d5b4b !important;
+  --orca-color-text-3: #8c7b6c !important;
+  --orca-color-border-1: #ebdcb9 !important;
+  background: #f4ede2 !important;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__scroll {
+  background: transparent !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__inner {
+  background: #fcf8f2 !important;
+  color: #2c251e !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(44, 37, 30, 0.08) !important;
+  border: 1px solid #ebdcb9 !important;
+  margin-top: 16px !important;
+  margin-bottom: 24px !important;
+  padding: 40px 48px 96px !important;
+  padding-right: max(48px, var(--ir-content-safe-right, 48px)) !important;
+  max-width: 800px !important;
+  transition: all 0.25s ease;
+}
+.ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__body,
+.ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+  font-family: Charter, Georgia, "Nimbus Roman No9 L", "Songti SC", "Noto Serif SC", serif !important;
+  font-size: 19.5px !important;
+  line-height: 1.85 !important;
+  color: #2c251e !important;
+  letter-spacing: 0.02em !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__body .orca-block {
+  margin-block: 1.25em !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__body ::selection {
+  background-color: rgba(230, 126, 34, 0.22) !important;
+  color: inherit !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__meta {
+  border-bottom: 1px solid #ebdcb9 !important;
+  padding-bottom: 14px !important;
+  margin-bottom: 24px !important;
+  color: #8c7b6c !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__context {
+  border-bottom: 1px dashed #ebdcb9 !important;
+  padding-bottom: 20px !important;
+  margin-bottom: 20px !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__context-toggle {
+  background: #f5ede2 !important;
+  border-color: #ebdcb9 !important;
+  color: #6d5b4b !important;
+  border-radius: 6px !important;
+}
+.ir-reading[data-ir-theme="sepia"] .ir-reading__context-toggle:hover {
+  background: #ebdcb9 !important;
+  color: #2c251e !important;
+}
+.ir-reading[data-ir-theme="sepia"] mark,
+.ir-reading[data-ir-theme="sepia"] [data-highlight="true"] {
+  background-color: rgba(243, 156, 18, 0.15) !important;
+  border-bottom: 2px solid #e67e22 !important;
+  color: inherit !important;
+}
+
+/* --- 3. 学术文献 (academic) --- */
+.ir-reading[data-ir-theme="academic"] {
+  --orca-color-bg-1: #ffffff !important;
+  --orca-color-bg-2: #f3f3f3 !important;
+  --orca-color-bg-3: #e5e5e5 !important;
+  --orca-color-text-1: #111111 !important;
+  --orca-color-text-2: #444444 !important;
+  --orca-color-text-3: #666666 !important;
+  --orca-color-border-1: #dcdcdc !important;
+  background: #f5f5f5 !important;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__scroll {
+  background: transparent !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__inner {
+  background: #ffffff !important;
+  color: #111111 !important;
+  border-radius: 4px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid #dcdcdc !important;
+  margin-top: 24px !important;
+  margin-bottom: 36px !important;
+  padding: 48px 56px 96px !important;
+  padding-right: max(56px, var(--ir-content-safe-right, 56px)) !important;
+  max-width: 820px !important;
+  transition: all 0.25s ease;
+}
+.ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__body,
+.ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+  font-family: "Charter", "Baskerville", "Times New Roman", Times, serif !important;
+  font-size: 18.5px !important;
+  line-height: 1.95 !important;
+  color: #111111 !important;
+  text-align: justify !important;
+  text-justify: inter-word !important;
+  letter-spacing: 0.005em !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__body .orca-block {
+  margin-block: 1.4em !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__body ::selection {
+  background-color: rgba(254, 240, 138, 0.85) !important;
+  color: #000000 !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__meta {
+  border-bottom: 2px solid #111111 !important;
+  padding-bottom: 14px !important;
+  margin-bottom: 24px !important;
+  color: #555555 !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__context {
+  border-bottom: 1px solid #dcdcdc !important;
+  padding-bottom: 20px !important;
+  margin-bottom: 20px !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__context-toggle {
+  background: #f3f3f3 !important;
+  border-color: #dcdcdc !important;
+  color: #444444 !important;
+  border-radius: 4px !important;
+}
+.ir-reading[data-ir-theme="academic"] .ir-reading__context-toggle:hover {
+  background: #e5e5e5 !important;
+  color: #111111 !important;
+}
+.ir-reading[data-ir-theme="academic"] mark,
+.ir-reading[data-ir-theme="academic"] [data-highlight="true"] {
+  background-color: rgba(254, 240, 138, 0.7) !important;
+  border-bottom: 1px solid #eab308 !important;
+  color: inherit !important;
+}
+

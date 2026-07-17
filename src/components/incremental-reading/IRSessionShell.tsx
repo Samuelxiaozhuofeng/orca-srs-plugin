@@ -97,6 +97,14 @@ export default function IRSessionShell({
   const [breakpointError, setBreakpointError] = useState<string | null>(null)
   /** 阅读模式（默认）压平大纲视觉；编辑模式恢复原生结构操作。仅作用于本会话阅读条目。 */
   const [viewMode, setViewMode] = useState<"reading" | "edit">("reading")
+  const [theme, setTheme] = useState<"mint" | "sepia" | "academic">(() => {
+    const saved = localStorage.getItem("orca-ir-reader-theme")
+    return (saved === "sepia" || saved === "academic" || saved === "mint") ? saved : "mint"
+  })
+
+  useEffect(() => {
+    localStorage.setItem("orca-ir-reader-theme", theme)
+  }, [theme])
 
   const sessionRootRef = useRef<HTMLDivElement | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
@@ -471,7 +479,7 @@ export default function IRSessionShell({
     }
     metricsRef.current.record("session.end", progress.completed)
     return (
-      <div className="ir-reading">
+      <div className="ir-reading" data-ir-theme={theme}>
         <IRSessionSummary
           metrics={metricsRef.current.getSnapshot()}
           autoPostponeCount={0}
@@ -487,7 +495,7 @@ export default function IRSessionShell({
 
   if (isReviewEntry && currentEntry.kind === "review") {
     return (
-      <div ref={sessionRootRef} className="ir-reading ir-reading--mixed-review">
+      <div ref={sessionRootRef} className="ir-reading ir-reading--mixed-review" data-ir-theme={theme}>
         <IRSessionHeader
           progress={progress}
           remainingTimeLabel={timer.formattedRemaining}
@@ -518,6 +526,7 @@ export default function IRSessionShell({
       ref={sessionRootRef}
       className="ir-reading"
       data-ir-view-mode={viewMode}
+      data-ir-theme={theme}
       onMouseUp={breakpoint.scheduleCapture}
       onKeyUp={breakpoint.scheduleCapture}
     >
@@ -581,6 +590,33 @@ export default function IRSessionShell({
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("low")}>低</Button>
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("medium")}>中</Button>
           <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
+          <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
+            主题模式
+          </span>
+          <Button
+            tabIndex={0}
+            variant={theme === "mint" ? "solid" : "plain"}
+            onClick={() => setTheme("mint")}
+            style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
+          >
+            绿茶
+          </Button>
+          <Button
+            tabIndex={0}
+            variant={theme === "sepia" ? "solid" : "plain"}
+            onClick={() => setTheme("sepia")}
+            style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
+          >
+            书卷
+          </Button>
+          <Button
+            tabIndex={0}
+            variant={theme === "academic" ? "solid" : "plain"}
+            onClick={() => setTheme("academic")}
+            style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
+          >
+            文献
+          </Button>
           <Button
             tabIndex={0}
             variant="plain"
