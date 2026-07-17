@@ -22,6 +22,7 @@ import {
 } from "./irLibraryFilters"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
 import { buildIRSourceTree, type IRTimeNavKey } from "./irSourceTreeBuilder"
+import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useState } = window.React
 
@@ -94,24 +95,28 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
   useEffect(() => {
     let cancelled = false
     const loadTitles = async () => {
-      const missing: DbId[] = Array.from(new Set(
-        libraryCards
-          .map((card: IRCard) => card.id)
-          .filter((id: DbId) => !titleMap[String(id)] && !(orca.state.blocks?.[id] as Block | undefined)?.text)
-      ))
-      if (missing.length === 0) return
+      // 每次资料库加载都刷新标题：页面改名后 alias 会变，不能因 titleMap 已有旧值而跳过
+      const ids: DbId[] = Array.from(new Set(libraryCards.map((card: IRCard) => card.id)))
+      if (ids.length === 0) return
       try {
         const next: Record<string, string> = {}
+        // 先用内存态块（alias > text）填充，避免等待后端时闪旧编号
+        for (const id of ids) {
+          const fromState = orca.state.blocks?.[id] as Block | undefined
+          if (!fromState) continue
+          const seeded = resolveBlockDisplayTitle(fromState, "")
+          if (seeded) next[String(id)] = seeded
+        }
         const BATCH = 200
-        for (let i = 0; i < missing.length; i += BATCH) {
-          const batch = missing.slice(i, i + BATCH)
+        for (let i = 0; i < ids.length; i += BATCH) {
+          const batch = ids.slice(i, i + BATCH)
           const blocks = await orca.invokeBackend("get-blocks", batch) as Block[] | undefined
           const map = new Map<DbId, Block>()
           for (const block of blocks ?? []) {
             map.set(block.id, block)
           }
           for (const id of batch) {
-            next[String(id)] = map.get(id)?.text || "(无标题)"
+            next[String(id)] = resolveBlockDisplayTitle(map.get(id), "(无标题)")
           }
         }
         if (cancelled) return
@@ -122,7 +127,7 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     }
     void loadTitles()
     return () => { cancelled = true }
-  }, [libraryCards, titleMap])
+  }, [libraryCards])
 
   useEffect(() => {
     setSelectedCardIds((prev: Set<DbId>) => {

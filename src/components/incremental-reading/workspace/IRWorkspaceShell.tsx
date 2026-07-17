@@ -16,6 +16,7 @@ import {
   IR_WORKSPACE_MODE_EVENT,
   type IRWorkspaceModeEventDetail
 } from "./irWorkspaceLaunch"
+import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
 
@@ -140,8 +141,10 @@ export default function IRWorkspaceShell({
 
   const detailsTitle = library.detailsCard
     ? (library.titleMap[String(library.detailsCard.id)] ||
-      (orca.state.blocks?.[library.detailsCard.id] as Block | undefined)?.text ||
-      `#${library.detailsCard.id}`)
+      resolveBlockDisplayTitle(
+        orca.state.blocks?.[library.detailsCard.id] as Block | undefined,
+        `#${library.detailsCard.id}`
+      ))
     : ""
 
   return (

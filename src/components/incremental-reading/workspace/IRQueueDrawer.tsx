@@ -4,6 +4,7 @@
 
 import type { IRSessionEntry } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import { formatIRCardSourceLabel, formatIRCardTypeLabel } from "./irLibraryFilters"
+import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 import { useIRDialogFocus } from "./useIRDialogFocus"
 
 type Props = {
@@ -16,19 +17,21 @@ type Props = {
 
 function entryTitle(entry: IRSessionEntry, titleMap: Record<string, string>): string {
   if (entry.kind === "review") {
-    const block = orca.state.blocks?.[entry.card.id] as { text?: string } | undefined
-    let label = block?.text || entry.card.front || `#${entry.card.id}`
+    const block = orca.state.blocks?.[entry.card.id] as { aliases?: string[]; text?: string } | undefined
+    let label =
+      resolveBlockDisplayTitle(block, "") ||
+      entry.card.front ||
+      `#${entry.card.id}`
     if (entry.card.clozeNumber) label += ` [c${entry.card.clozeNumber}]`
     if (entry.card.directionType) {
       label += ` [${entry.card.directionType === "forward" ? "→" : "←"}]`
     }
     return label
   }
-  return (
-    titleMap[String(entry.card.id)] ||
-    (orca.state.blocks?.[entry.card.id] as { text?: string } | undefined)?.text ||
-    `#${entry.card.id}`
-  )
+  const mapped = titleMap[String(entry.card.id)]
+  if (mapped) return mapped
+  const block = orca.state.blocks?.[entry.card.id] as { aliases?: string[]; text?: string } | undefined
+  return resolveBlockDisplayTitle(block, `#${entry.card.id}`)
 }
 
 function entryTypeLabel(entry: IRSessionEntry): string {

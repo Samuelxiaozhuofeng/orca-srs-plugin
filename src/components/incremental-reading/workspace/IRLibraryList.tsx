@@ -10,6 +10,7 @@ import {
 } from "../../../srs/incrementalReadingManagerUtils"
 import IRLibraryRow from "./IRLibraryRow"
 import { groupSortedIRLibraryCards } from "./irLibraryFilters"
+import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useMemo } = window.React
 
@@ -35,9 +36,11 @@ type Props = {
 }
 
 function getTitle(cardId: DbId, titleMap: Record<string, string>): string {
-  const fromState = orca.state.blocks?.[cardId] as { text?: string } | undefined
-  if (fromState?.text) return fromState.text
-  return titleMap[String(cardId)] ?? `(#${cardId})`
+  // titleMap 由 get-blocks 按 alias > text 刷新；不得再用 state.text 覆盖回旧编号
+  const mapped = titleMap[String(cardId)]
+  if (mapped) return mapped
+  const fromState = orca.state.blocks?.[cardId] as { aliases?: string[]; text?: string } | undefined
+  return resolveBlockDisplayTitle(fromState, `(#${cardId})`)
 }
 
 export default function IRLibraryList({
