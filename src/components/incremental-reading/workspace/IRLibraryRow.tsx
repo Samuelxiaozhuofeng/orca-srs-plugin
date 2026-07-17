@@ -6,6 +6,7 @@ import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import {
   formatIRCardTypeLabel,
+  formatIRCardSourceLabel,
   formatIRDueDate,
   formatIRImportanceLabel,
   formatIRStageLabel,
@@ -46,7 +47,7 @@ export default function IRLibraryRow({
   const importanceTone = importanceLabel === "高" ? "high" : importanceLabel === "中" ? "medium" : "low"
   const stageLabel = formatIRStageLabel(card.stage)
   const dueTone = getIRDueTone(card, now)
-  const source = card.sourceBookTitle?.trim() || "—"
+  const source = formatIRCardSourceLabel(card)
 
   return (
     <div className={`ir-library-row${selected ? " ir-library-row--selected" : ""}`}>
@@ -84,7 +85,7 @@ export default function IRLibraryRow({
           </span>
           {showSource && source !== "—" ? (
             <span className="ir-tag ir-tag--source" title={source}>
-              <i className="ti ti-book" aria-hidden="true" />
+              <i className={`ti ${card.sourceWebUrl ? "ti-world-download" : "ti-book"}`} aria-hidden="true" />
               {source}
             </span>
           ) : null}

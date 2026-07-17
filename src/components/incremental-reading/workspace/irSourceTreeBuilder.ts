@@ -4,7 +4,12 @@
 
 import type { DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
-import type { IRLibraryFilters } from "./irLibraryFilters"
+import {
+  IR_WEB_SOURCE_ID,
+  isIRWebSourceCard,
+  matchesIRSourceFilter,
+  type IRLibraryFilters
+} from "./irLibraryFilters"
 import { getIRDateGroup, type IRDateGroupKey } from "../../../srs/incrementalReadingManagerUtils"
 import { priorityToTier } from "../../../srs/incremental-reading/irQueuePolicy"
 
@@ -50,7 +55,7 @@ export type IRChapterNode = {
   extracts: IRExtractNode[]
 }
 
-export type IRSourceType = "book" | "general" | "unassigned"
+export type IRSourceType = "book" | "web" | "general" | "unassigned"
 
 export type IRSourceStats = {
   totalChapterCount: number
@@ -142,6 +147,14 @@ export function getCardSourceInfo(
     }
   }
 
+  if (isIRWebSourceCard(card, topicsById)) {
+    return {
+      sourceType: "web",
+      sourceId: IR_WEB_SOURCE_ID,
+      sourceTitle: "网页"
+    }
+  }
+
   const sourceTopic = card.cardType === "topic" ? card : parentTopic
   if (sourceTopic) {
     const topicId = String(sourceTopic.id)
@@ -165,12 +178,18 @@ export function getCardSourceInfo(
 function matchesNonTimeFilters(
   card: IRCard,
   filters: IRLibraryFilters,
+  topicsById: Map<string, IRCard>,
   titleMap?: Record<string, string>
 ): boolean {
   const query = filters.query.trim().toLowerCase()
   if (query) {
     const title = (titleMap?.[String(card.id)] ?? "").toLowerCase()
-    const book = (card.sourceBookTitle ?? "").toLowerCase()
+    const parentTopic = card.cardType === "extracts" && card.sourceTopicId != null
+      ? topicsById.get(String(card.sourceTopicId))
+      : null
+    const book = (card.sourceBookTitle ?? parentTopic?.sourceBookTitle ?? "").toLowerCase()
+    const webSite = (card.sourceWebSiteName ?? parentTopic?.sourceWebSiteName ?? "").toLowerCase()
+    const webUrl = (card.sourceWebUrl ?? parentTopic?.sourceWebUrl ?? "").toLowerCase()
     const stage = (card.stage ?? "").toLowerCase()
     const type = card.cardType.toLowerCase()
     const batch = (card.batchId ?? "").toLowerCase()
@@ -178,6 +197,9 @@ function matchesNonTimeFilters(
     if (
       !title.includes(query) &&
       !book.includes(query) &&
+      !webSite.includes(query) &&
+      !webUrl.includes(query) &&
+      !(isIRWebSourceCard(card, topicsById) && "网页".includes(query)) &&
       !stage.includes(query) &&
       !type.includes(query) &&
       !batch.includes(query) &&
@@ -191,12 +213,8 @@ function matchesNonTimeFilters(
     return false
   }
 
-  if (filters.sourceBook !== "all") {
-    if (filters.sourceBook === "none") {
-      if (card.sourceBookId != null) return false
-    } else {
-      if (String(card.sourceBookId ?? "") !== filters.sourceBook) return false
-    }
+  if (!matchesIRSourceFilter(card, filters.sourceBook, topicsById)) {
+    return false
   }
 
   if (filters.stage !== "all" && card.stage !== filters.stage) {
@@ -282,7 +300,7 @@ export function buildIRSourceTree(
   }
 
   for (const card of cards) {
-    if (matchesNonTimeFilters(card, filters, titleMap)) {
+    if (matchesNonTimeFilters(card, filters, topicsById, titleMap)) {
       timeNavCounts.all += 1
       const key = getCardTimeNavKey(card, now)
       timeNavCounts[key] = (timeNavCounts[key] ?? 0) + 1
@@ -380,7 +398,7 @@ export function buildIRSourceTree(
     for (const chapter of allChapters) {
       if (!chapter.isFallback && chapter.card) {
         totalCardCountInSource += 1
-        if (matchesNonTimeFilters(chapter.card, filters, titleMap)) {
+        if (matchesNonTimeFilters(chapter.card, filters, topicsById, titleMap)) {
           sourceTimeGroupCounts.all += 1
           const k = getCardTimeNavKey(chapter.card, now)
           sourceTimeGroupCounts[k] = (sourceTimeGroupCounts[k] ?? 0) + 1
@@ -388,7 +406,7 @@ export function buildIRSourceTree(
       }
       for (const extractNode of chapter.extracts) {
         totalCardCountInSource += 1
-        if (matchesNonTimeFilters(extractNode.card, filters, titleMap)) {
+        if (matchesNonTimeFilters(extractNode.card, filters, topicsById, titleMap)) {
           sourceTimeGroupCounts.all += 1
           const k = getCardTimeNavKey(extractNode.card, now)
           sourceTimeGroupCounts[k] = (sourceTimeGroupCounts[k] ?? 0) + 1
@@ -399,13 +417,13 @@ export function buildIRSourceTree(
     // 自底向上判断保留条件
     for (const chapter of allChapters) {
       const chapterCardMatches = !chapter.isFallback && chapter.card
-        ? matchesNonTimeFilters(chapter.card, filters, titleMap) && matchesTimeFilter(chapter.card, timeNavKey, now)
+        ? matchesNonTimeFilters(chapter.card, filters, topicsById, titleMap) && matchesTimeFilter(chapter.card, timeNavKey, now)
         : false
 
       const matchedExtracts: IRExtractNode[] = []
       for (const extractNode of chapter.extracts) {
         if (
-          matchesNonTimeFilters(extractNode.card, filters, titleMap) &&
+          matchesNonTimeFilters(extractNode.card, filters, topicsById, titleMap) &&
           matchesTimeFilter(extractNode.card, timeNavKey, now)
         ) {
           matchedExtracts.push(extractNode)

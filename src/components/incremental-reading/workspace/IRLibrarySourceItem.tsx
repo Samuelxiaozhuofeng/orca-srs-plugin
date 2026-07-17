@@ -60,6 +60,16 @@ export default function IRLibrarySourceItem({
   const cardCountLabel = source.stats.matchedCardCount === source.stats.totalCardCount
     ? String(source.stats.totalCardCount)
     : `${source.stats.matchedCardCount}/${source.stats.totalCardCount}`
+  const itemUnit = source.sourceType === "book"
+    ? "章"
+    : source.sourceType === "web"
+      ? "篇"
+      : "主题"
+  const sourceIcon = source.sourceType === "book"
+    ? "ti-book"
+    : source.sourceType === "web"
+      ? "ti-world-download"
+      : "ti-folder"
 
   return (
     <section className="ir-library-source">
@@ -74,11 +84,11 @@ export default function IRLibrarySourceItem({
             className={`ti ${isExpanded ? "ti-chevron-down" : "ti-chevron-right"} ir-library-source__toggle-icon`}
             aria-hidden="true"
           />
-          <i className={`ti ${source.sourceType === "book" ? "ti-book" : "ti-folder"} ir-library-source__icon`} aria-hidden="true" />
+          <i className={`ti ${sourceIcon} ir-library-source__icon`} aria-hidden="true" />
           <span className="ir-library-source__title" title={source.title}>{source.title}</span>
           <span className="ir-library-source__stats">
             <span className="ir-library-source__badge ir-library-source__badge--main">
-              {chapterCountLabel} 章 · {cardCountLabel} 卡
+              {chapterCountLabel} {itemUnit} · {cardCountLabel} 卡
             </span>
             {overdueCount > 0 ? (
               <span className="ir-library-source__badge ir-library-source__badge--overdue">

@@ -17,6 +17,13 @@ type Props = {
   sessionLoading: boolean
   sessionEntries: IRSessionEntry[]
   timeBudgetMinutes: number
+  todayReadingSummary: {
+    total: number
+    topics: number
+    extracts: number
+  }
+  todayReadingSummaryLoading: boolean
+  todayReadingSummaryAvailable: boolean
   collectResult: IRCollectResult | null
   autoPostponeLabel: string | null
   mixedDegradedNotice: string | null
@@ -39,6 +46,9 @@ export default function IRReadingView({
   sessionLoading,
   sessionEntries,
   timeBudgetMinutes,
+  todayReadingSummary,
+  todayReadingSummaryLoading,
+  todayReadingSummaryAvailable,
   collectResult,
   autoPostponeLabel,
   mixedDegradedNotice,
@@ -95,6 +105,32 @@ export default function IRReadingView({
         <div className="ir-reading__launch">
           <div className="ir-reading__launch-title">开始专注阅读</div>
           <div className="ir-reading__launch-hint">选择本次会话模式与时间盒，系统将生成有限队列</div>
+
+          <div className="ir-reading__today-summary" aria-live="polite">
+            {todayReadingSummaryLoading ? (
+              <div className="ir-reading__today-summary-loading">正在准备今天的阅读内容…</div>
+            ) : !todayReadingSummaryAvailable ? (
+              <>
+                <div className="ir-reading__today-summary-main">暂时无法读取今日数量</div>
+                <div className="ir-reading__today-summary-reassurance">仍然可以选择时间开始阅读</div>
+              </>
+            ) : todayReadingSummary.total === 0 ? (
+              <>
+                <div className="ir-reading__today-summary-main">今天没有需要优先阅读的卡片</div>
+                <div className="ir-reading__today-summary-reassurance">也可以从资料库选择想读的内容</div>
+              </>
+            ) : (
+              <>
+                <div className="ir-reading__today-summary-main">
+                  今天为你准备了 <strong>{todayReadingSummary.total}</strong> 张
+                </div>
+                <div className="ir-reading__today-summary-breakdown">
+                  主题 {todayReadingSummary.topics} · 摘录 {todayReadingSummary.extracts}
+                </div>
+                <div className="ir-reading__today-summary-reassurance">按自己的节奏，读多少都可以</div>
+              </>
+            )}
+          </div>
 
           <div className="ir-reading__launch-field">
             <div className="ir-reading__launch-label" id={`${workspaceId}-session-mode-label`}>

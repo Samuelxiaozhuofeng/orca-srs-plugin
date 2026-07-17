@@ -6,7 +6,7 @@ import type {
   IRCardTypeFilter,
   IRImportanceFilter,
   IRLibraryFilters,
-  IRSourceBookOption
+  IRSourceOption
 } from "./irLibraryFilters"
 import { formatIRStageLabel, hasActiveIRLibraryFilters } from "./irLibraryFilters"
 
@@ -15,7 +15,7 @@ const { useState } = window.React
 type Props = {
   workspaceId: string
   filters: IRLibraryFilters
-  sourceBooks: IRSourceBookOption[]
+  sourceOptions: IRSourceOption[]
   stages: string[]
   searchInputRef: { current: HTMLInputElement | null }
   onChange: (patch: Partial<IRLibraryFilters>) => void
@@ -34,7 +34,7 @@ function countAdvancedFilters(filters: IRLibraryFilters): number {
 export default function IRLibraryToolbar({
   workspaceId,
   filters,
-  sourceBooks,
+  sourceOptions,
   stages,
   searchInputRef,
   onChange,
@@ -122,7 +122,9 @@ export default function IRLibraryToolbar({
           >
             <option value="all">全部来源</option>
             <option value="none">无来源</option>
-            {sourceBooks.map(book => <option key={book.id} value={book.id}>{book.title}（{book.count}）</option>)}
+            {sourceOptions.map(source => (
+              <option key={source.id} value={source.id}>{source.title}（{source.count}）</option>
+            ))}
           </select>
         </label>
 

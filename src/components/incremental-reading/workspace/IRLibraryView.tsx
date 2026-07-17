@@ -3,7 +3,7 @@
  */
 
 import type { DbId } from "../../../orca.d.ts"
-import type { IRLibraryFilters, IRLibrarySummary, IRSourceBookOption } from "./irLibraryFilters"
+import type { IRLibraryFilters, IRLibrarySummary, IRSourceOption } from "./irLibraryFilters"
 import type { IRSourceTreeResult, IRTimeNavKey } from "./irSourceTreeBuilder"
 import IRBulkActionBar from "./IRBulkActionBar"
 import IRLibrarySourceTree from "./IRLibrarySourceTree"
@@ -26,7 +26,7 @@ type Props = {
   isChapterExpanded: (chapterId: string) => boolean
   selectedCardIds: Set<DbId>
   advancingIds: Record<string, boolean>
-  sourceBooks: IRSourceBookOption[]
+  sourceOptions: IRSourceOption[]
   stages: string[]
   candidateBatchId: string | null
   isBatchRemoving: boolean
@@ -70,7 +70,7 @@ export default function IRLibraryView({
   isChapterExpanded,
   selectedCardIds,
   advancingIds,
-  sourceBooks,
+  sourceOptions,
   stages,
   candidateBatchId,
   isBatchRemoving,
@@ -128,7 +128,7 @@ export default function IRLibraryView({
       <IRLibraryToolbar
         workspaceId={workspaceId}
         filters={filters}
-        sourceBooks={sourceBooks}
+        sourceOptions={sourceOptions}
         stages={stages}
         searchInputRef={searchInputRef}
         onChange={onFiltersChange}

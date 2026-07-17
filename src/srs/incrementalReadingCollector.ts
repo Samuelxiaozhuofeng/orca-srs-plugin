@@ -37,6 +37,9 @@ export type IRCard = {
   readingBreakpoint?: IRReadingBreakpoint | null
   sourceBookId: DbId | null
   sourceBookTitle: string | null
+  /** Present for a Web Import Topic and inherited by its Extracts. */
+  sourceWebUrl?: string | null
+  sourceWebSiteName?: string | null
   batchId: string | null
   batchCreatedAt: Date | null
   sourceTopicId?: DbId | null
@@ -88,9 +91,29 @@ function readIRSourceMeta(block: Block) {
   return {
     sourceBookId: parseOptionalNumber(readBlockProperty(block, "ir.sourceBookId")),
     sourceBookTitle: parseOptionalString(readBlockProperty(block, "ir.sourceBookTitle")),
+    sourceWebUrl:
+      parseOptionalString(readBlockProperty(block, "web.canonicalUrl"))
+      ?? parseOptionalString(readBlockProperty(block, "web.sourceUrl")),
+    sourceWebSiteName: parseOptionalString(readBlockProperty(block, "web.siteName")),
     batchId: parseOptionalString(readBlockProperty(block, "ir.batchId")),
     batchCreatedAt: parseOptionalDate(readBlockProperty(block, "ir.batchCreatedAt")),
     sourceTopicId: parseOptionalNumber(readBlockProperty(block, "ir.sourceTopicId"))
+  }
+}
+
+type IRSourceMeta = ReturnType<typeof readIRSourceMeta>
+
+function inheritWebSourceMeta(
+  meta: IRSourceMeta,
+  sourceMetaById: Map<DbId, IRSourceMeta>
+): IRSourceMeta {
+  if (meta.sourceWebUrl || meta.sourceTopicId == null) return meta
+  const parentMeta = sourceMetaById.get(meta.sourceTopicId)
+  if (!parentMeta?.sourceWebUrl) return meta
+  return {
+    ...meta,
+    sourceWebUrl: parentMeta.sourceWebUrl,
+    sourceWebSiteName: parentMeta.sourceWebSiteName
   }
 }
 
@@ -277,6 +300,9 @@ export async function collectIRCardsFromBlocksDetailed(
     const cardType = extractCardType(block)
     return cardType === "topic" || cardType === "extracts"
   })
+  const sourceMetaById = new Map<DbId, IRSourceMeta>(
+    blocks.map(block => [block.id, readIRSourceMeta(block)])
+  )
 
   let failedCount = 0
   const mapped = await mapPool(candidates, COLLECT_CONCURRENCY, async (block) => {
@@ -295,7 +321,10 @@ export async function collectIRCardsFromBlocksDetailed(
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
       const dueDayStartTime = getDayStart(state.due).getTime()
-      const sourceMeta = readIRSourceMeta(block)
+      const sourceMeta = inheritWebSourceMeta(
+        sourceMetaById.get(block.id) ?? readIRSourceMeta(block),
+        sourceMetaById
+      )
       if (dueDayStartTime > todayStartTime) return null
 
       const cardType = extractCardType(block) as IRCardType
@@ -338,6 +367,9 @@ export async function collectAllIRCardsFromBlocks(
   pluginName: string = "srs-plugin"
 ): Promise<IRCard[]> {
   const results: IRCard[] = []
+  const sourceMetaById = new Map<DbId, IRSourceMeta>(
+    blocks.map(block => [block.id, readIRSourceMeta(block)])
+  )
 
   for (const block of blocks) {
     const cardType = extractCardType(block)
@@ -347,7 +379,10 @@ export async function collectAllIRCardsFromBlocks(
       await ensureIRState(block.id)
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
-      const sourceMeta = readIRSourceMeta(block)
+      const sourceMeta = inheritWebSourceMeta(
+        sourceMetaById.get(block.id) ?? readIRSourceMeta(block),
+        sourceMetaById
+      )
 
       results.push({
         id: block.id,

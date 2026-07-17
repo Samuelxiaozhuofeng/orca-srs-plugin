@@ -129,4 +129,92 @@ describe("collectAllIRCardsFromBlocks", () => {
     expect(result.batchId).toBe("book-abc123")
     expect(result.batchCreatedAt?.toISOString()).toBe("2026-01-18T10:00:00.000Z")
   })
+
+  it("should recognize existing Web Import properties without migration", async () => {
+    const now = new Date("2026-01-19T00:00:00Z")
+    const block = createBlock(20, "topic")
+    block.properties = [
+      { name: "web.sourceUrl", value: "https://example.com/article", type: 1 },
+      { name: "web.canonicalUrl", value: "https://example.com/article", type: 1 },
+      { name: "web.siteName", value: "Example", type: 1 }
+    ]
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "topic.preview",
+      lastAction: "init",
+      position: 1,
+      resumeBlockId: null
+    })
+    vi.mocked(loadIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "topic.preview",
+      lastAction: "init",
+      position: 1,
+      resumeBlockId: null
+    })
+
+    const [result] = await collectAllIRCardsFromBlocks([block])
+
+    expect(result.sourceWebUrl).toBe("https://example.com/article")
+    expect(result.sourceWebSiteName).toBe("Example")
+    expect(result.sourceBookId).toBeNull()
+  })
+
+  it("should inherit Web Import source metadata from the parent Topic", async () => {
+    const now = new Date("2026-01-19T00:00:00Z")
+    const topic = createBlock(30, "topic")
+    topic.properties = [
+      { name: "web.canonicalUrl", value: "https://example.com/article", type: 1 },
+      { name: "web.siteName", value: "Example", type: 1 }
+    ]
+    const extract = createBlock(31, "extracts")
+    extract.properties = [
+      { name: "ir.sourceTopicId", value: 30, type: 2 }
+    ]
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+    vi.mocked(loadIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+
+    const results = await collectAllIRCardsFromBlocks([topic, extract])
+    const extractCard = results.find(card => card.id === 31)
+
+    expect(extractCard).toMatchObject({
+      sourceTopicId: 30,
+      sourceWebUrl: "https://example.com/article",
+      sourceWebSiteName: "Example"
+    })
+  })
 })
