@@ -66,6 +66,12 @@ export type IRLibrarySummary = {
   extracts: number
 }
 
+export type IRTodayReadingSummary = {
+  total: number
+  topics: number
+  extracts: number
+}
+
 const DUE_STATUS_TO_GROUP: Record<Exclude<IRDueStatusFilter, "all">, IRDateGroupKey | IRDateGroupKey[]> = {
   overdue: "已逾期",
   today: "今天",
@@ -313,6 +319,36 @@ export function summarizeIRLibrary(
     overdue,
     today,
     newCount,
+    topics,
+    extracts
+  }
+}
+
+/**
+ * 汇总截至今天已到期的阅读卡片，口径与专注阅读收集器一致。
+ * 逾期卡片仍属于今天可进入会话的候选内容。
+ */
+export function summarizeTodayReadableIRCards(
+  cards: IRCard[],
+  now: Date = new Date()
+): IRTodayReadingSummary {
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  let topics = 0
+  let extracts = 0
+
+  for (const card of cards) {
+    const dueStart = new Date(
+      card.due.getFullYear(),
+      card.due.getMonth(),
+      card.due.getDate()
+    ).getTime()
+    if (dueStart > todayStart) continue
+    if (card.cardType === "topic") topics += 1
+    else extracts += 1
+  }
+
+  return {
+    total: topics + extracts,
     topics,
     extracts
   }

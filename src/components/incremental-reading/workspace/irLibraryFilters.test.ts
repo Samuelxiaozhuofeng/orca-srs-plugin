@@ -13,7 +13,8 @@ import {
   getIRDueTone,
   groupSortedIRLibraryCards,
   hasActiveIRLibraryFilters,
-  summarizeIRLibrary
+  summarizeIRLibrary,
+  summarizeTodayReadableIRCards
 } from "./irLibraryFilters"
 
 function createCard(partial: Partial<IRCard> & { id: number }): IRCard {
@@ -234,6 +235,21 @@ describe("irLibraryFilters", () => {
     expect(summary.newCount).toBe(1)
     expect(summary.topics).toBe(2)
     expect(summary.extracts).toBe(2)
+  })
+
+  it("summarizes overdue and today cards for the reading launch page", () => {
+    const summary = summarizeTodayReadableIRCards([
+      createCard({ id: 401, cardType: "topic", due: new Date(2026, 0, 18, 23, 59) }),
+      createCard({ id: 402, cardType: "topic", due: new Date(2026, 0, 19, 23, 59) }),
+      createCard({ id: 403, cardType: "extracts", due: new Date(2026, 0, 19, 8, 0) }),
+      createCard({ id: 404, cardType: "extracts", due: new Date(2026, 0, 20, 0, 0) })
+    ], new Date(2026, 0, 19, 14, 30))
+
+    expect(summary).toEqual({
+      total: 3,
+      topics: 2,
+      extracts: 1
+    })
   })
 
   it("formats internal card metadata for the library UI", () => {

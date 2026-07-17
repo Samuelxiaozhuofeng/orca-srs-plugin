@@ -243,6 +243,13 @@ export default function IRWorkspaceShell({
             sessionLoading={reading.session.loading}
             sessionEntries={reading.session.entries}
             timeBudgetMinutes={reading.session.timeBudgetMinutes}
+            todayReadingSummary={{
+              total: library.todayQueueInfo.totalDueCount,
+              topics: library.todayQueueInfo.topicCount,
+              extracts: library.todayQueueInfo.extractCount
+            }}
+            todayReadingSummaryLoading={library.libraryLoading}
+            todayReadingSummaryAvailable={!library.libraryError}
             collectResult={reading.session.collectResult}
             autoPostponeLabel={reading.session.autoPostponeLabel}
             mixedDegradedNotice={reading.session.mixedDegradedNotice}

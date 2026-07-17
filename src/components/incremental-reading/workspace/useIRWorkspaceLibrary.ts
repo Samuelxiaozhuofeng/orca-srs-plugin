@@ -17,6 +17,7 @@ import {
   filterAndSortIRCards,
   hasActiveIRLibraryFilters,
   summarizeIRLibrary,
+  summarizeTodayReadableIRCards,
   type IRLibraryFilters
 } from "./irLibraryFilters"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
@@ -41,6 +42,8 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
   const [todayQueueInfo, setTodayQueueInfo] = useState({
     dailyLimit: 0,
     totalDueCount: 0,
+    topicCount: 0,
+    extractCount: 0,
     overflowCount: 0,
     actionEnabled: false
   })
@@ -60,6 +63,7 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
       const now = new Date()
       const todayStart = getDayStartTime(now)
       const dueCards = cards.filter(card => getDayStartTime(card.due) <= todayStart)
+      const todayReadingSummary = summarizeTodayReadableIRCards(cards, now)
       const queue = await buildIRQueue(dueCards, {
         topicQuotaPercent: settings.topicQuotaPercent,
         dailyLimit: settings.dailyLimit,
@@ -67,7 +71,9 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
       })
       setTodayQueueInfo({
         dailyLimit: settings.dailyLimit,
-        totalDueCount: dueCards.length,
+        totalDueCount: todayReadingSummary.total,
+        topicCount: todayReadingSummary.topics,
+        extractCount: todayReadingSummary.extracts,
         overflowCount: settings.dailyLimit > 0 ? Math.max(0, dueCards.length - queue.length) : 0,
         actionEnabled: settings.enableAutoDefer
       })
