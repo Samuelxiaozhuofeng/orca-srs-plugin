@@ -14,10 +14,7 @@ import { importHtmlAsOutline } from "../epub/orcaOutlineImporter"
 import { navigateToBlock } from "../epub/orcaBookHelpers"
 import { createTopicCardByBlockId } from "../../srs/topicCardCreator"
 import { advanceDueToToday } from "../../srs/incrementalReadingStorage"
-import {
-  DEFAULT_FIRECRAWL_SCRAPE_URL,
-  getWebImportSettings
-} from "../../srs/settings/webImportSettingsSchema"
+import { getWebImportSettings } from "../../srs/settings/webImportSettingsSchema"
 import {
   PROP_TYPE_TEXT,
   WEB_PROP,
@@ -35,8 +32,9 @@ import {
 import {
   buildTitleFromMetadata,
   pickMetadataString,
-  plainTextLength,
-  sanitizeWebHtml
+  prepareWebArticleHtml,
+  sanitizeWebHtml,
+  plainTextLength
 } from "./webHtml"
 
 // ---------------------------------------------------------------------------
@@ -69,11 +67,33 @@ export {
 
 export {
   sanitizeWebHtml,
+  prepareWebArticleHtml,
   isDangerousUrl,
   resolveHttpUrl,
   buildTitleFromMetadata,
-  plainTextLength
+  plainTextLength,
+  webTitlesEquivalent,
+  buildExcerpt
 } from "./webHtml"
+
+export {
+  extractMainContent,
+  stripStructuralChrome,
+  measurePlainText
+} from "./webContentExtract"
+
+export {
+  normalizeWebArticleHtml,
+  normalizeCodeBlocks,
+  rewriteLinksForSafeDisplay,
+  unwrapLayoutTables,
+  splitLegacyBrParagraphs
+} from "./webHtmlNormalize"
+
+export {
+  removeMatchingTopHeadingWeb,
+  stripTrustedSiteSuffix
+} from "./webTitle"
 
 // ---------------------------------------------------------------------------
 // Scrape orchestration (preview — no Orca write)
@@ -86,9 +106,9 @@ export async function scrapeWebArticle(
   request: ScrapeWebArticleRequest
 ): Promise<ScrapedArticle> {
   const { sourceUrl, canonicalUrl, hostname } = validateAndNormalizeUrl(request.url)
-  const settings = getWebImportSettingsSafe(request.pluginName)
-  const apiKey = request.apiKey ?? settings.firecrawlApiKey
-  const apiUrl = request.apiUrl ?? settings.firecrawlApiUrl
+  const settings = resolveWebImportSettings(request)
+  const apiKey = settings.firecrawlApiKey
+  const apiUrl = settings.firecrawlApiUrl
 
   const { html: rawHtml, metadata } = await scrapeWithFirecrawl({
     url: sourceUrl,
@@ -100,18 +120,14 @@ export async function scrapeWebArticle(
   })
 
   const title = buildTitleFromMetadata(metadata, hostname)
-  const cleanedHtml = sanitizeWebHtml(rawHtml, sourceUrl, title)
-  const textLength = plainTextLength(cleanedHtml)
-
-  if (textLength === 0 && !cleanedHtml.trim()) {
-    throw new WebImportError(
-      "清洗后正文为空，无法导入。该页可能几乎没有正文内容",
-      "empty_html"
-    )
-  }
-
-  const author = pickMetadataString(metadata, ["author", "article:author", "og:article:author"])
-  const siteName = pickMetadataString(metadata, ["siteName", "ogSiteName", "og:site_name", "publisher"])
+  const author =
+    pickMetadataString(metadata, ["author", "article:author", "og:article:author"])
+  const siteName = pickMetadataString(metadata, [
+    "siteName",
+    "ogSiteName",
+    "og:site_name",
+    "publisher"
+  ])
   const published = pickMetadataString(metadata, [
     "publishedTime",
     "published",
@@ -119,29 +135,93 @@ export async function scrapeWebArticle(
     "og:article:published_time"
   ])
 
+  const prepared = prepareWebArticleHtml({
+    html: rawHtml,
+    baseUrl: sourceUrl,
+    pageTitle: title,
+    siteName,
+    hostname
+  })
+
+  // Prefer metadata author; fill from Readability byline when missing
+  const resolvedAuthor = author || prepared.extractedByline
+  const resolvedSiteName = siteName || prepared.extractedSiteName
+
+  if (prepared.textLength === 0) {
+    const detail = prepared.warnings.map((w) => w.message).join("；")
+    throw new WebImportError(
+      detail
+        ? `清洗后正文为空，无法导入。${detail}`
+        : "清洗后正文为空，无法导入。该页可能几乎没有正文内容",
+      "empty_html"
+    )
+  }
+
   return {
     title,
     sourceUrl,
     canonicalUrl,
     hostname,
-    author,
-    siteName,
+    author: resolvedAuthor,
+    siteName: resolvedSiteName,
     published,
-    html: cleanedHtml,
-    textLength: textLength || plainTextLength(cleanedHtml) || cleanedHtml.length
+    html: prepared.html,
+    textLength: prepared.textLength,
+    excerpt: prepared.excerpt,
+    warnings: prepared.warnings.map((w) => ({ code: w.code, message: w.message })),
+    extractionMethod: prepared.extractionMethod
   }
 }
 
-function getWebImportSettingsSafe(pluginName: string): {
+/**
+ * Resolve Firecrawl settings.
+ * - Explicit non-empty `apiKey` may proceed even if schema read fails (tests/callers).
+ * - `apiUrl`-only override still requires a successful settings read for the key.
+ * - No overrides: schema failure is a visible error (never silent empty key).
+ */
+function resolveWebImportSettings(request: ScrapeWebArticleRequest): {
   firecrawlApiKey: string
   firecrawlApiUrl: string
 } {
+  const explicitKey =
+    typeof request.apiKey === "string" ? request.apiKey.trim() : null
+  const hasNonEmptyApiKey = Boolean(explicitKey)
+
+  if (hasNonEmptyApiKey) {
+    // Non-empty explicit key: schema failure is logged but does not block (tests/callers).
+    let fromSchema: { firecrawlApiKey: string; firecrawlApiUrl: string } | null = null
+    try {
+      fromSchema = getWebImportSettings(request.pluginName)
+    } catch (error) {
+      console.error("[web-import] reading webImport settings failed:", error)
+    }
+    return {
+      firecrawlApiKey: explicitKey!,
+      firecrawlApiUrl: (request.apiUrl ?? fromSchema?.firecrawlApiUrl ?? "").trim()
+        || "https://api.firecrawl.dev/v2/scrape"
+    }
+  }
+
+  // apiUrl-only override or no overrides: settings schema is required for the API key
   try {
-    return getWebImportSettings(pluginName)
-  } catch {
-    return { firecrawlApiKey: "", firecrawlApiUrl: DEFAULT_FIRECRAWL_SCRAPE_URL }
+    const fromSchema = getWebImportSettings(request.pluginName)
+    return {
+      firecrawlApiKey: (request.apiKey ?? fromSchema.firecrawlApiKey ?? "").trim(),
+      firecrawlApiUrl: (request.apiUrl ?? fromSchema.firecrawlApiUrl ?? "").trim()
+        || "https://api.firecrawl.dev/v2/scrape"
+    }
+  } catch (error) {
+    console.error("[web-import] reading webImport settings failed:", error)
+    throw new WebImportError(
+      `无法读取网页导入设置：${error instanceof Error ? error.message : String(error)}`,
+      "api_error",
+      { cause: error }
+    )
   }
 }
+
+/** @internal test hook for settings failure semantics */
+export { resolveWebImportSettings as resolveWebImportSettingsForTest }
 
 // ---------------------------------------------------------------------------
 // Dedup

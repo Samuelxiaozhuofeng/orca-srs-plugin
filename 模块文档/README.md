@@ -95,8 +95,8 @@
     - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
-27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-16 新建
-    - Firecrawl 抓取、清洗、去重、原子写入、可选 Topic / 今天阅读、资料库「网页」来源归类
+27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-18 更新
+    - Firecrawl 抓取、本地主文提取（Readability）、标题/链接/代码清洗、预览摘要与告警、去重原子写入、可选 Topic / 今天阅读
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
 
 28. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)** — **计划文档**（顶部有落地对照）
@@ -144,3 +144,4 @@
 - **2026-07-16**：新增 [网页导入.md](网页导入.md)（Firecrawl MVP）
 - **2026-07-17**：渐进阅读主面板默认启用 Wide View，并清理 Bullet、Query Tabs 与 Query Views 宿主 chrome
 - **2026-07-18**：渐进阅读专注会话新增「绿茶 / 书卷 / 文献」主题模式，默认「绿茶」，并通过 `localStorage` 持久化用户选择
+- **2026-07-18**：网页导入强化本地主文提取、标题后缀去重、安全链接文本、代码/遗留排版与预览诊断（见 [网页导入.md](网页导入.md)、[问题经验.md](问题经验.md)）

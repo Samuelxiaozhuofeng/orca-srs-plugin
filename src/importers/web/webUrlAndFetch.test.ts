@@ -365,7 +365,7 @@ describe("scrapeWebArticle integration (mocked fetch)", () => {
       json: async () => ({
         success: true,
         data: {
-          html: "<h1>T</h1><p>Hello from the web</p>",
+          html: "<h1>T</h1><p>Hello from the web with enough characters for a real article body.</p>",
           metadata: { title: "T", siteName: "Blog" }
         }
       })
@@ -380,6 +380,100 @@ describe("scrapeWebArticle integration (mocked fetch)", () => {
     expect(article.title).toBe("T")
     expect(article.hostname).toBe("example.com")
     expect(article.textLength).toBeGreaterThan(0)
+    // Plain-text length only — never fall back to raw markup length
+    expect(article.textLength).toBeLessThan(article.html.length + 1)
+    expect(typeof article.excerpt === "string" || article.excerpt === undefined).toBe(true)
+    expect(Array.isArray(article.warnings) || article.warnings === undefined).toBe(true)
     expect(mockOrca.commands.invokeEditorCommand).not.toHaveBeenCalled()
+  })
+
+  it("rejects markup-only cleaned body as empty_html", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          html: "<div><span class='x'></span><i></i></div>",
+          metadata: { title: "Empty" }
+        }
+      })
+    })) as unknown as typeof fetch
+
+    await expect(
+      scrapeWebArticle({
+        url: "https://example.com/empty",
+        pluginName: "orca-srs",
+        fetchImpl,
+        apiKey: "k"
+      })
+    ).rejects.toMatchObject({ code: "empty_html" })
+  })
+})
+
+describe("resolveWebImportSettingsForTest", () => {
+  it("allows non-empty explicit apiKey when settings read would fail", async () => {
+    const { resolveWebImportSettingsForTest } = await import("./webImport")
+    // plugin missing from orca.state.plugins — getWebImportSettings still returns empty key object
+    // simulate failure via bogus plugin that throws when accessed oddly: stub settings getter
+    const original = mockOrca.state.plugins
+    Object.defineProperty(mockOrca.state, "plugins", {
+      configurable: true,
+      get() {
+        throw new Error("settings unavailable")
+      }
+    })
+    try {
+      const r = resolveWebImportSettingsForTest({
+        url: "https://example.com",
+        pluginName: "orca-srs",
+        apiKey: "explicit-key"
+      })
+      expect(r.firecrawlApiKey).toBe("explicit-key")
+      expect(r.firecrawlApiUrl).toContain("firecrawl")
+    } finally {
+      Object.defineProperty(mockOrca.state, "plugins", {
+        configurable: true,
+        value: original,
+        writable: true
+      })
+      // restore normal shape
+      mockOrca.state.plugins = original
+    }
+  })
+
+  it("throws when apiUrl-only override and settings read fails", async () => {
+    const { resolveWebImportSettingsForTest, WebImportError: WIE } = await import(
+      "./webImport"
+    )
+    const original = mockOrca.state.plugins
+    Object.defineProperty(mockOrca.state, "plugins", {
+      configurable: true,
+      get() {
+        throw new Error("settings unavailable")
+      }
+    })
+    try {
+      expect(() =>
+        resolveWebImportSettingsForTest({
+          url: "https://example.com",
+          pluginName: "orca-srs",
+          apiUrl: "https://custom.firecrawl.example/v2/scrape"
+        })
+      ).toThrow(WIE)
+      expect(() =>
+        resolveWebImportSettingsForTest({
+          url: "https://example.com",
+          pluginName: "orca-srs",
+          apiUrl: "https://custom.firecrawl.example/v2/scrape"
+        })
+      ).toThrow(/无法读取网页导入设置/)
+    } finally {
+      Object.defineProperty(mockOrca.state, "plugins", {
+        configurable: true,
+        value: original,
+        writable: true
+      })
+      mockOrca.state.plugins = original
+    }
   })
 })

@@ -56,6 +56,12 @@ export class WebImportError extends Error {
   }
 }
 
+/** Compact quality warning for scrape preview (no write). */
+export interface ScrapedArticleWarning {
+  code: string
+  message: string
+}
+
 export interface ScrapedArticle {
   title: string
   sourceUrl: string
@@ -65,7 +71,14 @@ export interface ScrapedArticle {
   siteName?: string
   published?: string
   html: string
+  /** Visible plain-text length after cleaning (not markup length). */
   textLength: number
+  /** Short plain-text excerpt for preview. */
+  excerpt?: string
+  /** Quality / extraction diagnostics shown before import. */
+  warnings?: ScrapedArticleWarning[]
+  /** How main content was chosen (debug / diagnostics). */
+  extractionMethod?: "readability" | "structural" | "raw_fallback"
 }
 
 export interface ScrapeWebArticleRequest {

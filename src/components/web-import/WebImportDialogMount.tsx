@@ -295,6 +295,39 @@ export default function WebImportDialog({
             <div style={{ color: "var(--orca-color-text-2)" }}>
               正文字符约 {article.textLength}
             </div>
+            {article.excerpt ? (
+              <div
+                style={{
+                  color: "var(--orca-color-text-2)",
+                  lineHeight: 1.45,
+                  marginTop: 2,
+                  maxHeight: 72,
+                  overflow: "hidden"
+                }}
+              >
+                {article.excerpt}
+              </div>
+            ) : null}
+            {article.warnings && article.warnings.length > 0 ? (
+              <div
+                role="status"
+                style={{
+                  marginTop: 2,
+                  color: "var(--orca-color-text-2)",
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2
+                }}
+              >
+                {article.warnings.slice(0, 4).map(
+                  (w: { code: string; message: string }, i: number) => (
+                    <div key={`${w.code}-${i}`}>⚠ {w.message}</div>
+                  )
+                )}
+              </div>
+            ) : null}
           </div>
 
           <label
