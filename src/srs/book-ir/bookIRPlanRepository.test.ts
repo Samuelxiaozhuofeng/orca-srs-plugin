@@ -88,11 +88,22 @@ const mockOrca = {
       return true
     })
   },
-  state: { blocks: {} as Record<number, Block> }
+  state: { blocks: {} as Record<number, Block>, repo: "test-repo" }
 }
 
 // @ts-expect-error test global
 globalThis.orca = mockOrca
+
+const memoryStorage = new Map<string, string>()
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => memoryStorage.get(key) ?? null,
+  setItem: (key: string, value: string) => {
+    memoryStorage.set(key, value)
+  },
+  removeItem: (key: string) => {
+    memoryStorage.delete(key)
+  }
+})
 
 import {
   loadBookIRPlan,
@@ -111,7 +122,8 @@ vi.mock("../incremental-reading/irIndex", () => ({
 }))
 
 vi.mock("../storage", () => ({
-  deleteCardSrsData: vi.fn(async () => undefined)
+  deleteCardSrsData: vi.fn(async () => undefined),
+  invalidateBlockCache: vi.fn()
 }))
 
 function samplePlan(bookBlockId = 100): BookIRPlanV1 {
@@ -130,7 +142,9 @@ function samplePlan(bookBlockId = 100): BookIRPlanV1 {
 
 beforeEach(() => {
   blockMap.clear()
+  memoryStorage.clear()
   mockOrca.state.blocks = {}
+  mockOrca.state.repo = "test-repo"
   vi.clearAllMocks()
   for (const id of [100, 1, 2]) {
     const block = makeBlock(id)
@@ -190,6 +204,25 @@ describe("loadBookIRPlan", () => {
 
     setProp(blockMap.get(100)!, IR_BOOK_PLAN_PROP, [JSON.stringify(plan)], 2)
     expect(await loadBookIRPlan(100)).toEqual(plan)
+  })
+
+  it("prefers backend get-block over a stale orca.state.blocks snapshot after save", async () => {
+    const oldPlan = samplePlan()
+    const newPlan: BookIRPlanV1 = {
+      ...oldPlan,
+      activeChapterId: 2,
+      outcomes: { "1": "completed", "2": "active" }
+    }
+    // Backend (blockMap) has new plan; state still has old plan
+    setProp(blockMap.get(100)!, IR_BOOK_PLAN_PROP, newPlan, PROP_TYPE_JSON)
+    const staleStateBlock = makeBlock(100)
+    setProp(staleStateBlock, IR_BOOK_PLAN_PROP, oldPlan, PROP_TYPE_JSON)
+    mockOrca.state.blocks[100] = staleStateBlock
+
+    const loaded = await loadBookIRPlan(100)
+    expect(loaded?.activeChapterId).toBe(2)
+    expect(loaded?.outcomes["1"]).toBe("completed")
+    expect(mockOrca.invokeBackend).toHaveBeenCalledWith("get-block", 100)
   })
 })
 

@@ -1,10 +1,20 @@
 /**
  * Strict BookIRPlanV1 parse/write on the book block.
+ *
+ * Reads are backend-first so a load immediately after setProperties/deleteProperties
+ * observes persisted truth rather than a stale orca.state.blocks snapshot.
+ * Every successful plan property write invalidates IR/SRS block caches for the book.
  */
 
 import type { Block, DbId } from "../../orca.d.ts"
 import type { BookIRChapterOutcome, BookIRMode, BookIRPlanV1 } from "../../importers/epub/types"
 import { EpubValidationError, IR_BOOK_PLAN_PROP } from "../../importers/epub/types"
+import { invalidateIrBlockCache } from "../incrementalReadingStorage"
+import { invalidateBlockCache } from "../storage"
+import {
+  registerSequentialBookId,
+  unregisterSequentialBookId
+} from "./sequentialBookRegistry"
 
 const MODES = new Set<BookIRMode>(["distributed", "sequential"])
 const OUTCOMES = new Set<BookIRChapterOutcome>([
@@ -18,10 +28,27 @@ const OUTCOMES = new Set<BookIRChapterOutcome>([
 /** Orca PropType.JSON — see plugin-docs/documents/Core-Editor-Commands.md */
 const PROP_TYPE_JSON = 0
 
+/**
+ * Backend-first block load. Prefer get-block so post-write reads are not stuck
+ * on a stale orca.state.blocks snapshot. State is only a fallback when backend
+ * misses or fails (failure is logged; not swallowed as empty success).
+ */
 async function getBlock(blockId: DbId): Promise<Block | undefined> {
-  const cached = orca.state.blocks?.[blockId] as Block | undefined
-  if (cached) return cached
-  return (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  try {
+    const fromBackend = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+    if (fromBackend) return fromBackend
+  } catch (error) {
+    console.warn(
+      `[BookIR] get-block #${blockId} failed while loading plan; falling back to orca.state:`,
+      error
+    )
+  }
+  return orca.state.blocks?.[blockId] as Block | undefined
+}
+
+function invalidateBookCaches(bookBlockId: DbId): void {
+  invalidateIrBlockCache(bookBlockId)
+  invalidateBlockCache(bookBlockId)
 }
 
 export function serializeBookIRPlan(plan: BookIRPlanV1): string {
@@ -120,20 +147,35 @@ export function parseBookIRPlan(raw: unknown, bookBlockId?: DbId): BookIRPlanV1 
   // Always materialize plain JSON data. Values read from orca.state.blocks may be
   // reactive Proxies; passing those to invokeEditorCommand causes
   // "An object could not be cloned." (structured clone / IPC).
+  // Deduplicate selectedChapterIds (first occurrence wins) so outcomes/order stay stable.
+  const selectedChapterIds = dedupeChapterIds(
+    Array.from(value.selectedChapterIds as DbId[], (id) => id as DbId)
+  )
+
   return {
     version: 1,
     bookBlockId: value.bookBlockId as DbId,
     mode: value.mode as BookIRMode,
     priority: value.priority,
     totalDays: value.totalDays,
-    selectedChapterIds: Array.from(
-      value.selectedChapterIds as DbId[],
-      (id) => id as DbId
-    ),
+    selectedChapterIds,
     activeChapterId: value.activeChapterId as DbId | null,
     outcomes: { ...outcomes },
     lastError: lastError ?? null
   }
+}
+
+/** Order-preserving unique DbId list (first occurrence wins). */
+export function dedupeChapterIds(ids: DbId[]): DbId[] {
+  const seen = new Set<DbId>()
+  const result: DbId[] = []
+  for (const id of ids) {
+    if (typeof id !== "number" || !Number.isFinite(id)) continue
+    if (seen.has(id)) continue
+    seen.add(id)
+    result.push(id)
+  }
+  return result
 }
 
 /**
@@ -162,6 +204,11 @@ export async function saveBookIRPlan(bookBlockId: DbId, plan: BookIRPlanV1): Pro
     [bookBlockId],
     [{ name: IR_BOOK_PLAN_PROP, value: plain, type: PROP_TYPE_JSON }]
   )
+  invalidateBookCaches(bookBlockId)
+  if (plain.mode === "sequential") {
+    // Best-effort discovery index; plan write already succeeded.
+    registerSequentialBookId(plain.bookBlockId)
+  }
 }
 
 export async function clearBookIRPlan(bookBlockId: DbId): Promise<void> {
@@ -174,6 +221,8 @@ export async function clearBookIRPlan(bookBlockId: DbId): Promise<void> {
     [bookBlockId],
     [IR_BOOK_PLAN_PROP]
   )
+  invalidateBookCaches(bookBlockId)
+  unregisterSequentialBookId(bookBlockId)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -17,8 +17,17 @@ vi.mock("../../../importers/epub/epubManifestChapters", () => ({
   getImportedChaptersFromManifest: vi.fn()
 }))
 
+vi.mock("../../../srs/book-ir/sequentialBookRegistry", () => ({
+  listRegisteredSequentialBookIds: vi.fn(() => []),
+  pruneSequentialBookIds: vi.fn()
+}))
+
 import { loadBookIRPlan } from "../../../srs/book-ir/bookIRPlanRepository"
 import { getImportedChaptersFromManifest } from "../../../importers/epub/epubManifestChapters"
+import {
+  listRegisteredSequentialBookIds,
+  pruneSequentialBookIds
+} from "../../../srs/book-ir/sequentialBookRegistry"
 import { loadSequentialBookTreeContexts } from "./loadSequentialBookTreeContexts"
 
 function makeCard(partial: Partial<IRCard> & { id: number }): IRCard {
@@ -51,6 +60,9 @@ describe("loadSequentialBookTreeContexts", () => {
   beforeEach(() => {
     vi.mocked(loadBookIRPlan).mockReset()
     vi.mocked(getImportedChaptersFromManifest).mockReset()
+    vi.mocked(listRegisteredSequentialBookIds).mockReset()
+    vi.mocked(listRegisteredSequentialBookIds).mockReturnValue([])
+    vi.mocked(pruneSequentialBookIds).mockReset()
     mockOrca.state.blocks = {}
     mockOrca.invokeBackend.mockReset()
   })
@@ -185,5 +197,56 @@ describe("loadSequentialBookTreeContexts", () => {
     expect(warnings).toEqual([])
     expect(contexts[0].bookTitle).toBe("真实书名")
     expect(mockOrca.invokeBackend).toHaveBeenCalledWith("get-block", 10)
+  })
+
+  it("discovers sequential books from registry when there are zero live IR cards", async () => {
+    vi.mocked(listRegisteredSequentialBookIds).mockReturnValue([50])
+    vi.mocked(loadBookIRPlan).mockResolvedValue({
+      version: 1,
+      bookBlockId: 50,
+      mode: "sequential",
+      priority: 50,
+      totalDays: 0,
+      selectedChapterIds: [1, 2],
+      activeChapterId: null,
+      outcomes: { "1": "completed", "2": "completed" },
+      lastError: null
+    })
+    vi.mocked(getImportedChaptersFromManifest).mockResolvedValue({
+      manifest: {} as any,
+      chapters: [
+        { blockId: 1, title: "一", key: "c1", spineIndex: 0 },
+        { blockId: 2, title: "二", key: "c2", spineIndex: 1 }
+      ]
+    })
+    mockOrca.invokeBackend.mockResolvedValue({
+      id: 50,
+      aliases: ["已完成书"],
+      text: "",
+      properties: []
+    })
+
+    const { contexts, warnings } = await loadSequentialBookTreeContexts([])
+    expect(warnings).toEqual([])
+    expect(contexts).toHaveLength(1)
+    expect(contexts[0].bookBlockId).toBe(50)
+    expect(contexts[0].bookTitle).toBe("已完成书")
+    expect(contexts[0].selectedChapterIds).toEqual([1, 2])
+    expect(pruneSequentialBookIds).not.toHaveBeenCalled()
+  })
+
+  it("prunes stale registry ids with no sequential plan and keeps read failures visible", async () => {
+    vi.mocked(listRegisteredSequentialBookIds).mockReturnValue([60, 70])
+    vi.mocked(loadBookIRPlan)
+      .mockResolvedValueOnce(null) // 60 stale
+      .mockRejectedValueOnce(new Error("backend timeout")) // 70 retryable
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const { contexts, warnings } = await loadSequentialBookTreeContexts([])
+    consoleSpy.mockRestore()
+
+    expect(contexts).toEqual([])
+    expect(pruneSequentialBookIds).toHaveBeenCalledWith([60], "orca-srs")
+    expect(warnings.some(w => w.includes("#70") && w.includes("ir.bookPlan"))).toBe(true)
   })
 })

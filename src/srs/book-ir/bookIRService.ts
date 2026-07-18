@@ -10,7 +10,7 @@ import type {
 } from "../../importers/epub/types"
 import { calculateChapterDueDates } from "../bookIRCreator"
 import { initializeChapterAsTopicIR } from "./bookIRChapterInit"
-import { loadBookIRPlan, saveBookIRPlan } from "./bookIRPlanRepository"
+import { dedupeChapterIds, loadBookIRPlan, saveBookIRPlan } from "./bookIRPlanRepository"
 import { retrySequentialActivation } from "./bookIRProgression"
 
 function createIRBatchId(): string {
@@ -20,9 +20,12 @@ function createIRBatchId(): string {
 export async function initializeBookIR(
   request: InitializeBookIRRequest
 ): Promise<BookIRMutationResult> {
-  const chapterIds = Array.isArray(request.chapterIds)
-    ? request.chapterIds.filter((id) => typeof id === "number")
-    : []
+  // Dedupe while preserving order — duplicate selectedChapterIds break sequential
+  // progression (same id can appear as "next pending" after completion) and can
+  // double-init distributed chapters.
+  const chapterIds = dedupeChapterIds(
+    Array.isArray(request.chapterIds) ? request.chapterIds : []
+  )
 
   if (chapterIds.length === 0) {
     return {
@@ -149,17 +152,8 @@ export async function retryFailedBookIRInit(
   }
 
   if (current.mode === "sequential") {
-    if (current.activeChapterId != null) {
-      return {
-        kind: "initialized",
-        bookBlockId,
-        plan: current,
-        success: [],
-        failed: [],
-        message: "顺序模式已有激活章节"
-      }
-    }
-    // First pending may never have been activated, or next activation failed
+    // Always reconcile: activeChapterId may still point at the old chapter while next
+    // already has IR (plan-save + checkpoint both failed). Early "已有激活章节" hid that.
     return retrySequentialActivation(bookBlockId, pluginName)
   }
 

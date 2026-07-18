@@ -168,6 +168,16 @@ export interface BookIRMutationResult {
   message?: string
   /** When sequential active was removed without skip/complete, sequence is paused */
   sequentialPaused?: boolean
+  /**
+   * Sequential advance only: current chapter no longer has IR identity (strip succeeded).
+   * Session UI must keep the card visible when this is false after a partial result.
+   */
+  currentChapterRemoved?: boolean
+  /**
+   * Sequential advance only: intended plan state was successfully written to the backend.
+   * False when plan save (or repair checkpoint) failed — state is retryable, not “persisted success”.
+   */
+  planPersisted?: boolean
 }
 
 /**

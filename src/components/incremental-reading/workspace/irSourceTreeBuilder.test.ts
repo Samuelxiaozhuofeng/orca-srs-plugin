@@ -443,6 +443,34 @@ describe("irSourceTreeBuilder", () => {
       expect(result.sources[0].chapters[2].isSequentialPlaceholder).toBe(true)
     })
 
+    it("19b. 零真实卡片时仍可仅凭 sequentialBooks 构建完整大纲", () => {
+      const completedPlan = {
+        ...sequentialPlan,
+        activeChapterId: null as number | null,
+        outcomes: {
+          "1": "completed" as const,
+          "2": "completed" as const,
+          "3": "completed" as const
+        }
+      }
+      const result = buildIRSourceTree([], createDefaultIRLibraryFilters(), "all", {
+        now,
+        sequentialBooks: [completedPlan],
+        titleMap: {}
+      })
+      expect(result.sources).toHaveLength(1)
+      expect(result.sources[0].sourceId).toBe("1")
+      expect(result.sources[0].chapters).toHaveLength(3)
+      expect(result.sources[0].chapters.every(c => c.isSequentialPlaceholder)).toBe(true)
+      expect(result.sources[0].chapters.every(c => c.card === null)).toBe(true)
+      expect(result.sources[0].stats.totalCardCount).toBe(0)
+      // Placeholders never enter selectable card id set
+      const selectable = result.sources[0].chapters
+        .filter(c => c.card != null)
+        .map(c => c.card!.id)
+      expect(selectable).toEqual([])
+    })
+
     it("19. 占位章节不出现在可选择 card id 集合中", () => {
       const cards = [
         makeCard({

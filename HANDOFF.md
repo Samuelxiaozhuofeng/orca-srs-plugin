@@ -1,6 +1,61 @@
 # 项目交接文档
 
-更新时间：2026-07-18
+更新时间：2026-07-18（顺序 Book IR 恢复硬化）
+
+## 2026-07-18 追加：归档入口后端真相与属性形状防护
+
+- `performArchive` / `performSkipChapter` 在识别顺序书前以后端 `get-block` 读取 `ir.sourceBookId`，不再用可能过期的 `orca.state` 快照做最终判断。
+- 支持 Orca 单元素数组属性；空、多元素或无效 `ir.sourceBookId` 显式报错，禁止误回退 `completeIRCard`。
+- 回归测试覆盖状态快照落后、数组属性和后端读取失败；该文件聚焦测试 20 项通过。
+- 本轮独立验证：`npm test` 通过（105 个测试文件、1115 项）；`npx tsc --noEmit` 通过；`npm run build` 通过并复制到 `/Users/samdagreat/Documents/orca/plugins/orca-srs/dist`。
+- 当前 Codex 浏览器没有可认领的 Orca 页面标签，因此真实实例验证仍未完成。
+
+## 2026-07-18 落地：顺序推进恢复合同 + plan 缓存 + 资料库发现
+
+### 已实现（本轮，未 commit）
+
+1. **SAC / 顺序推进失败恢复（P1）**
+   - Fully active：backend 验证 `#card` + `ir.due` + 匹配 `ir.sourceBookId`
+   - plan-save 失败：visible partial；检查点失败同时 log/报告原错误与检查点错误（无空 catch）
+   - `retrySequentialActivation`：扫描 selected 上本书 IR，保留 plan 顺序最后一章，strip 旧 dual-live，收敛到单卡
+   - 结果标志：`currentChapterRemoved` / `planPersisted`；会话 `leftCard` 跟 strip 成功与否
+   - 正常路径仍为 activate-before-strip + today/tomorrow due
+
+2. **Plan 读写缓存（P1）**
+   - `bookIRPlanRepository` backend-first `get-block`；写后 `invalidateIrBlockCache` + `invalidateBlockCache`
+
+3. **Partial UI（P1）**
+   - `performArchive` / `performSkipChapter` 传播 sequential 标志
+   - `IRSessionShell` 仅在 `outcome.leftCard` 时 `removeCurrent()`
+
+4. **P2 输入与发现**
+   - 创建 plan / parse 时 `selectedChapterIds` 去重
+   - 激活下一章：兼容 fully active 复用；外国书 IR 显式失败
+   - `sequentialBookRegistry`（repo-scoped localStorage，上限 500）：save sequential 注册，clear 注销
+   - `loadSequentialBookTreeContexts` 合并 registry + live cards；零 live 卡仍可显示大纲
+   - `irSourceTreeBuilder` 可为无卡顺序书创建 source 组 + 纯 placeholder
+
+### 本轮验证（自动化）
+
+```text
+npx vitest run src/srs/book-ir/bookIRService.test.ts \
+  src/srs/book-ir/bookIRPlanRepository.test.ts \
+  src/srs/book-ir/sequentialBookRegistry.test.ts \
+  src/srs/incremental-reading/irSessionService.archive.test.ts \
+  src/srs/incremental-reading/irSequentialActiveCadence.test.ts \
+  src/components/incremental-reading/workspace/loadSequentialBookTreeContexts.test.ts \
+  src/components/incremental-reading/workspace/irSourceTreeBuilder.test.ts
+npx tsc --noEmit
+npm test
+```
+
+### 仍待真实 Orca 验证
+
+- 人为制造 plan-save / strip 失败后 UI 是否保留当前卡、重试后是否单卡
+- 全书完成后资料库是否仍显示顺序大纲（注册表路径）
+- Proxy/`structuredClone` 在真实 `orca.state` 下的 payload 路径
+
+---
 
 ## 任务背景
 
@@ -144,17 +199,15 @@ npm run build
 
 ## 已知边界与待处理事项
 
-### 1. 无真实 IR 卡片时的顺序书发现
+### 1. 无真实 IR 卡片时的顺序书发现（本轮已落地注册表）
 
-`loadSequentialBookTreeContexts` 目前只从 `collectAllIRCards()` 返回的真实 IR 卡片中发现 `sourceBookId`，不会扫描全库的 `ir.bookPlan`。
+`loadSequentialBookTreeContexts` 合并 live `sourceBookId` 与 `sequentialBookRegistry`（localStorage，按 repo 隔离）。sequential `saveBookIRPlan` 时登记；`clearBookIRPlan` 时注销。仍**不**做全库 `get-all-blocks` 扫描。
 
-因此：
+边界：
 
-- 正常流程“完成第一章 -> 下一章激活”可以显示完整大纲。
-- 如果整本书已经全部完成、所有 IR 卡片都被移除，资料库重新打开后可能无法发现这本书。
-- 如果推进中途失败且没有任何残留 IR 卡片，也可能暂时无法发现这本书。
-
-这是当前有意保留的性能边界。若后续要彻底解决，应设计持久化的顺序书索引或受控的 plan 查询，不要简单地每次资料库加载都 `get-all-blocks` 扫描全库。
+- 注册表是发现索引，非权威；每次加载仍 `loadBookIRPlan` 校验。
+- 从未在本机成功 save 过 plan 的库（例如仅手写 plan、或换机无 localStorage）仍可能漏发现，直到下一次 sequential save。
+- 读 plan 失败不 prune；确认无 plan 才 prune 过期 id。
 
 ### 2. “明天”目前是明确的明天 00:00
 

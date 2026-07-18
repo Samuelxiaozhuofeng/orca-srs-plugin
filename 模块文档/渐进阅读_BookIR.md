@@ -60,7 +60,8 @@
 | `bookIRService.initializeBookIR` | 两种模式初始化 + 写 plan；返回 `BookIRMutationResult` |
 | `bookIRChapterInit.initializeChapterAsTopicIR` | 单章：`#card type=topic` + `ir.*`（含 `sourceBookId` / `batchId` 等）+ 入 IR 索引；**不**读写 plan / `epub.*` |
 | `bookIRProgression.advanceSequentialBook` | 完成/跳过 + 检查点式解锁下一章；读/推后/改优先级**禁止**调用 |
-| `bookIRProgression.retrySequentialActivation` | 下一章已 IR 但 plan `active=null` 时的修复 |
+| `bookIRProgression.retrySequentialActivation` | 顺序书统一修复入口：扫描 live/partial、收敛单卡、对齐 plan（含 `active!=null` 的 dual-live） |
+| `bookIRService.retryFailedBookIRInit`（sequential） | **始终**委托 `retrySequentialActivation`，不再因 `activeChapterId!=null` 早退 |
 | `bookIRRemovalService.removeBookFromIR` | 整本移出（`Promise.allSettled`）；成功则 `clearBookIRPlan` |
 | `bookIRRemovalService.removeChaptersFromIR` | 章节批量移出；顺序激活章被移出时**暂停**（`sequentialPaused`），**不**静默推进 |
 | `bookIRRemovalService.retryRemoveChaptersFromIR` | 仅重试失败章节 ID |
@@ -95,14 +96,14 @@
 
 | 层 | 行为 |
 | --- | --- |
-| 发现 | `loadSequentialBookTreeContexts`：从当前 `collectAllIRCards` 结果的 `sourceBookId` 集合加载 `mode === "sequential"` 的 `ir.bookPlan`；章节标题优先 manifest，其次块标题。plan/manifest 失败写 `console.error` 并 `orca.notify` 警告，**不**静默清空整本 |
-| 树构建 | `buildIRSourceTree` 选项 `sequentialBooks`：对 `selectedChapterIds` 中尚无 Topic 卡的章创建占位 `IRChapterNode`（`card: null`，`isSequentialPlaceholder: true`，`sequentialStatus`） |
-| 真实队列 | **不变**：仍仅 `collectAllIRCards`；占位**不**写 `#card`、**不**入索引 |
+| 发现 | `loadSequentialBookTreeContexts`：合并 **live 卡 `sourceBookId`** 与 **repo 级顺序书注册表**（`sequentialBookRegistry`，localStorage，按 `orca.state.repo` 隔离），加载 `mode === "sequential"` 的 `ir.bookPlan`；章节标题优先 manifest，其次块标题。plan/manifest 失败写 `console.error` 并进入 `warnings`，**不**静默清空整本，也**不**在读失败时 prune 注册表 |
+| 注册表 | `saveBookIRPlan`（sequential）时 `registerSequentialBookId`；`clearBookIRPlan` 时 `unregister`。仅在确认无 sequential plan 时 prune 过期 id。上限 500，不扫描 `get-all-blocks` |
+| 树构建 | `buildIRSourceTree` 选项 `sequentialBooks`：即使 **零 live 卡** 也创建 book source 组；对 `selectedChapterIds` 中尚无 Topic 卡的章创建占位 `IRChapterNode`（`card: null`，`isSequentialPlaceholder: true`，`sequentialStatus`） |
+| 真实队列 | **不变**：仍仅 `collectAllIRCards`；占位**不**写 `#card`、**不**入索引、不进批量选择 |
 | UI | 激活章：徽标「当前激活」+ 原有 due/阶段/开始阅读等；未激活/已完成/已跳过：灰化 + 文案，无操作按钮、不进 `selectedCardIds` |
 | 筛选 | 默认「全部」保留大纲；时间带与属性筛选不把纯占位当匹配卡 |
-| 边界 | 不扫描全库无卡书籍；全书完成后若库中已无该书任何 IR 卡，大纲可能不可见（主流程「完成章一 → 章二激活」已保证有卡可发现） |
 
-相关文件：`workspace/loadSequentialBookTreeContexts.ts`、`workspace/irSourceTreeBuilder.ts`、`workspace/IRLibraryChapterItem.tsx`、`workspace/useIRWorkspaceLibrary.ts`。
+相关文件：`workspace/loadSequentialBookTreeContexts.ts`、`workspace/irSourceTreeBuilder.ts`、`src/srs/book-ir/sequentialBookRegistry.ts`、`workspace/IRLibraryChapterItem.tsx`、`workspace/useIRWorkspaceLibrary.ts`。
 
 ### Sequential Active Cadence（SAC）：当前激活章的短节奏
 
@@ -164,21 +165,54 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 
 1. 校验 plan 存在、`mode=sequential`、且 `activeChapterId === request.chapterId`
 2. 找下一个 `pending` 章；若无则进入「全书完成」路径（`nextChapterSchedule` 被忽略）
-3. 若有下一章：`initializeChapterAsTopicIR` 先将其初始化为唯一目标 IR Topic（`due` 由显式 `nextChapterSchedule` 决定）  
+3. 若有下一章：安全激活为唯一目标 IR Topic（`due` 由显式 `nextChapterSchedule` 决定）  
+   - 已完全兼容（`#card` + `ir.due` + 匹配 `ir.sourceBookId`）→ 复用，不重写进度  
+   - 同书 partial（`ir.sourceBookId` 已匹配）→ 可补全激活  
+   - 属于其他书的 IR，或已有 `#card` 但 **缺少** `ir.sourceBookId` → **显式抛错**，不静默覆盖无关卡  
    - **失败则抛错**：plan 与当前章均未改动，不得 plain-complete，不得整本清理
 4. 写 plan — 记录当前 outcome，`outcomes[next]=active`（若有），`activeChapterId=next|null`
 5. `completeIRCard(request.chapterId)` **仅**剥离当前章 IR 身份（单 id：`#card` / `srs.*` / `ir.*` / 索引）  
-   - 清理失败 → `kind: "partial"`（下一章已激活、plan 已指向 next；不调用整本移出）
-6. 若有下一章，从后端再次校验其最终 `#card`；标签因连续同名 insert/remove 消失时自动补写一次，仍失败则返回 visible `partial` 并写入 `lastError`
+   - 清理失败 → `kind: "partial"`，`currentChapterRemoved: false`（下一章已激活、plan 已指向 next）
+6. 若有下一章，从后端校验**完全激活**（`#card` + `ir.due` + `sourceBookId`）；失败 → `partial` 且 `currentChapterRemoved: true`（当前章已清理）
+
+**完全激活（fully active）定义**（**严格** backend `get-block`；读失败抛错，**禁止**用 `orca.state` 冒充已验证）：
+
+- 存在 `#card` 标签，且
+- 存在有效 `ir.due`（primitive 或单元素数组；空/多元素数组不算），且
+- `ir.sourceBookId` 等于本书 `bookBlockId`（同样规范化单元素数组；经 `parseOptionalNumber`）
+
+**结果标志**（会话 UI 用）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `currentChapterRemoved` | 当前章 strip 是否成功；`false` 时会话**不得** `removeCurrent()` |
+| `planPersisted` | 目标 plan / 检查点是否已写入后端；检查点也失败时为 `false` 且消息同时报告原错误与检查点错误 |
+
+**`retrySequentialActivation` 恢复合同**：
+
+1. 扫描 `selectedChapterIds` 上属于本书的 live / partial IR（不碰 `sourceBookId` 不同的无关卡）
+2. 选择 plan 顺序中**最后**一个已有本书 IR 的章作为目标（activate-before-strip 失败时 next 在 current 之后）
+3. 将目标补全为 fully active；剥离其他 selected 上本书 IR
+4. 写 plan：`activeChapterId=target`，旧 dual-live 章 outcome → `completed`（已是 skipped/removed/completed 则保留）
+5. 成功后本书最多一张 fully active sequential 卡；无法安全收敛 → visible `partial` + `lastError`
 
 **不变量（故障相关）**：
 
 - 不得对 `selectedChapterIds` 全集批量 `removeTag` / `deleteProperties`
 - 不得从完成本章路径调用 `removeBookFromIR` / `removeChaptersFromIR`
 - pending 章默认无真实 IR 卡；不得因推进而破坏其无关标签/属性
-- 下一章只有在后端真实存在 `#card` 后才算完整激活；不能只凭 `insertTag` 未抛错或 IR 索引已写入判定成功
-- 旧实现「先 strip 再 init」会在 next 初始化失败时留下 **零 IR 卡**，资料库按 live `sourceBookId` 发现顺序书时会整本从队列/大纲消失——已改为 activate-before-strip
-- 若 3 成功而 4 失败：下一章已有 IR；broken plan 会把 `activeChapterId=null`、next 暂记 `pending` 并写 `lastError`，便于 `retrySequentialActivation` 按 live IR 修复
+- 下一章只有在后端满足 fully active 后才算完整激活；不能只凭 `insertTag` 未抛错或 IR 索引已写入判定成功
+- 旧实现「先 strip 再 init」会在 next 初始化失败时留下 **零 IR 卡**——已改为 activate-before-strip
+- 若 3 成功而 4 失败：下一章已有 IR；broken plan 会把 `activeChapterId=null`、next 暂记 `pending` 并写 `lastError`；检查点写失败时错误可见且仍可重试，**禁止空 catch**
+- 创建 plan 时 `selectedChapterIds` 去重（保序）；`parseBookIRPlan` 亦规范化重复 id
+
+### Plan 读写与缓存
+
+`bookIRPlanRepository`：
+
+- **读**：backend-first `get-block`，避免 `orca.state.blocks` 旧快照；backend 失败时 log 后回退 state
+- **写**：`setProperties` / `deleteProperties` 成功后 `invalidateIrBlockCache` + `invalidateBlockCache`
+- sequential 写入时维护 `sequentialBookRegistry`（发现索引，非权威真相）
 
 #### 下一章安排策略 `nextChapterSchedule`
 
@@ -200,6 +234,7 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 
 - `performArchive(blockId, pluginName, { nextChapterSchedule? })`：若为顺序激活章 → progression `completed` + 传入安排策略；否则普通 `completeIRCard` 归档
 - `performSkipChapter`：仅顺序书；progression `skipped`（下一章默认 `today`）
+- 会话在决定是否进入顺序推进前以后端 `get-block` 读取 `ir.sourceBookId`；状态快照缺失或过期不会再把顺序章误判为普通卡。单元素数组属性会先规范化，歧义/无效值直接暴露错误并保留可重试状态
 - UI：`IRSessionShell` 更多菜单
   - **顺序激活章「完成本章」**：`ModalOverlay` 说明当前章将标记完成，并二选一「今天安排下一章」/「明天安排下一章」；**取消/关闭不调用推进、不清理当前章**
   - **普通 IR 卡「归档」**：既有 `ConfirmBox` 确认后 `completeIRCard`

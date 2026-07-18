@@ -69,7 +69,9 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
 
       // Plan-backed sequential outline (placeholders only; does not invent IR cards)
       try {
-        const { contexts, warnings } = await loadSequentialBookTreeContexts(cards)
+        // Pass plugin name so sequentialBookRegistry uses the same repo/plugin key
+        // as collectAllIRCards / saveBookIRPlan registration.
+        const { contexts, warnings } = await loadSequentialBookTreeContexts(cards, name)
         setSequentialBooks(contexts)
         if (warnings.length > 0) {
           orca.notify(

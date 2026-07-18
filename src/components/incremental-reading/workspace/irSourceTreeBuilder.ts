@@ -394,12 +394,22 @@ export function buildIRSourceTree(
     }
   }
 
-  // Sequential outline: ensure source groups exist for books that still have live IR cards
-  // under another grouping edge-case is unnecessary — discovery is card-driven.
+  // Sequential outline: create source groups even when the book has zero live IR cards
+  // (completed / paused / recovery). Placeholders remain UI-only (card: null).
   // Upgrade book titles from plan context when cards only have "书籍 #id".
   for (const [bookId, seqCtx] of sequentialByBookId) {
-    const group = sourceGroupMap.get(bookId)
-    if (!group) continue
+    let group = sourceGroupMap.get(bookId)
+    if (!group) {
+      group = {
+        sourceType: "book",
+        sourceId: bookId,
+        sourceTitle: seqCtx.bookTitle?.trim() || `书籍 #${bookId}`,
+        topics: [],
+        extracts: []
+      }
+      sourceGroupMap.set(bookId, group)
+      continue
+    }
     if (seqCtx.bookTitle?.trim() && group.sourceTitle.startsWith("书籍 #")) {
       group.sourceTitle = seqCtx.bookTitle.trim()
     }

@@ -2,7 +2,7 @@
  * 会话动作服务：下一篇、推后、归档，并推进 stage
  */
 
-import type { DbId } from "../../orca.d.ts"
+import type { Block, DbId } from "../../orca.d.ts"
 import {
   loadIRState,
   markAsRead,
@@ -24,7 +24,19 @@ import type { NextChapterSchedule } from "../../importers/epub/types"
 
 export type SessionActionOutcome = {
   state: IRState | null
+  /**
+   * Whether the session should leave/remove the current card from the queue UI.
+   * For sequential partial results, false when the current chapter was not stripped
+   * (plan-save fail / strip fail) so the user can retry without losing the card.
+   */
   leftCard: boolean
+  /** Present when sequential advance ran (including partial). */
+  sequential?: {
+    kind: "advanced" | "partial"
+    currentChapterRemoved: boolean
+    planPersisted: boolean
+    message?: string
+  }
 }
 
 export type ArchiveOptions = {
@@ -68,10 +80,22 @@ export async function performArchive(
   const sequential = await tryAdvanceSequentialBook(blockId, "completed", pluginName, {
     nextChapterSchedule: options?.nextChapterSchedule
   })
-  if (sequential === "advanced" || sequential === "partial") {
-    return { state: null, leftCard: true }
+  if (sequential.status === "advanced" || sequential.status === "partial") {
+    // Keep session card when current chapter was not stripped (retryable partial).
+    const leftCard = sequential.currentChapterRemoved
+    return {
+      state: null,
+      leftCard,
+      sequential: {
+        kind: sequential.status,
+        currentChapterRemoved: sequential.currentChapterRemoved,
+        planPersisted: sequential.planPersisted,
+        message: sequential.message
+      }
+    }
   }
-  // not_applicable → 普通归档
+  // not_applicable only: no book / non-sequential plan → ordinary archive.
+  // not_active throws inside tryAdvanceSequentialBook (never plain-complete).
   await completeIRCard(blockId, pluginName)
   return { state: null, leftCard: true }
 }
@@ -84,13 +108,30 @@ export async function performSkipChapter(
   pluginName = "orca-srs"
 ): Promise<SessionActionOutcome> {
   const sequential = await tryAdvanceSequentialBook(blockId, "skipped", pluginName)
-  if (sequential === "not_applicable") {
+  if (sequential.status === "not_applicable") {
     throw new Error("当前卡片不是顺序解锁书籍的激活章节")
   }
-  return { state: null, leftCard: true }
+  const leftCard = sequential.currentChapterRemoved
+  return {
+    state: null,
+    leftCard,
+    sequential: {
+      kind: sequential.status,
+      currentChapterRemoved: sequential.currentChapterRemoved,
+      planPersisted: sequential.planPersisted,
+      message: sequential.message
+    }
+  }
 }
 
-type SequentialAdvanceAttempt = "advanced" | "partial" | "not_applicable"
+type SequentialAdvanceAttempt =
+  | { status: "not_applicable" }
+  | {
+      status: "advanced" | "partial"
+      currentChapterRemoved: boolean
+      planPersisted: boolean
+      message?: string
+    }
 
 type SequentialAdvanceOptions = {
   nextChapterSchedule?: NextChapterSchedule
@@ -98,7 +139,8 @@ type SequentialAdvanceOptions = {
 
 /**
  * Attempt sequential book progression.
- * - not_applicable: no sequential plan for this card → caller may use plain complete
+ * - not_applicable: no sourceBookId / no plan / non-sequential → caller may plain-complete
+ * - sequential plan but block is not activeChapterId → throws visible not_active (never plain-complete)
  * - advanced/partial: progression service ran (including partial next-init failure)
  * Throws on hard failure after progression started — do NOT plain-complete (plan may be mutated).
  */
@@ -108,18 +150,12 @@ async function tryAdvanceSequentialBook(
   pluginName: string,
   options?: SequentialAdvanceOptions
 ): Promise<SequentialAdvanceAttempt> {
-  const block =
-    (orca.state.blocks?.[blockId] as { properties?: Array<{ name: string; value: unknown }> } | undefined)
-    || ((await orca.invokeBackend("get-block", blockId)) as
-      | { properties?: Array<{ name: string; value: unknown }> }
-      | undefined)
-  // Coerce like isSequentialActiveChapter / collectors — Orca may surface PropType.Number as string.
-  // Strict typeof === "number" would fall through to plain completeIRCard and strip the only live
-  // sequential chapter without unlocking the next → whole book leaves the IR queue.
-  const bookId = parseOptionalNumber(
-    block?.properties?.find((p) => p.name === "ir.sourceBookId")?.value
-  )
-  if (bookId === null) return "not_applicable"
+  // Archive decisions must use backend truth. A stale state snapshot can omit
+  // ir.sourceBookId after a prior property write and incorrectly fall through to
+  // ordinary completeIRCard, which strips the only live sequential chapter.
+  const block = await loadBackendBlockForArchive(blockId)
+  const bookId = readSourceBookIdForArchive(block, blockId)
+  if (bookId === null) return { status: "not_applicable" }
 
   const { loadBookIRPlan } = await import("../book-ir/bookIRPlanRepository")
   let plan
@@ -130,8 +166,18 @@ async function tryAdvanceSequentialBook(
     console.error("[IR Session] ir.bookPlan invalid:", error)
     throw error
   }
-  if (!plan || plan.mode !== "sequential") return "not_applicable"
-  if (plan.activeChapterId !== blockId) return "not_applicable"
+  if (!plan || plan.mode !== "sequential") return { status: "not_applicable" }
+  if (plan.activeChapterId !== blockId) {
+    // Sequential plan exists but this chapter is not the active one (stale dual-live,
+    // paused after strip-fail lag, or user opened a non-active outline chapter).
+    // Never plain-complete: that would strip an obsolete IR card without reconciling plan.
+    const activeLabel =
+      plan.activeChapterId == null ? "null（可重试激活）" : `#${plan.activeChapterId}`
+    throw new Error(
+      `章节 #${blockId} 不是顺序书 #${bookId} 的当前激活章（active=${activeLabel}）。` +
+        `请使用「重试激活」修复计划，或仅对激活章完成本章/跳过；禁止普通归档非激活顺序章。`
+    )
+  }
 
   // Errors propagate — no silent failed return / plain-complete fallback.
   // Next-init failure throws before plan/current mutation (activate-before-strip).
@@ -150,10 +196,56 @@ async function tryAdvanceSequentialBook(
       { title: "渐进阅读" }
     )
   }
-  // Partial after progression started must not look like total success to callers that
-  // only check leftCard; still return partial so UI can leave the session card path
-  // while the warn notify exposes the incomplete strip / plan lag.
-  return result.kind === "partial" ? "partial" : "advanced"
+  // leftCard must follow strip success, not merely kind===partial.
+  // - plan-save fail / strip fail: current still live → keep session card
+  // - next #card verify fail after strip: current gone → leave card
+  const currentChapterRemoved = result.currentChapterRemoved === true
+  const planPersisted = result.planPersisted !== false
+  return {
+    status: result.kind === "partial" ? "partial" : "advanced",
+    currentChapterRemoved,
+    planPersisted,
+    message: result.message
+  }
+}
+
+async function loadBackendBlockForArchive(blockId: DbId): Promise<Block> {
+  try {
+    const block = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+    if (block) return block
+    throw new Error(`章节块不存在或后端未返回数据`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[IR Session] 读取章节 #${blockId} 后端状态失败:`, error)
+    throw new Error(`读取章节 #${blockId} 后端状态失败: ${message}`)
+  }
+}
+
+function readSourceBookIdForArchive(block: Block, blockId: DbId): number | null {
+  const property = block.properties?.find((item) => item.name === "ir.sourceBookId")
+  if (!property || property.value == null || property.value === "") return null
+
+  const raw = property.value
+  const scalar = Array.isArray(raw)
+    ? raw.length === 1
+      ? raw[0]
+      : undefined
+    : raw
+
+  if (scalar === undefined) {
+    throw new Error(
+      `章节 #${blockId} 的 ir.sourceBookId 属性形状不明确，无法安全归档`
+    )
+  }
+  if (scalar == null || scalar === "") return null
+
+  const parsed = parseOptionalNumber(scalar)
+  if (parsed === null) {
+    throw new Error(
+      `章节 #${blockId} 的 ir.sourceBookId 无效（${String(scalar)}），无法安全归档`
+    )
+  }
+  return parsed
 }
 
 /**

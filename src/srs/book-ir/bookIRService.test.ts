@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Block, DbId } from "../../orca.d.ts"
 
 const blockMap = new Map<DbId, Block>()
@@ -79,7 +79,7 @@ const mockOrca = {
     })
   },
   notify: vi.fn(),
-  state: { blocks: {} as Record<number, Block> }
+  state: { blocks: {} as Record<number, Block>, repo: "test-repo" }
 }
 
 // @ts-expect-error test global
@@ -99,21 +99,39 @@ vi.mock("../incremental-reading/irIndex", () => ({
 }))
 
 vi.mock("../storage", () => ({
-  deleteCardSrsData: vi.fn(async () => undefined)
+  deleteCardSrsData: vi.fn(async () => undefined),
+  invalidateBlockCache: vi.fn()
 }))
 
-import { initializeBookIR } from "./bookIRService"
-import { advanceSequentialBook, resolveNextChapterDue } from "./bookIRProgression"
+import { initializeBookIR, retryFailedBookIRInit } from "./bookIRService"
+import {
+  advanceSequentialBook,
+  isChapterFullyActive,
+  resolveNextChapterDue
+} from "./bookIRProgression"
 import { removeBookFromIR, removeChaptersFromIR } from "./bookIRRemovalService"
 import { parseBookIRPlan, toPlainJsonValue } from "./bookIRPlanRepository"
 import { calculateChapterDueDates } from "../bookIRCreator"
 import { IR_BOOK_PLAN_PROP } from "../../importers/epub/types"
 
+const memoryStorage = new Map<string, string>()
+
 beforeEach(() => {
   blockMap.clear()
   irIndex.clear()
+  memoryStorage.clear()
   mockOrca.state.blocks = {}
+  mockOrca.state.repo = "test-repo"
   vi.clearAllMocks()
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => memoryStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      memoryStorage.set(key, value)
+    },
+    removeItem: (key: string) => {
+      memoryStorage.delete(key)
+    }
+  })
   // seed chapters + book
   for (const id of [100, 1, 2, 3]) {
     const b = makeBlock(id, `block-${id}`)
@@ -776,5 +794,369 @@ describe("plan validation", () => {
   it("rejects malformed plan", () => {
     expect(() => parseBookIRPlan("{bad")).toThrow()
     expect(() => parseBookIRPlan(JSON.stringify({ version: 9 }))).toThrow()
+  })
+
+  it("dedupes selectedChapterIds on parse (first wins)", () => {
+    const plan = parseBookIRPlan(
+      {
+        version: 1,
+        bookBlockId: 100,
+        mode: "sequential",
+        priority: 50,
+        totalDays: 5,
+        selectedChapterIds: [1, 2, 1, 3, 2],
+        activeChapterId: 1,
+        outcomes: { "1": "active", "2": "pending", "3": "pending" },
+        lastError: null
+      },
+      100
+    )
+    expect(plan.selectedChapterIds).toEqual([1, 2, 3])
+  })
+})
+
+describe("initializeBookIR chapter id dedupe", () => {
+  it("dedupes duplicate chapterIds so progression order stays unique", async () => {
+    const result = await initializeBookIR({
+      bookBlockId: 100,
+      bookTitle: "Book",
+      chapterIds: [1, 2, 1, 3, 2],
+      mode: "sequential",
+      priority: 50,
+      totalDays: 5
+    })
+    expect(result.plan!.selectedChapterIds).toEqual([1, 2, 3])
+    expect(result.success).toEqual([1])
+    // Only first chapter activated once
+    expect(blockMap.get(1)!.properties?.filter((p) => p.name === "ir.due")).toHaveLength(1)
+  })
+})
+
+describe("advanceSequentialBook plan-save / retry recovery", () => {
+  const defaultEditorImpl = mockOrca.commands.invokeEditorCommand.getMockImplementation()!
+
+  afterEach(() => {
+    mockOrca.commands.invokeEditorCommand.mockImplementation(defaultEditorImpl)
+  })
+
+  async function setupSequential() {
+    mockOrca.commands.invokeEditorCommand.mockImplementation(defaultEditorImpl)
+    await initializeBookIR({
+      bookBlockId: 100,
+      bookTitle: "Book",
+      chapterIds: [1, 2, 3],
+      mode: "sequential",
+      priority: 50,
+      totalDays: 5
+    })
+  }
+
+  it("plan-save failure after next init returns partial, keeps current, dual-live until retry", async () => {
+    await setupSequential()
+    let planWriteCount = 0
+    mockOrca.commands.invokeEditorCommand.mockImplementation(async (command: string, ...args: any[]) => {
+      if (command === "core.editor.setProperties") {
+        const props = args[2] as Array<{ name: string }>
+        if (props.some((p) => p.name === IR_BOOK_PLAN_PROP)) {
+          planWriteCount++
+          // First plan write after next init is the afterAdvance save — fail it.
+          // Second is the broken checkpoint — allow.
+          if (planWriteCount === 1) {
+            throw new Error("plan save boom")
+          }
+        }
+      }
+      return defaultEditorImpl(command, ...args)
+    })
+
+    const result = await advanceSequentialBook({
+      bookBlockId: 100,
+      chapterId: 1,
+      outcome: "completed",
+      nextChapterSchedule: "today"
+    })
+
+    expect(result.kind).toBe("partial")
+    expect(result.currentChapterRemoved).toBe(false)
+    expect(result.planPersisted).toBe(true) // checkpoint saved
+    // Current still live
+    expect(blockMap.get(1)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBe(true)
+    expect(blockMap.get(1)!.properties?.some((p) => p.name === "ir.due")).toBe(true)
+    // Next already has IR
+    expect(blockMap.get(2)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBe(true)
+    expect(blockMap.get(2)!.properties?.find((p) => p.name === "ir.sourceBookId")?.value).toBe(100)
+
+    const plan = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    expect(plan.activeChapterId).toBeNull()
+    expect(plan.lastError).toMatch(/计划保存失败/)
+  })
+
+  it("surfaces both errors when plan save and checkpoint write fail", async () => {
+    await setupSequential()
+    mockOrca.commands.invokeEditorCommand.mockImplementation(async (command: string, ...args: any[]) => {
+      if (command === "core.editor.setProperties") {
+        const props = args[2] as Array<{ name: string }>
+        if (props.some((p) => p.name === IR_BOOK_PLAN_PROP)) {
+          throw new Error("plan ipc dead")
+        }
+      }
+      return defaultEditorImpl(command, ...args)
+    })
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await advanceSequentialBook({
+      bookBlockId: 100,
+      chapterId: 1,
+      outcome: "completed"
+    })
+    consoleSpy.mockRestore()
+
+    expect(result.kind).toBe("partial")
+    expect(result.currentChapterRemoved).toBe(false)
+    expect(result.planPersisted).toBe(false)
+    expect(result.message).toMatch(/检查点/)
+    expect(result.message).toMatch(/plan ipc dead/)
+    // Backend plan unchanged (still original active=1)
+    const plan = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    expect(plan.activeChapterId).toBe(1)
+    // Dual live IR still present
+    expect(blockMap.get(1)!.refs?.some((r) => r.alias === "card")).toBe(true)
+    expect(blockMap.get(2)!.refs?.some((r) => r.alias === "card")).toBe(true)
+  })
+
+  it("retrySequentialActivation reconciles dual-live to single card after plan-save failure", async () => {
+    await setupSequential()
+    let planWriteCount = 0
+    mockOrca.commands.invokeEditorCommand.mockImplementation(async (command: string, ...args: any[]) => {
+      if (command === "core.editor.setProperties") {
+        const props = args[2] as Array<{ name: string }>
+        if (props.some((p) => p.name === IR_BOOK_PLAN_PROP)) {
+          planWriteCount++
+          if (planWriteCount === 1) throw new Error("plan save boom")
+        }
+      }
+      return defaultEditorImpl(command, ...args)
+    })
+
+    await advanceSequentialBook({
+      bookBlockId: 100,
+      chapterId: 1,
+      outcome: "completed"
+    })
+    // Restore normal plan writes for retry
+    mockOrca.commands.invokeEditorCommand.mockImplementation(defaultEditorImpl)
+
+    const { retrySequentialActivation } = await import("./bookIRProgression")
+    const repaired = await retrySequentialActivation(100)
+    expect(repaired.kind).toBe("advanced")
+    expect(repaired.plan!.activeChapterId).toBe(2)
+    expect(repaired.plan!.outcomes["2"]).toBe("active")
+    // Single live sequential card
+    expect(blockMap.get(2)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBe(true)
+    expect(blockMap.get(2)!.properties?.find((p) => p.name === "ir.sourceBookId")?.value).toBe(100)
+    expect(blockMap.get(1)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBeFalsy()
+    expect(blockMap.get(3)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBeFalsy()
+  })
+
+  it("retry completes due-only partial next (missing #card) into fully active", async () => {
+    await setupSequential()
+    // Simulate half-init: next has ir.due + sourceBookId but no #card
+    setProp(blockMap.get(2)!, "ir.due", new Date(), 5)
+    setProp(blockMap.get(2)!, "ir.sourceBookId", 100, 3)
+    blockMap.get(2)!.refs = []
+    // Broken plan after failed advance
+    const broken = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    await (await import("./bookIRPlanRepository")).saveBookIRPlan(100, {
+      ...broken,
+      activeChapterId: null,
+      outcomes: { ...broken.outcomes, "1": "active", "2": "pending" },
+      lastError: "partial next"
+    })
+    // Leave current live — retry should prefer last partial/live and strip current
+    const { retrySequentialActivation } = await import("./bookIRProgression")
+    const repaired = await retrySequentialActivation(100)
+    expect(repaired.kind).toBe("advanced")
+    expect(repaired.plan!.activeChapterId).toBe(2)
+    expect(blockMap.get(2)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBe(true)
+    expect(blockMap.get(2)!.properties?.some((p) => p.name === "ir.due")).toBe(true)
+    // At most one live card for this book
+    const liveCount = [1, 2, 3].filter((id) => {
+      const b = blockMap.get(id)!
+      const hasCard = b.refs?.some((r) => r.type === 2 && r.alias === "card")
+      const source = b.properties?.find((p) => p.name === "ir.sourceBookId")?.value
+      return hasCard && source === 100
+    }).length
+    expect(liveCount).toBe(1)
+  })
+
+  it("refuses to wipe a chapter that already belongs to another book", async () => {
+    await setupSequential()
+    // Chapter 2 has IR for a different book
+    setProp(blockMap.get(2)!, "ir.due", new Date(), 5)
+    setProp(blockMap.get(2)!, "ir.sourceBookId", 999, 3)
+    blockMap.get(2)!.refs = [{ type: 2, alias: "card", to: 2 } as any]
+
+    await expect(
+      advanceSequentialBook({
+        bookBlockId: 100,
+        chapterId: 1,
+        outcome: "completed"
+      })
+    ).rejects.toThrow(/属于书籍 #999/)
+
+    // Current chapter untouched
+    expect(blockMap.get(1)!.refs?.some((r) => r.alias === "card")).toBe(true)
+    const plan = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    expect(plan.activeChapterId).toBe(1)
+  })
+
+  it("refuses to overwrite unrelated #card with missing sourceBookId (no init commands)", async () => {
+    await setupSequential()
+    // Pending chapter has an existing unrelated card + IR/SRS-like props, no sourceBookId
+    const ch2 = blockMap.get(2)!
+    ch2.refs = [{ type: 2, alias: "card", to: 2 } as any]
+    setProp(ch2, "ir.due", new Date("2030-01-01"), 5)
+    setProp(ch2, "ir.priority", 80, 3)
+    setProp(ch2, "ir.readCount", 5, 3)
+    setProp(ch2, "srs.due", new Date("2030-02-01"), 5)
+    // Explicitly no ir.sourceBookId
+
+    const commandsBefore = mockOrca.commands.invokeEditorCommand.mock.calls.length
+
+    await expect(
+      advanceSequentialBook({
+        bookBlockId: 100,
+        chapterId: 1,
+        outcome: "completed",
+        nextChapterSchedule: "today"
+      })
+    ).rejects.toThrow(/缺少 ir\.sourceBookId/)
+
+    // No editor mutations after the throw path for chapter 2 (no insertTag/setProperties on 2)
+    const newCalls = mockOrca.commands.invokeEditorCommand.mock.calls.slice(commandsBefore)
+    // invokeEditorCommand(cmd, null, blockId|ids, ...)
+    const ch2Mutations = newCalls.filter((call) => {
+      const command = call[0] as string
+      if (command === "core.editor.insertTag") {
+        return call[2] === 2
+      }
+      if (command === "core.editor.setRefData") {
+        const ref = call[2] as { from?: DbId; to?: DbId } | undefined
+        return ref?.from === 2 || ref?.to === 2
+      }
+      if (command === "core.editor.setProperties" || command === "core.editor.deleteProperties") {
+        const ids = call[2] as DbId[]
+        return Array.isArray(ids) && ids.includes(2)
+      }
+      if (command === "core.editor.removeTag") {
+        return call[2] === 2
+      }
+      return false
+    })
+    expect(ch2Mutations).toHaveLength(0)
+
+    // Unrelated progress preserved
+    expect(ch2.properties?.find((p) => p.name === "ir.readCount")?.value).toBe(5)
+    expect(ch2.properties?.find((p) => p.name === "srs.due")).toBeTruthy()
+    expect(ch2.refs?.some((r) => r.alias === "card")).toBe(true)
+
+    const plan = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    expect(plan.activeChapterId).toBe(1)
+    expect(blockMap.get(1)!.refs?.some((r) => r.alias === "card")).toBe(true)
+  })
+})
+
+describe("retryFailedBookIRInit sequential reconciliation", () => {
+  it("reconciles dual-live when plan still points at the old chapter", async () => {
+    await initializeBookIR({
+      bookBlockId: 100,
+      bookTitle: "Book",
+      chapterIds: [1, 2, 3],
+      mode: "sequential",
+      priority: 50,
+      totalDays: 5
+    })
+    // Simulate plan-save + checkpoint both failed: plan still active=1, but next already has IR
+    const ch2 = blockMap.get(2)!
+    ch2.refs = [{ type: 2, alias: "card", to: 2 } as any]
+    setProp(ch2, "ir.due", new Date(), 5)
+    setProp(ch2, "ir.sourceBookId", 100, 3)
+    setProp(ch2, "ir.priority", 50, 3)
+
+    const planBefore = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    expect(planBefore.activeChapterId).toBe(1)
+    expect(blockMap.get(1)!.refs?.some((r) => r.alias === "card")).toBe(true)
+    expect(blockMap.get(2)!.refs?.some((r) => r.alias === "card")).toBe(true)
+
+    const result = await retryFailedBookIRInit(100, "Book")
+    expect(result.kind).toBe("advanced")
+    expect(result.plan!.activeChapterId).toBe(2)
+    expect(result.plan!.outcomes["2"]).toBe("active")
+    // Single live sequential card for this book
+    expect(blockMap.get(2)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBe(true)
+    expect(blockMap.get(1)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBeFalsy()
+    expect(blockMap.get(3)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBeFalsy()
+  })
+})
+
+describe("isChapterFullyActive strict backend truth", () => {
+  it("accepts single-element Orca arrays for ir.sourceBookId and ir.due", async () => {
+    const block = blockMap.get(1)!
+    block.refs = [{ type: 2, alias: "card", to: 1 } as any]
+    setProp(block, "ir.due", [new Date("2026-07-18T00:00:00")], 5)
+    setProp(block, "ir.sourceBookId", [100], 3)
+    // Keep state empty so truth must come from get-block → blockMap
+    mockOrca.state.blocks = {}
+
+    await expect(isChapterFullyActive(1, 100)).resolves.toBe(true)
+    // multi-element source is not fully active
+    setProp(block, "ir.sourceBookId", [100, 200], 3)
+    await expect(isChapterFullyActive(1, 100)).resolves.toBe(false)
+    // empty array due is not fully active
+    setProp(block, "ir.sourceBookId", 100, 3)
+    setProp(block, "ir.due", [], 5)
+    await expect(isChapterFullyActive(1, 100)).resolves.toBe(false)
+  })
+
+  it("propagates backend get-block failures instead of trusting orca.state", async () => {
+    const stale = makeBlock(1, "stale")
+    stale.refs = [{ type: 2, alias: "card", to: 1 } as any]
+    setProp(stale, "ir.due", new Date(), 5)
+    setProp(stale, "ir.sourceBookId", 100, 3)
+    mockOrca.state.blocks[1] = stale
+    // Backend fails — must not report fully active from stale state
+    mockOrca.invokeBackend.mockImplementation(async (command: string, id: DbId) => {
+      if (command === "get-block" && id === 1) {
+        throw new Error("backend offline")
+      }
+      if (command === "get-block") return blockMap.get(id)
+      return undefined
+    })
+
+    await expect(isChapterFullyActive(1, 100)).rejects.toThrow(/后端状态失败|backend offline/)
+
+    // Restore default backend mock so later suites in the same worker stay healthy
+    mockOrca.invokeBackend.mockImplementation(async (command: string, id: DbId) => {
+      if (command === "get-block") return blockMap.get(id)
+      return undefined
+    })
   })
 })

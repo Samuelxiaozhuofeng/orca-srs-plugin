@@ -389,12 +389,16 @@ export default function IRSessionShell({
     if (!currentCard) return
     try {
       await breakpoint.flush()
-      await performArchive(currentCard.id, pluginName, options)
+      const outcome = await performArchive(currentCard.id, pluginName, options)
       metricsRef.current.record("action.archive")
       setCompleteChapterOpen(false)
-      removeCurrent()
+      // Sequential partial may keep the current chapter live (strip/plan incomplete).
+      // Only leave the session card when the service reports leftCard.
+      if (outcome.leftCard) {
+        removeCurrent()
+      }
       // 顺序推进服务自身也会 notify 详细结果；此处仅对普通归档补一条成功提示
-      if (!options?.nextChapterSchedule) {
+      if (!options?.nextChapterSchedule && !outcome.sequential) {
         orca.notify("success", "已归档", { title: "渐进阅读" })
       }
     } catch (error) {
@@ -409,9 +413,11 @@ export default function IRSessionShell({
     if (!currentCard) return
     try {
       await breakpoint.flush()
-      await performSkipChapter(currentCard.id, pluginName)
+      const outcome = await performSkipChapter(currentCard.id, pluginName)
       metricsRef.current.record("action.archive")
-      removeCurrent()
+      if (outcome.leftCard) {
+        removeCurrent()
+      }
     } catch (error) {
       console.error("[IR Session] 跳过章节失败:", error)
       orca.notify("error", error instanceof Error ? error.message : "跳过章节失败", {
