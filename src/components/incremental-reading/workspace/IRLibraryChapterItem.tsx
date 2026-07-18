@@ -43,6 +43,17 @@ function getCardTitle(cardId: DbId, titleMap: Record<string, string>): string {
   return resolveBlockDisplayTitle(fromState, `(#${cardId})`)
 }
 
+function sequentialChapterClassName(chapter: IRChapterNode): string {
+  if (!chapter.sequentialStatus) return ""
+  if (chapter.sequentialStatus === "active" && chapter.card) {
+    return "ir-library-chapter--sequential-active"
+  }
+  if (chapter.isSequentialPlaceholder || chapter.sequentialStatus !== "active") {
+    return `ir-library-chapter--sequential-${chapter.sequentialStatus}`
+  }
+  return "ir-library-chapter--sequential-active"
+}
+
 export default function IRLibraryChapterItem({
   chapter,
   titleMap,
@@ -67,7 +78,10 @@ export default function IRLibraryChapterItem({
     chapterCard,
     isContextOnly,
     canExpand,
-    extractCountLabel
+    extractCountLabel,
+    sequentialStatus,
+    sequentialStatusLabel,
+    isSequentialPlaceholder
   } = getIRChapterPresentation(chapter)
   const dueLabel = chapter.due ? formatIRDueDate(chapter.due) : "无到期日"
   const stageLabel = formatIRStageLabel(chapter.stage)
@@ -75,6 +89,12 @@ export default function IRLibraryChapterItem({
   const canAdvanceLearn = chapterCard
     ? FUTURE_GROUPS.includes(getIRDateGroup(chapterCard, now))
     : false
+  const sequentialClass = sequentialChapterClassName(chapter)
+  const contentAriaLabel = [
+    chapter.title,
+    sequentialStatusLabel,
+    chapterCard ? `${dueLabel}，${stageLabel}` : null
+  ].filter(Boolean).join("，")
 
   useEffect(() => {
     if (groupCheckboxRef.current) {
@@ -86,6 +106,8 @@ export default function IRLibraryChapterItem({
     <div className={[
       "ir-library-chapter",
       isContextOnly ? "ir-library-chapter--context" : "",
+      isSequentialPlaceholder ? "ir-library-chapter--placeholder" : "",
+      sequentialClass,
       chapterCard && selectedCount > 0 ? "ir-library-chapter--selected" : ""
     ].filter(Boolean).join(" ")}>
       <div className="ir-library-chapter__header">
@@ -120,17 +142,53 @@ export default function IRLibraryChapterItem({
             />
           ) : null}
 
-          <i className="ti ti-bookmark ir-library-chapter__icon" aria-hidden="true" />
+          <i
+            className={[
+              "ti",
+              sequentialStatus === "active" ? "ti-player-play" : "ti-bookmark",
+              "ir-library-chapter__icon"
+            ].join(" ")}
+            aria-hidden="true"
+          />
 
           <button
             type="button"
             className="ir-library-chapter__content"
-            onClick={() => canExpand ? onToggleExpand(chapter.chapterId) : chapterCard && onOpenDetails(chapterCard.id)}
+            onClick={() => {
+              if (canExpand) {
+                onToggleExpand(chapter.chapterId)
+                return
+              }
+              if (chapterCard) {
+                onOpenDetails(chapterCard.id)
+              }
+            }}
             aria-expanded={canExpand ? isExpanded : undefined}
-            title={canExpand ? (isExpanded ? "收起章节摘录" : "展开章节摘录") : "查看章节详情"}
+            aria-label={contentAriaLabel}
+            title={
+              canExpand
+                ? (isExpanded ? "收起章节摘录" : "展开章节摘录")
+                : chapterCard
+                  ? "查看章节详情"
+                  : sequentialStatusLabel
+                    ? `${chapter.title}（${sequentialStatusLabel}）`
+                    : chapter.title
+            }
+            disabled={isSequentialPlaceholder && !canExpand}
           >
             <span className="ir-library-chapter__title" title={chapter.title}>{chapter.title}</span>
             <span className="ir-library-chapter__metadata">
+              {sequentialStatusLabel ? (
+                <span
+                  className={[
+                    "ir-library-chapter__status",
+                    `ir-library-chapter__status--${sequentialStatus}`
+                  ].join(" ")}
+                  aria-label={sequentialStatusLabel}
+                >
+                  {sequentialStatusLabel}
+                </span>
+              ) : null}
               {chapterCard ? (
                 <>
                   <span className="ir-library-chapter__meta">{dueLabel}</span>

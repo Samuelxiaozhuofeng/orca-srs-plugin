@@ -1,8 +1,9 @@
 # 渐进阅读 Book IR（建书 / 顺序 / 退出）
 
-> **文档同步日期：2026-07-13**  
+> **文档同步日期：2026-07-18**  
 > 以 `src/srs/book-ir/*`、`src/srs/bookIRCreator.ts`、会话内顺序推进与右键/命令入口为实现真相。  
-> 通用 IR 会话与工作区见 [`渐进阅读.md`](渐进阅读.md)。EPUB 纯笔记导入见 [`EPUB导入.md`](EPUB导入.md)。
+> 通用 IR 会话与工作区见 [`渐进阅读.md`](渐进阅读.md)。EPUB 纯笔记导入见 [`EPUB导入.md`](EPUB导入.md)。  
+> 排期写回细节见 [`记忆排期推送.md`](记忆排期推送.md)。
 
 ## 概述
 
@@ -10,8 +11,8 @@
 
 | 模式 | `mode` | 行为 |
 | --- | --- | --- |
-| **分散排期**（默认） | `distributed` | 选中章节**全部**初始化为 Topic IR；第 1 章 `due` 为今天，其余按 `totalDays` 分散 |
-| **顺序解锁** | `sequential` | 计划记录全部 `selectedChapterIds`；**同时只激活一章**（写 `#card` + IR）；完成或跳过才解锁下一章 |
+| **分散排期**（默认） | `distributed` | 选中章节**全部**初始化为 Topic IR；第 1 章 `due` 为今天，其余按 `totalDays` 分散；之后各章走**普通 Topic 记忆型排期**（基础间隔 + ×1.25 增长） |
+| **顺序解锁** | `sequential` | 计划记录全部 `selectedChapterIds`；**同时只激活一章**（写 `#card` + IR）；完成或跳过才解锁下一章。**当前激活章**在「下一篇」时走 **Sequential Active Cadence（SAC）短节奏**，与普通 Topic 记忆间隔分离 |
 
 移出渐进阅读只清理卡片身份与调度，**不删除**笔记正文、图片、引用或 `epub.*` 溯源。
 
@@ -33,10 +34,10 @@
 | `version` | `1` | 计划 schema 版本，固定 1 |
 | `bookBlockId` | `DbId` | 稳定书籍身份（不用 `batchId` 当书身份） |
 | `mode` | `"distributed" \| "sequential"` | 排期/解锁模式 |
-| `priority` | `number` | 章节 Topic 初始化优先级 |
-| `totalDays` | `number` | 分散模式跨度（天） |
+| `priority` | `number` | 章节 Topic 初始化优先级（写入各章 `ir.priority`；顺序激活章的 SAC 也读该优先级） |
+| `totalDays` | `number` | **仅分散模式**用于首次 due 跨度（天）。顺序模式会保存该字段（schema 必填、UI 可录入），但**不参与**顺序解锁、不作为每章间隔、也不驱动 SAC。勿把它当成「每章 N 天」 |
 | `selectedChapterIds` | `DbId[]` | 第二阶段选中的章节，顺序即阅读/解锁顺序 |
-| `activeChapterId` | `DbId \| null` | 顺序模式当前章；无激活则为 `null`（含暂停或刚完成章尚未激活下一章的检查点） |
+| `activeChapterId` | `DbId \| null` | 顺序模式当前章；无激活则为 `null`（含暂停、全书完成、或推进失败后的可重试态） |
 | `outcomes` | `Record<string, BookIRChapterOutcome>` | 每章结果 |
 | `lastError` | `string \| null`（可选） | 顺序下一章激活失败等可诊断错误 |
 
@@ -88,23 +89,122 @@
 - 打开/阅读、下一篇、推后、改优先级**不得**解锁下一章
 - `completed` 与 `skipped` 在 plan 中可区分，但对解锁行为等价（都会尝试激活下一 `pending`）
 
+### 资料库展示（顺序大纲，非队列）
+
+顺序模式同一时间通常只有**一张** Topic IR（`activeChapterId`）。资料库树不能只渲染真实卡，否则完成第一章后用户会只看到下一激活章、甚至在短暂无卡窗口看到「没有匹配的渐进阅读卡片」。
+
+| 层 | 行为 |
+| --- | --- |
+| 发现 | `loadSequentialBookTreeContexts`：从当前 `collectAllIRCards` 结果的 `sourceBookId` 集合加载 `mode === "sequential"` 的 `ir.bookPlan`；章节标题优先 manifest，其次块标题。plan/manifest 失败写 `console.error` 并 `orca.notify` 警告，**不**静默清空整本 |
+| 树构建 | `buildIRSourceTree` 选项 `sequentialBooks`：对 `selectedChapterIds` 中尚无 Topic 卡的章创建占位 `IRChapterNode`（`card: null`，`isSequentialPlaceholder: true`，`sequentialStatus`） |
+| 真实队列 | **不变**：仍仅 `collectAllIRCards`；占位**不**写 `#card`、**不**入索引 |
+| UI | 激活章：徽标「当前激活」+ 原有 due/阶段/开始阅读等；未激活/已完成/已跳过：灰化 + 文案，无操作按钮、不进 `selectedCardIds` |
+| 筛选 | 默认「全部」保留大纲；时间带与属性筛选不把纯占位当匹配卡 |
+| 边界 | 不扫描全库无卡书籍；全书完成后若库中已无该书任何 IR 卡，大纲可能不可见（主流程「完成章一 → 章二激活」已保证有卡可发现） |
+
+相关文件：`workspace/loadSequentialBookTreeContexts.ts`、`workspace/irSourceTreeBuilder.ts`、`workspace/IRLibraryChapterItem.tsx`、`workspace/useIRWorkspaceLibrary.ts`。
+
+### Sequential Active Cadence（SAC）：当前激活章的短节奏
+
+**问题**：顺序模式虽只激活一章，但章节卡原先复用普通 Topic 排期（priority=50 时基础间隔约 8 天，每次「下一篇」×1.25），导致一章分三次阅读可能拖到 20+ 天。
+
+**适用范围**（必须同时满足）：
+
+1. 书籍 `ir.bookPlan.mode === "sequential"`
+2. 当前块 `blockId === plan.activeChapterId`
+3. 章节带 `ir.sourceBookId` 指向该书籍
+
+**不走 SAC**（保持原 Topic/Extract 行为）：普通 Topic、Extract、distributed 各章、顺序计划中**非** active 的章（通常本就无 IR）。
+
+**基线间隔**（`ir.priority` 0–100，经 `normalizePriority`；公式在 `irSchedulingHelpers.getSequentialActiveBaseIntervalDays`）：
+
+```text
+baseIntervalDays = 1 + 2 * (1 - priority / 100)
+```
+
+| priority | 约期间隔 |
+| --- | --- |
+| 0 | 3 天 |
+| 50 | 2 天 |
+| 100 | 1 天 |
+
+间隔最终 ≥ 1 天。数值 **1/2/3 天是产品启发式**，不是学习科学给出的固定最优；与「记忆巩固」的 Topic 增长是不同目标。
+
+**有实际阅读进展时**：下一次仍用 SAC 短节奏重算，**不**使用 Topic 的 ×1.25 增长。
+
+**停滞保护**（防超长章/空转占满队列）：
+
+- 进度指纹来自现有字段：`ir.resumeBlockId` + `ir.breakpoint`（`readingBreakpoint` 的 preview/selection；**不含** `updatedAt`）
+- 可选持久化：`ir.sacProgressKey`、`ir.sacStagnantCount`（缺失视为无历史，**不**批量迁移旧数据）
+- 连续「下一篇」且指纹不变 → `stagnantCount` 递增，间隔 `base + stagnantCount * 1` 天，**上限约 6 天**
+- 指纹变化（resume/断点实质前进）→ 停滞计数清零
+- **局限说明**：若用户阅读却从未写回断点/resume，指纹会一直为空，连续 next 会被判停滞并逐渐拉长间隔——保守策略，与断点写入路径一致
+
+**手动意图优先**：
+
+- `postpone` / 会话推后：立即写 `due`/`intervalDays`/`lastAction=postpone`；**打开卡片不会**用 SAC 静默覆盖
+- 仅在用户再次「下一篇」等写路径时按 SAC 重算下一轮
+- 显式改优先级：SAC 章按新 priority 重算短节奏（属用户意图）；非 SAC 仍比例修正
+
+**兼容**：
+
+- 不重写历史 `ir.bookPlan`、不批量 re-anchor 已有 due
+- 从**下一次** `markAsRead` / 相关写路径起对新逻辑生效；已经很远的 due 保持到用户动作再变
+- `totalDays` 在 sequential 中仍只是存盘字段，与 SAC 无关
+
+**实现位置**：
+
+- 纯函数：`src/srs/incremental-reading/irSchedulingHelpers.ts`（`getSequentialActiveBaseIntervalDays` / `computeSacIntervalDays` / `nextSacStagnation` / `isSequentialActiveChapter`）
+- 写路径：`irSchedulingMutations.markAsRead`（及 priority 相关）、`irSessionService.performNext` → `markAsRead`
+- 测试：`src/srs/incremental-reading/irSequentialActiveCadence.test.ts`
+
 ### 推进状态机（检查点）
 
-`advanceSequentialBook` 顺序（失败可重试）：
+`advanceSequentialBook` 顺序（**先激活下一章，再清理当前章**，失败可重试）：
 
 1. 校验 plan 存在、`mode=sequential`、且 `activeChapterId === request.chapterId`
-2. **检查点 A**：写 plan — 记录 outcome，`activeChapterId = null`
-3. `completeIRCard` 剥离当前章 IR 身份（失败则尝试恢复原 plan）
-4. 找下一个 `pending` 章；若无则返回「全书完成/跳过完毕」
-5. `initializeChapterAsTopicIR` 激活下一章（due=今天）
-6. 写 plan — `outcomes[next]=active`，`activeChapterId=next`  
-   若 5 成功而 6 失败：下一章已有 IR 但 plan 可能仍 `active=null` → `retrySequentialActivation` 可修复
+2. 找下一个 `pending` 章；若无则进入「全书完成」路径（`nextChapterSchedule` 被忽略）
+3. 若有下一章：`initializeChapterAsTopicIR` 先将其初始化为唯一目标 IR Topic（`due` 由显式 `nextChapterSchedule` 决定）  
+   - **失败则抛错**：plan 与当前章均未改动，不得 plain-complete，不得整本清理
+4. 写 plan — 记录当前 outcome，`outcomes[next]=active`（若有），`activeChapterId=next|null`
+5. `completeIRCard(request.chapterId)` **仅**剥离当前章 IR 身份（单 id：`#card` / `srs.*` / `ir.*` / 索引）  
+   - 清理失败 → `kind: "partial"`（下一章已激活、plan 已指向 next；不调用整本移出）
+6. 若有下一章，从后端再次校验其最终 `#card`；标签因连续同名 insert/remove 消失时自动补写一次，仍失败则返回 visible `partial` 并写入 `lastError`
+
+**不变量（故障相关）**：
+
+- 不得对 `selectedChapterIds` 全集批量 `removeTag` / `deleteProperties`
+- 不得从完成本章路径调用 `removeBookFromIR` / `removeChaptersFromIR`
+- pending 章默认无真实 IR 卡；不得因推进而破坏其无关标签/属性
+- 下一章只有在后端真实存在 `#card` 后才算完整激活；不能只凭 `insertTag` 未抛错或 IR 索引已写入判定成功
+- 旧实现「先 strip 再 init」会在 next 初始化失败时留下 **零 IR 卡**，资料库按 live `sourceBookId` 发现顺序书时会整本从队列/大纲消失——已改为 activate-before-strip
+- 若 3 成功而 4 失败：下一章已有 IR；broken plan 会把 `activeChapterId=null`、next 暂记 `pending` 并写 `lastError`，便于 `retrySequentialActivation` 按 live IR 修复
+
+#### 下一章安排策略 `nextChapterSchedule`
+
+类型：`NextChapterSchedule = "today" | "tomorrow"`（定义于 `AdvanceSequentialBookRequest`）。**禁止**隐式全局状态；调用方必须把用户选择显式传入。
+
+| 值 | 下一章 `ir.due` | plan | 今日队列 |
+| --- | --- | --- | --- |
+| `today`（默认） | 本地今天 00:00 | `outcomes[next]=active`，`activeChapterId=next` | **立即**可作为到期卡进入 IR 队列 |
+| `tomorrow` | 本地明天 00:00 | 同上（完成结果与激活语义不变） | 今日**不**当作到期卡；明日起进入队列 |
+
+- 选择 **tomorrow** 只改下一章 due，**不**改变当前章 `completed`/`skipped` 记录，也不改变「下一章成为 active」的计划状态。
+- `retrySequentialActivation` 修复路径仍默认 `today`，便于把失败卡住的下一章立刻拉回队列。
+- 传给 `invokeEditorCommand` 的 plan / ref / 属性必须是可 structured clone 的纯 JSON（`parseBookIRPlan` 会物化数组与 outcomes；`saveBookIRPlan` 再 plain 克隆）。避免把 `orca.state` 上的 Proxy 直接写入导致 `An object could not be cloned.`。
+- Orca 的 type=2 属性经 `get-block` 可能返回单元素数组；EPUB 仓库会在读取边界解包后再严格解析 `epub.manifest`，多元素数组仍视为非法。
+- 激活下一章时会继承当前章 `ir.sourceBookTitle`；若为空则从书籍块 alias/text 恢复。资料库 header 也使用书籍块标题兜底，避免显示“书籍 #id”。
+- IR 索引 localStorage key 使用 `orca.state.repo` 隔离；切换数据库后不会复用另一库的 block ID。
 
 会话侧：
 
-- `performArchive`（`irSessionService.ts`）：若卡带 `ir.sourceBookId` 且为顺序激活章 → progression `completed`；否则普通归档
-- `performSkipChapter`：仅顺序书；progression `skipped`
-- UI：`IRSessionShell` 更多菜单「完成本章」/「跳过本章并继续」
+- `performArchive(blockId, pluginName, { nextChapterSchedule? })`：若为顺序激活章 → progression `completed` + 传入安排策略；否则普通 `completeIRCard` 归档
+- `performSkipChapter`：仅顺序书；progression `skipped`（下一章默认 `today`）
+- UI：`IRSessionShell` 更多菜单
+  - **顺序激活章「完成本章」**：`ModalOverlay` 说明当前章将标记完成，并二选一「今天安排下一章」/「明天安排下一章」；**取消/关闭不调用推进、不清理当前章**
+  - **普通 IR 卡「归档」**：既有 `ConfirmBox` 确认后 `completeIRCard`
+  - **顺序书「跳过本章并继续」**：`ConfirmBox`（与完成结果不同，下一章默认今天）
+- 失败时错误必须暴露（`归档失败：${message}`），不得吞错后 plain-complete；检查点失败仍可重试
 - 命令：`{plugin}.skipSequentialChapter`（提示在会话内操作）
 
 ## 退出语义（移出 IR）
@@ -150,6 +250,7 @@
 - `src/srs/book-ir/bookIRService.test.ts`（初始化、顺序推进、移出、plan 校验）
 - `src/srs/book-ir/bookIRPlanRepository.test.ts`
 - `src/srs/book-ir/bookIRRemovalConfirm.test.ts`
+- `src/srs/incremental-reading/irSequentialActiveCadence.test.ts`（SAC 公式、停滞、postpone 不静默覆盖、Topic/distributed 回归）
 
 ## 相关文件
 

@@ -166,7 +166,9 @@ export const IR_SCHEDULING_PROPERTY_NAMES = new Set([
   "ir.position",
   "ir.resumeBlockId",
   "ir.breakpoint",
-  "ir.autoPostponeBatchId"
+  "ir.autoPostponeBatchId",
+  "ir.sacProgressKey",
+  "ir.sacStagnantCount"
 ])
 
 export function getBlockCreatedDate(block: Block): Date | null {

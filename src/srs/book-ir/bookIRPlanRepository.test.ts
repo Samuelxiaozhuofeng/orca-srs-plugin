@@ -49,6 +49,42 @@ const mockOrca = {
         }
         return true
       }
+      if (command === "core.editor.insertTag") {
+        const blockId = args[1] as DbId
+        const alias = args[2] as string
+        const block = blockMap.get(blockId)!
+        block.refs = [
+          ...(block.refs ?? []),
+          {
+            id: 9000 + blockId,
+            from: blockId,
+            to: 8,
+            type: 2,
+            alias
+          } as Block["refs"][number]
+        ]
+        return 9000 + blockId
+      }
+      if (command === "core.editor.removeTag") {
+        const blockId = args[1] as DbId
+        const alias = args[2] as string
+        const block = blockMap.get(blockId)!
+        block.refs = (block.refs ?? []).filter(
+          ref => !(ref.type === 2 && ref.alias === alias)
+        )
+        return true
+      }
+      if (command === "core.editor.deleteProperties") {
+        const ids = args[1] as DbId[]
+        const names = args[2] as string[]
+        for (const id of ids) {
+          const block = blockMap.get(id)!
+          block.properties = (block.properties ?? []).filter(
+            property => !names.includes(property.name)
+          )
+        }
+        return true
+      }
       return true
     })
   },
@@ -66,7 +102,7 @@ import {
 import { advanceSequentialBook } from "./bookIRProgression"
 
 vi.mock("../cardTagDataBuilder", () => ({
-  buildCardTagData: vi.fn(async () => ({}))
+  buildCardTagData: vi.fn(async () => [{ name: "type", value: "topic" }])
 }))
 
 vi.mock("../incremental-reading/irIndex", () => ({

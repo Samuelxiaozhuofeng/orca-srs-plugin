@@ -3,6 +3,7 @@
  */
 
 import type { DbId } from "../../../orca.d.ts"
+import type { BookIRChapterOutcome } from "../../../importers/epub/types"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import {
   IR_WEB_SOURCE_ID,
@@ -35,6 +36,23 @@ export const IR_TIME_NAV_LABELS: Record<IRTimeNavKey, string> = {
   later: "7 天后"
 }
 
+/** Sequential plan chapter display status (library outline only; not IR queue state). */
+export type IRSequentialChapterStatus = "active" | "pending" | "completed" | "skipped"
+
+/**
+ * Plan-backed outline for sequential Book IR books.
+ * Used only to render non-card placeholders; never invents IRCard / queue entries.
+ */
+export type SequentialBookTreeContext = {
+  bookBlockId: DbId
+  bookTitle?: string
+  selectedChapterIds: DbId[]
+  activeChapterId: DbId | null
+  outcomes: Record<string, BookIRChapterOutcome>
+  /** chapterId string → display title (manifest / block title) */
+  chapterTitles?: Record<string, string>
+}
+
 export type IRExtractNode = {
   type: "extract"
   card: IRCard
@@ -53,6 +71,18 @@ export type IRChapterNode = {
   stage: string
   priority: number
   extracts: IRExtractNode[]
+  /**
+   * Sequential Book IR outline status. Set for plan chapters (with or without a live card).
+   * Null/undefined for non-sequential topics and fallback extract groups.
+   */
+  sequentialStatus?: IRSequentialChapterStatus | null
+  /**
+   * True when this node exists only as plan outline (no live Topic IR card).
+   * Placeholders must not expose IR card actions or enter selection.
+   */
+  isSequentialPlaceholder?: boolean
+  /** Index in plan.selectedChapterIds for stable sequential ordering. */
+  sequentialOrder?: number
 }
 
 export type IRSourceType = "book" | "web" | "general" | "unassigned"
@@ -247,16 +277,92 @@ function getCardTitle(cardId: DbId, titleMap?: Record<string, string>): string {
 }
 
 /**
+ * Resolve sequential outline status for a plan chapter.
+ * activeChapterId wins over stale outcomes when they disagree.
+ */
+export function resolveSequentialChapterStatus(
+  chapterId: DbId,
+  plan: Pick<SequentialBookTreeContext, "activeChapterId" | "outcomes">
+): IRSequentialChapterStatus | null {
+  const key = String(chapterId)
+  const outcome = plan.outcomes[key]
+  if (outcome === "removed") return null
+  if (plan.activeChapterId != null && String(plan.activeChapterId) === key) {
+    return "active"
+  }
+  if (outcome === "completed") return "completed"
+  if (outcome === "skipped") return "skipped"
+  if (outcome === "active") return "active"
+  // pending or missing outcome in selected plan
+  return "pending"
+}
+
+/**
+ * Whether a pure sequential placeholder (no live topic card) should survive prune.
+ * Default "全部" view keeps the full outline; advanced time/type/stage filters only
+ * keep placeholders that still have matched extracts or a matching title query.
+ */
+function shouldKeepSequentialPlaceholder(
+  chapter: IRChapterNode,
+  filters: IRLibraryFilters,
+  timeNavKey: IRTimeNavKey,
+  sourceId: string,
+  sourceType: IRSourceType
+): boolean {
+  if (!chapter.isSequentialPlaceholder || !chapter.sequentialStatus) return false
+
+  // Time nav other than "all" is about real due cards — hide pure placeholders.
+  if (timeNavKey !== "all") return false
+
+  // Respect source filter (placeholders have no IRCard to pass matchesIRSourceFilter).
+  if (filters.sourceBook !== "all") {
+    if (filters.sourceBook === IR_WEB_SOURCE_ID) return false
+    if (filters.sourceBook === "none") return false
+    if (sourceType !== "book" || sourceId !== filters.sourceBook) return false
+  }
+
+  // Attribute filters apply only to live cards.
+  if (filters.cardType !== "all") return false
+  if (filters.stage !== "all") return false
+  if (filters.importance !== "all") return false
+  // dueStatus is not used by the tree time path; timeNavKey covers it.
+
+  const query = filters.query.trim().toLowerCase()
+  if (query) {
+    return chapter.title.toLowerCase().includes(query) || chapter.chapterId.includes(query)
+  }
+
+  return true
+}
+
+function resolveChapterTitle(
+  chapterId: string,
+  titleMap: Record<string, string> | undefined,
+  sequentialTitles: Record<string, string> | undefined
+): string {
+  if (titleMap?.[chapterId]) return titleMap[chapterId]
+  if (sequentialTitles?.[chapterId]) return sequentialTitles[chapterId]
+  return `(#${chapterId})`
+}
+
+/**
  * 构建完整的稳定来源树并实施自下而上的剪枝及排序
  */
 export function buildIRSourceTree(
   cards: IRCard[],
   filters: IRLibraryFilters,
   timeNavKey: IRTimeNavKey = "all",
-  options: { now?: Date; titleMap?: Record<string, string> } = {}
+  options: {
+    now?: Date
+    titleMap?: Record<string, string>
+    sequentialBooks?: SequentialBookTreeContext[]
+  } = {}
 ): IRSourceTreeResult {
   const now = options.now ?? new Date()
   const titleMap = options.titleMap
+  const sequentialByBookId = new Map(
+    (options.sequentialBooks ?? []).map(ctx => [String(ctx.bookBlockId), ctx] as const)
+  )
   const topicsById = new Map(
     cards
       .filter(card => card.cardType === "topic")
@@ -288,6 +394,17 @@ export function buildIRSourceTree(
     }
   }
 
+  // Sequential outline: ensure source groups exist for books that still have live IR cards
+  // under another grouping edge-case is unnecessary — discovery is card-driven.
+  // Upgrade book titles from plan context when cards only have "书籍 #id".
+  for (const [bookId, seqCtx] of sequentialByBookId) {
+    const group = sourceGroupMap.get(bookId)
+    if (!group) continue
+    if (seqCtx.bookTitle?.trim() && group.sourceTitle.startsWith("书籍 #")) {
+      group.sourceTitle = seqCtx.bookTitle.trim()
+    }
+  }
+
   // 2) 统计在通过非时间过滤的候选卡片中的时间带分布数量
   const timeNavCounts: Record<IRTimeNavKey, number> = {
     all: 0,
@@ -312,10 +429,21 @@ export function buildIRSourceTree(
   // 3) 为每个来源构建完整树并进行自下而上的裁剪 (Bottom-up Pruning)
   for (const group of sourceGroupMap.values()) {
     const chapterMap = new Map<string, IRChapterNode>()
+    const sequentialCtx =
+      group.sourceType === "book" ? sequentialByBookId.get(group.sourceId) : undefined
+    const sequentialOrder = new Map<string, number>()
+    if (sequentialCtx) {
+      sequentialCtx.selectedChapterIds.forEach((id, index) => {
+        sequentialOrder.set(String(id), index)
+      })
+    }
 
     // 创建普通真实主题卡章节
     for (const topicCard of group.topics) {
       const chapterId = String(topicCard.id)
+      const sequentialStatus = sequentialCtx
+        ? resolveSequentialChapterStatus(topicCard.id, sequentialCtx)
+        : null
       chapterMap.set(chapterId, {
         type: "chapter",
         chapterId,
@@ -327,13 +455,53 @@ export function buildIRSourceTree(
         sortDue: topicCard.due,
         stage: topicCard.stage || "topic.preview",
         priority: topicCard.priority,
-        extracts: []
+        extracts: [],
+        sequentialStatus,
+        isSequentialPlaceholder: false,
+        sequentialOrder: sequentialOrder.get(chapterId)
       })
+    }
+
+    // 顺序计划占位：为 selectedChapterIds 中尚无真实 Topic IR 的章节创建大纲节点
+    if (sequentialCtx) {
+      for (const chapterDbId of sequentialCtx.selectedChapterIds) {
+        const chapterId = String(chapterDbId)
+        const sequentialStatus = resolveSequentialChapterStatus(chapterDbId, sequentialCtx)
+        if (sequentialStatus == null) continue // removed
+
+        const existing = chapterMap.get(chapterId)
+        if (existing) {
+          // Live card already present — annotate plan status only
+          existing.sequentialStatus = sequentialStatus
+          existing.sequentialOrder = sequentialOrder.get(chapterId)
+          if (!titleMap?.[chapterId] && sequentialCtx.chapterTitles?.[chapterId]) {
+            existing.title = sequentialCtx.chapterTitles[chapterId]
+          }
+          continue
+        }
+
+        chapterMap.set(chapterId, {
+          type: "chapter",
+          chapterId,
+          isFallback: false,
+          card: null,
+          cardMatches: false,
+          title: resolveChapterTitle(chapterId, titleMap, sequentialCtx.chapterTitles),
+          due: null,
+          sortDue: null,
+          stage: "",
+          priority: 0,
+          extracts: [],
+          sequentialStatus,
+          isSequentialPlaceholder: true,
+          sequentialOrder: sequentialOrder.get(chapterId)
+        })
+      }
     }
 
     const unassignedExtracts: IRCard[] = []
 
-    // 摘录归入真实章节或记录到孤立列表
+    // 摘录归入真实章节或记录到孤立列表（含顺序占位章节：完成后若仍有摘录可挂回）
     for (const extractCard of group.extracts) {
       const parentTopicId = extractCard.sourceTopicId != null ? String(extractCard.sourceTopicId) : null
       if (parentTopicId && chapterMap.has(parentTopicId)) {
@@ -395,6 +563,7 @@ export function buildIRSourceTree(
     let matchedCardCountInSource = 0
 
     // 计算该来源在所有真实卡片上的统计（基于满足 matchesNonTimeFilters 的卡片算作该来源时间负载统计）
+    // 顺序占位章节不计入卡片/时间统计
     for (const chapter of allChapters) {
       if (!chapter.isFallback && chapter.card) {
         totalCardCountInSource += 1
@@ -430,8 +599,19 @@ export function buildIRSourceTree(
         }
       }
 
-      // 只要章节自身或其后代摘录命中，该章节分支保留
-      if (chapterCardMatches || matchedExtracts.length > 0) {
+      const keepPlaceholder =
+        !chapterCardMatches &&
+        matchedExtracts.length === 0 &&
+        shouldKeepSequentialPlaceholder(
+          chapter,
+          filters,
+          timeNavKey,
+          group.sourceId,
+          group.sourceType
+        )
+
+      // 章节自身命中、摘录命中、或默认视图下的顺序占位 → 保留
+      if (chapterCardMatches || matchedExtracts.length > 0 || keepPlaceholder) {
         matchedExtracts.sort((a, b) => {
           const diff = a.card.due.getTime() - b.card.due.getTime()
           if (diff !== 0) return diff
@@ -455,23 +635,42 @@ export function buildIRSourceTree(
           ...chapter,
           cardMatches: Boolean(chapterCardMatches),
           sortDue,
-          extracts: matchedExtracts
+          extracts: matchedExtracts,
+          // 占位节点在仅靠 outline 保留时仍标记为占位
+          isSequentialPlaceholder: chapter.isSequentialPlaceholder === true && !chapter.card
         })
       }
     }
 
     if (prunedChapters.length > 0) {
-      prunedChapters.sort((a, b) => {
-        const timeA = a.sortDue ? a.sortDue.getTime() : Number.MAX_SAFE_INTEGER
-        const timeB = b.sortDue ? b.sortDue.getTime() : Number.MAX_SAFE_INTEGER
-        const diff = timeA - timeB
-        if (diff !== 0) return diff
+      if (sequentialCtx) {
+        // 顺序书：按 plan.selectedChapterIds 稳定排序；兜底摘录章放末尾
+        prunedChapters.sort((a, b) => {
+          if (a.isFallback !== b.isFallback) return a.isFallback ? 1 : -1
+          const orderA = a.sequentialOrder ?? Number.MAX_SAFE_INTEGER
+          const orderB = b.sequentialOrder ?? Number.MAX_SAFE_INTEGER
+          if (orderA !== orderB) return orderA - orderB
+          return a.chapterId.localeCompare(b.chapterId)
+        })
+      } else {
+        prunedChapters.sort((a, b) => {
+          const timeA = a.sortDue ? a.sortDue.getTime() : Number.MAX_SAFE_INTEGER
+          const timeB = b.sortDue ? b.sortDue.getTime() : Number.MAX_SAFE_INTEGER
+          const diff = timeA - timeB
+          if (diff !== 0) return diff
 
-        const titleDiff = a.title.localeCompare(b.title, "zh")
-        if (titleDiff !== 0) return titleDiff
+          const titleDiff = a.title.localeCompare(b.title, "zh")
+          if (titleDiff !== 0) return titleDiff
 
-        return a.chapterId.localeCompare(b.chapterId)
-      })
+          return a.chapterId.localeCompare(b.chapterId)
+        })
+      }
+
+      const plannedChapterCount = sequentialCtx
+        ? sequentialCtx.selectedChapterIds.filter(
+            id => resolveSequentialChapterStatus(id, sequentialCtx) != null
+          ).length
+        : group.topics.length
 
       sources.push({
         type: "source",
@@ -480,7 +679,7 @@ export function buildIRSourceTree(
         title: group.sourceTitle,
         chapters: prunedChapters,
         stats: {
-          totalChapterCount: group.topics.length,
+          totalChapterCount: plannedChapterCount,
           matchedChapterCount: prunedChapters.filter(chapter => !chapter.isFallback).length,
           timeGroupCardCounts: sourceTimeGroupCounts,
           totalCardCount: totalCardCountInSource,

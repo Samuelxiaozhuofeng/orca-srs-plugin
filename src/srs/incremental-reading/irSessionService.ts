@@ -15,10 +15,24 @@ import { advanceIRStage, type StageTriggerAction } from "./irStageTransitions"
 import { adjustIntervalForPriorityChange } from "./irQueuePolicy"
 import { normalizePriority } from "../incrementalReadingScheduler"
 import { computeDueFromIntervalDays } from "../incrementalReadingDispersal"
+import {
+  computeSacIntervalDays,
+  isSequentialActiveChapter
+} from "./irSchedulingHelpers"
+import { parseOptionalNumber } from "./irPropertyCodec"
+import type { NextChapterSchedule } from "../../importers/epub/types"
 
 export type SessionActionOutcome = {
   state: IRState | null
   leftCard: boolean
+}
+
+export type ArchiveOptions = {
+  /**
+   * 顺序解锁完成本章后下一章 due 安排。普通 IR 归档忽略此字段。
+   * 必须由调用方显式传入；服务内不使用隐式全局状态。
+   */
+  nextChapterSchedule?: NextChapterSchedule
 }
 
 export async function performNext(blockId: DbId): Promise<SessionActionOutcome> {
@@ -47,17 +61,17 @@ export async function performPostpone(
 
 export async function performArchive(
   blockId: DbId,
-  pluginName = "orca-srs"
+  pluginName = "orca-srs",
+  options?: ArchiveOptions
 ): Promise<SessionActionOutcome> {
   // 顺序书籍：完成本章并解锁下一章（与「跳过」区分 outcome）
-  const sequential = await tryAdvanceSequentialBook(blockId, "completed", pluginName)
+  const sequential = await tryAdvanceSequentialBook(blockId, "completed", pluginName, {
+    nextChapterSchedule: options?.nextChapterSchedule
+  })
   if (sequential === "advanced" || sequential === "partial") {
     return { state: null, leftCard: true }
   }
-  if (sequential === "failed") {
-    // Do NOT fall through to plain completeIRCard — plan may already be mutated.
-    throw new Error("顺序推进失败，计划状态请检查后重试（不会再次按普通完成清理）")
-  }
+  // not_applicable → 普通归档
   await completeIRCard(blockId, pluginName)
   return { state: null, leftCard: true }
 }
@@ -73,32 +87,39 @@ export async function performSkipChapter(
   if (sequential === "not_applicable") {
     throw new Error("当前卡片不是顺序解锁书籍的激活章节")
   }
-  if (sequential === "failed") {
-    throw new Error("跳过并推进失败，请检查书籍计划后重试")
-  }
   return { state: null, leftCard: true }
 }
 
-type SequentialAdvanceAttempt = "advanced" | "partial" | "not_applicable" | "failed"
+type SequentialAdvanceAttempt = "advanced" | "partial" | "not_applicable"
+
+type SequentialAdvanceOptions = {
+  nextChapterSchedule?: NextChapterSchedule
+}
 
 /**
  * Attempt sequential book progression.
  * - not_applicable: no sequential plan for this card → caller may use plain complete
  * - advanced/partial: progression service ran (including partial next-init failure)
- * - failed: progression threw after starting → do NOT plain-complete
+ * Throws on hard failure after progression started — do NOT plain-complete (plan may be mutated).
  */
 async function tryAdvanceSequentialBook(
   blockId: DbId,
   outcome: "completed" | "skipped",
-  pluginName: string
+  pluginName: string,
+  options?: SequentialAdvanceOptions
 ): Promise<SequentialAdvanceAttempt> {
   const block =
     (orca.state.blocks?.[blockId] as { properties?: Array<{ name: string; value: unknown }> } | undefined)
     || ((await orca.invokeBackend("get-block", blockId)) as
       | { properties?: Array<{ name: string; value: unknown }> }
       | undefined)
-  const bookId = block?.properties?.find((p) => p.name === "ir.sourceBookId")?.value
-  if (typeof bookId !== "number") return "not_applicable"
+  // Coerce like isSequentialActiveChapter / collectors — Orca may surface PropType.Number as string.
+  // Strict typeof === "number" would fall through to plain completeIRCard and strip the only live
+  // sequential chapter without unlocking the next → whole book leaves the IR queue.
+  const bookId = parseOptionalNumber(
+    block?.properties?.find((p) => p.name === "ir.sourceBookId")?.value
+  )
+  if (bookId === null) return "not_applicable"
 
   const { loadBookIRPlan } = await import("../book-ir/bookIRPlanRepository")
   let plan
@@ -112,31 +133,27 @@ async function tryAdvanceSequentialBook(
   if (!plan || plan.mode !== "sequential") return "not_applicable"
   if (plan.activeChapterId !== blockId) return "not_applicable"
 
-  try {
-    const { advanceSequentialBook } = await import("../book-ir/bookIRProgression")
-    const result = await advanceSequentialBook({
-      bookBlockId: bookId,
-      chapterId: blockId,
-      outcome,
-      pluginName
-    })
-    if (result.message) {
-      orca.notify(
-        result.kind === "partial" ? "warn" : "success",
-        result.message,
-        { title: "渐进阅读" }
-      )
-    }
-    return result.kind === "partial" ? "partial" : "advanced"
-  } catch (error) {
-    console.error("[IR Session] sequential advance failed:", error)
+  // Errors propagate — no silent failed return / plain-complete fallback.
+  // Next-init failure throws before plan/current mutation (activate-before-strip).
+  const { advanceSequentialBook } = await import("../book-ir/bookIRProgression")
+  const result = await advanceSequentialBook({
+    bookBlockId: bookId,
+    chapterId: blockId,
+    outcome,
+    pluginName,
+    nextChapterSchedule: options?.nextChapterSchedule
+  })
+  if (result.message) {
     orca.notify(
-      "error",
-      error instanceof Error ? error.message : String(error),
+      result.kind === "partial" ? "warn" : "success",
+      result.message,
       { title: "渐进阅读" }
     )
-    return "failed"
   }
+  // Partial after progression started must not look like total success to callers that
+  // only check leftCard; still return partial so UI can leave the session card path
+  // while the warn notify exposes the incomplete strip / plan lag.
+  return result.kind === "partial" ? "partial" : "advanced"
 }
 
 /**
@@ -148,18 +165,20 @@ export async function performPriorityAdjust(
 ): Promise<IRState> {
   const prev = await loadIRState(blockId)
   const normalized = normalizePriority(newPriority)
-  const nextInterval = adjustIntervalForPriorityChange(
-    prev.intervalDays,
-    prev.priority,
-    normalized
-  )
+  const useSac = await isSequentialActiveChapter(blockId)
+  // SAC：显式改优先级按短节奏重算；普通 Topic 仍比例修正
+  const nextInterval = useSac
+    ? computeSacIntervalDays(normalized, prev.sacStagnantCount ?? 0)
+    : adjustIntervalForPriorityChange(prev.intervalDays, prev.priority, normalized)
   const now = new Date()
   const nextState: IRState = {
     ...prev,
     priority: normalized,
     intervalDays: nextInterval,
     due: computeDueFromIntervalDays(now, nextInterval),
-    lastAction: "priority"
+    lastAction: "priority",
+    sacProgressKey: prev.sacProgressKey ?? null,
+    sacStagnantCount: prev.sacStagnantCount ?? 0
   }
   await saveIRState(blockId, nextState)
   return nextState

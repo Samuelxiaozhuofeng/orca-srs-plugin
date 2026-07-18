@@ -21,7 +21,12 @@ import {
   type IRLibraryFilters
 } from "./irLibraryFilters"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
-import { buildIRSourceTree, type IRTimeNavKey } from "./irSourceTreeBuilder"
+import {
+  buildIRSourceTree,
+  type IRTimeNavKey,
+  type SequentialBookTreeContext
+} from "./irSourceTreeBuilder"
+import { loadSequentialBookTreeContexts } from "./loadSequentialBookTreeContexts"
 import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useState } = window.React
@@ -32,6 +37,7 @@ function getDayStartTime(date: Date): number {
 
 export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, pluginName: string) {
   const [libraryCards, setLibraryCards] = useState<IRCard[]>([])
+  const [sequentialBooks, setSequentialBooks] = useState<SequentialBookTreeContext[]>([])
   const [libraryLoading, setLibraryLoading] = useState(true)
   const [libraryError, setLibraryError] = useState<string | null>(null)
   const [filters, setFilters] = useState<IRLibraryFilters>(() => createDefaultIRLibraryFilters())
@@ -60,6 +66,28 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
       const name = await loadPluginName()
       const cards = await collectAllIRCards(name)
       setLibraryCards(cards)
+
+      // Plan-backed sequential outline (placeholders only; does not invent IR cards)
+      try {
+        const { contexts, warnings } = await loadSequentialBookTreeContexts(cards)
+        setSequentialBooks(contexts)
+        if (warnings.length > 0) {
+          orca.notify(
+            "warn",
+            warnings.length === 1
+              ? warnings[0]
+              : `顺序阅读计划加载有 ${warnings.length} 个警告，详见控制台`,
+            { title: "渐进阅读" }
+          )
+        }
+      } catch (seqError) {
+        console.error("[IR Workspace] 加载顺序书计划失败:", seqError)
+        setSequentialBooks([])
+        orca.notify("warn", "顺序阅读章节大纲加载失败，仅显示已激活卡片", {
+          title: "渐进阅读"
+        })
+      }
+
       const settings = getIncrementalReadingSettings(name)
       const now = new Date()
       const todayStart = getDayStartTime(now)
@@ -96,10 +124,21 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     let cancelled = false
     const loadTitles = async () => {
       // 每次资料库加载都刷新标题：页面改名后 alias 会变，不能因 titleMap 已有旧值而跳过
-      const ids: DbId[] = Array.from(new Set(libraryCards.map((card: IRCard) => card.id)))
+      const cardIds = libraryCards.map((card: IRCard) => card.id)
+      const sequentialChapterIds = (sequentialBooks as SequentialBookTreeContext[]).flatMap(
+        (book: SequentialBookTreeContext) => book.selectedChapterIds
+      )
+      const ids: DbId[] = Array.from(new Set([...cardIds, ...sequentialChapterIds]))
       if (ids.length === 0) return
       try {
         const next: Record<string, string> = {}
+        // Seed manifest titles for sequential placeholders first
+        for (const book of sequentialBooks as SequentialBookTreeContext[]) {
+          if (!book.chapterTitles) continue
+          for (const [id, title] of Object.entries(book.chapterTitles)) {
+            if (typeof title === "string" && title.trim()) next[id] = title
+          }
+        }
         // 先用内存态块（alias > text）填充，避免等待后端时闪旧编号
         for (const id of ids) {
           const fromState = orca.state.blocks?.[id] as Block | undefined
@@ -116,7 +155,12 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
             map.set(block.id, block)
           }
           for (const id of batch) {
-            next[String(id)] = resolveBlockDisplayTitle(map.get(id), "(无标题)")
+            const resolved = resolveBlockDisplayTitle(map.get(id), "")
+            if (resolved) {
+              next[String(id)] = resolved
+            } else if (!next[String(id)]) {
+              next[String(id)] = "(无标题)"
+            }
           }
         }
         if (cancelled) return
@@ -127,7 +171,7 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
     }
     void loadTitles()
     return () => { cancelled = true }
-  }, [libraryCards])
+  }, [libraryCards, sequentialBooks])
 
   useEffect(() => {
     setSelectedCardIds((prev: Set<DbId>) => {
@@ -169,8 +213,11 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
   )
 
   const sourceTreeResult = useMemo(() => {
-    return buildIRSourceTree(libraryCards, filters, timeNavKey, { titleMap })
-  }, [libraryCards, filters, timeNavKey, titleMap])
+    return buildIRSourceTree(libraryCards, filters, timeNavKey, {
+      titleMap,
+      sequentialBooks
+    })
+  }, [libraryCards, filters, timeNavKey, titleMap, sequentialBooks])
 
   const isSourceExpanded = useCallback((sourceId: string): boolean => {
     if (expandedSourceIds[sourceId] !== undefined) {

@@ -79,6 +79,44 @@ describe("epubImportViewModel", () => {
     expect(schedulePreviewText("distributed", 5, 10)).toMatch(/分散排期/)
   })
 
+  it("sequential preview reflects SAC base interval by priority", () => {
+    const p0 = schedulePreviewText("sequential", 16, 10, 0)
+    expect(p0).toMatch(/约每 3 天/)
+    expect(p0).toMatch(/当前优先级 0/)
+    expect(p0).toMatch(/完成或跳过/)
+    expect(p0).toMatch(/当天解锁下一章/)
+    expect(p0).toMatch(/没有阅读进展/)
+    expect(p0).toMatch(/最长约 6 天/)
+    expect(p0).toMatch(/共 16 章/)
+    expect(p0).toMatch(/同时仅 1 章/)
+
+    const p50 = schedulePreviewText("sequential", 16, 10, 50)
+    expect(p50).toMatch(/约每 2 天/)
+    expect(p50).toMatch(/当前优先级 50/)
+
+    const p100 = schedulePreviewText("sequential", 16, 10, 100)
+    expect(p100).toMatch(/约每 1 天/)
+    expect(p100).toMatch(/当前优先级 100/)
+  })
+
+  it("sequential preview defaults priority to 50 for 3-arg calls", () => {
+    const text = schedulePreviewText("sequential", 8, 30)
+    expect(text).toMatch(/当前优先级 50/)
+    expect(text).toMatch(/约每 2 天/)
+  })
+
+  it("distributed preview is unchanged by priority", () => {
+    const a = schedulePreviewText("distributed", 5, 10)
+    const b = schedulePreviewText("distributed", 5, 10, 0)
+    const c = schedulePreviewText("distributed", 5, 10, 100)
+    expect(a).toBe(b)
+    expect(a).toBe(c)
+    expect(a).toMatch(/分散排期/)
+    expect(a).toMatch(/约 10 天跨度/)
+    expect(a).not.toMatch(/当前优先级/)
+    expect(a).not.toMatch(/没有阅读进展/)
+  })
+
   it("exposes accessibility labels", () => {
     const labels = accessibilityLabels()
     expect(labels.fileInput).toBeTruthy()

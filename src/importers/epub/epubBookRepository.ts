@@ -23,7 +23,10 @@ const PROP_TYPE_STRING = 2
 const PROP_TYPE_NUMBER = 3
 
 function getPropValue(block: Block | undefined, name: string): unknown {
-  return block?.properties?.find((p) => p.name === name)?.value
+  const value = block?.properties?.find((p) => p.name === name)?.value
+  // Orca type=2 properties may be returned as a single-element array by get-block.
+  // Only unwrap that known transport shape; ambiguous multi-value data must still fail validation.
+  return Array.isArray(value) && value.length === 1 ? value[0] : value
 }
 
 async function getBlock(blockId: DbId): Promise<Block | undefined> {

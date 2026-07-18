@@ -1911,6 +1911,81 @@
   background: var(--orca-color-bg-2, #f8fafc);
 }
 
+/* Sequential Book IR outline: active vs inactive placeholders */
+.ir-library-chapter--sequential-active .ir-library-chapter__header {
+  background: var(--orca-color-primary-1, rgba(59, 130, 246, 0.08));
+  box-shadow: inset 3px 0 0 var(--orca-color-primary-6, #2563eb);
+}
+
+.ir-library-chapter--sequential-pending .ir-library-chapter__header,
+.ir-library-chapter--sequential-completed .ir-library-chapter__header,
+.ir-library-chapter--sequential-skipped .ir-library-chapter__header {
+  background: var(--orca-color-bg-2, #f8fafc);
+}
+
+.ir-library-chapter--placeholder .ir-library-chapter__title,
+.ir-library-chapter--sequential-pending .ir-library-chapter__title,
+.ir-library-chapter--sequential-completed .ir-library-chapter__title,
+.ir-library-chapter--sequential-skipped .ir-library-chapter__title {
+  color: var(--orca-color-text-3, #64748b);
+  font-weight: 550;
+}
+
+.ir-library-chapter--sequential-active .ir-library-chapter__title {
+  color: var(--orca-color-text-1, #0f172a);
+  font-weight: 700;
+}
+
+.ir-library-chapter--sequential-active .ir-library-chapter__icon {
+  color: var(--orca-color-primary-6, #2563eb);
+}
+
+.ir-library-chapter--placeholder .ir-library-chapter__icon,
+.ir-library-chapter--sequential-pending .ir-library-chapter__icon {
+  color: var(--orca-color-text-4, #94a3b8);
+}
+
+.ir-library-chapter__status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.ir-library-chapter__status--active {
+  color: var(--orca-color-primary-7, #1d4ed8);
+  background: var(--orca-color-primary-1, rgba(59, 130, 246, 0.12));
+  border-color: var(--orca-color-primary-2, rgba(37, 99, 235, 0.25));
+}
+
+.ir-library-chapter__status--pending {
+  color: var(--orca-color-text-3, #64748b);
+  background: var(--orca-color-bg-3, #f1f5f9);
+  border-color: var(--orca-color-border-1, #e2e8f0);
+}
+
+.ir-library-chapter__status--completed {
+  color: var(--orca-color-success-7, #15803d);
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.ir-library-chapter__status--skipped {
+  color: var(--orca-color-text-3, #64748b);
+  background: var(--orca-color-bg-3, #f1f5f9);
+  border-color: var(--orca-color-border-1, #e2e8f0);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.ir-library-chapter__content:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .ir-library-chapter__main {
   display: flex;
   align-items: center;

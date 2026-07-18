@@ -52,6 +52,14 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
     const resumeBlockId = parseOptionalNumber(readProp(block, "ir.resumeBlockId"))
     const readingBreakpoint = parseReadingBreakpoint(readProp(block, "ir.breakpoint"))
     const autoPostponeBatchId = parseString(readProp(block, "ir.autoPostponeBatchId"), null)
+    // SAC 字段可选：旧卡缺失不迁移重写
+    const sacProgressKeyRaw = readProp(block, "ir.sacProgressKey")
+    const sacProgressKey =
+      sacProgressKeyRaw === undefined || sacProgressKeyRaw === null
+        ? null
+        : (parseString(sacProgressKeyRaw, "") ?? "")
+    const sacStagnantRaw = parseOptionalNumber(readProp(block, "ir.sacStagnantCount"))
+    const sacStagnantCount = sacStagnantRaw === null ? 0 : Math.max(0, Math.floor(sacStagnantRaw))
 
     const priority = normalizePriority(rawPriority)
     const cardType = extractCardType(block)
@@ -76,7 +84,9 @@ export async function loadIRState(blockId: DbId): Promise<IRState> {
       position,
       resumeBlockId,
       readingBreakpoint,
-      autoPostponeBatchId
+      autoPostponeBatchId,
+      sacProgressKey,
+      sacStagnantCount
     }
   } catch (error) {
     console.error("[IR] 读取渐进阅读状态失败:", error)
@@ -103,7 +113,14 @@ export async function saveIRState(blockId: DbId, state: IRState): Promise<void> 
       { name: "ir.position", value: state.position ?? null, type: 3 },
       { name: "ir.resumeBlockId", value: state.resumeBlockId ?? null, type: 3 },
       { name: "ir.breakpoint", value: serializeReadingBreakpoint(state.readingBreakpoint), type: 2 },
-      { name: "ir.autoPostponeBatchId", value: state.autoPostponeBatchId ?? null, type: 2 }
+      { name: "ir.autoPostponeBatchId", value: state.autoPostponeBatchId ?? null, type: 2 },
+      // SAC：始终写回，便于停滞计数跨会话；普通 Topic 保持 null/0 无害
+      { name: "ir.sacProgressKey", value: state.sacProgressKey ?? null, type: 2 },
+      {
+        name: "ir.sacStagnantCount",
+        value: Math.max(0, Math.floor(state.sacStagnantCount ?? 0)),
+        type: 3
+      }
     ]
 
     await orca.commands.invokeEditorCommand(
@@ -267,7 +284,9 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
         position: nextPosition,
         resumeBlockId: state.resumeBlockId,
         readingBreakpoint: state.readingBreakpoint ?? null,
-        autoPostponeBatchId: state.autoPostponeBatchId ?? null
+        autoPostponeBatchId: state.autoPostponeBatchId ?? null,
+        sacProgressKey: state.sacProgressKey ?? null,
+        sacStagnantCount: state.sacStagnantCount ?? 0
       }
       await saveIRState(blockId, normalizedState)
       return normalizedState

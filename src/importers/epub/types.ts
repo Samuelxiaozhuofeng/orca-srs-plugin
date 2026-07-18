@@ -170,11 +170,23 @@ export interface BookIRMutationResult {
   sequentialPaused?: boolean
 }
 
+/**
+ * 顺序解锁完成本章后，下一章 due 安排策略（显式参数，禁止隐式全局状态）。
+ * - today: 下一章 due 为今天 00:00，立即进入今日 IR 队列
+ * - tomorrow: 下一章 due 为明天 00:00，plan 仍记为 active，但今日不作为到期卡
+ */
+export type NextChapterSchedule = "today" | "tomorrow"
+
 export interface AdvanceSequentialBookRequest {
   bookBlockId: DbId
   chapterId: DbId
   outcome: "completed" | "skipped"
   pluginName?: string
+  /**
+   * 激活下一章时的 due 安排。省略时默认 `today`（兼容跳过/重试路径）。
+   * 仅影响下一章 `ir.due`；当前章 outcome / plan 写入语义不变。
+   */
+  nextChapterSchedule?: NextChapterSchedule
 }
 
 export class EpubValidationError extends Error {

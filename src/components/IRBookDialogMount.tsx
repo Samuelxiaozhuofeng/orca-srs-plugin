@@ -272,7 +272,7 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
         </label>
 
         <div style={{ fontSize: 13, color: "var(--orca-text-secondary, #666)" }}>
-          {schedulePreviewText(mode, selectedChapterIds.length, totalDays)}
+          {schedulePreviewText(mode, selectedChapterIds.length, totalDays, priority)}
         </div>
 
         {failedCount > 0 ? (

@@ -136,7 +136,11 @@ globalThis.fetch = vi.fn(async (url: string) => {
 })
 
 import { importEpub, resumeEpubImport } from "./epubImportService"
-import { ensureInlineReference, findBookByFingerprint } from "./epubBookRepository"
+import {
+  ensureInlineReference,
+  findBookByFingerprint,
+  loadManifestFromBook
+} from "./epubBookRepository"
 import { parseEpub } from "./epubParser"
 
 function installDefaultBackend() {
@@ -273,6 +277,28 @@ describe("importEpub plain import", () => {
       expect(refBlock.content?.[0]).toMatchObject({ t: "r" })
       expect(typeof refBlock.content?.[0]?.v).toBe("number")
     }
+  })
+
+  it("loads epub.manifest when get-block returns a single-element string array", async () => {
+    const buffer = await buildMinimalEpub3()
+    const parsed = await parseEpub(buffer)
+    const result = await importEpub({
+      buffer,
+      sourceFileName: "array-wrapper.epub",
+      bookTitle: "Array Wrapper Book",
+      selectedChapterKeys: parsed.chapters.map((c) => c.key)
+    })
+
+    const book = blockMap.get(result.bookBlockId)!
+    const manifestJson = getProp(book, EPUB_PROP.manifest)
+    setProp(book, EPUB_PROP.manifest, [manifestJson], 2)
+    delete mockOrca.state.blocks[result.bookBlockId]
+
+    const manifest = await loadManifestFromBook(result.bookBlockId)
+
+    expect(manifest.bookBlockId).toBe(result.bookBlockId)
+    expect(manifest.status).toBe("complete")
+    expect(manifest.chapters).toHaveLength(result.manifest.chapters.length)
   })
 
   it("stops with no book when source upload fails", async () => {

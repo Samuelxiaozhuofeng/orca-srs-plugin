@@ -352,4 +352,205 @@ describe("irSourceTreeBuilder", () => {
     expect(result.sources[0].sourceType).toBe("web")
     expect(collectIRSourceMatchedCardIds(result.sources[0])).toEqual([911, 912])
   })
+
+  describe("顺序解锁 Book IR 大纲占位", () => {
+    const sequentialPlan = {
+      bookBlockId: 1 as const,
+      bookTitle: "顺序阅读示例",
+      selectedChapterIds: [1, 2, 3] as number[],
+      activeChapterId: 1 as number | null,
+      outcomes: {
+        "1": "active" as const,
+        "2": "pending" as const,
+        "3": "pending" as const
+      },
+      chapterTitles: {
+        "1": "第一章",
+        "2": "第二章",
+        "3": "第三章"
+      }
+    }
+
+    it("17. 仅有第 1 章真实卡片时树仍含 3 个章节且状态正确、顺序稳定", () => {
+      const cards = [
+        makeCard({
+          id: 1,
+          cardType: "topic",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          due: new Date(2026, 6, 11)
+        })
+      ]
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", {
+        now,
+        sequentialBooks: [sequentialPlan],
+        titleMap: { "1": "第一章" }
+      })
+
+      expect(result.sources).toHaveLength(1)
+      expect(result.sources[0].chapters).toHaveLength(3)
+      expect(result.sources[0].chapters.map(c => c.chapterId)).toEqual(["1", "2", "3"])
+      expect(result.sources[0].chapters.map(c => c.sequentialStatus)).toEqual([
+        "active",
+        "pending",
+        "pending"
+      ])
+      expect(result.sources[0].chapters[0].card?.id).toBe(1)
+      expect(result.sources[0].chapters[0].isSequentialPlaceholder).toBe(false)
+      expect(result.sources[0].chapters[1].card).toBeNull()
+      expect(result.sources[0].chapters[1].isSequentialPlaceholder).toBe(true)
+      expect(result.sources[0].chapters[1].title).toBe("第二章")
+      expect(result.sources[0].chapters[2].isSequentialPlaceholder).toBe(true)
+      expect(result.sources[0].stats.totalChapterCount).toBe(3)
+    })
+
+    it("18. 完成第一章后仅有第 2 章卡片时，默认视图不空且含 completed/active/pending", () => {
+      const cards = [
+        makeCard({
+          id: 2,
+          cardType: "topic",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          due: new Date(2026, 6, 12)
+        })
+      ]
+      const planAfterCh1 = {
+        ...sequentialPlan,
+        activeChapterId: 2,
+        outcomes: {
+          "1": "completed" as const,
+          "2": "active" as const,
+          "3": "pending" as const
+        }
+      }
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", {
+        now,
+        sequentialBooks: [planAfterCh1],
+        titleMap: { "2": "第二章" }
+      })
+
+      expect(result.sources).toHaveLength(1)
+      expect(result.sources[0].chapters).toHaveLength(3)
+      expect(result.sources[0].chapters.map(c => c.sequentialStatus)).toEqual([
+        "completed",
+        "active",
+        "pending"
+      ])
+      expect(result.sources[0].chapters[0].isSequentialPlaceholder).toBe(true)
+      expect(result.sources[0].chapters[0].card).toBeNull()
+      expect(result.sources[0].chapters[1].card?.id).toBe(2)
+      expect(result.sources[0].chapters[1].cardMatches).toBe(true)
+      expect(result.sources[0].chapters[2].isSequentialPlaceholder).toBe(true)
+    })
+
+    it("19. 占位章节不出现在可选择 card id 集合中", () => {
+      const cards = [
+        makeCard({
+          id: 2,
+          cardType: "topic",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          due: new Date(2026, 6, 12)
+        })
+      ]
+      const planAfterCh1 = {
+        ...sequentialPlan,
+        activeChapterId: 2,
+        outcomes: {
+          "1": "completed" as const,
+          "2": "active" as const,
+          "3": "pending" as const
+        }
+      }
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", {
+        now,
+        sequentialBooks: [planAfterCh1]
+      })
+      const source = result.sources[0]
+      const placeholder = source.chapters.find(c => c.chapterId === "1")!
+      const active = source.chapters.find(c => c.chapterId === "2")!
+      const pending = source.chapters.find(c => c.chapterId === "3")!
+
+      expect(collectIRChapterMatchedCardIds(placeholder)).toEqual([])
+      expect(collectIRChapterMatchedCardIds(pending)).toEqual([])
+      expect(collectIRChapterMatchedCardIds(active)).toEqual([2])
+      expect(collectIRSourceMatchedCardIds(source)).toEqual([2])
+    })
+
+    it("20. 跳过章节显示 skipped；普通 Topic / distributed 不受影响", () => {
+      const cards = [
+        makeCard({
+          id: 3,
+          cardType: "topic",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例"
+        }),
+        makeCard({
+          id: 50,
+          cardType: "topic",
+          sourceBookId: null,
+          sourceBookTitle: null
+        })
+      ]
+      const plan = {
+        ...sequentialPlan,
+        activeChapterId: 3,
+        outcomes: {
+          "1": "completed" as const,
+          "2": "skipped" as const,
+          "3": "active" as const
+        }
+      }
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", {
+        now,
+        sequentialBooks: [plan],
+        titleMap: { "3": "第三章", "50": "独立主题" }
+      })
+
+      const book = result.sources.find(s => s.sourceId === "1")!
+      expect(book.chapters.map(c => c.sequentialStatus)).toEqual([
+        "completed",
+        "skipped",
+        "active"
+      ])
+
+      const topicSource = result.sources.find(s => s.sourceId === "topic:50")
+      expect(topicSource).toBeDefined()
+      expect(topicSource!.chapters).toHaveLength(1)
+      expect(topicSource!.chapters[0].sequentialStatus ?? null).toBeNull()
+      expect(topicSource!.chapters[0].isSequentialPlaceholder).toBeFalsy()
+    })
+
+    it("21. 时间导航 today 不把纯占位章节算进匹配，但激活章仍可见", () => {
+      const cards = [
+        makeCard({
+          id: 2,
+          cardType: "topic",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          due: new Date(2026, 6, 11, 9, 0, 0),
+          isNew: false
+        })
+      ]
+      const planAfterCh1 = {
+        ...sequentialPlan,
+        activeChapterId: 2,
+        outcomes: {
+          "1": "completed" as const,
+          "2": "active" as const,
+          "3": "pending" as const
+        }
+      }
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "today", {
+        now,
+        sequentialBooks: [planAfterCh1]
+      })
+
+      expect(result.sources).toHaveLength(1)
+      // only the active live card chapter survives time prune
+      expect(result.sources[0].chapters).toHaveLength(1)
+      expect(result.sources[0].chapters[0].chapterId).toBe("2")
+      expect(result.sources[0].chapters[0].sequentialStatus).toBe("active")
+    })
+  })
 })

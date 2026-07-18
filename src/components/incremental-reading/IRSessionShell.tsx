@@ -20,6 +20,8 @@ import {
   performPriorityAdjust,
   performSkipChapter
 } from "../../srs/incremental-reading/irSessionService"
+import type { NextChapterSchedule } from "../../importers/epub/types"
+import { isSequentialActiveChapter } from "../../srs/incremental-reading/irSchedulingHelpers"
 import { resolveSessionItemizeIntercept } from "../../srs/incremental-reading/irSessionActionsLogic"
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import { tierToPriority, priorityToTier } from "../../srs/incremental-reading/irQueuePolicy"
@@ -41,7 +43,7 @@ import IRSessionSummary from "./IRSessionSummary"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
 
 const { useEffect, useMemo, useRef, useState } = window.React
-const { Button, ConfirmBox } = orca.components
+const { Button, ConfirmBox, ModalOverlay } = orca.components
 
 export type IRSessionShellProps = {
   entries?: IRSessionEntry[]
@@ -101,6 +103,9 @@ export default function IRSessionShell({
     const saved = localStorage.getItem("orca-ir-reader-theme")
     return (saved === "sepia" || saved === "academic" || saved === "mint") ? saved : "mint"
   })
+  /** 顺序解锁「完成本章」：询问下一章 today / tomorrow；取消不得推进 */
+  const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
+  const [isSequentialActive, setIsSequentialActive] = useState(false)
 
   useEffect(() => {
     localStorage.setItem("orca-ir-reader-theme", theme)
@@ -161,6 +166,32 @@ export default function IRSessionShell({
   useEffect(() => {
     cardEnteredAtRef.current = Date.now()
   }, [currentEntry?.key])
+
+  useEffect(() => {
+    let cancelled = false
+    const cardId = currentCard?.id
+    if (cardId == null) {
+      setIsSequentialActive(false)
+      setCompleteChapterOpen(false)
+      return
+    }
+    setIsSequentialActive(false)
+    setCompleteChapterOpen(false)
+    void isSequentialActiveChapter(cardId)
+      .then((active) => {
+        if (!cancelled) {
+          setIsSequentialActive(active)
+          if (!active) setCompleteChapterOpen(false)
+        }
+      })
+      .catch((error) => {
+        console.error("[IR Session] 检测顺序激活章失败:", error)
+        if (!cancelled) setIsSequentialActive(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentCard?.id])
 
   const sessionSeed = entriesProp ?? cards
   useEffect(() => {
@@ -354,17 +385,23 @@ export default function IRSessionShell({
     }
   })
 
-  const handleArchive = () => withWork(async () => {
+  const handleArchive = (options?: { nextChapterSchedule?: NextChapterSchedule }) => withWork(async () => {
     if (!currentCard) return
     try {
       await breakpoint.flush()
-      await performArchive(currentCard.id, pluginName)
+      await performArchive(currentCard.id, pluginName, options)
       metricsRef.current.record("action.archive")
+      setCompleteChapterOpen(false)
       removeCurrent()
-      orca.notify("success", "已归档", { title: "渐进阅读" })
+      // 顺序推进服务自身也会 notify 详细结果；此处仅对普通归档补一条成功提示
+      if (!options?.nextChapterSchedule) {
+        orca.notify("success", "已归档", { title: "渐进阅读" })
+      }
     } catch (error) {
-      console.error("[IR Session] 归档失败:", error)
-      orca.notify("error", "归档失败", { title: "渐进阅读" })
+      metricsRef.current.record("action.failure", undefined, { kind: "archive" })
+      const msg = error instanceof Error ? error.message : String(error)
+      console.error("[IR Session] 归档/完成本章失败:", error)
+      orca.notify("error", `归档失败：${msg}`, { title: "渐进阅读" })
     }
   })
 
@@ -626,22 +663,36 @@ export default function IRSessionShell({
           >
             {viewMode === "reading" ? "编辑模式" : "阅读模式"}
           </Button>
-          <ConfirmBox
-            text="确认完成本章/归档？将清除 IR 身份并保留正文。若为顺序解锁书籍，将尝试解锁下一章。"
-            onConfirm={async (_e: unknown, close: () => void) => {
-              await handleArchive()
-              close()
-            }}
-          >
-            {(open) => (
-              <Button tabIndex={0} variant="plain" onClick={open}>
-                {currentCard?.sourceBookId != null ? "完成本章" : "归档"}
-              </Button>
-            )}
-          </ConfirmBox>
-          {currentCard?.sourceBookId != null ? (
+          {isSequentialActive ? (
+            <Button
+              tabIndex={0}
+              variant="plain"
+              onClick={() => {
+                if (isWorking) return
+                setCompleteChapterOpen(true)
+              }}
+              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+            >
+              完成本章
+            </Button>
+          ) : (
             <ConfirmBox
-              text="确认跳过本章并继续？与「完成」结果不同，但同样会解锁下一章并保留笔记。"
+              text="确认归档？将清除 IR 身份并保留正文。"
+              onConfirm={async (_e: unknown, close: () => void) => {
+                await handleArchive()
+                close()
+              }}
+            >
+              {(open) => (
+                <Button tabIndex={0} variant="plain" onClick={open}>
+                  {currentCard?.sourceBookId != null ? "完成本章" : "归档"}
+                </Button>
+              )}
+            </ConfirmBox>
+          )}
+          {isSequentialActive ? (
+            <ConfirmBox
+              text="确认跳过本章并继续？与「完成」结果不同，但同样会解锁下一章并保留笔记。下一章默认安排到今天。"
               onConfirm={async (_e: unknown, close: () => void) => {
                 await handleSkipChapter()
                 close()
@@ -668,6 +719,81 @@ export default function IRSessionShell({
         onMore={() => setMoreOpen((v: boolean) => !v)}
         moreOpen={moreOpen}
       />
+
+      {completeChapterOpen ? (
+        <ModalOverlay
+          visible={true}
+          canClose={!isWorking}
+          onClose={() => {
+            if (isWorking) return
+            setCompleteChapterOpen(false)
+          }}
+        >
+          <div
+            style={{
+              minWidth: 320,
+              maxWidth: 420,
+              padding: "18px 20px",
+              borderRadius: 12,
+              background: "var(--orca-color-bg-1)",
+              border: "1px solid var(--orca-color-border-1)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--orca-color-text-1)" }}>
+              完成本章
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
+              当前章节将标记为<strong>已完成</strong>，并清除其 IR 身份（正文与笔记保留）。
+              若还有下一章，请选择如何安排：
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
+              <li><strong>今天安排下一章</strong>：下一章 due 为今天，立即进入今日 IR 队列。</li>
+              <li><strong>明天安排下一章</strong>：下一章写入计划为当前激活章，但 due 从明天起，今日不作为到期卡。</li>
+            </ul>
+            <div style={{ fontSize: 12, color: "var(--orca-color-text-3)", lineHeight: 1.45 }}>
+              取消不会清理当前章节，也不会解锁下一章。若无下一章，完成本章后书籍计划正常结束。
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+              <Button
+                tabIndex={0}
+                variant="outline"
+                onClick={() => {
+                  if (isWorking) return
+                  setCompleteChapterOpen(false)
+                }}
+                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              >
+                取消
+              </Button>
+              <Button
+                tabIndex={0}
+                variant="outline"
+                onClick={() => {
+                  if (isWorking) return
+                  void handleArchive({ nextChapterSchedule: "tomorrow" })
+                }}
+                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              >
+                {isWorking ? "处理中…" : "明天安排下一章"}
+              </Button>
+              <Button
+                tabIndex={0}
+                variant="solid"
+                onClick={() => {
+                  if (isWorking) return
+                  void handleArchive({ nextChapterSchedule: "today" })
+                }}
+                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              >
+                {isWorking ? "处理中…" : "今天安排下一章"}
+              </Button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
     </div>
   )
 }

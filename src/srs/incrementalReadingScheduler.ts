@@ -50,6 +50,22 @@ export function getTopicBaseIntervalDays(priority: number): number {
   return getBaseIntervalDays("topic", priority)
 }
 
+/**
+ * Sequential Active Cadence（SAC）基线间隔（天）。
+ * `baseIntervalDays = 1 + 2 * (1 - priority / 100)`
+ * priority 0/50/100 → 3/2/1；最终至少 1 天。
+ *
+ * 使用 `normalizePriority`（0–100，四舍五入到整数），
+ * 与 `irSchedulingHelpers` 中的 SAC 排期共用同一公式，避免文案与实现漂移。
+ */
+export function getSequentialActiveBaseIntervalDays(priority: number): number {
+  const p = normalizePriority(priority)
+  return Math.max(1, 1 + 2 * (1 - p / 100))
+}
+
+/** SAC 停滞保护：间隔上限（天）。产品启发式，与调度实现一致。 */
+export const SAC_MAX_INTERVAL_DAYS = 6
+
 export function getPostponeDays(cardType: IRCardType, priority: number): number {
   const p = normalizePriority(priority) / 100
   const inv = 1 - p

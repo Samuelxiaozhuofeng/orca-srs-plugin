@@ -52,6 +52,7 @@ describe("getIRChapterPresentation", () => {
     expect(presentation.chapterCard?.id).toBe(10)
     expect(presentation.isContextOnly).toBe(false)
     expect(presentation.extractCountLabel).toBeNull()
+    expect(presentation.isNonActionable).toBe(false)
   })
 
   it("hides Topic actions when only a child Extract matches", () => {
@@ -66,6 +67,7 @@ describe("getIRChapterPresentation", () => {
     expect(presentation.isContextOnly).toBe(true)
     expect(presentation.canExpand).toBe(true)
     expect(presentation.extractCountLabel).toBe("1 个匹配摘录")
+    expect(presentation.isNonActionable).toBe(true)
   })
 
   it("treats the unassigned-extract fallback as context only", () => {
@@ -83,5 +85,37 @@ describe("getIRChapterPresentation", () => {
       canExpand: true,
       extractCountLabel: "1 个匹配摘录"
     })
+  })
+
+  it("marks sequential placeholders as non-actionable with status labels", () => {
+    const presentation = getIRChapterPresentation(makeChapter({
+      chapterId: "2",
+      card: null,
+      cardMatches: false,
+      title: "第二章",
+      due: null,
+      sortDue: null,
+      stage: "",
+      sequentialStatus: "pending",
+      isSequentialPlaceholder: true
+    }))
+
+    expect(presentation.chapterCard).toBeNull()
+    expect(presentation.isSequentialPlaceholder).toBe(true)
+    expect(presentation.isNonActionable).toBe(true)
+    expect(presentation.canExpand).toBe(false)
+    expect(presentation.sequentialStatusLabel).toBe("未激活")
+  })
+
+  it("keeps active sequential chapter actions when live card matches", () => {
+    const presentation = getIRChapterPresentation(makeChapter({
+      sequentialStatus: "active",
+      isSequentialPlaceholder: false
+    }))
+
+    expect(presentation.chapterCard?.id).toBe(10)
+    expect(presentation.isSequentialPlaceholder).toBe(false)
+    expect(presentation.isNonActionable).toBe(false)
+    expect(presentation.sequentialStatusLabel).toBe("当前激活")
   })
 })

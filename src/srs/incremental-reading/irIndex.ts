@@ -17,6 +17,17 @@ export type IRIndexSnapshot = {
   extractIds: DbId[]
 }
 
+function getStorageKey(pluginName: string): string {
+  const currentOrca = (globalThis as unknown as {
+    orca?: { state?: { repo?: unknown } }
+  }).orca
+  const repo = currentOrca?.state?.repo
+  const repoKey = typeof repo === "string" && repo.trim()
+    ? encodeURIComponent(repo.trim())
+    : "unknown-repo"
+  return `${STORAGE_PREFIX}${repoKey}:${pluginName}`
+}
+
 export function isIRIndexFresh(
   snapshot: IRIndexSnapshot,
   now = Date.now(),
@@ -32,7 +43,7 @@ export function isIRIndexFresh(
 
 export function loadIRIndex(pluginName: string): IRIndexSnapshot | null {
   try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + pluginName)
+    const raw = localStorage.getItem(getStorageKey(pluginName))
     if (!raw) return null
     const parsed = JSON.parse(raw) as IRIndexSnapshot
     if (!parsed || !Array.isArray(parsed.topicIds) || !Array.isArray(parsed.extractIds)) {
@@ -46,7 +57,7 @@ export function loadIRIndex(pluginName: string): IRIndexSnapshot | null {
 
 export function saveIRIndex(pluginName: string, snapshot: IRIndexSnapshot): void {
   try {
-    localStorage.setItem(STORAGE_PREFIX + pluginName, JSON.stringify(snapshot))
+    localStorage.setItem(getStorageKey(pluginName), JSON.stringify(snapshot))
   } catch (error) {
     console.warn(`[${pluginName}] 保存 IR 索引失败:`, error)
   }

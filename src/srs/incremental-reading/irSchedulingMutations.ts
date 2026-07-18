@@ -14,16 +14,25 @@ import {
 } from "./irPropertyCodec"
 import {
   clampIntervalDays,
+  clampSacIntervalDays,
   computeBaseIntervalDays,
   computeDispersedSchedule,
   computeNewExtractQueueDelayDays,
+  computeReadingProgressKey,
+  computeSacIntervalDays,
   growIntervalDays,
-  isNewCard
+  isNewCard,
+  isSequentialActiveChapter,
+  nextSacStagnation
 } from "./irSchedulingHelpers"
 import { loadIRState, saveIRState } from "./irStatePersistence"
 
 /**
  * 标记已读：更新 lastRead/readCount/due
+ *
+ * - 普通 Topic/Extract/distributed：interval *= growth factor
+ * - 顺序 Book IR 当前 active 章：Sequential Active Cadence（短节奏，无 1.25 增长）
+ * - 不在「打开卡片」时改写 due；仅本动作与 postpone/priority 等显式写路径改排期
  */
 export async function markAsRead(blockId: DbId): Promise<IRState> {
   try {
@@ -31,8 +40,46 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
     const now = new Date()
     const block = await getBlockCached(blockId)
     const cardType = block ? extractCardType(block) : "topic"
-    const baseIntervalDays = growIntervalDays(cardType, prev.intervalDays)
-    const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, { isNew: isNewCard(prev) })
+    const useSac = await isSequentialActiveChapter(blockId, block)
+
+    let schedule: { intervalDays: number; due: Date }
+    let sacProgressKey = prev.sacProgressKey ?? null
+    let sacStagnantCount = prev.sacStagnantCount ?? 0
+
+    if (useSac) {
+      const currentKey = computeReadingProgressKey(prev)
+      const stagnation = nextSacStagnation(
+        prev.sacProgressKey,
+        currentKey,
+        prev.sacStagnantCount
+      )
+      sacProgressKey = stagnation.progressKey
+      sacStagnantCount = stagnation.stagnantCount
+      const sacBase = computeSacIntervalDays(prev.priority, sacStagnantCount)
+      // SAC 短节奏需可预期：非新卡不做 Topic 式 ± 分散（否则 6 天上限会被抖到 ~4.8）。
+      // 新卡仅做小幅向前分散，避免同日多章扎堆。
+      if (isNewCard(prev)) {
+        const dispersed = computeDispersedSchedule(blockId, cardType, now, sacBase, {
+          isNew: true
+        })
+        const intervalDays = clampSacIntervalDays(dispersed.intervalDays)
+        schedule = {
+          intervalDays,
+          due: computeDueFromIntervalDays(now, intervalDays)
+        }
+      } else {
+        const intervalDays = clampSacIntervalDays(sacBase)
+        schedule = {
+          intervalDays,
+          due: computeDueFromIntervalDays(now, intervalDays)
+        }
+      }
+    } else {
+      const baseIntervalDays = growIntervalDays(cardType, prev.intervalDays)
+      schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
+        isNew: isNewCard(prev)
+      })
+    }
 
     // 真实动作推进 ir.stage（不阻止用户操作）
     let nextStage = prev.stage
@@ -52,7 +99,9 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
       position: prev.position,
       resumeBlockId: prev.resumeBlockId,
       readingBreakpoint: prev.readingBreakpoint ?? null,
-      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null,
+      sacProgressKey,
+      sacStagnantCount
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -76,11 +125,37 @@ export async function markAsReadWithPriority(
     const block = await getBlockCached(blockId)
     const normalizedPriority = normalizePriority(newPriority)
     const cardType = block ? extractCardType(block) : "topic"
-    const baseIntervalDays = clampIntervalDays(
-      cardType,
-      computeBaseIntervalDays(block, normalizedPriority)
-    )
-    const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, { isNew: isNewCard(prev) })
+    const useSac = await isSequentialActiveChapter(blockId, block)
+
+    let schedule: { intervalDays: number; due: Date }
+    if (useSac) {
+      const sacBase = computeSacIntervalDays(normalizedPriority, prev.sacStagnantCount ?? 0)
+      if (isNewCard(prev)) {
+        const dispersed = computeDispersedSchedule(blockId, cardType, now, sacBase, {
+          isNew: true
+        })
+        const intervalDays = clampSacIntervalDays(dispersed.intervalDays)
+        schedule = {
+          intervalDays,
+          due: computeDueFromIntervalDays(now, intervalDays)
+        }
+      } else {
+        const intervalDays = clampSacIntervalDays(sacBase)
+        schedule = {
+          intervalDays,
+          due: computeDueFromIntervalDays(now, intervalDays)
+        }
+      }
+    } else {
+      const baseIntervalDays = clampIntervalDays(
+        cardType,
+        computeBaseIntervalDays(block, normalizedPriority)
+      )
+      schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
+        isNew: isNewCard(prev)
+      })
+    }
+
     const nextState: IRState = {
       priority: normalizedPriority,
       lastRead: now,
@@ -93,7 +168,9 @@ export async function markAsReadWithPriority(
       position: prev.position,
       resumeBlockId: prev.resumeBlockId,
       readingBreakpoint: prev.readingBreakpoint ?? null,
-      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null,
+      sacProgressKey: prev.sacProgressKey ?? null,
+      sacStagnantCount: prev.sacStagnantCount ?? 0
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -117,13 +194,13 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
     const block = await getBlockCached(blockId)
     const cardType = block ? extractCardType(block) : "topic"
 
+    const useSac = await isSequentialActiveChapter(blockId, block)
     const isFreshInit = isNewCard(prev) && (prev.lastAction === "init" || prev.lastAction === "migrate")
     if (isFreshInit) {
-      const baseIntervalDays = clampIntervalDays(
-        cardType,
-        computeBaseIntervalDays(block, normalizedPriority)
-      )
-      const shouldApplyQueueDelay = Boolean(block && cardType === "extracts")
+      const baseIntervalDays = useSac
+        ? computeSacIntervalDays(normalizedPriority, prev.sacStagnantCount ?? 0)
+        : clampIntervalDays(cardType, computeBaseIntervalDays(block, normalizedPriority))
+      const shouldApplyQueueDelay = Boolean(block && cardType === "extracts" && !useSac)
       const queueDelayDays = shouldApplyQueueDelay
         ? await computeNewExtractQueueDelayDays(blockId, block!, baseIntervalDays)
         : 0
@@ -131,19 +208,50 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
         isNew: true,
         queueDelayDays
       })
+      const intervalDays = useSac
+        ? clampSacIntervalDays(schedule.intervalDays)
+        : schedule.intervalDays
       const nextState: IRState = {
         priority: normalizedPriority,
         lastRead: prev.lastRead,
         readCount: prev.readCount,
-        intervalDays: schedule.intervalDays,
+        intervalDays,
         postponeCount: prev.postponeCount,
         stage: prev.stage,
         lastAction: "priority",
-        due: schedule.due,
+        due: useSac ? computeDueFromIntervalDays(now, intervalDays) : schedule.due,
         position: prev.position,
         resumeBlockId: prev.resumeBlockId,
         readingBreakpoint: prev.readingBreakpoint ?? null,
-        autoPostponeBatchId: prev.autoPostponeBatchId ?? null
+        autoPostponeBatchId: prev.autoPostponeBatchId ?? null,
+        sacProgressKey: prev.sacProgressKey ?? null,
+        sacStagnantCount: prev.sacStagnantCount ?? 0
+      }
+      await saveIRState(blockId, nextState)
+      return nextState
+    }
+
+    // SAC 激活章：显式改优先级时按新 priority 重算短节奏（保留停滞计数，不静默覆盖 postpone due——本路径会写 due 属用户意图）
+    if (useSac) {
+      const nextIntervalDays = computeSacIntervalDays(
+        normalizedPriority,
+        prev.sacStagnantCount ?? 0
+      )
+      const nextState: IRState = {
+        priority: normalizedPriority,
+        lastRead: prev.lastRead,
+        readCount: prev.readCount,
+        intervalDays: nextIntervalDays,
+        postponeCount: prev.postponeCount,
+        stage: prev.stage,
+        lastAction: "priority",
+        due: computeDueFromIntervalDays(now, nextIntervalDays),
+        position: prev.position,
+        resumeBlockId: prev.resumeBlockId,
+        readingBreakpoint: prev.readingBreakpoint ?? null,
+        autoPostponeBatchId: prev.autoPostponeBatchId ?? null,
+        sacProgressKey: prev.sacProgressKey ?? null,
+        sacStagnantCount: prev.sacStagnantCount ?? 0
       }
       await saveIRState(blockId, nextState)
       return nextState
@@ -166,7 +274,9 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
       position: prev.position,
       resumeBlockId: prev.resumeBlockId,
       readingBreakpoint: prev.readingBreakpoint ?? null,
-      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null,
+      sacProgressKey: prev.sacProgressKey ?? null,
+      sacStagnantCount: prev.sacStagnantCount ?? 0
     }
 
     await saveIRState(blockId, nextState)
@@ -222,7 +332,9 @@ export async function updateResumeBlockId(
     const prev = await loadIRState(blockId)
     const nextState: IRState = {
       ...prev,
-      resumeBlockId
+      resumeBlockId,
+      sacProgressKey: prev.sacProgressKey ?? null,
+      sacStagnantCount: prev.sacStagnantCount ?? 0
     }
     await saveIRState(blockId, nextState)
     return nextState
@@ -262,7 +374,9 @@ export async function updateReadingBreakpoint(
       ...prev,
       resumeBlockId: nextResumeBlockId ?? null,
       readingBreakpoint: nextBreakpoint,
-      autoPostponeBatchId: prev.autoPostponeBatchId ?? null
+      autoPostponeBatchId: prev.autoPostponeBatchId ?? null,
+      sacProgressKey: prev.sacProgressKey ?? null,
+      sacStagnantCount: prev.sacStagnantCount ?? 0
     }
 
     await saveIRState(blockId, nextState)
@@ -302,7 +416,10 @@ export async function postpone(
       lastAction: "postpone",
       due: computeDueFromIntervalDays(now, nextIntervalDays),
       // 用户手动推后不属于自动批次
-      autoPostponeBatchId: null
+      autoPostponeBatchId: null,
+      // 保留 SAC 进度指纹；不在打开时用 SAC 覆盖本 due（仅本动作写排期）
+      sacProgressKey: prev.sacProgressKey ?? null,
+      sacStagnantCount: prev.sacStagnantCount ?? 0
     }
 
     await saveIRState(blockId, nextState)

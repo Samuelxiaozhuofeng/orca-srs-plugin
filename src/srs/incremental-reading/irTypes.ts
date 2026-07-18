@@ -61,6 +61,16 @@ export type IRState = {
   sourceTopicId?: DbId | null
   /** 自动推后批次 ID */
   autoPostponeBatchId?: string | null
+  /**
+   * Sequential Active Cadence (SAC)：上次「下一篇」时的阅读进度指纹。
+   * 由 resumeBlockId + readingBreakpoint 推导，用于判断是否实质进展。
+   * 缺省/缺失视为无历史（兼容旧数据，不迁移重写）。
+   */
+  sacProgressKey?: string | null
+  /**
+   * SAC：连续无实质进展的「下一篇」次数。缺省视为 0。
+   */
+  sacStagnantCount?: number
 }
 
 export type IRCollectStatus = "ok" | "empty" | "partial" | "error"

@@ -3,6 +3,12 @@
  */
 
 import type { EpubChapter, EpubImportStatus, ImportEpubResult } from "../../importers/epub/types"
+import {
+  DEFAULT_IR_PRIORITY,
+  getSequentialActiveBaseIntervalDays,
+  normalizePriority,
+  SAC_MAX_INTERVAL_DAYS
+} from "../../srs/incrementalReadingScheduler"
 
 export type WizardStep =
   | "file"
@@ -69,14 +75,31 @@ export function resultSummary(result: ImportEpubResult): {
   }
 }
 
+/** Format SAC base interval for preview copy (keep one decimal when needed). */
+function formatApproxIntervalDays(days: number): string {
+  return String(Math.round(days * 10) / 10)
+}
+
+/**
+ * Preview copy for IR book creation schedule mode.
+ * `priority` only affects sequential mode; default 50 keeps 3-arg call sites compatible.
+ */
 export function schedulePreviewText(
   mode: "distributed" | "sequential",
   chapterCount: number,
-  totalDays: number
+  totalDays: number,
+  priority: number = DEFAULT_IR_PRIORITY
 ): string {
   if (chapterCount <= 0) return "请至少选择 1 章"
   if (mode === "sequential") {
-    return `顺序解锁：同时仅 1 章激活；完成或跳过当前章后才解锁下一章（共 ${chapterCount} 章）`
+    const p = normalizePriority(priority)
+    const intervalDays = getSequentialActiveBaseIntervalDays(p)
+    const intervalLabel = formatApproxIntervalDays(intervalDays)
+    return (
+      `顺序解锁：同时仅 1 章激活；当前优先级 ${p}，当前章节约每 ${intervalLabel} 天再次推送；` +
+      `完成或跳过当前章后当天解锁下一章（共 ${chapterCount} 章）。` +
+      `如果连续没有阅读进展，间隔会逐步放宽，最长约 ${SAC_MAX_INTERVAL_DAYS} 天。`
+    )
   }
   const interval = Math.max(1, Math.round(totalDays / Math.max(1, chapterCount)))
   return `分散排期：第 1 章今天到期，其余按约 ${totalDays} 天跨度分散（约每 ${interval} 天一章）`

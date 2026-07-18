@@ -453,7 +453,7 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
               fontSize: 13
             }}
           >
-            {schedulePreviewText(irMode, irSelectedIds.length, irTotalDays)}
+            {schedulePreviewText(irMode, irSelectedIds.length, irTotalDays, irPriority)}
           </div>
           {irFailedCount > 0 ? (
             <div role="status" style={{ fontSize: 13, color: "var(--orca-color-warning-6, #a60)" }}>

@@ -117,17 +117,31 @@ export function parseBookIRPlan(raw: unknown, bookBlockId?: DbId): BookIRPlanV1 
     lastError = value.lastError as string | null | undefined
   }
 
+  // Always materialize plain JSON data. Values read from orca.state.blocks may be
+  // reactive Proxies; passing those to invokeEditorCommand causes
+  // "An object could not be cloned." (structured clone / IPC).
   return {
     version: 1,
     bookBlockId: value.bookBlockId as DbId,
     mode: value.mode as BookIRMode,
     priority: value.priority,
     totalDays: value.totalDays,
-    selectedChapterIds: value.selectedChapterIds as DbId[],
+    selectedChapterIds: Array.from(
+      value.selectedChapterIds as DbId[],
+      (id) => id as DbId
+    ),
     activeChapterId: value.activeChapterId as DbId | null,
-    outcomes,
+    outcomes: { ...outcomes },
     lastError: lastError ?? null
   }
+}
+
+/**
+ * Deep plain JSON clone suitable for Orca editor commands / structured clone.
+ * Throws if value is not JSON-serializable (surfaces problems instead of silent loss).
+ */
+export function toPlainJsonValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 export async function loadBookIRPlan(bookBlockId: DbId): Promise<BookIRPlanV1 | null> {
@@ -140,11 +154,13 @@ export async function loadBookIRPlan(bookBlockId: DbId): Promise<BookIRPlanV1 | 
 
 export async function saveBookIRPlan(bookBlockId: DbId, plan: BookIRPlanV1): Promise<void> {
   const validated = parseBookIRPlan({ ...plan, bookBlockId }, bookBlockId)
+  // Re-validate after plain clone so editor args never carry Proxies / non-cloneables
+  const plain = parseBookIRPlan(toPlainJsonValue(validated), bookBlockId)
   await orca.commands.invokeEditorCommand(
     "core.editor.setProperties",
     null,
     [bookBlockId],
-    [{ name: IR_BOOK_PLAN_PROP, value: validated, type: PROP_TYPE_JSON }]
+    [{ name: IR_BOOK_PLAN_PROP, value: plain, type: PROP_TYPE_JSON }]
   )
 }
 
