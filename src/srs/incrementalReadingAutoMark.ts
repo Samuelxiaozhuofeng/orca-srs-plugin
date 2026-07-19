@@ -12,7 +12,7 @@
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
 import { DEFAULT_IR_PRIORITY } from "./incrementalReadingScheduler"
-import { loadIRState, updatePriority } from "./incrementalReadingStorage"
+import { loadIRState } from "./incrementalReadingStorage"
 import { getIncrementalReadingSettings } from "./settings/incrementalReadingSettingsSchema"
 import { buildCardTagData } from "./cardTagDataBuilder"
 import { upsertIRIndexId } from "./incremental-reading/irIndex"
@@ -130,11 +130,14 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
     const { ensureCardSrsState } = await import("./storage")
     await ensureCardSrsState(blockId)
 
-    // 初始化渐进阅读状态（ir.*）
-    const { ensureIRState, invalidateIrBlockCache } = await import("./incrementalReadingStorage")
-    await ensureIRState(blockId)
-    await updatePriority(blockId, inheritedPriority)
-    invalidateIrBlockCache(blockId)
+    // 初始化渐进阅读状态（ir.*）：直接 child 的 sourceTopicId = parent Topic（正确，非凭空臆造）
+    // 顺序：写 sourceTopicId → invalidate → updatePriority（与 createExtract 一致）
+    const { initializeExtractScheduleAfterCreate } = await import("./extractUtils")
+    await initializeExtractScheduleAfterCreate({
+      extractBlockId: blockId,
+      sourceTopicId: parentTopic.id,
+      priority: inheritedPriority
+    })
     upsertIRIndexId(pluginName, blockId, "extracts")
 
     processedBlocks.add(blockId)

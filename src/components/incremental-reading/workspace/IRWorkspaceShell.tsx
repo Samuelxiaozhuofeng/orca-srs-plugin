@@ -318,7 +318,6 @@ export default function IRWorkspaceShell({
             onRetryLoad={() => void reading.loadReadingQueue({
               timeBudgetMinutes: reading.session.timeBudgetMinutes
             })}
-            onUndoAutoPostpone={() => void reading.handleUndoAutoPostpone()}
             onBackToLibrary={() => handleModeChange("library")}
             onQueueSnapshot={reading.setQueueSnapshot}
             onOpenQueue={() => setDrawer("queue")}

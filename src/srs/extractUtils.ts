@@ -10,11 +10,64 @@
 
 import type { Block, ContentFragment, CursorData, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
-import { ensureIRState, loadIRState, updatePriority } from "./incrementalReadingStorage"
+import {
+  ensureIRState,
+  invalidateIrBlockCache,
+  loadIRState,
+  updatePriority
+} from "./incrementalReadingStorage"
 import { DEFAULT_IR_PRIORITY, normalizePriority } from "./incrementalReadingScheduler"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
 import { buildCardTagData } from "./cardTagDataBuilder"
+
+/**
+ * 新 Extract 排期初始化生产顺序（可注入依赖以便测试约束调用序）。
+ *
+ * 调用前刚 insertTag / setRefData(type=extracts)，IR cache 可能仍是无标签快照。
+ * 必须先 invalidate，再 ensure，避免按 basic 错误 cardType 初始化。
+ *
+ * 有 sourceTopicId：
+ *   invalidate(tag) → setSource → invalidate(source) → ensure → updatePriority
+ * 无 source：
+ *   invalidate(tag) → ensure → updatePriority
+ */
+export async function initializeExtractScheduleAfterCreate(args: {
+  extractBlockId: DbId
+  sourceTopicId: DbId | null
+  priority: number
+  deps?: {
+    ensureIRState?: typeof ensureIRState
+    setSourceTopicId?: (blockId: DbId, topicId: DbId) => Promise<void>
+    invalidateIrBlockCache?: (blockId: DbId) => void
+    updatePriority?: typeof updatePriority
+  }
+}): Promise<void> {
+  const ensure = args.deps?.ensureIRState ?? ensureIRState
+  const invalidate = args.deps?.invalidateIrBlockCache ?? invalidateIrBlockCache
+  const updatePrio = args.deps?.updatePriority ?? updatePriority
+  const setSource =
+    args.deps?.setSourceTopicId
+    ?? (async (blockId: DbId, topicId: DbId) => {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setProperties",
+        null,
+        [blockId],
+        [{ name: "ir.sourceTopicId", value: topicId, type: 3 }]
+      )
+    })
+
+  // 1) 标签刚写入：先失效 cache，确保 ensure 读到 #card/type=extracts
+  invalidate(args.extractBlockId)
+  // 2) 有来源时写 sourceTopicId，写后再失效
+  if (args.sourceTopicId != null) {
+    await setSource(args.extractBlockId, args.sourceTopicId)
+    invalidate(args.extractBlockId)
+  }
+  // 3) ensure 使用最新卡种；4) updatePriority 读 sourceTopicId 算 sibling delay
+  await ensure(args.extractBlockId)
+  await updatePrio(args.extractBlockId, args.priority)
+}
 
 const findNearestTopic = (block: Block): Block | null => {
   let current: Block | undefined = block
@@ -239,18 +292,14 @@ async function createExtractFromText(args: {
     return null
   }
 
-  // 3) 初始化渐进阅读状态（ir.*）并写入来源 Topic
+  // 3) 初始化渐进阅读状态（ir.*）：必须先写 sourceTopicId + invalidate，再 updatePriority
+  //    （sibling queueDelay 依赖 ir.sourceTopicId 找来源 Topic；真实嵌套 Extract 的 parent 不是 Topic）
   try {
-    await ensureIRState(extractBlockId)
-    await updatePriority(extractBlockId, inheritedPriority)
-    if (topic) {
-      await orca.commands.invokeEditorCommand(
-        "core.editor.setProperties",
-        null,
-        [extractBlockId],
-        [{ name: "ir.sourceTopicId", value: topic.id, type: 3 }]
-      )
-    }
+    await initializeExtractScheduleAfterCreate({
+      extractBlockId,
+      sourceTopicId: topic?.id ?? null,
+      priority: inheritedPriority
+    })
     try {
       const { upsertIRIndexId } = await import("./incremental-reading/irIndex")
       upsertIRIndexId(pluginName, extractBlockId, "extracts")

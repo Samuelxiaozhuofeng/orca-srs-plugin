@@ -62,11 +62,18 @@ describe("incrementalReadingDispersal", () => {
     expect(interval).toBeLessThanOrEqual(baseIntervalDays + 0.5)
   })
 
-  it("should add queue delay for new cards", () => {
+  it("must not fold queue delay into intentional intervalDays", () => {
     const baseDate = new Date(2026, 0, 15, 12, 0, 0)
     const baseIntervalDays = 4
     const queueDelayDays = 4.5
-    const interval = computeDispersedIntervalDays({
+    const withoutDelay = computeDispersedIntervalDays({
+      blockId: 10,
+      cardType: "extracts",
+      baseDate,
+      baseIntervalDays,
+      isNew: true
+    })
+    const withIgnoredDelay = computeDispersedIntervalDays({
       blockId: 10,
       cardType: "extracts",
       baseDate,
@@ -74,9 +81,11 @@ describe("incrementalReadingDispersal", () => {
       isNew: true,
       queueDelayDays
     })
+    // queueDelay is due-only; low-level dispersal ignores it
+    expect(withIgnoredDelay).toBe(withoutDelay)
     // For extracts, forward max is base * 0.5 (no 1-day cap).
-    expect(interval).toBeGreaterThanOrEqual(baseIntervalDays + queueDelayDays)
-    expect(interval).toBeLessThanOrEqual(baseIntervalDays + queueDelayDays + baseIntervalDays * 0.5)
+    expect(withoutDelay).toBeGreaterThanOrEqual(baseIntervalDays)
+    expect(withoutDelay).toBeLessThanOrEqual(baseIntervalDays + baseIntervalDays * 0.5)
   })
 
   it("should disperse within expected ± range for non-new cards", () => {

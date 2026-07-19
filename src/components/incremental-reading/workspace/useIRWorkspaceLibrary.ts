@@ -27,6 +27,7 @@ import {
   type SequentialBookTreeContext
 } from "./irSourceTreeBuilder"
 import { loadSequentialBookTreeContexts } from "./loadSequentialBookTreeContexts"
+import { mapOverflowDeferNotify } from "./irOverflowDeferNotify"
 import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useState } = window.React
@@ -356,13 +357,10 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
       })
       const result = await deferIROverflow(dueCards, queue, { now })
       await loadLibrary()
-      orca.notify(
-        result.deferredCount > 0 ? "success" : "info",
-        result.deferredCount > 0
-          ? `已推后溢出 ${result.deferredCount} 张`
-          : "当前没有需要推后的溢出卡片",
-        { title: "渐进阅读" }
-      )
+      const successCount = result.successIds?.length ?? result.deferredCount
+      const failedCount = result.failed?.length ?? 0
+      const notice = mapOverflowDeferNotify({ successCount, failedCount })
+      orca.notify(notice.level, notice.message, { title: "渐进阅读" })
     } catch (error) {
       console.error("[IR Workspace] 溢出推后失败:", error)
       orca.notify("error", "溢出推后失败", { title: "渐进阅读" })

@@ -143,7 +143,7 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 
 **手动意图优先**：
 
-- `postpone` / 会话推后：立即写 `due`/`intervalDays`/`lastAction=postpone`；**打开卡片不会**用 SAC 静默覆盖
+- `postpone` / 会话推后：只写 `due` / `lastAction=postpone`（及 `postponeCount`），**保留** intentional `intervalDays`（Batch B2）；**打开卡片不会**用 SAC 静默覆盖
 - 仅在用户再次「下一篇」等写路径时按 SAC 重算下一轮
 - 显式改优先级：SAC 章按新 priority 重算短节奏（属用户意图）；非 SAC 仍比例修正
 

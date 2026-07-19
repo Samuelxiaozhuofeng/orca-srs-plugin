@@ -25,12 +25,12 @@ type Props = {
   todayReadingSummaryLoading: boolean
   todayReadingSummaryAvailable: boolean
   collectResult: IRCollectResult | null
+  /** 工作区会话启动不再自动顺延；固定 null，仅兼容 IRSessionShell 可选展示 */
   autoPostponeLabel: string | null
   mixedDegradedNotice: string | null
   sessionGeneration: number
   onStartSession: (minutes: number, mode: IRSessionLaunchMode) => void
   onRetryLoad: () => void
-  onUndoAutoPostpone: () => void
   onBackToLibrary: () => void
   onQueueSnapshot: (snapshot: { queue: IRSessionEntry[]; currentIndex: number }) => void
   onOpenQueue: () => void
@@ -55,7 +55,6 @@ export default function IRReadingView({
   sessionGeneration,
   onStartSession,
   onRetryLoad,
-  onUndoAutoPostpone,
   onBackToLibrary,
   onQueueSnapshot,
   onOpenQueue,
@@ -216,7 +215,6 @@ export default function IRReadingView({
         onRetryLoad={onRetryLoad}
         autoPostponeLabel={autoPostponeLabel}
         sessionNotice={mixedDegradedNotice}
-        onUndoAutoPostpone={onUndoAutoPostpone}
         embedded
         onBackToLibrary={onBackToLibrary}
         onQueueSnapshot={onQueueSnapshot}

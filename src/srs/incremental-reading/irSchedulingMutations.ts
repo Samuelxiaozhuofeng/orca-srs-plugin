@@ -6,6 +6,10 @@ import type { DbId } from "../../orca.d.ts"
 import { extractCardType } from "../deckUtils"
 import { computeDueFromIntervalDays } from "../incrementalReadingDispersal"
 import { getPostponeDays, normalizePriority } from "../incrementalReadingScheduler"
+import {
+  BLOCK_PREFETCH_CONCURRENCY,
+  runBoundedConcurrency
+} from "../storage"
 import { getBlockCached } from "./irBlockCache"
 import {
   normalizeReadingBreakpoint,
@@ -13,6 +17,7 @@ import {
   type IRState
 } from "./irPropertyCodec"
 import {
+  adjustIntervalForPriorityChange,
   clampIntervalDays,
   clampSacIntervalDays,
   computeBaseIntervalDays,
@@ -20,6 +25,7 @@ import {
   computeNewExtractQueueDelayDays,
   computeReadingProgressKey,
   computeSacIntervalDays,
+  getMaxIntervalDays,
   growIntervalDays,
   isNewCard,
   isSequentialActiveChapter,
@@ -257,11 +263,13 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
       return nextState
     }
 
-    // 比例修正：保留已增长的间隔，factor 限制在 0.6..1.6
-    const oldP = prev.priority
-    const rawFactor = 1 + (oldP - normalizedPriority) / 200
-    const factor = Math.min(1.6, Math.max(0.6, rawFactor))
-    const nextIntervalDays = clampIntervalDays(cardType, Math.max(1, prev.intervalDays * factor))
+    // 比例修正：保留已增长的间隔；统一 helper + cardType clamp
+    const nextIntervalDays = adjustIntervalForPriorityChange(
+      cardType,
+      prev.intervalDays,
+      prev.priority,
+      normalizedPriority
+    )
     const nextState: IRState = {
       priority: normalizedPriority,
       lastRead: prev.lastRead,
@@ -289,7 +297,7 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
 }
 
 /**
- * 批量更新优先级
+ * 批量更新优先级（有界并发，禁止无界 Promise.all）
  */
 export async function bulkUpdatePriority(
   blockIds: DbId[],
@@ -299,24 +307,24 @@ export async function bulkUpdatePriority(
     return { success: [], failed: [] }
   }
 
-  const results = await Promise.allSettled(
-    blockIds.map(blockId => updatePriority(blockId, newPriority))
-  )
-
   const success: DbId[] = []
   const failed: Array<{ id: DbId; error: string }> = []
 
-  results.forEach((result, index) => {
-    if (result.status === "fulfilled") {
-      success.push(blockIds[index])
-      return
+  await runBoundedConcurrency(
+    blockIds,
+    BLOCK_PREFETCH_CONCURRENCY,
+    async (blockId) => {
+      try {
+        await updatePriority(blockId, newPriority)
+        success.push(blockId)
+      } catch (reason) {
+        failed.push({
+          id: blockId,
+          error: reason instanceof Error ? reason.message : String(reason ?? "未知错误")
+        })
+      }
     }
-    const reason = result.reason
-    failed.push({
-      id: blockIds[index],
-      error: reason instanceof Error ? reason.message : String(reason ?? "未知错误")
-    })
-  })
+  )
 
   return { success, failed }
 }
@@ -389,9 +397,11 @@ export async function updateReadingBreakpoint(
 }
 
 /**
- * 推后（Postpone）：写回 due/intervalDays/postponeCount/lastAction
+ * 推后（Postpone）：只移动 due，保留 intentional `intervalDays`。
+ * 允许更新：postponeCount / lastAction / 清空 autoPostponeBatchId。
+ * 不增加 readCount，不改 AF，不借推后重置长期间隔。
  *
- * @param days 可选指定天数；未提供时按优先级自动决定
+ * @param days 可选指定天数；未提供时按优先级自动决定 delay（仅用于 due）
  */
 export async function postpone(
   blockId: DbId,
@@ -404,17 +414,22 @@ export async function postpone(
     const cardType = block ? extractCardType(block) : "topic"
 
     const irCardType = cardType === "extracts" ? "extracts" : "topic"
-    const resolvedDays = typeof days === "number" && Number.isFinite(days) && days > 0
+    const rawDays = typeof days === "number" && Number.isFinite(days) && days > 0
       ? days
       : getPostponeDays(irCardType, prev.priority)
-    const nextIntervalDays = clampIntervalDays(cardType, resolvedDays)
+    // delay 只用于 due；仍做合理上下界，但不写回 intervalDays
+    const resolvedDays = Math.min(
+      getMaxIntervalDays(cardType),
+      Math.max(0.1, rawDays)
+    )
 
     const nextState: IRState = {
       ...prev,
-      intervalDays: nextIntervalDays,
+      // 保留 intentional interval（不因 postpone 改写）
+      intervalDays: prev.intervalDays,
       postponeCount: prev.postponeCount + 1,
       lastAction: "postpone",
-      due: computeDueFromIntervalDays(now, nextIntervalDays),
+      due: computeDueFromIntervalDays(now, resolvedDays),
       // 用户手动推后不属于自动批次
       autoPostponeBatchId: null,
       // 保留 SAC 进度指纹；不在打开时用 SAC 覆盖本 due（仅本动作写排期）
@@ -423,7 +438,7 @@ export async function postpone(
     }
 
     await saveIRState(blockId, nextState)
-    return { state: nextState, days: nextIntervalDays }
+    return { state: nextState, days: resolvedDays }
   } catch (error) {
     console.error("[IR] 推后失败:", error)
     orca.notify("error", "推后失败", { title: "渐进阅读" })

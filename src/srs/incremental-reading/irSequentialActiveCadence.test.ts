@@ -328,7 +328,8 @@ describe("markAsRead SAC for sequential active chapter", () => {
     invalidateIrBlockCache(1)
     const { state: postponed, days } = await postpone(1, 10)
     expect(days).toBe(10)
-    expect(postponed.intervalDays).toBe(10)
+    // Batch B2：postpone 只移 due，保留 intentional intervalDays
+    expect(postponed.intervalDays).toBe(2)
     expect(postponed.lastAction).toBe("postpone")
 
     const dueAfterPostpone = postponed.due.getTime()
@@ -337,14 +338,15 @@ describe("markAsRead SAC for sequential active chapter", () => {
     invalidateIrBlockCache(1)
     const loaded = await loadIRState(1)
     expect(loaded.due.getTime()).toBe(dueAfterPostpone)
-    expect(loaded.intervalDays).toBe(10)
+    expect(loaded.intervalDays).toBe(2)
     expect(loaded.lastAction).toBe("postpone")
 
     // Only next user action (markAsRead) applies SAC again
     invalidateIrBlockCache(1)
     const afterNext = await markAsRead(1)
     expect(afterNext.lastAction).toBe("next")
-    expect(afterNext.intervalDays).toBeLessThan(10)
+    // SAC 短节奏重算，与 postpone delay 无关
+    expect(afterNext.intervalDays).toBeLessThanOrEqual(6)
     expect(afterNext.due.getTime()).not.toBe(dueAfterPostpone)
   })
 })

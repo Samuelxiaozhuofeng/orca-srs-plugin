@@ -1,5 +1,5 @@
 /**
- * 专注阅读队列加载与自动顺延
+ * 专注阅读队列加载（会话创建 / 打开 / 刷新 / 重试为只读装配，不写 block 属性）
  */
 
 import type { DbId } from "../../../orca.d.ts"
@@ -13,14 +13,11 @@ import {
 } from "../../../srs/incrementalReadingSessionManager"
 import { advanceDueToToday } from "../../../srs/incrementalReadingStorage"
 import {
-  applyAutoPostpone,
-  formatAutoPostponeSummary,
-  undoAutoPostponeBatch
-} from "../../../srs/incremental-reading/irOverloadService"
-import {
   DEFAULT_QUEUE_POLICY,
   budgetSeconds,
-  selectQueueWithPolicy
+  formatLocalDateKey,
+  selectQueueWithPolicy,
+  topicQuotaPercentToMinRatio
 } from "../../../srs/incremental-reading/irQueuePolicy"
 import {
   buildMixedSessionQueue,
@@ -31,6 +28,7 @@ import { estimateCardCostSecondsCalibrated } from "../../../srs/incremental-read
 import { buildCollectError, buildCollectOk } from "../../../srs/incremental-reading/irCollectResult"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
+import { assembleSessionReadingQueue } from "./assembleSessionReadingQueue"
 import {
   buildMixedDegradedNotice,
   resolveSessionMixedEnabled,
@@ -62,7 +60,6 @@ export function useIRWorkspaceSession(
   })
   const [advancingIds, setAdvancingIds] = useState<Record<string, boolean>>({})
   const advancingRef = useRef<Set<DbId>>(new Set())
-  const autoBatchIdRef = useRef<string | null>(null)
   /** 上次显式/继承的本次模式，供刷新/重试在未传 sessionLaunchMode 时复用 */
   const sessionLaunchModeRef = useRef<IRSessionLaunchMode | null>(null)
 
@@ -87,9 +84,11 @@ export function useIRWorkspaceSession(
         collectIRCardsDetailed
       } = await import("../../../srs/incrementalReadingCollector")
 
+      // 会话创建/打开/刷新/重试：收集必须只读（跳过 ensureIRState / setProperties）
+      const sessionCollectOpts = { readOnly: true as const }
       const detailed = typeof collectIRCardsDetailed === "function"
-        ? await collectIRCardsDetailed(name)
-        : { cards: await collectIRCards(name), failedCount: 0 }
+        ? await collectIRCardsDetailed(name, sessionCollectOpts)
+        : { cards: await collectIRCards(name, sessionCollectOpts), failedCount: 0 }
 
       const result: IRCollectResult = buildCollectOk(detailed.cards, detailed.failedCount)
       if (result.status === "error") {
@@ -111,8 +110,9 @@ export function useIRWorkspaceSession(
         launchMode,
         settings.mixedLearningEnabled
       )
-      const seed = new Date().toISOString().slice(0, 10)
+      // 同一时刻派生 seed 与会话时间，避免相邻 new Date() 跨午夜漂移；seed 用本地日而非 UTC ISO
       const sessionStartedAt = new Date()
+      const seed = formatLocalDateKey(sessionStartedAt)
       let reviewCards: import("../../../srs/types").ReviewCard[] = []
       if (mixedEnabledForSession) {
         const { collectReviewCards } = await import("../../../srs/cardCollector")
@@ -126,34 +126,28 @@ export function useIRWorkspaceSession(
         ...DEFAULT_QUEUE_POLICY,
         timeBudgetMinutes: readingBudgetMinutes,
         dailyLimit: settings.dailyLimit,
+        // Source Topic 在纯 IR reading queue 中的最低比例（0..1）；非 mixed SRS 比例
+        topicMinRatio: topicQuotaPercentToMinRatio(settings.topicQuotaPercent),
         seed
       })
 
-      const auto = await applyAutoPostpone(result.cards, {
-        protectedIds: policyQueue.protectedIds,
-        createBatchId: () => `session-${Date.now()}`
-      })
-      let autoLabel: string | null = null
-      if (auto.batch && auto.deferredCount > 0) {
-        autoBatchIdRef.current = auto.batch.batchId
-        autoLabel = formatAutoPostponeSummary(auto.deferredCount)
-      } else {
-        autoBatchIdRef.current = null
-      }
+      // 会话创建/打开/刷新/重试：只装配队列，不隐式写 block 属性（Batch B1）。
+      // enableAutoDefer 仅控制资料库「一键溢出推后」按钮，不是自动写入许可。
+      // focus 在最终会话队列中解析并冻结；因不再执行 overload mutation，focus 不会在同次加载被推迟。
 
       let focusCardId = options.focusCardId ?? null
       if (focusCardId == null) {
         focusCardId = await popNextIRSessionFocusCardId(name)
       }
 
-      let focusedQueue = policyQueue.queue
+      let focusCard: IRCard | null = null
       if (focusCardId) {
-        let focusCard = result.cards.find((c: IRCard) => c.id === focusCardId)
+        focusCard = result.cards.find((c: IRCard) => c.id === focusCardId) ?? null
         if (!focusCard) {
           try {
             const block = await orca.invokeBackend("get-block", focusCardId)
             if (block) {
-              const cards = await collectAllIRCardsFromBlocks([block], name)
+              const cards = await collectAllIRCardsFromBlocks([block], name, sessionCollectOpts)
               if (cards.length > 0) {
                 focusCard = cards[0]
               }
@@ -163,16 +157,15 @@ export function useIRWorkspaceSession(
           }
         }
         if (!focusCard) {
-          focusCard = libraryCards.find((c: IRCard) => c.id === focusCardId)
-        }
-        if (focusCard) {
-          const without = focusedQueue.filter((c: IRCard) => c.id !== focusCardId)
-          focusedQueue = [focusCard, ...without]
-          if (settings.dailyLimit > 0 && focusedQueue.length > settings.dailyLimit) {
-            focusedQueue = focusedQueue.slice(0, settings.dailyLimit)
-          }
+          focusCard = libraryCards.find((c: IRCard) => c.id === focusCardId) ?? null
         }
       }
+
+      const focusedQueue = assembleSessionReadingQueue({
+        policyQueue: policyQueue.queue,
+        focusCard,
+        dailyLimit: settings.dailyLimit
+      })
 
       const readingCostSeconds = focusedQueue.reduce(
         (sum, card) => sum + estimateCardCostSecondsCalibrated(card),
@@ -200,8 +193,9 @@ export function useIRWorkspaceSession(
         entries: sessionEntries,
         timeBudgetMinutes: options.timeBudgetMinutes,
         collectResult: result,
-        autoPostponeLabel: autoLabel,
-        autoBatchId: autoBatchIdRef.current,
+        // 会话启动不再自动顺延；字段保留以兼容会话 UI 接线
+        autoPostponeLabel: null,
+        autoBatchId: null,
         generation: Date.now(),
         sessionLaunchMode: launchMode,
         mixedDegradedNotice
@@ -268,28 +262,6 @@ export function useIRWorkspaceSession(
     }
   }, [])
 
-  const handleUndoAutoPostpone = useCallback(async () => {
-    const batchId = autoBatchIdRef.current ?? session.autoBatchId
-    if (!batchId) return
-    try {
-      const result = await undoAutoPostponeBatch(batchId)
-      if (result.restored > 0) {
-        orca.notify("success", `已撤销自动顺延 ${result.restored} 条`, { title: "渐进阅读" })
-        autoBatchIdRef.current = null
-        setSession((prev: IRWorkspaceSessionState) => ({
-          ...prev,
-          autoPostponeLabel: null,
-          autoBatchId: null
-        }))
-      } else {
-        orca.notify("info", "没有可撤销的自动顺延（可能已被手动修改）", { title: "渐进阅读" })
-      }
-    } catch (error) {
-      console.error("[IR Workspace] 撤销自动推后失败:", error)
-      orca.notify("error", "撤销自动推后失败", { title: "渐进阅读" })
-    }
-  }, [session.autoBatchId])
-
   return {
     session,
     queueSnapshot,
@@ -297,7 +269,6 @@ export function useIRWorkspaceSession(
     advancingIds,
     loadReadingQueue,
     startReadingWithCard,
-    handleAdvanceDueOnly,
-    handleUndoAutoPostpone
+    handleAdvanceDueOnly
   }
 }

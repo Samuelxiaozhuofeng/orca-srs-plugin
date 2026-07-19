@@ -3,6 +3,8 @@
  *
  * 写入策略：先全部读取快照 → 逐张写入 → 任一张失败则回滚已写入 → 成功后才登记批次。
  * autoPostponeBatchId 必须经 saveIRState 持久化，撤销时从磁盘重读校验。
+ *
+ * Batch B2：postpone 只移动 due，保留 intentional intervalDays；失败/回滚事实可见。
  */
 
 import type { DbId } from "../../orca.d.ts"
@@ -23,6 +25,25 @@ export type AutoPostponeOptions = {
 export type AutoPostponeResult = {
   batch: IRAutoPostponeBatch | null
   deferredCount: number
+  /** 本批成功 committed 的 blockId（与 deferredCount 一致） */
+  committedIds: DbId[]
+}
+
+export type AutoPostponeFailureDetails = {
+  committedBeforeFailure: number
+  rolledBackCount: number
+  rollbackFailed: Array<{ blockId: DbId; error: string }>
+  cause: unknown
+}
+
+export class AutoPostponeError extends Error {
+  readonly details: AutoPostponeFailureDetails
+
+  constructor(message: string, details: AutoPostponeFailureDetails) {
+    super(message)
+    this.name = "AutoPostponeError"
+    this.details = details
+  }
 }
 
 const batchStore = new Map<string, IRAutoPostponeBatch>()
@@ -73,6 +94,12 @@ async function restoreSnapshot(snap: IRAutoPostponeSnapshot, current: IRState): 
   })
 }
 
+function resolveDueOnlyDelayDays(cardType: string, priority: number): number {
+  const days = getPostponeDays(cardType === "extracts" ? "extracts" : "topic", priority)
+  const max = cardType === "extracts" ? 30 : 60
+  return Math.min(max, Math.max(0.1, days))
+}
+
 export async function applyAutoPostpone(
   dueCards: IRCard[],
   options: AutoPostponeOptions
@@ -80,7 +107,7 @@ export async function applyAutoPostpone(
   const now = options.now ?? new Date()
   const candidates = selectAutoPostponeCandidates(dueCards, options)
   if (candidates.length === 0) {
-    return { batch: null, deferredCount: 0 }
+    return { batch: null, deferredCount: 0, committedIds: [] }
   }
 
   const batchId = (options.createBatchId ?? createAutoPostponeBatchId)()
@@ -96,16 +123,13 @@ export async function applyAutoPostpone(
   const committed: IRAutoPostponeSnapshot[] = []
   try {
     for (const { card, prev, snap } of prepared) {
-      const days = getPostponeDays(card.cardType, card.priority)
-      const nextInterval = Math.min(
-        card.cardType === "extracts" ? 30 : 60,
-        Math.max(1, days)
-      )
-      const nextDue = computeDueFromIntervalDays(now, nextInterval)
+      // 只移动 due；保留 intentional intervalDays
+      const delayDays = resolveDueOnlyDelayDays(card.cardType, card.priority)
+      const nextDue = computeDueFromIntervalDays(now, delayDays)
 
       await saveIRState(card.id, {
         ...prev,
-        intervalDays: nextInterval,
+        intervalDays: prev.intervalDays,
         postponeCount: prev.postponeCount + 1,
         lastAction: "autoPostpone",
         due: nextDue,
@@ -115,15 +139,37 @@ export async function applyAutoPostpone(
     }
   } catch (error) {
     console.error("[IR] 自动推后中途失败，回滚已写入:", error)
+    let rolledBackCount = 0
+    const rollbackFailed: Array<{ blockId: DbId; error: string }> = []
     for (const snap of committed.reverse()) {
       try {
         const current = await loadIRState(snap.blockId)
         await restoreSnapshot(snap, current)
+        rolledBackCount += 1
       } catch (rollbackError) {
+        const message = rollbackError instanceof Error
+          ? rollbackError.message
+          : String(rollbackError)
         console.error("[IR] 自动推后回滚失败:", snap.blockId, rollbackError)
+        rollbackFailed.push({ blockId: snap.blockId, error: message })
       }
     }
-    throw error instanceof Error ? error : new Error(String(error))
+
+    const details: AutoPostponeFailureDetails = {
+      committedBeforeFailure: committed.length,
+      rolledBackCount,
+      rollbackFailed,
+      cause: error
+    }
+    console.error("[IR] 自动推后失败详情:", {
+      committedBeforeFailure: details.committedBeforeFailure,
+      rolledBackCount: details.rolledBackCount,
+      rollbackFailed: details.rollbackFailed
+    })
+    throw new AutoPostponeError(
+      error instanceof Error ? error.message : String(error),
+      details
+    )
   }
 
   const batch: IRAutoPostponeBatch = {
@@ -132,7 +178,8 @@ export async function applyAutoPostpone(
     snapshots: committed
   }
   batchStore.set(batchId, batch)
-  return { batch, deferredCount: committed.length }
+  const committedIds = committed.map(s => s.blockId)
+  return { batch, deferredCount: committed.length, committedIds }
 }
 
 export type UndoAutoPostponeResult = {

@@ -7,16 +7,20 @@
 import type { Block, DbId } from "../orca.d.ts"
 import { extractCardType } from "./deckUtils"
 import { isCardTag } from "./tagUtils"
-import { computeDueFromIntervalDays } from "./incrementalReadingDispersal"
-import { ensureIRState, loadIRState, saveIRState } from "./incrementalReadingStorage"
+import { ensureIRState, loadIRState } from "./incrementalReadingStorage"
 import type { IRLastAction, IRReadingBreakpoint, IRStage } from "./incrementalReadingStorage"
-import {
-  getPostponeDays
-} from "./incrementalReadingScheduler"
 import {
   DEFAULT_IR_DAILY_LIMIT,
   DEFAULT_IR_TOPIC_QUOTA_PERCENT
 } from "./settings/incrementalReadingSettingsSchema"
+
+// B2 overflow postpone 实现见 irOverflowDefer；此处兼容 re-export，调用方路径不变
+export type {
+  DeferOverflowFailure,
+  DeferOverflowWriteResult,
+  DeferIROverflowResult
+} from "./incremental-reading/irOverflowDefer"
+export { deferIROverflow } from "./incremental-reading/irOverflowDefer"
 
 export type IRCardType = "topic" | "extracts"
 
@@ -253,11 +257,22 @@ export type CollectIRCardsFromBlocksResult = {
   failedCount: number
 }
 
+/**
+ * IR 收集选项。
+ * - `readOnly: true`：跳过 `ensureIRState`（不写 block property）；仍 `loadIRState`，
+ *   内存中按块属性解析/补默认；`loadIRState` 失败不得伪装成功。
+ * - 默认 `false`：保留缺核心字段时的惰性 ensure / 迁移写入语义。
+ */
+export type IRCollectionOptions = {
+  readOnly?: boolean
+}
+
 export async function collectIRCardsFromBlocks(
   blocks: Block[],
-  pluginName: string = "srs-plugin"
+  pluginName: string = "srs-plugin",
+  options?: IRCollectionOptions
 ): Promise<IRCard[]> {
-  const { cards } = await collectIRCardsFromBlocksDetailed(blocks, pluginName)
+  const { cards } = await collectIRCardsFromBlocksDetailed(blocks, pluginName, options)
   return cards
 }
 
@@ -293,8 +308,10 @@ async function mapPool<T, R>(
  */
 export async function collectIRCardsFromBlocksDetailed(
   blocks: Block[],
-  pluginName: string = "srs-plugin"
+  pluginName: string = "srs-plugin",
+  options?: IRCollectionOptions
 ): Promise<CollectIRCardsFromBlocksResult> {
+  const readOnly = options?.readOnly === true
   const todayStartTime = getDayStart(new Date()).getTime()
   const candidates = blocks.filter(block => {
     const cardType = extractCardType(block)
@@ -308,9 +325,10 @@ export async function collectIRCardsFromBlocksDetailed(
   const mapped = await mapPool(candidates, COLLECT_CONCURRENCY, async (block) => {
     try {
       // 惰性迁移：属性明显缺失时 ensure，但始终以 load 结果为准（避免 ensure 默认值覆盖真实 due）
+      // 只读收集（会话启动）跳过 ensure，避免隐式 saveIRState / setProperties
       const props = block.properties ?? []
       const missingCore = !props.some(p => p.name === "ir.priority") || !props.some(p => p.name === "ir.due")
-      if (missingCore) {
+      if (missingCore && !readOnly) {
         try {
           await ensureIRState(block.id)
         } catch (error) {
@@ -361,11 +379,14 @@ export async function collectIRCardsFromBlocksDetailed(
 
 /**
  * 基于给定块列表收集所有渐进阅读卡片（便于测试）
+ * `options.readOnly === true` 时跳过 `ensureIRState`，仅 `loadIRState`（可能内存默认，不持久化）。
  */
 export async function collectAllIRCardsFromBlocks(
   blocks: Block[],
-  pluginName: string = "srs-plugin"
+  pluginName: string = "srs-plugin",
+  options?: IRCollectionOptions
 ): Promise<IRCard[]> {
+  const readOnly = options?.readOnly === true
   const results: IRCard[] = []
   const sourceMetaById = new Map<DbId, IRSourceMeta>(
     blocks.map(block => [block.id, readIRSourceMeta(block)])
@@ -376,7 +397,9 @@ export async function collectAllIRCardsFromBlocks(
     if (cardType !== "topic" && cardType !== "extracts") continue
 
     try {
-      await ensureIRState(block.id)
+      if (!readOnly) {
+        await ensureIRState(block.id)
+      }
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
       const sourceMeta = inheritWebSourceMeta(
@@ -413,9 +436,13 @@ export async function collectAllIRCardsFromBlocks(
  * 收集到期的 Topic/Extract 卡片
  *
  * 失败时抛出错误，不得用空数组伪装成“暂无到期内容”。
+ * 传入 `{ readOnly: true }` 可跳过 ensure 写入（会话启动路径）。
  */
-export async function collectIRCards(pluginName: string = "srs-plugin"): Promise<IRCard[]> {
-  const detailed = await collectIRCardsDetailed(pluginName)
+export async function collectIRCards(
+  pluginName: string = "srs-plugin",
+  options?: IRCollectionOptions
+): Promise<IRCard[]> {
+  const detailed = await collectIRCardsDetailed(pluginName, options)
   return detailed.cards
 }
 
@@ -423,11 +450,12 @@ export async function collectIRCards(pluginName: string = "srs-plugin"): Promise
  * 收集到期卡片（含失败计数），支持有限并发读取以降低首屏阻塞。
  */
 export async function collectIRCardsDetailed(
-  pluginName: string = "srs-plugin"
+  pluginName: string = "srs-plugin",
+  options?: IRCollectionOptions
 ): Promise<CollectIRCardsFromBlocksResult> {
   try {
     const taggedBlocks = await collectCandidateBlocks(pluginName)
-    return await collectIRCardsFromBlocksDetailed(taggedBlocks, pluginName)
+    return await collectIRCardsFromBlocksDetailed(taggedBlocks, pluginName, options)
   } catch (error) {
     console.error(`[${pluginName}] collectIRCards 失败:`, error)
     orca.notify("error", "渐进阅读卡片收集失败", { title: "渐进阅读" })
@@ -440,10 +468,13 @@ export async function collectIRCardsDetailed(
  *
  * 失败时抛出错误，不得用空数组伪装成空库。
  */
-export async function collectAllIRCards(pluginName: string = "srs-plugin"): Promise<IRCard[]> {
+export async function collectAllIRCards(
+  pluginName: string = "srs-plugin",
+  options?: IRCollectionOptions
+): Promise<IRCard[]> {
   try {
     const taggedBlocks = await collectCandidateBlocks(pluginName)
-    return await collectAllIRCardsFromBlocks(taggedBlocks, pluginName)
+    return await collectAllIRCardsFromBlocks(taggedBlocks, pluginName, options)
   } catch (error) {
     console.error(`[${pluginName}] collectAllIRCards 失败:`, error)
     orca.notify("error", "渐进阅读卡片收集失败", { title: "渐进阅读" })
@@ -518,78 +549,6 @@ function interleaveByRatio(topics: IRCard[], extracts: IRCard[], ratio: number):
   return queue
 }
 
-function getMaxTopicPosition(cards: IRCard[], fallback: number): number {
-  let max = Number.NEGATIVE_INFINITY
-  for (const card of cards) {
-    if (typeof card.position === "number" && Number.isFinite(card.position)) {
-      if (card.position > max) max = card.position
-    }
-  }
-  return Number.isFinite(max) ? max : fallback
-}
-
-async function deferOverflowCards(
-  topics: IRCard[],
-  extracts: IRCard[],
-  now: Date,
-  maxPositionSeed: number
-): Promise<void> {
-  if (topics.length === 0 && extracts.length === 0) return
-
-  const clampIntervalDays = (cardType: IRCardType, rawDays: number): number => {
-    const max = cardType === "extracts" ? 30 : 60
-    return Math.min(max, Math.max(1, rawDays))
-  }
-  const tasks: Promise<void>[] = []
-
-  topics.forEach((card, index) => {
-    const nextPosition = maxPositionSeed + index + 1
-    const postponeDays = getPostponeDays("topic", card.priority)
-    const nextIntervalDays = clampIntervalDays("topic", postponeDays)
-    const nextDue = computeDueFromIntervalDays(now, nextIntervalDays)
-    tasks.push(saveIRState(card.id, {
-      priority: card.priority,
-      lastRead: card.lastRead,
-      readCount: card.readCount,
-      due: nextDue,
-      intervalDays: nextIntervalDays,
-      postponeCount: card.postponeCount + 1,
-      stage: card.stage,
-      lastAction: "autoPostpone",
-      position: nextPosition,
-      resumeBlockId: card.resumeBlockId,
-      readingBreakpoint: card.readingBreakpoint ?? null,
-      autoPostponeBatchId: null
-    }))
-  })
-
-  extracts.forEach(card => {
-    const postponeDays = getPostponeDays("extracts", card.priority)
-    const nextIntervalDays = clampIntervalDays("extracts", postponeDays)
-    const nextDue = computeDueFromIntervalDays(now, nextIntervalDays)
-    tasks.push(saveIRState(card.id, {
-      priority: card.priority,
-      lastRead: card.lastRead,
-      readCount: card.readCount,
-      due: nextDue,
-      intervalDays: nextIntervalDays,
-      postponeCount: card.postponeCount + 1,
-      stage: card.stage,
-      lastAction: "autoPostpone",
-      position: card.position,
-      resumeBlockId: card.resumeBlockId,
-      readingBreakpoint: card.readingBreakpoint ?? null,
-      autoPostponeBatchId: null
-    }))
-  })
-
-  const results = await Promise.allSettled(tasks)
-  const failed = results.filter(result => result.status === "rejected")
-  if (failed.length > 0) {
-    console.warn("[IR] 溢出推后失败", { failed: failed.length })
-  }
-}
-
 /**
  * 构建渐进阅读队列（Topic 配额 + Extract 配额）
  *
@@ -645,36 +604,4 @@ export async function buildIRQueue(cards: IRCard[], options: IRQueueOptions = {}
   ]
 
   return queue
-}
-
-/**
- * 将“溢出（未入选今天队列）”的卡片按优先级推后，并写回排期状态。
- *
- * - 用于“明确按钮”触发（例如：一键把溢出推后）
- * - 不会影响已入选 `queue` 的卡片
- */
-export async function deferIROverflow(
-  dueCards: IRCard[],
-  queue: IRCard[],
-  options: { now?: Date } = {}
-): Promise<{ deferredCount: number }> {
-  const topics = sortTopics(dueCards.filter(card => card.cardType === "topic"))
-  const extracts = sortExtracts(dueCards.filter(card => card.cardType === "extracts"))
-  const selectedIds = new Set(queue.map(card => card.id))
-
-  const deferredTopics = topics.filter(card => !selectedIds.has(card.id))
-  const deferredExtracts = extracts.filter(card => !selectedIds.has(card.id))
-  const deferredCount = deferredTopics.length + deferredExtracts.length
-  if (deferredCount === 0) return { deferredCount: 0 }
-
-  const now = options.now ?? new Date()
-  const maxPositionSeed = getMaxTopicPosition(topics, Date.now())
-
-  try {
-    await deferOverflowCards(deferredTopics, deferredExtracts, now, maxPositionSeed)
-  } catch (error) {
-    console.warn("[IR] 溢出推后异常:", error)
-  }
-
-  return { deferredCount }
 }

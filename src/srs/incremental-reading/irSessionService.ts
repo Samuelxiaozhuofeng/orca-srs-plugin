@@ -8,17 +8,11 @@ import {
   markAsRead,
   postpone,
   saveIRState,
+  updatePriority,
   type IRState
 } from "../incrementalReadingStorage"
 import { completeIRCard } from "../irSessionActions"
 import { advanceIRStage, type StageTriggerAction } from "./irStageTransitions"
-import { adjustIntervalForPriorityChange } from "./irQueuePolicy"
-import { normalizePriority } from "../incrementalReadingScheduler"
-import { computeDueFromIntervalDays } from "../incrementalReadingDispersal"
-import {
-  computeSacIntervalDays,
-  isSequentialActiveChapter
-} from "./irSchedulingHelpers"
 import { parseOptionalNumber } from "./irPropertyCodec"
 import type { NextChapterSchedule } from "../../importers/epub/types"
 
@@ -249,31 +243,14 @@ function readSourceBookIdForArchive(block: Block, blockId: DbId): number | null 
 }
 
 /**
- * 调整重要性：比例修正间隔，不无条件清空已有间隔增长
+ * 调整重要性：委托 `updatePriority` 单一生产实现（含 cardType clamp / SAC / 新卡路径）。
+ * 会话 UI 与公开 `updatePriority` 不得再保留两套公式。
  */
 export async function performPriorityAdjust(
   blockId: DbId,
   newPriority: number
 ): Promise<IRState> {
-  const prev = await loadIRState(blockId)
-  const normalized = normalizePriority(newPriority)
-  const useSac = await isSequentialActiveChapter(blockId)
-  // SAC：显式改优先级按短节奏重算；普通 Topic 仍比例修正
-  const nextInterval = useSac
-    ? computeSacIntervalDays(normalized, prev.sacStagnantCount ?? 0)
-    : adjustIntervalForPriorityChange(prev.intervalDays, prev.priority, normalized)
-  const now = new Date()
-  const nextState: IRState = {
-    ...prev,
-    priority: normalized,
-    intervalDays: nextInterval,
-    due: computeDueFromIntervalDays(now, nextInterval),
-    lastAction: "priority",
-    sacProgressKey: prev.sacProgressKey ?? null,
-    sacStagnantCount: prev.sacStagnantCount ?? 0
-  }
-  await saveIRState(blockId, nextState)
-  return nextState
+  return updatePriority(blockId, newPriority)
 }
 
 export async function performStageAction(

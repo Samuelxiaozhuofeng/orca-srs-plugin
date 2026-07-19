@@ -15,8 +15,9 @@ type DispersalParams = {
   baseIntervalDays: number
   isNew: boolean
   /**
-   * Optional extra delay (in days) used to spread batches of newly created cards
-   * (e.g., many extracts created under the same topic in a short period).
+   * @deprecated Due-only sibling offset. Must not be applied inside this function.
+   * Callers that still pass it are ignored so `intervalDays` stays intentional cadence.
+   * Apply queue delay only when computing first `due` (see `computeDispersedSchedule`).
    */
   queueDelayDays?: number
   seedSalt?: string
@@ -63,11 +64,13 @@ function getNewCardForwardMaxDays(cardType: IRDispersalCardType, baseIntervalDay
 }
 
 /**
- * 方案 1（B 选择）：抖动 intervalDays（而不是只抖动 due）
+ * Intentional cadence only（写入 `ir.intervalDays` 的部分）。
  *
  * - 通过 “按天稳定” 的 seed（blockId + dayStart）保证同一天重复触发不会反复改变
- * - 新卡：只向后（避免大量新摘录同日结块）
+ * - 新卡：只向后抖动 base（避免大量新摘录同日结块）
  * - 非新卡：±比例（Extract 更大、Topic 更小）
+ * - **不**把 sibling `queueDelayDays` 计入返回值；一次性错峰只应加在首次 `due` 上，
+ *   避免后续 ×1.35 / ×1.25 复利污染 intentional interval
  */
 export function computeDispersedIntervalDays(params: DispersalParams): number {
   const base = Number.isFinite(params.baseIntervalDays) ? params.baseIntervalDays : 1
@@ -76,10 +79,12 @@ export function computeDispersedIntervalDays(params: DispersalParams): number {
   const seed = hashStringToUint32(`${params.blockId}:${dayStartMs}:${params.cardType}:${salt}`)
   const rand = mulberry32(seed)()
 
+  // Intentionally ignore params.queueDelayDays — due-only offset is applied by callers.
+  void params.queueDelayDays
+
   if (params.isNew) {
     const maxForward = getNewCardForwardMaxDays(params.cardType, base)
-    const queueDelay = Number.isFinite(params.queueDelayDays) ? Math.max(0, params.queueDelayDays!) : 0
-    return base + rand * maxForward + queueDelay
+    return base + rand * maxForward
   }
 
   const spec = getDispersalSpec(params.cardType)
