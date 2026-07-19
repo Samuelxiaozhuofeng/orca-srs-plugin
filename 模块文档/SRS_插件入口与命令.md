@@ -104,7 +104,7 @@ Orca 启用插件
 | `importWeb` | 导入网页 | 挂载 Firecrawl 网页导入对话框 |
 | `resumeEpubImport` | 继续导入 EPUB | 参数 `bookBlockId` |
 | `removeBookFromIR` | IR: 将整本书移出渐进阅读 | 参数 `bookBlockId` |
-| `skipSequentialChapter` | IR: 跳过本章并继续 | `orca-srs:ir-session-action` / 提示 |
+| `skipSequentialChapter` | IR: 跳过本章（兼容；主路径用「完成」） | `orca-srs:ir-session-action` / 提示 |
 | `irSessionNext` / `irSessionPostpone` / `irSessionPriority` | IR: 下一篇 / 推后 / 调整重要性 | `CustomEvent("orca-srs:ir-session-action")` |
 
 #### 编辑器命令

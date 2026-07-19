@@ -1,28 +1,21 @@
 /**
- * 「更多操作」次级面板：推后入口、主题、编辑模式、归档/完成本章等。
+ * 「更多操作」次级面板：只保留推后、主题、编辑模式等；完成已在主栏。
  * 重要性主路径在动作栏；推后保留在此 + Shift+Enter。
  */
 
-import type { DbId } from "../../orca.d.ts"
 import type { IRReaderTheme } from "./irReaderThemeStorage"
 
-const { Button, ConfirmBox } = orca.components
+const { Button } = orca.components
 
 export type IRSessionMorePanelProps = {
   open: boolean
   isWorking?: boolean
   theme: IRReaderTheme
   viewMode: "reading" | "edit"
-  isSequentialActive: boolean
-  /** When non-null, archive button prefers「完成本章」label for book-sourced topics. */
-  sourceBookId: DbId | null | undefined
   embedded?: boolean
   onPostpone: () => void
   onThemeChange: (theme: IRReaderTheme) => void
   onToggleViewMode: () => void
-  onOpenCompleteChapter: () => void
-  onArchive: () => void | Promise<void>
-  onSkipChapter: () => void | Promise<void>
   onBackToLibrary?: () => void
 }
 
@@ -31,15 +24,10 @@ export default function IRSessionMorePanel({
   isWorking,
   theme,
   viewMode,
-  isSequentialActive,
-  sourceBookId,
   embedded,
   onPostpone,
   onThemeChange,
   onToggleViewMode,
-  onOpenCompleteChapter,
-  onArchive,
-  onSkipChapter,
   onBackToLibrary
 }: IRSessionMorePanelProps) {
   if (!open) return null
@@ -95,46 +83,6 @@ export default function IRSessionMorePanel({
       >
         {viewMode === "reading" ? "编辑模式" : "阅读模式"}
       </Button>
-      {isSequentialActive ? (
-        <Button
-          tabIndex={0}
-          variant="plain"
-          onClick={() => {
-            if (isWorking) return
-            onOpenCompleteChapter()
-          }}
-          style={busyStyle}
-        >
-          完成本章
-        </Button>
-      ) : (
-        <ConfirmBox
-          text="确认归档？将清除 IR 身份并保留正文。"
-          onConfirm={async (_e: unknown, close: () => void) => {
-            await onArchive()
-            close()
-          }}
-        >
-          {(open: (e: React.UIEvent, state?: unknown) => void) => (
-            <Button tabIndex={0} variant="plain" onClick={open}>
-              {sourceBookId != null ? "完成本章" : "归档"}
-            </Button>
-          )}
-        </ConfirmBox>
-      )}
-      {isSequentialActive ? (
-        <ConfirmBox
-          text="确认跳过本章并继续？与「完成」结果不同，但同样会解锁下一章并保留笔记。下一章默认安排到今天。"
-          onConfirm={async (_e: unknown, close: () => void) => {
-            await onSkipChapter()
-            close()
-          }}
-        >
-          {(open: (e: React.UIEvent, state?: unknown) => void) => (
-            <Button tabIndex={0} variant="plain" onClick={open}>跳过本章并继续</Button>
-          )}
-        </ConfirmBox>
-      ) : null}
       {embedded && onBackToLibrary ? (
         <Button tabIndex={0} variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
       ) : null}

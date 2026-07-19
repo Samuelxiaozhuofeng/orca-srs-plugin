@@ -601,7 +601,7 @@ export function registerCommands(
         if (!notPrevented) return
 
         // Fallback when session shell did not handle the event
-        orca.notify("warn", "请在顺序阅读会话中通过「更多 → 跳过本章并继续」操作", {
+        orca.notify("warn", "请在顺序阅读会话中操作；主路径请使用「完成」完成本章", {
           title: "渐进阅读"
         })
       } catch (error) {

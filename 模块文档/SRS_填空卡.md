@@ -16,7 +16,7 @@
 3. 选中文本变为 `${pluginName}.cloze` inline fragment；块自动带 `#card(type=cloze)`
 4. 可对同一块多次挖空，编号自动递增（c1、c2、…）
 
-命令入口经 `createClozeFromEditorCommand`（`irClozeCommandService.ts`）：若当前块是 `extracts` 类型会走 IR 转换路径，否则调用 `createCloze()`。
+命令入口经 `createClozeFromEditorCommand`（`irClozeCommandService.ts`）：若当前块是 `extracts` 类型会走 IR 转换路径（`convertExtractToItem`，策略 `keep_extract`：创建 Cloze、保留 Extract IR、不离开会话），否则调用 `createCloze()`。
 
 ---
 

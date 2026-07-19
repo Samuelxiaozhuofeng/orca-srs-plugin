@@ -46,7 +46,7 @@ describe("IR Cloze editor command routing", () => {
         sourceBookTitle: null,
         selectedText: "test"
       },
-      completedExtract: true
+      completedExtract: false
     }))
     const createRegularCloze = vi.fn(async () => ({ blockId: 10, clozeNumber: 1 }))
 
@@ -59,7 +59,7 @@ describe("IR Cloze editor command routing", () => {
     expect(result).toEqual({ blockId: 10, clozeNumber: 2 })
     expect(convertExtract).toHaveBeenCalledWith(expect.objectContaining({
       extractId: 10,
-      strategy: "complete_extract"
+      strategy: "keep_extract"
     }))
     expect(createRegularCloze).not.toHaveBeenCalled()
   })

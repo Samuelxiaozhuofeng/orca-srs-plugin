@@ -269,11 +269,17 @@ export async function advanceSequentialBook(
       plan: afterAdvance,
       success: [request.chapterId],
       failed: [],
-      message: request.outcome === "completed" ? "本书已全部完成" : "本书已全部跳过/完成",
+      message:
+        request.outcome === "completed"
+          ? "已完成本章，本书阅读计划已结束"
+          : "已跳过本章，本书阅读计划已结束",
       currentChapterRemoved: true,
       planPersisted: true
     }
   }
+
+  const nextScheduleCopy =
+    nextChapterSchedule === "tomorrow" ? "下一章从明天开始" : "下一章已加入今天"
 
   return {
     kind: "advanced",
@@ -283,8 +289,8 @@ export async function advanceSequentialBook(
     failed: [],
     message:
       request.outcome === "completed"
-        ? `已完成本章，已解锁 #${nextId}`
-        : `已跳过本章，已解锁 #${nextId}`,
+        ? `已完成本章，${nextScheduleCopy}`
+        : `已跳过本章，${nextScheduleCopy}`,
     currentChapterRemoved: true,
     planPersisted: true
   }

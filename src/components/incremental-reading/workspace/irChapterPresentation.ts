@@ -23,8 +23,8 @@ export type IRChapterPresentation = {
 }
 
 const SEQUENTIAL_STATUS_LABELS: Record<IRSequentialChapterStatus, string> = {
-  active: "当前激活",
-  pending: "未激活",
+  active: "在读",
+  pending: "未解锁",
   completed: "已完成",
   skipped: "已跳过"
 }

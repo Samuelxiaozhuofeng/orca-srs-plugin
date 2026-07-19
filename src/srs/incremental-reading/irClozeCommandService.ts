@@ -43,7 +43,7 @@ export async function createClozeFromEditorCommand(
     extractId: blockId,
     cursor,
     pluginName,
-    strategy: "complete_extract"
+    strategy: "keep_extract"
   })
   if (!result.ok) {
     throw new Error(`Extract 制卡失败（${result.step}）：${result.error}`)

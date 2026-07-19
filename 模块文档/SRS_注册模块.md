@@ -80,7 +80,7 @@ export function unregisterCommands(pluginName: string): void
 | `${pluginName}.importEpub` | 导入 EPUB | `showEpubImportDialog` |
 | `${pluginName}.resumeEpubImport` | 继续导入 EPUB | `resumeEpubImport(bookBlockId)` |
 | `${pluginName}.removeBookFromIR` | IR: 将整本书移出渐进阅读 | `confirmAndRemoveBookFromIR` |
-| `${pluginName}.skipSequentialChapter` | IR: 跳过本章并继续 | IR session CustomEvent |
+| `${pluginName}.skipSequentialChapter` | IR: 跳过本章并继续（**兼容**；阅读主路径不暴露，新操作走「完成」/`completed`） | IR session CustomEvent `skipChapter` |
 | `${pluginName}.irSessionNext` | IR: 下一篇 | `orca-srs:ir-session-action` |
 | `${pluginName}.irSessionPostpone` | IR: 推后 | 同上 |
 | `${pluginName}.irSessionPriority` | IR: 调整重要性 | 同上 |

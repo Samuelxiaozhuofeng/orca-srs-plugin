@@ -80,7 +80,7 @@
 |----------------------|--------------|
 | `itemize` | `createCloze` 编辑器命令（cancelable，Shell 可 preventDefault） |
 | `next` / `postpone` / `priority` | `irSessionNext` 等命令 |
-| `skipChapter` | `skipSequentialChapter` |
+| `skipChapter` | `skipSequentialChapter`（兼容；主 UX 为完成/`completed`，见 [渐进阅读.md](渐进阅读.md)） |
 
 监听方：`IRSessionShell` 等。命令实现见 `src/srs/registry/commands.ts`。
 

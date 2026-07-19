@@ -104,7 +104,7 @@ describe("getIRChapterPresentation", () => {
     expect(presentation.isSequentialPlaceholder).toBe(true)
     expect(presentation.isNonActionable).toBe(true)
     expect(presentation.canExpand).toBe(false)
-    expect(presentation.sequentialStatusLabel).toBe("未激活")
+    expect(presentation.sequentialStatusLabel).toBe("未解锁")
   })
 
   it("keeps active sequential chapter actions when live card matches", () => {
@@ -116,7 +116,7 @@ describe("getIRChapterPresentation", () => {
     expect(presentation.chapterCard?.id).toBe(10)
     expect(presentation.isSequentialPlaceholder).toBe(false)
     expect(presentation.isNonActionable).toBe(false)
-    expect(presentation.sequentialStatusLabel).toBe("当前激活")
+    expect(presentation.sequentialStatusLabel).toBe("在读")
     expect(presentation.isCompletedContext).toBe(false)
   })
 

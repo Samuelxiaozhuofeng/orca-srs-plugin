@@ -470,6 +470,7 @@ describe("advanceSequentialBook", () => {
       nextChapterSchedule: "today"
     })
     expect(result.kind).toBe("advanced")
+    expect(result.message).toBe("已完成本章，下一章已加入今天")
     const plan = parseBookIRPlan(
       blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
       100
@@ -496,6 +497,7 @@ describe("advanceSequentialBook", () => {
       nextChapterSchedule: "tomorrow"
     })
     expect(result.kind).toBe("advanced")
+    expect(result.message).toBe("已完成本章，下一章从明天开始")
     const plan = parseBookIRPlan(
       blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
       100
@@ -536,7 +538,7 @@ describe("advanceSequentialBook", () => {
     )
     expect(plan.outcomes["1"]).toBe("completed")
     expect(plan.activeChapterId).toBeNull()
-    expect(result.message).toMatch(/全部完成/)
+    expect(result.message).toBe("已完成本章，本书阅读计划已结束")
   })
 
   it("setProperties payloads for plan and chapter init are structuredClone-safe", async () => {

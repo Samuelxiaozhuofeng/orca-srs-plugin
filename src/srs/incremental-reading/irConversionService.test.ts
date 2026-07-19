@@ -81,6 +81,28 @@ describe("convertExtractToItem", () => {
     expect(deps.deleteIrOnly).toHaveBeenCalledWith(10)
   })
 
+  it("keep_extract keeps IR, sets item_candidate stage, and does not delete IR", async () => {
+    const deps = makeDeps()
+    const result = await convertExtractToItem({
+      extractId: 10,
+      cursor,
+      pluginName: "orca-srs",
+      strategy: "keep_extract",
+      deps
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.itemId).toBe(10)
+      expect(result.clozeNumber).toBe(1)
+      expect(result.completedExtract).toBe(false)
+    }
+    expect(deps.deleteIrOnly).not.toHaveBeenCalled()
+    expect(deps.saveState).toHaveBeenCalledWith(10, expect.objectContaining({
+      stage: "extract.item_candidate",
+      lastAction: "itemize"
+    }))
+  })
+
   it("restores content and IR when SRS init fails on same block", async () => {
     const snapshot = baseState({ intervalDays: 7, priority: 80 })
     const deps = makeDeps({

@@ -8,6 +8,8 @@
 > 2026-07-19：**已完成章节资料库保留（landed）**——完成本章/归档 strip 章节 Topic IR，笔记保留；资料库书下仍显示章节结构与「已完成」；摘录靠 `ir.sourceTopicId` + `ir.sourceBookId` 挂回。详见下文「资料库展示」与 [`渐进阅读.md`](渐进阅读.md) 资料库三级树。
 >
 > 2026-07-19：**建书重要性 UI**——创建 Book IR 时用户选「重要性」三档（低 20 / 中 50 默认 / 高 80，`importanceSetupOptions`），不再暴露 0–100 数字输入；plan 字段名仍为 `priority`，写入各章 `ir.priority`。阅读中改重要性见 [`渐进阅读.md`](渐进阅读.md)。
+>
+> 2026-07-19：**顺序完成 UX（landed）**——阅读主路径用主栏 **「完成」** 打开简化完成本章对话框（今天/明天；末章仅完成）；**不再**在主栏/更多提供「跳过本章」。新操作 plan outcome 走 `completed`；`skipped` 与 `performSkipChapter` / 命令仅兼容。用户 toast 无 block id（「下一章已加入今天 / 从明天开始 / 本书阅读计划已结束」）。资料库徽标：**在读 / 未解锁 / 已完成 / 已跳过**（`irChapterPresentation`）。会话动作栏总表见 [`渐进阅读.md`](渐进阅读.md)。
 
 ## 概述
 
@@ -16,7 +18,7 @@
 | 模式 | `mode` | 行为 |
 | --- | --- | --- |
 | **分散排期**（默认） | `distributed` | 选中章节**全部**初始化为 Topic IR；第 1 章 `due` 为今天，其余按 `totalDays` 分散；之后各章走**普通 Topic 记忆型排期**（基础间隔 + ×1.25 增长） |
-| **顺序解锁** | `sequential` | 计划记录全部 `selectedChapterIds`；**同时只激活一章**（写 `#card` + IR）；完成或跳过才解锁下一章。**当前激活章**在「下一篇」时走 **Sequential Active Cadence（SAC）短节奏**，与普通 Topic 记忆间隔分离 |
+| **顺序解锁** | `sequential` | 计划记录全部 `selectedChapterIds`；**同时只激活一章**（写 `#card` + IR）；**主路径「完成」**（`outcome=completed`）才解锁下一章；`skipped` 仅兼容/历史。**当前激活章**在「下一篇」时走 **Sequential Active Cadence（SAC）短节奏**，与普通 Topic 记忆间隔分离 |
 
 移出渐进阅读只清理卡片身份与调度，**不删除**笔记正文、图片、引用或 `epub.*` 溯源。
 
@@ -51,8 +53,8 @@
 | --- | --- |
 | `pending` | 计划内、尚未成为 Topic IR（顺序模式锁定章） |
 | `active` | 当前已初始化为 Topic IR |
-| `completed` | 用户「完成本章」 |
-| `skipped` | 用户「跳过本章并继续」 |
+| `completed` | 用户主路径 **「完成」**（完成本章） |
+| `skipped` | 历史 / API 兼容「跳过」；阅读主路径**不再**提供入口；资料库仍可显示「已跳过」徽标 |
 | `removed` | 从 IR 移出（笔记仍在） |
 
 解析失败必须抛 `EpubValidationError`（带 `code`，如 `plan_missing` / `plan_version` / `plan_corrupted_blockrefs`），禁止静默默认。
@@ -63,7 +65,7 @@
 | --- | --- |
 | `bookIRService.initializeBookIR` | 两种模式初始化 + 写 plan；返回 `BookIRMutationResult` |
 | `bookIRChapterInit.initializeChapterAsTopicIR` | 单章：`#card type=topic` + `ir.*`（含 `sourceBookId` / `batchId` 等）+ 入 IR 索引；**不**读写 plan / `epub.*` |
-| `bookIRProgression.advanceSequentialBook` | 完成/跳过 + 检查点式解锁下一章；读/推后/改优先级**禁止**调用 |
+| `bookIRProgression.advanceSequentialBook` | 完成（主路径）/ 跳过（兼容）+ 检查点式解锁下一章；读/推后/改重要性**禁止**调用 |
 | `bookIRProgression.retrySequentialActivation` | 顺序书统一修复入口：扫描 live/partial、收敛单卡、对齐 plan（含 `active!=null` 的 dual-live） |
 | `bookIRService.retryFailedBookIRInit`（sequential） | **始终**委托 `retrySequentialActivation`，不再因 `activeChapterId!=null` 早退 |
 | `bookIRRemovalService.removeBookFromIR` | 整本移出（`Promise.allSettled`）；成功则 `clearBookIRPlan` |
@@ -90,8 +92,9 @@
 ## 顺序模式规则
 
 - **锁定章**：`pending` → 无卡身份 → 不会进入 IR 队列
-- **仅**「完成本章」或「跳过本章并继续」调用 `advanceSequentialBook`
-- 打开/阅读、下一篇、推后、改优先级**不得**解锁下一章
+- **主路径**：阅读主栏 **「完成」** → `performArchive` + `advanceSequentialBook({ outcome: "completed", nextChapterSchedule })`
+- **兼容**：`performSkipChapter` / `skipSequentialChapter` 仍可写 `outcome: "skipped"`，**阅读 UI 主路径不暴露**
+- 打开/阅读、下一篇、推后、改重要性、**挖空** **不得**解锁下一章
 - `completed` 与 `skipped` 在 plan 中可区分，但对解锁行为等价（都会尝试激活下一 `pending`）
 
 ### 资料库展示（大纲结构 vs 队列）
@@ -109,7 +112,7 @@
 | 树构建 | `buildIRSourceTree` 选项 `sequentialBooks`：即使 **零 live 卡** 也创建 book source 组；对 `selectedChapterIds` 中尚无 Topic 卡的章创建占位 `IRChapterNode`（`card: null`，`isSequentialPlaceholder: true`，`sequentialStatus`） |
 | 已完成章 | plan `outcomes[id]=completed` → 占位节点保留在大纲中；徽标 **「已完成」**；`card: null`、不可操作；**其下 Extract** 经 `ir.sourceTopicId === chapterId` 挂回（摘录仍 actionable） |
 | 真实队列 | **不变**：仍仅 `collectAllIRCards`；占位**不**写 `#card`、**不**入索引、不进批量选择 |
-| UI | 激活章：徽标「当前激活」+ 原有 due/阶段/开始阅读等；未激活/已完成/已跳过：灰化 + 文案，无操作按钮、不进 `selectedCardIds` |
+| UI | 激活章：徽标「在读」+ 原有 due/阶段/开始阅读等；未解锁/已完成/已跳过：灰化 + 文案，无操作按钮、不进 `selectedCardIds` |
 | 筛选 | 默认「全部」保留大纲；时间带与属性筛选不把纯占位当匹配卡 |
 
 #### 分散模式与跨模式：已完成章 + 摘录挂靠（landed）
@@ -210,6 +213,15 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 | `currentChapterRemoved` | 当前章 strip 是否成功；`false` 时会话**不得** `removeCurrent()` |
 | `planPersisted` | 目标 plan / 检查点是否已写入后端；检查点也失败时为 `false` 且消息同时报告原错误与检查点错误 |
 
+**成功 `message`（用户可见，无 block id）**：
+
+| outcome / 下一章 | 文案 |
+| --- | --- |
+| `completed`，无下一章 | 已完成本章，本书阅读计划已结束 |
+| `completed` + `nextChapterSchedule=today` | 已完成本章，下一章已加入今天 |
+| `completed` + `nextChapterSchedule=tomorrow` | 已完成本章，下一章从明天开始 |
+| `skipped`（API/兼容） | 同上结构，前缀改为「已跳过本章，…」 |
+
 **`retrySequentialActivation` 恢复合同**：
 
 1. 扫描 `selectedChapterIds` 上属于本书的 live / partial IR（不碰 `sourceBookId` 不同的无关卡）
@@ -254,15 +266,16 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 
 会话侧：
 
-- `performArchive(blockId, pluginName, { nextChapterSchedule? })`：若为顺序激活章 → progression `completed` + 传入安排策略；否则普通 `completeIRCard` 归档
-- `performSkipChapter`：仅顺序书；progression `skipped`（下一章默认 `today`）
+- `performArchive(blockId, pluginName, { nextChapterSchedule? })`：**主路径完成**——若为顺序激活章 → progression `completed` + 传入安排策略；否则普通 `completeIRCard`
+- `performSkipChapter`：仅顺序书；progression `skipped`（下一章默认 `today`）。**非阅读主 UX**（主栏/更多已移除跳过）
 - 会话在决定是否进入顺序推进前以后端 `get-block` 读取 `ir.sourceBookId`；状态快照缺失或过期不会再把顺序章误判为普通卡。单元素数组属性会先规范化，歧义/无效值直接暴露错误并保留可重试状态
-- UI：`IRSessionShell` 更多菜单
-  - **顺序激活章「完成本章」**：`ModalOverlay` 说明当前章将标记完成，并二选一「今天安排下一章」/「明天安排下一章」；**取消/关闭不调用推进、不清理当前章**
-  - **普通 IR 卡「归档」**：既有 `ConfirmBox` 确认后 `completeIRCard`
-  - **顺序书「跳过本章并继续」**：`ConfirmBox`（与完成结果不同，下一章默认今天）
-- 失败时错误必须暴露（`归档失败：${message}`），不得吞错后 plain-complete；检查点失败仍可重试
-- 命令：`{plugin}.skipSequentialChapter`（提示在会话内操作）
+- UI（`IRSessionShell` + 主栏 **「完成」**，**不在**「更多」）：
+  - **顺序激活章**：`IRCompleteChapterDialog`——有下一章：短文案（无 IR 术语）+「取消 \| 明天 \| 今天」；最后一章（`hasNextChapter === false`）：「取消 \| 完成」。**取消/关闭不调用推进、不清理当前章**
+  - **其他 Topic / Extract**：`IRArchiveConfirmDialog`——标题「完成」；确认后清 IR、保留正文；按钮文案统一「完成」
+  - **跳过本章**：阅读主路径**不提供**；勿再把「跳过」写进主栏/更多产品说明
+- 成功 toast：用 progression 返回的 `message`（见上表，无 block id）
+- 失败时错误必须暴露（如 `归档失败：${message}`），不得吞错后 plain-complete；检查点失败仍可重试
+- 命令：`{plugin}.skipSequentialChapter`（兼容；可提示在会话内操作，**非**主入口）
 
 ## 退出语义（移出 IR）
 
@@ -299,7 +312,8 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 | 独立建书对话框 | `IRBookSetupDialog.tsx` + `IRBookDialogMount.tsx`（共用 `IRImportanceSetupField` / `importanceSetupOptions`） |
 | 右键「创建渐进阅读书籍」 | `contextMenuRegistry.tsx` → 章节 refs → `showIRBookDialog` |
 | 右键整本移出 | 同上 + `removeBookFromIR` 命令 |
-| 会话完成本章 / 跳过 | `IRSessionShell` + `irSessionService` |
+| 会话主栏 **完成**（顺序章对话框 / 非顺序确认） | `IRSessionShell` + `IRCompleteChapterDialog` / `IRArchiveConfirmDialog` + `performArchive` |
+| 顺序跳过（兼容 API/命令，非主 UX） | `performSkipChapter` / `{plugin}.skipSequentialChapter` |
 | 资料库批量/整本移出 | `useIRWorkspaceLibrary` / bulk bar + removal 服务 |
 
 ## 测试
@@ -320,8 +334,12 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 - `src/srs/book-ir/bookIRRemovalConfirm.ts`
 - `src/srs/bookIRCreator.ts`（门面 + 章节发现 + due 计算）
 - `src/importers/epub/types.ts`（`BookIRPlanV1`、`IR_BOOK_PLAN_PROP`、mutation 类型）
-- `src/srs/incremental-reading/irSessionService.ts`（顺序完成/跳过桥接）
+- `src/srs/incremental-reading/irSessionService.ts`（顺序完成/兼容跳过桥接）
+- `src/srs/incremental-reading/irSessionCompleteCopy.ts`（完成/挖空短文案）
 - `src/components/incremental-reading/IRSessionShell.tsx`
+- `src/components/incremental-reading/IRCompleteChapterDialog.tsx`
+- `src/components/incremental-reading/IRArchiveConfirmDialog.tsx`
+- `src/components/incremental-reading/workspace/irChapterPresentation.ts`（在读/未解锁/已完成/已跳过）
 - `src/components/IRBookSetupDialog.tsx` / `IRBookDialogMount.tsx`
 - `src/components/epub-import/EpubImportWizard.tsx` / `EpubIRSetupStep.tsx`
 - `src/components/incremental-reading/IRImportanceSetupField.tsx`（建书三档 UI）

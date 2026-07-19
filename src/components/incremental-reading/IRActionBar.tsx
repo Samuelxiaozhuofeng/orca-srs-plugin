@@ -1,5 +1,5 @@
 /**
- * 右侧竖排阅读动作栏：返回(可选)、下一篇、摘录|记住、重要性、更多。
+ * 右侧竖排阅读动作栏：返回(可选)、下一篇、摘录|挖空、重要性、完成、⋯(更多)。
  * position:fixed，跟随所属 `.ir-reading` 面板的可视区域垂直居中，
  * 并按面板宽度三档（wide / medium / narrow）缩放；不覆盖正文。
  */
@@ -22,6 +22,10 @@ export type IRActionBarProps = {
   importanceOpen?: boolean
   /** Compact tier label for the importance control, e.g. 低/中/高 */
   importanceTierLabel?: string
+  /** Complete current extract / chapter and leave or unlock next. */
+  onComplete: () => void
+  /** Hover title for complete; parent may pass sequential vs extract copy. */
+  completeTitle?: string
   onMore: () => void
   moreOpen?: boolean
   /** Chapter browse mode: show return-to-excerpt control (parent via shouldShowReturnButton). */
@@ -71,6 +75,8 @@ export default function IRActionBar({
   onImportance,
   importanceOpen,
   importanceTierLabel,
+  onComplete,
+  completeTitle = "完成",
   onMore,
   moreOpen,
   showReturn = false,
@@ -166,7 +172,7 @@ export default function IRActionBar({
     }
   }, [])
 
-  // Compact labels / optional return control change footer width; remeasure for secondary menus.
+  // Compact labels / optional return / complete control change footer width; remeasure for secondary menus.
   useLayoutEffect(() => {
     const footer = footerRef.current
     if (!footer) return
@@ -176,15 +182,17 @@ export default function IRActionBar({
     if (measured > 0) {
       panel.style.setProperty(CSS_WIDTH, `${measured}px`)
     }
-  }, [tier, showReturn, importanceTierLabel, importanceOpen, moreOpen])
+  }, [tier, showReturn, importanceTierLabel, importanceOpen, moreOpen, completeTitle])
 
   const returnLabel = compact ? "↩" : "返回"
   const nextLabel = compact ? "→" : "下一篇"
-  const secondLabel = compact ? "+" : isTopic ? "摘录" : "记住"
+  const secondLabel = compact ? "+" : isTopic ? "摘录" : "挖空"
   const importanceLabel = compact
     ? (importanceTierLabel ?? "中")
     : "重要性"
-  const moreLabel = compact ? "⋯" : moreOpen ? "收起" : "更多"
+  const completeLabel = compact ? "完" : "完成"
+  // Product scheme 3: more always icon-style ⋯ (compact spirit at every tier).
+  const moreLabel = "⋯"
 
   return (
     <div
@@ -242,8 +250,8 @@ export default function IRActionBar({
             onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
             style={style}
             aria-disabled={isWorking}
-            aria-label="记住"
-            title="记住 Alt+Z"
+            aria-label="挖空 Alt+Z"
+            title="挖空 Alt+Z — 将选区制成填空卡，摘录仍留在阅读中"
           >
             {secondLabel}
           </Button>
@@ -261,6 +269,18 @@ export default function IRActionBar({
           title="重要性 Alt+P"
         >
           {importanceLabel}
+        </Button>
+        <Button
+          tabIndex={0}
+          variant="plain"
+          onClick={isWorking ? undefined : onComplete}
+          onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
+          style={style}
+          aria-disabled={isWorking}
+          aria-label="完成"
+          title={completeTitle}
+        >
+          {completeLabel}
         </Button>
         <Button
           tabIndex={0}

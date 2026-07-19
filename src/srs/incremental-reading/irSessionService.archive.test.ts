@@ -81,7 +81,7 @@ describe("performArchive sequential schedule", () => {
       plan: null,
       success: [10, 11],
       failed: [],
-      message: "已完成本章，已解锁 #11",
+      message: "已完成本章，下一章已加入今天",
       currentChapterRemoved: true,
       planPersisted: true
     })
@@ -95,7 +95,7 @@ describe("performArchive sequential schedule", () => {
         kind: "advanced",
         currentChapterRemoved: true,
         planPersisted: true,
-        message: "已完成本章，已解锁 #11"
+        message: "已完成本章，下一章已加入今天"
       }
     })
     expect(advanceSequentialBook).toHaveBeenCalledWith({

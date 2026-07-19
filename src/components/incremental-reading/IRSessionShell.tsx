@@ -3,10 +3,8 @@
  * 布局：单滚动正文 + 底部固定动作栏；可嵌入统一工作区
  */
 
-import type { CursorData, DbId } from "../../orca.d.ts"
+import type { DbId } from "../../orca.d.ts"
 import type { IRCard } from "../../srs/incrementalReadingCollector"
-import { createExtract } from "../../srs/extractUtils"
-import { convertExtractToItem } from "../../srs/incremental-reading/irConversionService"
 import { IRSessionMetrics } from "../../srs/incremental-reading/irMetrics"
 import type { IRSessionMetricsSnapshot } from "../../srs/incremental-reading/irMetrics"
 import {
@@ -21,25 +19,8 @@ import {
   markSessionItemCompleted,
   syncSessionRemaining
 } from "../../srs/incremental-reading/irSessionProgress"
-import {
-  performArchive,
-  performNext,
-  performPostpone,
-  performPriorityAdjust,
-  performSkipChapter
-} from "../../srs/incremental-reading/irSessionService"
-import type { NextChapterSchedule } from "../../importers/epub/types"
-import { isSequentialActiveChapter } from "../../srs/incremental-reading/irSchedulingHelpers"
+import { loadSequentialSessionMeta } from "../../srs/incremental-reading/irSequentialSessionMeta"
 import { resolveSessionItemizeIntercept } from "../../srs/incremental-reading/irSessionActionsLogic"
-import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
-import {
-  applyImportanceNudge,
-  formatImportanceTierCompact,
-  formatImportanceTierLabel,
-  importanceToTier,
-  type ImportanceNudgeDirection
-} from "../../srs/incremental-reading/irImportance"
-import { recordDwellSample } from "../../srs/incremental-reading/irCostCalibration"
 import type { IRSessionProgress } from "../../srs/incremental-reading/irTypes"
 import {
   readingCardsToEntries,
@@ -49,14 +30,11 @@ import { useIRReadingBreakpoint } from "../../hooks/useIRReadingBreakpoint"
 import { useIRShortcuts } from "../../hooks/useIRShortcuts"
 import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
 import IRMixedReviewPane from "./IRMixedReviewPane"
-import IRActionBar from "./IRActionBar"
-import IRImportanceMenu from "./IRImportanceMenu"
-import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
-import IRSessionMorePanel from "./IRSessionMorePanel"
 import IRSessionSummary from "./IRSessionSummary"
-import IRCompleteChapterDialog from "./IRCompleteChapterDialog"
+import IRSessionChrome from "./IRSessionChrome"
+import { createIRSessionCardActions } from "./useIRSessionCardActions"
 import { useIRReadingContext } from "./useIRReadingContext"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
 import { readIRReaderTheme, writeIRReaderTheme } from "./irReaderThemeStorage"
@@ -131,7 +109,10 @@ export default function IRSessionShell({
   })
   /** 顺序解锁「完成本章」：询问下一章 today / tomorrow；取消不得推进 */
   const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
+  /** 非顺序 / 摘录「完成」确认 */
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [isSequentialActive, setIsSequentialActive] = useState(false)
+  const [sequentialHasNext, setSequentialHasNext] = useState(true)
   const themeStorageWarnedRef = useRef(false)
   /** 完成页展示的今日累计（或会话回退）指标 */
   const [summaryMetrics, setSummaryMetrics] = useState<IRSessionMetricsSnapshot | null>(null)
@@ -224,21 +205,29 @@ export default function IRSessionShell({
     const cardId = currentCard?.id
     if (cardId == null) {
       setIsSequentialActive(false)
+      setSequentialHasNext(true)
       setCompleteChapterOpen(false)
+      setArchiveConfirmOpen(false)
       return
     }
     setIsSequentialActive(false)
+    setSequentialHasNext(true)
     setCompleteChapterOpen(false)
-    void isSequentialActiveChapter(cardId)
-      .then((active) => {
+    setArchiveConfirmOpen(false)
+    void loadSequentialSessionMeta(cardId)
+      .then((meta) => {
         if (!cancelled) {
-          setIsSequentialActive(active)
-          if (!active) setCompleteChapterOpen(false)
+          setIsSequentialActive(meta.isActive)
+          setSequentialHasNext(meta.hasNextChapter)
+          if (!meta.isActive) setCompleteChapterOpen(false)
         }
       })
       .catch((error) => {
         console.error("[IR Session] 检测顺序激活章失败:", error)
-        if (!cancelled) setIsSequentialActive(false)
+        if (!cancelled) {
+          setIsSequentialActive(false)
+          setSequentialHasNext(true)
+        }
       })
     return () => {
       cancelled = true
@@ -381,7 +370,7 @@ export default function IRSessionShell({
 
         event.preventDefault()
         if (intercept.kind === "topic_block") {
-          orca.notify("warn", "请先创建 Extract，再将精炼内容制成记忆卡片", { title: "渐进阅读" })
+          orca.notify("warn", "请先创建摘录，再挖空制成记忆卡片", { title: "渐进阅读" })
         } else {
           void handleItemize()
         }
@@ -405,202 +394,33 @@ export default function IRSessionShell({
     })
   }
 
-  const withWork = async (fn: () => Promise<void>) => {
-    if (isWorking) return
-    setIsWorking(true)
-    try {
-      await fn()
-    } finally {
-      setIsWorking(false)
-    }
-  }
-
-  const recordDwell = (card: IRCard) => {
-    const dwellMs = Math.max(0, Date.now() - cardEnteredAtRef.current)
-    recordDwellSample({
-      cardType: card.cardType,
-      isLong: !card.isNew && card.readCount > 1,
-      dwellMs
-    })
-    return dwellMs
-  }
-
-  const handleNext = () => withWork(async () => {
-    if (!currentCard) return
-    try {
-      await breakpoint.flush()
-      const dwellMs = recordDwell(currentCard)
-      await performNext(currentCard.id)
-      metricsRef.current.record("action.next", dwellMs, { cardType: currentCard.cardType })
-      removeCurrent()
-      orca.notify("success", "已进入下一篇", { title: "渐进阅读" })
-    } catch (error) {
-      metricsRef.current.record("action.failure", undefined, { kind: "next" })
-      console.error("[IR Session] 下一篇失败:", error)
-      orca.notify("error", "下一篇失败", { title: "渐进阅读" })
-    }
-  })
-
-  const handlePostpone = (choice?: PostponeChoice) => withWork(async () => {
-    if (!currentCard) return
-    try {
-      await breakpoint.flush()
-      recordDwell(currentCard)
-      const days = choice ? postponeDaysForChoice(choice) : undefined
-      const result = await performPostpone(currentCard.id, days)
-      metricsRef.current.record("action.postpone")
-      removeCurrent()
-      setPostponeOpen(false)
-      orca.notify("success", `已推后 ${result.days} 天`, { title: "渐进阅读" })
-    } catch (error) {
-      metricsRef.current.record("action.failure", undefined, { kind: "postpone" })
-      console.error("[IR Session] 推后失败:", error)
-      orca.notify("error", "推后失败", { title: "渐进阅读" })
-    }
-  })
-
-  const handleExtract = () => withWork(async () => {
-    if (!currentCard) return
-    const selection = window.getSelection()
-    const cursor = orca.utils.getCursorDataFromSelection(selection) as CursorData | null
-    if (!cursor) {
-      orca.notify("warn", "请先选择要摘录的文本", { title: "渐进阅读" })
-      return
-    }
-    try {
-      const result = await createExtract(cursor, pluginName)
-      if (!result) {
-        metricsRef.current.record("action.failure", undefined, { kind: "extract" })
-        return
-      }
-      await breakpoint.flush()
-      metricsRef.current.record("action.extract")
-      orca.notify("success", "已创建摘录", { title: "渐进阅读" })
-    } catch (error) {
-      metricsRef.current.record("action.failure", undefined, { kind: "extract" })
-      console.error("[IR Session] 摘录失败:", error)
-      orca.notify("error", "摘录失败", { title: "渐进阅读" })
-    }
-  })
-
-  const handleItemize = () => withWork(async () => {
-    if (!currentCard || isTopic) return
-    const selection = window.getSelection()
-    const cursor = orca.utils.getCursorDataFromSelection(selection) as CursorData | null
-    if (!cursor) {
-      orca.notify("warn", "请先选择要记住的文本", { title: "渐进阅读" })
-      return
-    }
-    if (cursor.rootBlockId !== currentCard.id) {
-      orca.notify("warn", "请在当前 Extract 正文中选择要记住的文本", { title: "渐进阅读" })
-      return
-    }
-    try {
-      await breakpoint.flush()
-      const result = await convertExtractToItem({
-        extractId: currentCard.id,
-        cursor,
-        pluginName,
-        strategy: "complete_extract"
-      })
-      if (!result.ok) {
-        metricsRef.current.record("action.failure", undefined, { kind: "itemize" })
-        orca.notify("error", `制卡失败（${result.step}）：${result.error}`, { title: "渐进阅读" })
-        return
-      }
-      metricsRef.current.record("action.itemize")
-      removeCurrent()
-      orca.notify("success", "已创建记忆卡片", { title: "渐进阅读" })
-    } catch (error) {
-      metricsRef.current.record("action.failure", undefined, { kind: "itemize" })
-      console.error("[IR Session] 制卡失败:", error)
-      orca.notify("error", "制卡失败，Extract 已保留", { title: "渐进阅读" })
-    }
-  })
-
-  const handleArchive = (options?: { nextChapterSchedule?: NextChapterSchedule }) => withWork(async () => {
-    if (!currentCard) return
-    try {
-      await breakpoint.flush()
-      const outcome = await performArchive(currentCard.id, pluginName, options)
-      metricsRef.current.record("action.archive")
-      setCompleteChapterOpen(false)
-      // Sequential partial may keep the current chapter live (strip/plan incomplete).
-      // Only leave the session card when the service reports leftCard.
-      if (outcome.leftCard) {
-        removeCurrent()
-      }
-      // 顺序推进服务自身也会 notify 详细结果；此处仅对普通归档补一条成功提示
-      if (!options?.nextChapterSchedule && !outcome.sequential) {
-        orca.notify("success", "已归档", { title: "渐进阅读" })
-      }
-    } catch (error) {
-      metricsRef.current.record("action.failure", undefined, { kind: "archive" })
-      const msg = error instanceof Error ? error.message : String(error)
-      console.error("[IR Session] 归档/完成本章失败:", error)
-      orca.notify("error", `归档失败：${msg}`, { title: "渐进阅读" })
-    }
-  })
-
-  const handleSkipChapter = () => withWork(async () => {
-    if (!currentCard) return
-    try {
-      await breakpoint.flush()
-      const outcome = await performSkipChapter(currentCard.id, pluginName)
-      metricsRef.current.record("action.archive")
-      if (outcome.leftCard) {
-        removeCurrent()
-      }
-    } catch (error) {
-      console.error("[IR Session] 跳过章节失败:", error)
-      orca.notify("error", error instanceof Error ? error.message : "跳过章节失败", {
-        title: "渐进阅读"
-      })
-    }
-  })
-
-  const handleImportanceNudge = (direction: ImportanceNudgeDirection) => withWork(async () => {
-    if (!currentCard) return
-    try {
-      const nudge = applyImportanceNudge(currentCard.priority, direction)
-      if (nudge.blockedAtBound) {
-        orca.notify(
-          "info",
-          direction === "down" ? "已经最低" : "已经最高",
-          { title: "渐进阅读" }
-        )
-        setImportanceOpen(false)
-        return
-      }
-      if (!nudge.changed) {
-        orca.notify("info", "已是正常", { title: "渐进阅读" })
-        setImportanceOpen(false)
-        return
-      }
-      const next = await performPriorityAdjust(currentCard.id, nudge.nextPriority)
-      setQueue((prev: IRSessionEntry[]) => prev.map((entry: IRSessionEntry, i: number) => {
-        if (i !== currentIndex || entry.kind !== "reading") return entry
-        return {
-          ...entry,
-          card: {
-            ...entry.card,
-            priority: next.priority,
-            intervalDays: next.intervalDays,
-            due: next.due,
-            lastAction: next.lastAction
-          }
-        }
-      }))
-      orca.notify(
-        "success",
-        `重要性：${formatImportanceTierLabel(nudge.tier)}`,
-        { title: "渐进阅读" }
-      )
-      setImportanceOpen(false)
-    } catch (error) {
-      console.error("[IR Session] 调整重要性失败:", error)
-      orca.notify("error", "调整重要性失败", { title: "渐进阅读" })
-    }
+  const {
+    handleNext,
+    handlePostpone,
+    handleExtract,
+    handleItemize,
+    handleArchive,
+    handleCompleteRequest,
+    handleSkipChapter,
+    handleImportanceNudge
+  } = createIRSessionCardActions({
+    currentCard,
+    currentIndex,
+    isTopic,
+    isWorking,
+    isSequentialActive,
+    pluginName,
+    metricsRef,
+    cardEnteredAtRef,
+    breakpoint,
+    setIsWorking,
+    setQueue,
+    setPostponeOpen,
+    setImportanceOpen,
+    setMoreOpen,
+    setCompleteChapterOpen,
+    setArchiveConfirmOpen,
+    removeCurrent
   })
 
   const openImportanceMenu = () => {
@@ -831,59 +651,41 @@ export default function IRSessionShell({
         />
       </div>
 
-      <IRPostponeMenu
-        open={postponeOpen}
-        isWorking={isWorking}
-        onChoose={(c) => void handlePostpone(c)}
-        onClose={() => setPostponeOpen(false)}
-      />
-
-      <IRImportanceMenu
-        open={importanceOpen}
-        isWorking={isWorking}
-        currentPriority={currentCard.priority}
-        onChoose={(direction) => void handleImportanceNudge(direction)}
-        onClose={() => setImportanceOpen(false)}
-      />
-
-      <IRSessionMorePanel
-        open={moreOpen}
-        isWorking={isWorking}
-        theme={theme}
-        viewMode={viewMode}
-        isSequentialActive={isSequentialActive}
-        sourceBookId={currentCard.sourceBookId}
-        embedded={embedded}
-        onPostpone={openPostponeMenu}
-        onThemeChange={setTheme}
-        onToggleViewMode={toggleViewMode}
-        onOpenCompleteChapter={() => setCompleteChapterOpen(true)}
-        onArchive={() => handleArchive()}
-        onSkipChapter={() => handleSkipChapter()}
-        onBackToLibrary={onBackToLibrary}
-      />
-
-      <IRActionBar
+      <IRSessionChrome
         isTopic={isTopic}
         isWorking={isWorking}
+        isSequentialActive={isSequentialActive}
+        sequentialHasNext={sequentialHasNext}
+        priority={currentCard.priority}
+        theme={theme}
+        viewMode={viewMode}
+        embedded={embedded}
+        postponeOpen={postponeOpen}
+        importanceOpen={importanceOpen}
+        moreOpen={moreOpen}
+        completeChapterOpen={completeChapterOpen}
+        archiveConfirmOpen={archiveConfirmOpen}
+        showReturn={readingContext.showReturn}
         onNext={handleNext}
         onExtract={handleExtract}
         onItemize={handleItemize}
+        onComplete={handleCompleteRequest}
         onImportance={openImportanceMenu}
-        importanceOpen={importanceOpen}
-        importanceTierLabel={formatImportanceTierCompact(importanceToTier(currentCard.priority))}
         onMore={toggleMorePanel}
-        moreOpen={moreOpen}
-        showReturn={readingContext.showReturn}
         onReturn={readingContext.onReturnFromBrowse}
-      />
-
-      <IRCompleteChapterDialog
-        open={completeChapterOpen}
-        isWorking={isWorking}
-        onClose={() => setCompleteChapterOpen(false)}
-        onConfirmToday={() => void handleArchive({ nextChapterSchedule: "today" })}
-        onConfirmTomorrow={() => void handleArchive({ nextChapterSchedule: "tomorrow" })}
+        onPostponeChoose={handlePostpone}
+        onPostponeClose={() => setPostponeOpen(false)}
+        onImportanceChoose={handleImportanceNudge}
+        onImportanceClose={() => setImportanceOpen(false)}
+        onOpenPostpone={openPostponeMenu}
+        onThemeChange={setTheme}
+        onToggleViewMode={toggleViewMode}
+        onBackToLibrary={onBackToLibrary}
+        onCompleteChapterClose={() => setCompleteChapterOpen(false)}
+        onCompleteChapterToday={() => void handleArchive({ nextChapterSchedule: "today" })}
+        onCompleteChapterTomorrow={() => void handleArchive({ nextChapterSchedule: "tomorrow" })}
+        onArchiveConfirmClose={() => setArchiveConfirmOpen(false)}
+        onArchiveConfirm={() => void handleArchive()}
       />
     </div>
   )
