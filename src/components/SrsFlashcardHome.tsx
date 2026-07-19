@@ -5,9 +5,19 @@ import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../s
 import type { FilterType } from "../srs/cardFilterUtils"
 import { filterCards } from "../srs/cardFilterUtils"
 import { SRS_EVENTS } from "../srs/srsEvents"
+import {
+  invalidateFlashHomeDataCache,
+  loadFlashHomeData
+} from "../srs/flashHomeDataLoader"
 import FlashHomePage from "./flashcard-home/FlashHomePage"
 import CardListView from "./flashcard-home/CardListView"
 import DifficultCardsView from "./DifficultCardsView"
+import type { HomeStatKind } from "./flashcard-home/homeStatNav"
+import {
+  GLOBAL_DECK_SCOPE,
+  homeStatToFilter,
+  isGlobalDeckScope
+} from "./flashcard-home/homeStatNav"
 
 const { useState, useEffect, useCallback, useMemo, useRef } = window.React
 const { Button } = orca.components
@@ -20,107 +30,92 @@ type SrsFlashcardHomeProps = {
   onClose?: () => void
 }
 
+async function mergeDeckNotes(
+  pluginName: string,
+  stats: DeckStats
+): Promise<DeckStats> {
+  const { getAllDeckNotes } = await import("../srs/deckNoteManager")
+  const deckNotes = await getAllDeckNotes(pluginName)
+  return {
+    ...stats,
+    decks: stats.decks.map((deck: DeckInfo) => ({
+      ...deck,
+      note: deckNotes[deck.name] || ""
+    }))
+  }
+}
+
 export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFlashcardHomeProps) {
-  // 1. 所有 Hooks 在顶层声明（避免 Error #185）
   const [viewMode, setViewMode] = useState<ViewMode>("home")
   const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
   const [allCards, setAllCards] = useState<ReviewCard[]>([])
-  const [deckStats, setDeckStats] = useState<DeckStats>({ decks: [], totalCards: 0, totalNew: 0, totalOverdue: 0 })
-  const [todayStats, setTodayStats] = useState<TodayStats>({ pendingCount: 0, todayCount: 0, newCount: 0, totalCount: 0 })
+  const [deckStats, setDeckStats] = useState<DeckStats>({
+    decks: [],
+    totalCards: 0,
+    totalNew: 0,
+    totalOverdue: 0
+  })
+  const [todayStats, setTodayStats] = useState<TodayStats>({
+    pendingCount: 0,
+    todayCount: 0,
+    newCount: 0,
+    totalCount: 0
+  })
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentFilter, setCurrentFilter] = useState<FilterType>("all")
 
-  // 加载数据（仅卡片 / 卡组统计 / 主页统计；不拉 reviewHistory / forecast / todayStatistics）
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    setErrorMessage(null)
-
-    try {
-      const { collectReviewCards, calculateDeckStats } = await import("../main")
-      const { calculateHomeStats } = await import("../srs/deckUtils")
-      const { getAllDeckNotes } = await import("../srs/deckNoteManager")
-
-      const cards = await collectReviewCards(pluginName)
-      setAllCards(cards)
-
-      const stats = calculateDeckStats(cards)
-
-      const deckNotes = await getAllDeckNotes(pluginName)
-      const enhancedStats = {
-        ...stats,
-        decks: stats.decks.map(deck => ({
-          ...deck,
-          note: deckNotes[deck.name] || ""
-        }))
+  const applyLoaded = useCallback(
+    async (force: boolean, showSpinner: boolean) => {
+      if (showSpinner) {
+        setIsLoading(true)
+        setErrorMessage(null)
       }
-      setDeckStats(enhancedStats)
+      try {
+        const data = await loadFlashHomeData({ pluginName, force })
+        setAllCards(data.cards)
+        setTodayStats(data.todayStats)
+        setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
+      } catch (error) {
+        console.error(`[${pluginName}] Flash Home 加载数据失败:`, error)
+        if (showSpinner) {
+          setErrorMessage(error instanceof Error ? error.message : String(error))
+        }
+      } finally {
+        if (showSpinner) setIsLoading(false)
+      }
+    },
+    [pluginName]
+  )
 
-      const homeStats = calculateHomeStats(cards)
-      setTodayStats(homeStats)
-    } catch (error) {
-      console.error(`[${pluginName}] Flash Home 加载数据失败:`, error)
-      setErrorMessage(error instanceof Error ? error.message : String(error))
-    } finally {
-      setIsLoading(false)
-    }
-  }, [pluginName])
+  const loadData = useCallback(async () => {
+    invalidateFlashHomeDataCache()
+    await applyLoaded(true, true)
+  }, [applyLoaded])
 
-  // 初始加载
   useEffect(() => {
-    void loadData()
-  }, [loadData])
+    void applyLoaded(false, true)
+  }, [applyLoaded])
 
-  // 动态更新：定期刷新数据以显示新到期的卡片
-  // FC-13：graded/postponed/suspended 已事件驱动即时刷新；编辑/删除事件不完整，
-  // 故保留 120s 低频全量兜底。收集成本由 cardCollector FC-13 预热/批量读取降低。
+  // 120s 兜底：强制刷新，绕过 TTL
   useEffect(() => {
     const autoRefresh = async () => {
       try {
-        const { collectReviewCards, calculateDeckStats } = await import("../main")
-        const { calculateHomeStats } = await import("../srs/deckUtils")
-        const { getAllDeckNotes } = await import("../srs/deckNoteManager")
-
-        const cards = await collectReviewCards(pluginName)
-
-        const oldTotalDue = todayStats.pendingCount
-        const newStats = calculateHomeStats(cards)
-
-        if (newStats.pendingCount > oldTotalDue) {
-          console.log(`[${pluginName}] Flash Home: 发现新到期卡片，从 ${oldTotalDue} 增加到 ${newStats.pendingCount}`)
-        }
-
-        setAllCards(cards)
-
-        const stats = calculateDeckStats(cards)
-
-        const deckNotes = await getAllDeckNotes(pluginName)
-        const enhancedStats = {
-          ...stats,
-          decks: stats.decks.map(deck => ({
-            ...deck,
-            note: deckNotes[deck.name] || ""
-          }))
-        }
-        setDeckStats(enhancedStats)
-        setTodayStats(newStats)
+        const data = await loadFlashHomeData({ pluginName, force: true })
+        setAllCards(data.cards)
+        setTodayStats(data.todayStats)
+        setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
       } catch (error) {
         console.warn(`[${pluginName}] Flash Home 自动刷新失败:`, error)
       }
     }
-
     const interval = setInterval(autoRefresh, 120000)
-
     return () => clearInterval(interval)
-  }, [pluginName, todayStats.pendingCount])
+  }, [pluginName])
 
-  // 使用 ref 存储 loadData，避免事件订阅时的依赖问题
   const loadDataRef = useRef(loadData)
   loadDataRef.current = loadData
 
-  // 事件订阅：静默刷新数据
-  // 注意：orca.broadcasts 每个事件类型只能有一个处理器
-  // 使用 useRef 存储处理器引用，确保注册和取消注册使用同一个函数引用
   const handlersRef = useRef<{
     graded: ((data: unknown) => void) | null
     postponed: ((data: unknown) => void) | null
@@ -128,19 +123,21 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }>({ graded: null, postponed: null, suspended: null })
 
   useEffect(() => {
+    const silentReload = () => {
+      invalidateFlashHomeDataCache()
+      void loadDataRef.current()
+    }
     const handleCardGraded = () => {
       console.log(`[${pluginName}] Flash Home: 收到 CARD_GRADED 事件，静默刷新`)
-      void loadDataRef.current()
+      silentReload()
     }
-
     const handleCardPostponed = () => {
       console.log(`[${pluginName}] Flash Home: 收到 CARD_POSTPONED 事件，静默刷新`)
-      void loadDataRef.current()
+      silentReload()
     }
-
     const handleCardSuspended = () => {
       console.log(`[${pluginName}] Flash Home: 收到 CARD_SUSPENDED 事件，静默刷新`)
-      void loadDataRef.current()
+      silentReload()
     }
 
     handlersRef.current = {
@@ -173,9 +170,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [pluginName])
 
-  // 筛选当前牌组的卡片
   const deckCards = useMemo(() => {
     if (!selectedDeck) return []
+    if (isGlobalDeckScope(selectedDeck)) return allCards
     return allCards.filter((card: ReviewCard) => card.deck === selectedDeck)
   }, [allCards, selectedDeck])
 
@@ -183,15 +180,20 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     return filterCards(deckCards, currentFilter)
   }, [deckCards, currentFilter])
 
-  // 处理查看牌组
   const handleViewDeck = useCallback((deckName: string) => {
     setSelectedDeck(deckName)
     setCurrentFilter("all")
     setViewMode("card-list")
   }, [])
 
-  // 处理复习牌组
+  const handleStatClick = useCallback((kind: HomeStatKind) => {
+    setSelectedDeck(GLOBAL_DECK_SCOPE)
+    setCurrentFilter(homeStatToFilter(kind))
+    setViewMode("card-list")
+  }, [])
+
   const handleReviewDeck = useCallback(async (deckName: string) => {
+    if (isGlobalDeckScope(deckName)) return
     try {
       const { startReviewSession } = await import("../main")
       await startReviewSession(deckName)
@@ -201,7 +203,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [pluginName])
 
-  // 处理开始今日复习
   const handleStartTodayReview = useCallback(async () => {
     try {
       const { startReviewSession } = await import("../main")
@@ -212,10 +213,16 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [pluginName])
 
-  // 处理重置卡片
+  const recomputeSummaries = useCallback(async (cards: ReviewCard[]) => {
+    const { calculateDeckStats, calculateHomeStats } = await import("../srs/deckUtils")
+    setTodayStats(calculateHomeStats(cards))
+    setDeckStats(await mergeDeckNotes(pluginName, calculateDeckStats(cards)))
+  }, [pluginName])
+
   const handleCardReset = useCallback(async (card: ReviewCard) => {
     try {
-      const { resetCardSrsState, resetClozeSrsState, resetDirectionSrsState } = await import("../srs/storage")
+      const { resetCardSrsState, resetClozeSrsState, resetDirectionSrsState } =
+        await import("../srs/storage")
 
       let newSrsState: SrsState
       if (card.clozeNumber) {
@@ -226,40 +233,48 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         newSrsState = await resetCardSrsState(card.id)
       }
 
-      setAllCards((prev: ReviewCard[]) => prev.map((c: ReviewCard) => {
-        const isMatch = card.clozeNumber
-          ? c.id === card.id && c.clozeNumber === card.clozeNumber
-          : card.directionType
-            ? c.id === card.id && c.directionType === card.directionType
-            : c.id === card.id
-
-        if (isMatch) {
-          return { ...c, srs: newSrsState, isNew: true }
-        }
-        return c
-      }))
-
+      setAllCards((prev: ReviewCard[]) => {
+        const next = prev.map((c: ReviewCard) => {
+          const isMatch = card.clozeNumber
+            ? c.id === card.id && c.clozeNumber === card.clozeNumber
+            : card.directionType
+              ? c.id === card.id && c.directionType === card.directionType
+              : c.id === card.id
+          if (isMatch) return { ...c, srs: newSrsState, isNew: true }
+          return c
+        })
+        void recomputeSummaries(next)
+        return next
+      })
+      invalidateFlashHomeDataCache()
       orca.notify("success", "卡片已重置为新卡", { title: "SRS" })
     } catch (error) {
       console.error(`[${pluginName}] 重置卡片失败:`, error)
       orca.notify("error", "重置卡片失败", { title: "SRS" })
     }
-  }, [pluginName])
+  }, [pluginName, recomputeSummaries])
 
-  // 处理删除卡片
   const handleCardDelete = useCallback(async (card: ReviewCard) => {
-    setAllCards((prev: ReviewCard[]) => prev.filter((c: ReviewCard) => {
-      if (card.clozeNumber) {
-        return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
-      }
-      if (card.directionType) {
-        return !(c.id === card.id && c.directionType === card.directionType)
-      }
-      return c.id !== card.id
-    }))
+    setAllCards((prev: ReviewCard[]) => {
+      const next = prev.filter((c: ReviewCard) => {
+        if (card.clozeNumber) {
+          return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
+        }
+        if (card.directionType) {
+          return !(c.id === card.id && c.directionType === card.directionType)
+        }
+        return c.id !== card.id
+      })
+      void recomputeSummaries(next)
+      return next
+    })
 
     try {
-      const { deleteCardSrsData, deleteClozeCardSrsData, deleteDirectionCardSrsData } = await import("../srs/storage")
+      const {
+        deleteCardSrsData,
+        deleteClozeCardSrsData,
+        deleteDirectionCardSrsData
+      } = await import("../srs/storage")
 
       if (card.clozeNumber) {
         await deleteClozeCardSrsData(card.id, card.clozeNumber)
@@ -276,36 +291,32 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         "card"
       )
 
+      invalidateFlashHomeDataCache()
       orca.notify("success", "卡片已删除", { title: "SRS" })
     } catch (error) {
       console.error(`[${pluginName}] 删除卡片失败:`, error)
       orca.notify("error", "删除卡片失败", { title: "SRS" })
     }
-  }, [pluginName])
+  }, [pluginName, recomputeSummaries])
 
-  // 处理点击卡片 - 在新面板打开卡片原始块
   const handleCardClick = useCallback((cardId: DbId) => {
     orca.nav.openInLastPanel("block", { blockId: cardId })
   }, [])
 
-  // 处理返回主页
   const handleBack = useCallback(() => {
     setViewMode("home")
     setSelectedDeck(null)
     setCurrentFilter("all")
   }, [])
 
-  // 处理显示困难卡片视图
   const handleShowDifficultCards = useCallback(() => {
     setViewMode("difficult-cards")
   }, [])
 
-  // 处理筛选变更
   const handleFilterChange = useCallback((filter: FilterType) => {
     setCurrentFilter(filter)
   }, [])
 
-  // 处理困难卡片复习
   const handleDifficultCardsReview = useCallback(async (cards: ReviewCard[]) => {
     try {
       const { createRepeatReviewSession } = await import("../srs/repeatReviewManager")
@@ -316,7 +327,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         "../srs/reviewSessionDescriptor"
       )
 
-      // F2-01：困难卡固定 sourceBlockId=0 + children，与进度 scope 约定一致
       const descriptor = createFixedRepeatSessionDescriptor({
         cards,
         sourceBlockId: 0,
@@ -334,7 +344,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       )
 
       orca.nav.openInLastPanel("block", { blockId: reviewBlockId })
-
       orca.notify("success", `已开始复习 ${cards.length} 张困难卡片`, { title: "SRS 复习" })
     } catch (error) {
       console.error(`[${pluginName}] 启动困难卡片复习失败:`, error)
@@ -342,12 +351,10 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [pluginName])
 
-  // 处理刷新
   const handleRefresh = useCallback(() => {
     void loadData()
   }, [loadData])
 
-  // 处理备注变更
   const handleNoteChange = useCallback((deckName: string, note: string) => {
     setDeckStats((prev: DeckStats) => ({
       ...prev,
@@ -357,18 +364,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }))
   }, [])
 
-  // 2. 条件渲染在 Hooks 之后
   if (isLoading) {
     return (
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        minHeight: "200px",
-        fontSize: "14px",
-        color: "var(--orca-color-text-2)"
-      }}>
+      <div className="srs-flash-home-state srs-flash-home-state--loading">
         加载中...
       </div>
     )
@@ -376,16 +374,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
 
   if (errorMessage) {
     return (
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-        padding: "24px",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "200px"
-      }}>
-        <div style={{ color: "var(--orca-color-danger-5)" }}>
+      <div className="srs-flash-home-state srs-flash-home-state--error">
+        <div className="srs-flash-home-state__error-text">
           加载失败：{errorMessage}
         </div>
         <Button variant="solid" onClick={handleRefresh}>
@@ -396,11 +386,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }
 
   return (
-    <div style={{
-      padding: "16px",
-      height: "100%",
-      overflow: "auto"
-    }}>
+    <div className="srs-flash-home-root">
       {viewMode === "home" ? (
         <div className="srs-flash-home-page">
           <FlashHomePage
@@ -414,6 +400,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             onRefresh={handleRefresh}
             onNoteChange={handleNoteChange}
             onShowDifficultCards={handleShowDifficultCards}
+            onStatClick={handleStatClick}
           />
         </div>
       ) : viewMode === "difficult-cards" ? (

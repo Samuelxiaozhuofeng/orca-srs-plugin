@@ -9,7 +9,7 @@
 
 | 场景 | 实现 | 作用域 |
 | ---- | ---- | ------ |
-| 卡组搜索 | `DeckSearchDemo` 输入框 `onKeyDown` | 仅搜索框内 Escape |
+| 卡组搜索 | `DeckListView` 搜索框 `onKeyDown` | 仅搜索框内 Escape |
 | 复习会话 | `useReviewShortcuts` + `reviewShortcutRules` | `document` keydown（过滤输入框） |
 | 渐进阅读会话 | `useIRShortcuts` + `irShortcutRules`；摘录/填空可走 Orca `shortcuts.assign` | 会话 DOM 树 + 部分全局可重绑定 |
 
@@ -17,7 +17,7 @@
 
 ## 1. 卡组搜索
 
-**文件**：`src/components/DeckSearchDemo.tsx`
+**文件**：`src/components/flashcard-home/DeckListView.tsx`
 
 ### 现行行为
 
@@ -152,7 +152,7 @@
 
 | 文件 | 说明 |
 | ---- | ---- |
-| `src/components/DeckSearchDemo.tsx` | 卡组搜索 Escape |
+| `src/components/flashcard-home/DeckListView.tsx` | 卡组搜索 Escape |
 | `src/hooks/useReviewShortcuts.ts` | 复习快捷键 Hook |
 | `src/hooks/reviewShortcutRules.ts` | 复习键解析 |
 | `src/hooks/useIRShortcuts.ts` | IR 会话快捷键 Hook |

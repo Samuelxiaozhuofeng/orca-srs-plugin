@@ -50,8 +50,7 @@ Flashcard Home 是插件的闪卡管理主界面，以块类型 `srs.flashcard-h
 | `src/srs/registry/converters.ts` | plain 转换器 |
 | `src/main.ts` | `openFlashcardHome`、`startReviewSession` 等；引入 `styles/flashcard-home.css` |
 
-> 旁路演示（非主路径）：`DeckNoteDemo.tsx`、`DeckSearchDemo.tsx`。  
-> **已删除、勿再引用**：`FlashcardDashboard`、`StatisticsView`、`components/statistics/*`、`components/charts/*`、`HomeStatsDemo`、`statisticsManager` / `srs/statistics/*`。
+> **已删除、勿再引用**：`FlashcardDashboard`、`StatisticsView`、`components/statistics/*`、`components/charts/*`、`HomeStatsDemo`、`DeckNoteDemo`、`DeckSearchDemo`、`statisticsManager` / `srs/statistics/*`。
 
 ---
 
@@ -95,12 +94,12 @@ flowchart TD
 
 ## 数据流
 
-1. `loadData()`（仅下列三项）：
-   - `collectReviewCards(pluginName)` → `allCards`
-   - `calculateDeckStats(cards)` + `getAllDeckNotes` → 合并 `note` 到各 `DeckInfo`
-   - `calculateHomeStats(cards)` → `todayStats`（`TodayStats`）
-2. 事件：`CARD_GRADED` / `CARD_POSTPONED` / `CARD_SUSPENDED` → `loadData`（单处理器注册防护）
-3. 定时：每 **120s** 静默刷新（卡片 + 卡组统计 + homeStats；不拉 statisticsManager）
+1. `loadFlashHomeData`（`src/srs/flashHomeDataLoader.ts`）：
+   - 短 TTL（45s）缓存 + 并发 inflight 去重，减少重复全量 `collectReviewCards`
+   - 产出 `cards` + `calculateDeckStats` + `calculateHomeStats`；备注另经 `getAllDeckNotes` 合并
+   - 用户刷新 / 评分事件：`invalidate` + `force` 重载
+2. 事件：`CARD_GRADED` / `CARD_POSTPONED` / `CARD_SUSPENDED` → 失效缓存并重载
+3. 定时：每 **120s** `force` 刷新
 4. 复习：`startReviewSession(deckName?)`；困难卡走 `createFixedRepeatSessionDescriptor` + `createRepeatReviewSession` + `createReviewSessionBlockWithDescriptor`
 
 ### TodayStats（主页三卡）
@@ -166,11 +165,26 @@ CardListView
 
 ---
 
+## 主页三数导航
+
+点击 **新卡 / 今日到期 / 积压** → 全局卡片列表（`selectedDeck = __all__`）并设置筛选：
+
+| 三数 | FilterType |
+| ---- | ---------- |
+| 新卡 | `new` |
+| 今日到期 | `today` |
+| 积压 | `overdue` |
+
+实现：`homeStatNav.ts`、`HomeSummaryBar` → `handleStatClick`。
+
+## 危险操作确认
+
+`CardListItem` 删除 / 重置经 `orca.components.ConfirmBox` 二次确认后再生效。
+
 ## 扩展点
 
 1. 将 `DeckCard` 卡片模式重新挂入视图切换（代码内仍保留组件）。
 2. 视图状态（`selectedDeck` / `currentFilter`）持久化到块属性。
-3. 点击顶部三统计跳转到对应筛选。
 
 ---
 
@@ -188,6 +202,8 @@ CardListView
 | `src/components/flashcard-home/CardListItem.tsx` | 卡片行内容 |
 | `src/components/flashcard-home/CardFrame.tsx` | 卡片外壳（左色条 / 状态帧） |
 | `src/components/flashcard-home/cardStatus.ts` | 列表用到期状态与日期文案 |
+| `src/components/flashcard-home/homeStatNav.ts` | 三数 → 全局筛选映射 |
+| `src/srs/flashHomeDataLoader.ts` | 首屏 collect TTL 缓存 + 去重 |
 | `src/styles/flashcard-home.css` | 列表托盘与卡片帧样式 |
 | `src/components/DifficultCardsView.tsx` | 困难卡片 UI |
 | `src/components/SrsFlashcardHomeRenderer.tsx` | 块渲染器 |

@@ -9,7 +9,7 @@ import {
   getCardDueStatus
 } from "./cardStatus"
 
-const { Button } = orca.components
+const { Button, ConfirmBox } = orca.components
 
 type CardListItemProps = {
   card: ReviewCard
@@ -52,16 +52,6 @@ export default function CardListItem({
   const handleGoToClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     onCardClick(card.id)
-  }
-
-  const handleResetClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    onCardReset(card)
-  }
-
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    onCardDelete(card)
   }
 
   return (
@@ -111,42 +101,56 @@ export default function CardListItem({
         </div>
 
         <div className="srs-card-frame__actions">
-          <Button
-            variant="plain"
-            onClick={handleDeleteClick}
-            style={{
-              fontSize: "12px",
-              padding: "4px 8px",
-              minWidth: "auto",
-              color: "var(--orca-color-danger-6)"
+          <ConfirmBox
+            text="确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。"
+            onConfirm={(_e: unknown, close: () => void) => {
+              onCardDelete(card)
+              close()
             }}
-            title="删除卡片（移除 Card 标记和 SRS 数据）"
           >
-            <i className="ti ti-trash" style={{ marginRight: "4px" }} />
-            删除
-          </Button>
-          <Button
-            variant="plain"
-            onClick={handleResetClick}
-            style={{
-              fontSize: "12px",
-              padding: "4px 8px",
-              minWidth: "auto",
-              color: "var(--orca-color-warning-6)"
+            {(open) => (
+              <Button
+                variant="plain"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation()
+                  open(e)
+                }}
+                className="srs-card-action srs-card-action--danger"
+                title="删除卡片（移除 Card 标记和 SRS 数据）"
+              >
+                <i className="ti ti-trash" style={{ marginRight: "4px" }} />
+                删除
+              </Button>
+            )}
+          </ConfirmBox>
+
+          <ConfirmBox
+            text="确定将此卡片重置为新卡？当前进度会丢失。"
+            onConfirm={(_e: unknown, close: () => void) => {
+              onCardReset(card)
+              close()
             }}
-            title="重置卡片为新卡状态"
           >
-            <i className="ti ti-refresh" style={{ marginRight: "4px" }} />
-            重置
-          </Button>
+            {(open) => (
+              <Button
+                variant="plain"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation()
+                  open(e)
+                }}
+                className="srs-card-action srs-card-action--warn"
+                title="重置卡片为新卡状态"
+              >
+                <i className="ti ti-refresh" style={{ marginRight: "4px" }} />
+                重置
+              </Button>
+            )}
+          </ConfirmBox>
+
           <Button
             variant="plain"
             onClick={handleGoToClick}
-            style={{
-              fontSize: "12px",
-              padding: "4px 8px",
-              minWidth: "auto"
-            }}
+            className="srs-card-action"
             title="在右侧面板打开编辑"
           >
             <i className="ti ti-external-link" style={{ marginRight: "4px" }} />

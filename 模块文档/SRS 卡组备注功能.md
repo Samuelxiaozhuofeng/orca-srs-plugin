@@ -11,7 +11,7 @@
 - `src/components/SrsFlashcardHome.tsx` — `loadData` 合并 notes
 - `src/components/flashcard-home/DeckRow.tsx` — 行内编辑 UI
 - `src/srs/types.ts` — `DeckInfo.note?`
-- 演示：`src/components/DeckNoteDemo.tsx`
+- 演示 `DeckNoteDemo` 已删除
 
 历史文中「卡片模式 / 表格模式双 UI」：代码仍含 `DeckCard`，**现行列表仅用 `DeckRow` 表格**。
 

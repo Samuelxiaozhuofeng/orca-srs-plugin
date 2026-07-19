@@ -58,7 +58,7 @@
 ### 旁路
 
 - `DeckCardCompact.tsx` 无备注能力且未在 Home 引用
-- 演示：`src/components/DeckNoteDemo.tsx`
+- 演示组件 `DeckNoteDemo` 已删除
 
 ## 注意事项
 
@@ -75,6 +75,6 @@
 | `src/srs/types.ts` | `DeckInfo.note` |
 | `src/components/SrsFlashcardHome.tsx` | 合并与 state |
 | `src/components/flashcard-home/DeckRow.tsx` | 行内编辑 UI |
-| `src/components/DeckNoteDemo.tsx` | 演示 |
+
 | [SRS_卡组搜索.md](SRS_卡组搜索.md) | 按备注搜索 |
 | [SRS_卡片浏览器.md](SRS_卡片浏览器.md) | Flash Home |

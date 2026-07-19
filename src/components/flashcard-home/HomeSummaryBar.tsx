@@ -1,4 +1,5 @@
 import type { TodayStats } from "../../srs/types"
+import type { HomeStatKind } from "./homeStatNav"
 import StatCard from "./StatCard"
 
 const { Button } = orca.components
@@ -8,65 +9,55 @@ export type HomeSummaryBarProps = {
   onStartTodayReview: () => void
   onShowDifficultCards: () => void
   onRefresh: () => void
+  /** 点击三数进入全局筛选列表 */
+  onStatClick?: (kind: HomeStatKind) => void
 }
 
 export default function HomeSummaryBar({
   todayStats,
   onStartTodayReview,
   onShowDifficultCards,
-  onRefresh
+  onRefresh,
+  onStatClick
 }: HomeSummaryBarProps) {
   const hasDueCards = todayStats.pendingCount > 0 || todayStats.newCount > 0
   const backlogCount = todayStats.pendingCount - todayStats.todayCount
 
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: "12px",
-      alignItems: "center"
-    }}>
-      {/* 三枚统计卡：新卡 / 今日到期 / 积压 */}
-      <div style={{
-        display: "flex",
-        gap: "12px",
-        justifyContent: "center",
-        flexWrap: "wrap"
-      }}>
+    <div className="srs-home-summary">
+      <div className="srs-home-summary__stats">
         <StatCard
           label="新卡"
           value={todayStats.newCount}
           color="var(--orca-color-primary-6)"
+          onClick={onStatClick ? () => onStatClick("new") : undefined}
+          title="查看全部新卡"
         />
         <StatCard
           label="今日到期"
           value={todayStats.todayCount}
           color="var(--orca-color-danger-6)"
+          onClick={onStatClick ? () => onStatClick("today") : undefined}
+          title="查看今日到期卡片"
         />
         <StatCard
           label="积压"
           value={backlogCount}
           color="var(--orca-color-success-6)"
+          onClick={onStatClick ? () => onStatClick("backlog") : undefined}
+          title="查看积压卡片"
         />
       </div>
 
-      <div style={{
-        fontSize: "13px",
-        color: "var(--orca-color-text-2)"
-      }}>
+      <div className="srs-home-summary__total">
         共 {todayStats.totalCount} 张卡片
       </div>
 
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        flexWrap: "wrap",
-        justifyContent: "center"
-      }}>
+      <div className="srs-home-summary__actions">
         <Button
           variant="solid"
           onClick={hasDueCards ? onStartTodayReview : undefined}
+          className={hasDueCards ? undefined : "srs-btn-disabled"}
           style={{
             opacity: hasDueCards ? 1 : 0.5,
             cursor: hasDueCards ? "pointer" : "not-allowed",

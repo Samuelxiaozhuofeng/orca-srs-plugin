@@ -1,36 +1,48 @@
-export default function StatCard({
-  label,
-  value,
-  color
-}: {
+type StatCardProps = {
   label: string
   value: number
   color?: string
-}) {
+  onClick?: () => void
+  title?: string
+  disabled?: boolean
+}
+
+export default function StatCard({
+  label,
+  value,
+  color,
+  onClick,
+  title,
+  disabled
+}: StatCardProps) {
+  const clickable = Boolean(onClick) && !disabled
+  const valueStyle = color ? { color } : undefined
+
+  if (clickable) {
+    return (
+      <button
+        type="button"
+        className="srs-stat-card srs-stat-card--clickable"
+        onClick={onClick}
+        title={title}
+      >
+        <div className="srs-stat-card__value" style={valueStyle}>
+          {value}
+        </div>
+        <div className="srs-stat-card__label">{label}</div>
+      </button>
+    )
+  }
+
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      padding: "12px 16px",
-      backgroundColor: "var(--orca-color-bg-2)",
-      borderRadius: "8px",
-      minWidth: "80px"
-    }}>
-      <div style={{
-        fontSize: "24px",
-        fontWeight: 600,
-        color: color || "var(--orca-color-text-1)"
-      }}>
+    <div
+      className={`srs-stat-card${disabled ? " srs-stat-card--disabled" : ""}`}
+      title={title}
+    >
+      <div className="srs-stat-card__value" style={valueStyle}>
         {value}
       </div>
-      <div style={{
-        fontSize: "12px",
-        color: "var(--orca-color-text-3)",
-        marginTop: "4px"
-      }}>
-        {label}
-      </div>
+      <div className="srs-stat-card__label">{label}</div>
     </div>
   )
 }

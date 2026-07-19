@@ -1,4 +1,5 @@
 import type { DeckStats, TodayStats } from "../../srs/types"
+import type { HomeStatKind } from "./homeStatNav"
 import HomeSummaryBar from "./HomeSummaryBar"
 import DeckListView from "./DeckListView"
 
@@ -13,6 +14,7 @@ export type FlashHomePageProps = {
   onRefresh: () => void
   onNoteChange: (deckName: string, note: string) => void
   onShowDifficultCards: () => void
+  onStatClick: (kind: HomeStatKind) => void
 }
 
 export default function FlashHomePage({
@@ -25,19 +27,17 @@ export default function FlashHomePage({
   onStartTodayReview,
   onRefresh,
   onNoteChange,
-  onShowDifficultCards
+  onShowDifficultCards,
+  onStatClick
 }: FlashHomePageProps) {
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: "16px"
-    }}>
+    <div className="srs-flash-home-page-inner">
       <HomeSummaryBar
         todayStats={todayStats}
         onStartTodayReview={onStartTodayReview}
         onShowDifficultCards={onShowDifficultCards}
         onRefresh={onRefresh}
+        onStatClick={onStatClick}
       />
       <DeckListView
         deckStats={deckStats}

@@ -33,7 +33,7 @@
 | `src/components/flashcard-home/HighlightText.tsx` | 高亮片段 |
 | `src/components/flashcard-home/DeckRow.tsx` | 接收 `searchQuery` 高亮名称与备注 |
 
-演示组件（旁路）：`src/components/DeckSearchDemo.tsx`。
+演示组件 `DeckSearchDemo` 已删除；行为以 `DeckListView` 为准。
 
 ### 过滤逻辑（现行）
 
@@ -66,6 +66,6 @@ const filteredDecks = useMemo(() => {
 | `src/components/flashcard-home/DeckListView.tsx` | 搜索 UI 与逻辑 |
 | `src/components/flashcard-home/HighlightText.tsx` | 高亮 |
 | `src/components/flashcard-home/DeckRow.tsx` | 行内高亮 |
-| `src/components/DeckSearchDemo.tsx` | 演示（旁路） |
+
 | `src/srs/deckNoteManager.ts` | 备注数据来源 |
 | [SRS_卡片浏览器.md](SRS_卡片浏览器.md) | Flash Home |
