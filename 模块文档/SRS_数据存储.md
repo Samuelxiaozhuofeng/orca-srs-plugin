@@ -190,7 +190,8 @@ invalidateBlockCache(blockId)
 
 - 旧日志只有 `duration`：`effectiveDurationFromReviewLog(log)` 再次归一化（幂等；历史 >60s 截断）。
 - 新字段 `rawDuration` 可选；v1/v2/legacy 读写路径不因该字段报错或丢失其它字段（`normalizeReviewLogIdentity` 展开保留）。
-- 统计页（`statisticsManager` 今日 totalTime、daily trend/time 等）**只**通过 `effectiveDurationFromReviewLog` 累加 `duration`，**不**累加 `rawDuration`。
+- 凡累计复习用时（会话摘要等）**只**通过 `effectiveDurationFromReviewLog` 累加 `duration`，**不**累加 `rawDuration`。
+- **学习统计页已删除**（原 `StatisticsView` / `statisticsManager` 今日 totalTime、daily trend 等不再是产品路径）；时长规则仍适用于会话进度与日志写入。
 - 实现唯一源：`sessionProgressTracker.ts`（`MAX_EFFECTIVE_CARD_DURATION_MS`、`calculateEffectiveDuration`、`computeReviewTiming` 等）。
 
 **评分路径 timing：** `gradeReviewCard` 单次 `now` 生成 `timestamp` + `rawDuration` + `effectiveDuration`；日志失败时 `timing` 仍返回，会话进度可记同一有效值。

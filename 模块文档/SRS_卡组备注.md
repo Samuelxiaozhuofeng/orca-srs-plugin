@@ -1,11 +1,11 @@
 # SRS 卡组备注
 
-> **文档同步日期：2026-07-13**  
+> **文档同步日期：2026-07-19**  
 > **权威文档**。历史实现总结见 [SRS 卡组备注功能.md](SRS%20卡组备注功能.md)（已降级为摘要）。
 
 ## 概述
 
-为每个卡组（Deck）保存一段文本备注，持久化在插件数据中，并在 Flash Home 卡组列表中展示与编辑。
+为每个卡组（Deck）保存一段文本备注，持久化在插件数据中，并在 Flash Home **主页卡组列表**中展示与编辑。
 
 ## 功能
 
@@ -35,7 +35,12 @@
 
 ## UI 集成（Flash Home）
 
-实现文件：`src/components/SrsFlashcardHome.tsx`。
+| 文件 | 职责 |
+| ---- | ---- |
+| `src/components/SrsFlashcardHome.tsx` | `loadData` 合并 notes；`onNoteChange` 更新 state |
+| `src/components/flashcard-home/FlashHomePage.tsx` | 将回调传入 `DeckListView` |
+| `src/components/flashcard-home/DeckListView.tsx` | 列表容器 |
+| `src/components/flashcard-home/DeckRow.tsx` | 行内备注展示与编辑 |
 
 ### 数据流
 
@@ -45,18 +50,15 @@
 
 ### 现行主路径：`DeckRow`（表格）
 
-卡组列表 **当前只渲染 `DeckRow`**：
-
 - 有备注时在名称下方灰色小字展示；点击进入编辑
 - 编辑：单行 `input` + 取消 / 保存
 - 备注按钮（笔记图标）也可进入编辑
 - 搜索时备注走 `HighlightText`
 
-### 仍保留但未挂载的 `DeckCard`
+### 旁路
 
-同文件内的 `DeckCard` 支持多行 `textarea` 与「添加备注」按钮；**DeckListView 未使用该组件**。  
-独立文件 `DeckCardCompact.tsx` 亦无备注能力且未在 Home 引用。  
-演示：`src/components/DeckNoteDemo.tsx`。
+- `DeckCardCompact.tsx` 无备注能力且未在 Home 引用
+- 演示：`src/components/DeckNoteDemo.tsx`
 
 ## 注意事项
 
@@ -71,7 +73,8 @@
 | ---- | ---- |
 | `src/srs/deckNoteManager.ts` | 存储与 API |
 | `src/srs/types.ts` | `DeckInfo.note` |
-| `src/components/SrsFlashcardHome.tsx` | UI 与合并逻辑 |
+| `src/components/SrsFlashcardHome.tsx` | 合并与 state |
+| `src/components/flashcard-home/DeckRow.tsx` | 行内编辑 UI |
 | `src/components/DeckNoteDemo.tsx` | 演示 |
 | [SRS_卡组搜索.md](SRS_卡组搜索.md) | 按备注搜索 |
 | [SRS_卡片浏览器.md](SRS_卡片浏览器.md) | Flash Home |

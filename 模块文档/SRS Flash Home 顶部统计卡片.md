@@ -1,23 +1,28 @@
 # Flash Home 顶部统计卡片
 
-> **文档同步日期：2026-07-13**  
-> 描述 `DeckListView` 顶部三枚 `StatCard` 的现行行为；演示页见 `HomeStatsDemo.tsx`。
+> **文档同步日期：2026-07-19**  
+> 描述单页 Flash Home 上半区 `HomeSummaryBar` 三枚 `StatCard` 的行为。  
+> 标签为 **新卡 / 今日到期 / 积压**（不再使用「未学习 / 学习中 / 待复习」）。
 
 ## 概述
 
-在 **卡组列表视图**（`viewMode === "deck-list"`）顶部展示三张统计卡片，对应 `calculateHomeStats` 产出的 `TodayStats`，帮助用户一眼区分新卡、今日到期与积压。
+在 **主页**（`viewMode === "home"`）上半区展示全局三张统计卡，对应 `calculateHomeStats` 产出的 `TodayStats`，帮助用户一眼区分新卡、今日到期与积压。
 
-默认 **主页 Dashboard** 使用问候区 + `dueCards`/`newCards` 文案，**不**复用这三枚 `StatCard`。
+布局归属：
+
+- 编排：`FlashHomePage`（上 `HomeSummaryBar` + 下 `DeckListView`）
+- 三卡 UI：`HomeSummaryBar` → 复用 `StatCard`
+- **不再**仅挂在 `DeckListView` 顶部；`DeckListView` 自身为精简卡组表，不重复嵌三卡
 
 ## 三张卡片
 
 | 标签 | 计算 | 颜色 token | 含义 |
 | ---- | ---- | ---------- | ---- |
-| 未学习 | `todayStats.newCount` | `var(--orca-color-primary-6)` | 从未复习（`isNew`） |
-| 学习中 | `todayStats.todayCount` | `var(--orca-color-danger-6)` | 已到期且到期日在今天的复习卡 |
-| 待复习 | `pendingCount - todayCount` | `var(--orca-color-success-6)` | 已到期且到期日早于今天（积压） |
+| **新卡** | `todayStats.newCount` | `var(--orca-color-primary-6)` | 从未复习（`isNew`） |
+| **今日到期** | `todayStats.todayCount` | `var(--orca-color-danger-6)` | 已到期且到期日在今天的复习卡 |
+| **积压** | `pendingCount - todayCount` | `var(--orca-color-success-6)` | 已到期且到期日早于今天 |
 
-> 文案「学习中」在 UI 中指「今天到期且已到点」的复习任务，不是 FSRS 状态机里的 `learning` 状态。
+> 「今日到期」指「今天自然日内到期且已到点」的复习任务，**不是** FSRS 状态机里的 `learning` 状态。
 
 ## 数据定义
 
@@ -41,32 +46,41 @@ export type TodayStats = {
 
 ## 实现位置
 
-- 组件：`SrsFlashcardHome.tsx` 内 `StatCard` + `DeckListView` 顶部 flex 区域。
-- 数据：主组件 `loadData` / 静默刷新中调用 `calculateHomeStats`，经 props 传入 `DeckListView`。
-- 演示：`src/components/HomeStatsDemo.tsx`（独立 demo，不进主路径）。
+| 位置 | 说明 |
+| ---- | ---- |
+| `src/components/flashcard-home/HomeSummaryBar.tsx` | 顶部三卡 + 困难卡片入口等摘要动作 |
+| `src/components/flashcard-home/StatCard.tsx` | 单枚统计卡展示 |
+| `src/components/flashcard-home/FlashHomePage.tsx` | 将 `todayStats` 传入 `HomeSummaryBar` |
+| `src/components/SrsFlashcardHome.tsx` | `loadData` / 静默刷新中调用 `calculateHomeStats` |
 
-布局：`display: flex`、`gap: 12px`、`justifyContent: center`、`flexWrap: wrap`；卡片 `minWidth: 80px`，背景 `var(--orca-color-bg-2)`。
+数据：`loadData` 仅 `collectReviewCards` → `calculateDeckStats` + notes → `calculateHomeStats`；**不再**加载 `getReviewHistory` / `getFutureForecast` / `getTodayStatistics`。
+
+布局建议：`display: flex`、`gap: 12px`、`justifyContent: center`、`flexWrap: wrap`；卡片 `minWidth: 80px`，背景 `var(--orca-color-bg-2)`。
 
 ## 与其他统计的关系
 
 | 数据 | 用途 |
 | ---- | ---- |
-| `TodayStats`（deckUtils） | 卡组页顶部三卡、底部「共 N 张…」、是否可「开始今日复习」 |
-| `TodayStatistics`（statisticsManager） | 今日已复习/新学/重学/用时与评分分布，供 Dashboard/StatisticsView |
-| Deck 行「未学习/学习中/待复习」 | 按 **单 Deck** 的 `newCount` / `todayCount` / `overdueCount`（`calculateDeckStats`） |
+| `TodayStats`（`deckUtils.calculateHomeStats`） | 主页三卡、「共 N 张…」、是否可「开始今日复习」 |
+| Deck 行「新卡 / 今日到期 / 积压」 | 单 Deck：`newCount` / `todayCount` / `overdueCount`（`calculateDeckStats` 与上表同语义） |
 
-## 用户体验（现行）
+> 原 `TodayStatistics`（`statisticsManager`）与学习统计页、Dashboard 热力图等 **已从 Flash Home 移除**，不再作为本模块数据源。会话进度时长累计仍走 `effectiveDurationFromReviewLog`（见数据存储文档）。
 
-- 打开「卡组」页即可看到全局待办拆分，无需进入统计页。
+## 用户体验
+
+- 打开 Flash Home 即见全局待办拆分 + 下方卡组列表，无需再切「卡组」页或进入统计页。
 - 颜色语义：蓝=新内容，红=今日到期，绿=积压。
-- 当前 **不可点击** 跳转筛选；筛选需进入具体 Deck 的 `CardListView`。
+- 摘要区同时提供「开始今日复习」「困难卡片」「刷新」；困难卡返回主页。
+- 当前三卡 **默认不可点击** 跳转筛选；筛选需进入具体 Deck 的 `CardListView`（扩展点见总览文档）。
 
 ## 相关文件
 
 | 文件 | 说明 |
 | ---- | ---- |
-| `src/components/SrsFlashcardHome.tsx` | `StatCard`、`DeckListView` |
+| `src/components/flashcard-home/HomeSummaryBar.tsx` | 顶部摘要 |
+| `src/components/flashcard-home/StatCard.tsx` | 统计小卡 |
+| `src/components/flashcard-home/FlashHomePage.tsx` | 主页编排 |
+| `src/components/SrsFlashcardHome.tsx` | 数据加载与 `todayStats` 状态 |
 | `src/srs/deckUtils.ts` | `calculateHomeStats` |
 | `src/srs/types.ts` | `TodayStats` |
-| `src/components/HomeStatsDemo.tsx` | 演示组件 |
 | [SRS_卡片浏览器.md](SRS_卡片浏览器.md) | Flash Home 总览 |

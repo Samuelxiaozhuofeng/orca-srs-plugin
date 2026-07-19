@@ -456,17 +456,19 @@ export function calculateDeckStats(cards: ReviewCard[]): DeckStats {
     if (card.isNew) {
       deckInfo.newCount++
     } else {
-      // 判断卡片属于哪个到期类别（精确时间判断）
+      // 与 HomeSummaryBar 文案一致：新卡 / 今日到期 / 积压
+      // - todayCount：已到期且到期日落在今天自然日
+      // - overdueCount：已到期且到期日早于今天（积压）
+      // - futureCount：尚未到点（含今天稍后）
       const dueTime = card.srs.due.getTime()
 
       if (dueTime <= nowTime) {
-        // 已到期（精确到时分秒）
-        deckInfo.overdueCount++
-      } else if (card.srs.due >= today && card.srs.due < tomorrow) {
-        // 今天稍后到期（还没到时间）
-        deckInfo.todayCount++
+        if (card.srs.due >= today && card.srs.due < tomorrow) {
+          deckInfo.todayCount++
+        } else {
+          deckInfo.overdueCount++
+        }
       } else {
-        // 未来到期
         deckInfo.futureCount++
       }
     }

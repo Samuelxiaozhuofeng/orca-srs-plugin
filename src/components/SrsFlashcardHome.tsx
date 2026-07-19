@@ -5,16 +5,14 @@ import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../s
 import type { FilterType } from "../srs/cardFilterUtils"
 import { filterCards } from "../srs/cardFilterUtils"
 import { SRS_EVENTS } from "../srs/srsEvents"
-import StatisticsView from "./StatisticsView"
-import DifficultCardsView from "./DifficultCardsView"
-import FlashcardDashboard from "./FlashcardDashboard"
+import FlashHomePage from "./flashcard-home/FlashHomePage"
 import CardListView from "./flashcard-home/CardListView"
-import DeckListView from "./flashcard-home/DeckListView"
+import DifficultCardsView from "./DifficultCardsView"
 
 const { useState, useEffect, useCallback, useMemo, useRef } = window.React
 const { Button } = orca.components
 
-type ViewMode = "dashboard" | "deck-list" | "card-list" | "statistics" | "difficult-cards"
+type ViewMode = "home" | "card-list" | "difficult-cards"
 
 type SrsFlashcardHomeProps = {
   panelId: string
@@ -24,7 +22,7 @@ type SrsFlashcardHomeProps = {
 
 export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFlashcardHomeProps) {
   // 1. 所有 Hooks 在顶层声明（避免 Error #185）
-  const [viewMode, setViewMode] = useState<ViewMode>("dashboard")
+  const [viewMode, setViewMode] = useState<ViewMode>("home")
   const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
   const [allCards, setAllCards] = useState<ReviewCard[]>([])
   const [deckStats, setDeckStats] = useState<DeckStats>({ decks: [], totalCards: 0, totalNew: 0, totalOverdue: 0 })
@@ -32,13 +30,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentFilter, setCurrentFilter] = useState<FilterType>("all")
-  
-  // Dashboard 需要的额外数据
-  const [reviewHistory, setReviewHistory] = useState<any>(null)
-  const [futureForecast, setFutureForecast] = useState<any>(null)
-  const [todayStatistics, setTodayStatistics] = useState<any>(null)
 
-  // 加载数据
+  // 加载数据（仅卡片 / 卡组统计 / 主页统计；不拉 reviewHistory / forecast / todayStatistics）
   const loadData = useCallback(async () => {
     setIsLoading(true)
     setErrorMessage(null)
@@ -47,18 +40,12 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       const { collectReviewCards, calculateDeckStats } = await import("../main")
       const { calculateHomeStats } = await import("../srs/deckUtils")
       const { getAllDeckNotes } = await import("../srs/deckNoteManager")
-      const { 
-        getReviewHistory, 
-        getFutureForecast,
-        getTodayStatistics 
-      } = await import("../srs/statisticsManager")
 
       const cards = await collectReviewCards(pluginName)
       setAllCards(cards)
 
       const stats = calculateDeckStats(cards)
-      
-      // 加载卡组备注并合并到统计数据中
+
       const deckNotes = await getAllDeckNotes(pluginName)
       const enhancedStats = {
         ...stats,
@@ -71,16 +58,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
 
       const homeStats = calculateHomeStats(cards)
       setTodayStats(homeStats)
-      
-      // 加载 Dashboard 需要的数据
-      const [history, forecast, todayStatsData] = await Promise.all([
-        getReviewHistory(pluginName, "3months"),
-        getFutureForecast(pluginName, 30),
-        getTodayStatistics(pluginName)
-      ])
-      setReviewHistory(history)
-      setFutureForecast(forecast)
-      setTodayStatistics(todayStatsData)
     } catch (error) {
       console.error(`[${pluginName}] Flash Home 加载数据失败:`, error)
       setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -100,26 +77,23 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   useEffect(() => {
     const autoRefresh = async () => {
       try {
-        // 静默刷新数据，不显示加载状态
         const { collectReviewCards, calculateDeckStats } = await import("../main")
         const { calculateHomeStats } = await import("../srs/deckUtils")
         const { getAllDeckNotes } = await import("../srs/deckNoteManager")
 
         const cards = await collectReviewCards(pluginName)
-        
-        // 检查是否有新的到期卡片
+
         const oldTotalDue = todayStats.pendingCount
         const newStats = calculateHomeStats(cards)
-        
+
         if (newStats.pendingCount > oldTotalDue) {
           console.log(`[${pluginName}] Flash Home: 发现新到期卡片，从 ${oldTotalDue} 增加到 ${newStats.pendingCount}`)
         }
-        
+
         setAllCards(cards)
 
         const stats = calculateDeckStats(cards)
-        
-        // 加载卡组备注并合并到统计数据中
+
         const deckNotes = await getAllDeckNotes(pluginName)
         const enhancedStats = {
           ...stats,
@@ -131,15 +105,12 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         setDeckStats(enhancedStats)
         setTodayStats(newStats)
       } catch (error) {
-        // 静默失败，不影响用户体验
         console.warn(`[${pluginName}] Flash Home 自动刷新失败:`, error)
       }
     }
 
-    // 每2分钟自动刷新一次数据
-    const interval = setInterval(autoRefresh, 120000) // 120秒
+    const interval = setInterval(autoRefresh, 120000)
 
-    // 组件卸载时清理定时器
     return () => clearInterval(interval)
   }, [pluginName, todayStats.pendingCount])
 
@@ -157,7 +128,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }>({ graded: null, postponed: null, suspended: null })
 
   useEffect(() => {
-    // 创建处理器函数
     const handleCardGraded = () => {
       console.log(`[${pluginName}] Flash Home: 收到 CARD_GRADED 事件，静默刷新`)
       void loadDataRef.current()
@@ -173,15 +143,12 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       void loadDataRef.current()
     }
 
-    // 存储处理器引用
     handlersRef.current = {
       graded: handleCardGraded,
       postponed: handleCardPostponed,
       suspended: handleCardSuspended
     }
 
-    // 安全注册：先检查是否已注册，如果已注册则跳过
-    // 这样可以避免重复注册错误，同时允许其他组件也能注册
     if (!orca.broadcasts.isHandlerRegistered(SRS_EVENTS.CARD_GRADED)) {
       orca.broadcasts.registerHandler(SRS_EVENTS.CARD_GRADED, handleCardGraded)
     }
@@ -193,7 +160,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
 
     return () => {
-      // 取消订阅 - 使用存储的处理器引用
       const handlers = handlersRef.current
       if (handlers.graded) {
         orca.broadcasts.unregisterHandler(SRS_EVENTS.CARD_GRADED, handlers.graded)
@@ -214,7 +180,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }, [allCards, selectedDeck])
 
   const filteredCards = useMemo(() => {
-    // 应用筛选条件
     return filterCards(deckCards, currentFilter)
   }, [deckCards, currentFilter])
 
@@ -251,34 +216,29 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const handleCardReset = useCallback(async (card: ReviewCard) => {
     try {
       const { resetCardSrsState, resetClozeSrsState, resetDirectionSrsState } = await import("../srs/storage")
-      
+
       let newSrsState: SrsState
       if (card.clozeNumber) {
-        // Cloze 卡片
         newSrsState = await resetClozeSrsState(card.id, card.clozeNumber)
       } else if (card.directionType) {
-        // Direction 卡片
         newSrsState = await resetDirectionSrsState(card.id, card.directionType)
       } else {
-        // 普通卡片
         newSrsState = await resetCardSrsState(card.id)
       }
-      
-      // 只更新该卡片的状态，不刷新整个列表
+
       setAllCards((prev: ReviewCard[]) => prev.map((c: ReviewCard) => {
-        // 匹配卡片
         const isMatch = card.clozeNumber
           ? c.id === card.id && c.clozeNumber === card.clozeNumber
           : card.directionType
             ? c.id === card.id && c.directionType === card.directionType
             : c.id === card.id
-        
+
         if (isMatch) {
           return { ...c, srs: newSrsState, isNew: true }
         }
         return c
       }))
-      
+
       orca.notify("success", "卡片已重置为新卡", { title: "SRS" })
     } catch (error) {
       console.error(`[${pluginName}] 重置卡片失败:`, error)
@@ -288,43 +248,34 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
 
   // 处理删除卡片
   const handleCardDelete = useCallback(async (card: ReviewCard) => {
-    // 先从列表中移除该卡片，避免闪烁
     setAllCards((prev: ReviewCard[]) => prev.filter((c: ReviewCard) => {
-      // 对于 Cloze 卡片，需要匹配 id 和 clozeNumber
       if (card.clozeNumber) {
         return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
       }
-      // 对于 Direction 卡片，需要匹配 id 和 directionType
       if (card.directionType) {
         return !(c.id === card.id && c.directionType === card.directionType)
       }
-      // 普通卡片只匹配 id
       return c.id !== card.id
     }))
-    
-    // 然后异步删除 SRS 数据和 #card 标签
+
     try {
       const { deleteCardSrsData, deleteClozeCardSrsData, deleteDirectionCardSrsData } = await import("../srs/storage")
-      
+
       if (card.clozeNumber) {
-        // Cloze 卡片 - 删除该填空的 SRS 数据
         await deleteClozeCardSrsData(card.id, card.clozeNumber)
       } else if (card.directionType) {
-        // Direction 卡片 - 删除该方向的 SRS 数据
         await deleteDirectionCardSrsData(card.id, card.directionType)
       } else {
-        // 普通卡片 - 删除所有 SRS 数据
         await deleteCardSrsData(card.id)
       }
-      
-      // 无论什么类型的卡片，都移除 #card 标签
+
       await orca.commands.invokeEditorCommand(
         "core.editor.removeTag",
         null,
         card.id,
         "card"
       )
-      
+
       orca.notify("success", "卡片已删除", { title: "SRS" })
     } catch (error) {
       console.error(`[${pluginName}] 删除卡片失败:`, error)
@@ -337,16 +288,11 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     orca.nav.openInLastPanel("block", { blockId: cardId })
   }, [])
 
-  // 处理返回
+  // 处理返回主页
   const handleBack = useCallback(() => {
-    setViewMode("deck-list")
+    setViewMode("home")
     setSelectedDeck(null)
     setCurrentFilter("all")
-  }, [])
-
-  // 处理显示统计视图
-  const handleShowStatistics = useCallback(() => {
-    setViewMode("statistics")
   }, [])
 
   // 处理显示困难卡片视图
@@ -387,7 +333,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         descriptor
       )
 
-      // 使用原生方法在新面板打开
       orca.nav.openInLastPanel("block", { blockId: reviewBlockId })
 
       orca.notify("success", `已开始复习 ${cards.length} 张困难卡片`, { title: "SRS 复习" })
@@ -406,7 +351,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const handleNoteChange = useCallback((deckName: string, note: string) => {
     setDeckStats((prev: DeckStats) => ({
       ...prev,
-      decks: prev.decks.map((deck: DeckInfo) => 
+      decks: prev.decks.map((deck: DeckInfo) =>
         deck.name === deckName ? { ...deck, note } : deck
       )
     }))
@@ -456,111 +401,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       height: "100%",
       overflow: "auto"
     }}>
-      {viewMode === "dashboard" ? (
-        <div className="srs-dashboard-view">
-          {/* Dashboard 顶部导航 */}
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "16px"
-          }}>
-            <div style={{
-              display: "flex",
-              gap: "8px"
-            }}>
-              <Button
-                variant="solid"
-                onClick={() => setViewMode("dashboard")}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                主页
-              </Button>
-              <Button
-                variant="plain"
-                onClick={() => setViewMode("deck-list")}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                卡组
-              </Button>
-              <Button
-                variant="plain"
-                onClick={handleShowStatistics}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                统计
-              </Button>
-            </div>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <Button
-                variant="plain"
-                onClick={handleShowDifficultCards}
-                style={{ fontSize: "13px", padding: "6px 12px", color: "var(--orca-color-danger-6)" }}
-              >
-                <i className="ti ti-alert-triangle" style={{ marginRight: "4px" }} />
-                困难卡片
-              </Button>
-              <Button
-                variant="plain"
-                onClick={handleRefresh}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                <i className="ti ti-refresh" />
-              </Button>
-            </div>
-          </div>
-          
-          <FlashcardDashboard
-            pluginName={pluginName}
-            todayStats={todayStatistics}
-            reviewHistory={reviewHistory}
-            futureForecast={futureForecast}
-            totalCards={todayStats.totalCount}
-            newCards={todayStats.newCount}
-            dueCards={todayStats.pendingCount}
-            onStartReview={handleStartTodayReview}
-            onRefresh={handleRefresh}
-            isLoading={isLoading}
-          />
-        </div>
-      ) : viewMode === "deck-list" ? (
-        <div className="srs-deck-list-view">
-          {/* Deck List 顶部导航 */}
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "16px"
-          }}>
-            <div style={{
-              display: "flex",
-              gap: "8px"
-            }}>
-              <Button
-                variant="plain"
-                onClick={() => setViewMode("dashboard")}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                主页
-              </Button>
-              <Button
-                variant="solid"
-                onClick={() => setViewMode("deck-list")}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                卡组
-              </Button>
-              <Button
-                variant="plain"
-                onClick={handleShowStatistics}
-                style={{ fontSize: "13px", padding: "6px 12px" }}
-              >
-                统计
-              </Button>
-            </div>
-          </div>
-          
-          <DeckListView
+      {viewMode === "home" ? (
+        <div className="srs-flash-home-page">
+          <FlashHomePage
             deckStats={deckStats}
             todayStats={todayStats}
             panelId={panelId}
@@ -570,17 +413,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             onStartTodayReview={handleStartTodayReview}
             onRefresh={handleRefresh}
             onNoteChange={handleNoteChange}
-            onShowStatistics={handleShowStatistics}
             onShowDifficultCards={handleShowDifficultCards}
-          />
-        </div>
-      ) : viewMode === "statistics" ? (
-        <div className="srs-statistics-view">
-          <StatisticsView
-            panelId={panelId}
-            pluginName={pluginName}
-            onBack={handleBack}
-            decks={deckStats.decks}
           />
         </div>
       ) : viewMode === "difficult-cards" ? (

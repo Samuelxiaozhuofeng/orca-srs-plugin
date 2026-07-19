@@ -103,7 +103,7 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
           )}
         </div>
 
-        {/* 未学习数 - 蓝色 */}
+        {/* 新卡 - 蓝色 */}
         <div style={{
           width: "60px",
           textAlign: "center",
@@ -113,7 +113,7 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
           {deck.newCount}
         </div>
 
-        {/* 学习中（今天到期） - 红色 */}
+        {/* 今日到期 - 红色 */}
         <div style={{
           width: "60px",
           textAlign: "center",
@@ -123,7 +123,7 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
           {deck.todayCount}
         </div>
 
-        {/* 待复习（已到期） - 绿色 */}
+        {/* 积压（已到期） - 绿色 */}
         <div style={{
           width: "60px",
           textAlign: "center",

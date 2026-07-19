@@ -8,7 +8,8 @@
 为 Flash Home 卡组提供备注 CRUD，数据键 `deckNotes`，实现于：
 
 - `src/srs/deckNoteManager.ts` — API
-- `src/components/SrsFlashcardHome.tsx` — `loadData` 合并、`DeckRow` 编辑 UI
+- `src/components/SrsFlashcardHome.tsx` — `loadData` 合并 notes
+- `src/components/flashcard-home/DeckRow.tsx` — 行内编辑 UI
 - `src/srs/types.ts` — `DeckInfo.note?`
 - 演示：`src/components/DeckNoteDemo.tsx`
 

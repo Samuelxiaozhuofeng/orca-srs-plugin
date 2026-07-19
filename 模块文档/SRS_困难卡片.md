@@ -10,10 +10,9 @@
 
 ## 入口
 
-- **主页 Dashboard** 顶栏：「困难卡片」
-- **卡组列表** 工具栏：「困难卡片」
-- 切换 `viewMode` → `"difficult-cards"`，渲染 `DifficultCardsView`
-- 「返回」→ `handleBack` → `deck-list`
+- **主页摘要区**（`HomeSummaryBar` / Flash Home 上半区）：「困难卡片」
+- 切换 `viewMode` → `"difficult-cards"`，渲染 `DifficultCardsView`（全页次级视图）
+- 「返回」→ `handleBack` → **`home`**（单页主页；不再回已删除的 `deck-list`）
 
 ## 判定标准
 
@@ -129,7 +128,9 @@ interface DifficultCardsStats {
 | ---- | ---- |
 | `src/srs/difficultCardsManager.ts` | 判定、列表、统计、复习抽取 |
 | `src/components/DifficultCardsView.tsx` | UI |
+| `src/components/difficultCardsPaging.ts` | 分页常量与切片 |
 | `src/components/SrsFlashcardHome.tsx` | 入口与复习启动 |
+| `src/components/flashcard-home/HomeSummaryBar.tsx` | 主页摘要区入口 |
 | `src/srs/cardIdentity.ts` | 日志匹配 |
 | `src/srs/reviewLogStorage.ts` | 日志读写 |
 | `src/srs/repeatReviewManager.ts` | 固定队列会话 |

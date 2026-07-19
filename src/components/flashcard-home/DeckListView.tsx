@@ -1,47 +1,35 @@
-import type { DeckInfo, DeckStats, TodayStats } from "../../srs/types"
+import type { DeckInfo, DeckStats } from "../../srs/types"
 import DeckRow from "./DeckRow"
-import StatCard from "./StatCard"
 
 const { useEffect, useMemo, useRef, useState } = window.React
 const { Button } = orca.components
 
-type DeckListViewProps = {
+export type DeckListViewProps = {
   deckStats: DeckStats
-  todayStats: TodayStats
   panelId: string
   pluginName: string
   onViewDeck: (deckName: string) => void
   onReviewDeck: (deckName: string) => void
-  onStartTodayReview: () => void
-  onRefresh: () => void
   onNoteChange: (deckName: string, note: string) => void
-  onShowStatistics: () => void
-  onShowDifficultCards: () => void
 }
 
 export default function DeckListView({
   deckStats,
-  todayStats,
-  panelId,
+  panelId: _panelId,
   pluginName,
   onViewDeck,
   onReviewDeck,
-  onStartTodayReview,
-  onRefresh,
-  onNoteChange,
-  onShowStatistics,
-  onShowDifficultCards
+  onNoteChange
 }: DeckListViewProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const hasDueCards = todayStats.pendingCount > 0 || todayStats.newCount > 0
 
   // 无限滚动状态
   const DECK_PAGE_SIZE = 15
   const [displayCount, setDisplayCount] = useState(DECK_PAGE_SIZE)
   const loaderRef = useRef<HTMLDivElement>(null)
 
-  // 搜索过滤逻辑
+  // 搜索过滤：卡组名称 + 备注
   const filteredDecks = useMemo(() => {
     if (!searchQuery.trim()) {
       return deckStats.decks
@@ -49,20 +37,18 @@ export default function DeckListView({
 
     const query = searchQuery.toLowerCase().trim()
     return deckStats.decks.filter((deck: DeckInfo) => {
-      // 按卡组名称搜索
       const nameMatch = deck.name.toLowerCase().includes(query)
-      // 按备注内容搜索
       const noteMatch = deck.note?.toLowerCase().includes(query) || false
       return nameMatch || noteMatch
     })
   }, [deckStats.decks, searchQuery])
 
-  // 当搜索条件变化时，重置显示数量
+  // 搜索条件变化时重置分页
   useEffect(() => {
     setDisplayCount(DECK_PAGE_SIZE)
   }, [searchQuery])
 
-  // 无限滚动：使用 IntersectionObserver 监听加载触发器
+  // 无限滚动：IntersectionObserver 监听加载触发器
   useEffect(() => {
     const loader = loaderRef.current
     if (!loader) return
@@ -80,109 +66,17 @@ export default function DeckListView({
     return () => observer.disconnect()
   }, [displayCount, filteredDecks.length])
 
-  // 当前显示的牌组
   const displayedDecks = filteredDecks.slice(0, displayCount)
   const hasMore = displayCount < filteredDecks.length
+  const isSearching = searchQuery.trim().length > 0
 
-  // 清空搜索
   const handleClearSearch = () => {
     setSearchQuery("")
     searchInputRef.current?.focus()
   }
 
-  // 移除全局键盘快捷键支持，避免与浏览器默认功能冲突
-
-  // 计算搜索结果统计
-  const searchStats = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return {
-        deckCount: deckStats.decks.length,
-        totalCards: todayStats.totalCount,
-        newCards: todayStats.newCount,
-        pendingCards: todayStats.pendingCount
-      }
-    }
-
-    const totalCards = filteredDecks.reduce((sum: number, deck: DeckInfo) => sum + deck.totalCount, 0)
-    const newCards = filteredDecks.reduce((sum: number, deck: DeckInfo) => sum + deck.newCount, 0)
-    const pendingCards = filteredDecks.reduce((sum: number, deck: DeckInfo) => sum + deck.overdueCount + deck.todayCount, 0)
-
-    return {
-      deckCount: filteredDecks.length,
-      totalCards,
-      newCards,
-      pendingCards
-    }
-  }, [deckStats.decks, filteredDecks, todayStats, searchQuery])
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* 顶部工具栏 - Requirements: 12.1 */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "flex-end",
-        gap: "8px"
-      }}>
-        <Button
-          variant="plain"
-          onClick={onShowDifficultCards}
-          className="srs-difficult-cards-button"
-          style={{
-            fontSize: "13px",
-            padding: "6px 12px",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            color: "var(--orca-color-danger-6)"
-          }}
-          title="查看困难卡片"
-        >
-          <i className="ti ti-alert-triangle" />
-          困难卡片
-        </Button>
-        <Button
-          variant="plain"
-          onClick={onShowStatistics}
-          className="srs-statistics-button"
-          style={{
-            fontSize: "13px",
-            padding: "6px 12px",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px"
-          }}
-          title="查看学习统计"
-        >
-          <i className="ti ti-chart-bar" />
-          统计
-        </Button>
-      </div>
-
-      {/* 顶部统计卡片 */}
-      <div style={{
-        display: "flex",
-        gap: "12px",
-        justifyContent: "center",
-        flexWrap: "wrap"
-      }}>
-        <StatCard
-          label="未学习"
-          value={todayStats.newCount}
-          color="var(--orca-color-primary-6)"
-        />
-        <StatCard
-          label="学习中"
-          value={todayStats.todayCount}
-          color="var(--orca-color-danger-6)"
-        />
-        <StatCard
-          label="待复习"
-          value={todayStats.pendingCount - todayStats.todayCount}
-          color="var(--orca-color-success-6)"
-        />
-      </div>
-
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       {/* 搜索栏 */}
       <div style={{
         display: "flex",
@@ -234,6 +128,17 @@ export default function DeckListView({
           </Button>
         )}
       </div>
+
+      {isSearching && filteredDecks.length > 0 && (
+        <div style={{
+          fontSize: "12px",
+          color: "var(--orca-color-text-3)",
+          paddingLeft: "2px"
+        }}>
+          匹配 {filteredDecks.length} 个卡组
+        </div>
+      )}
+
       {/* 牌组表格 */}
       <div style={{
         border: "1px solid var(--orca-color-border-1)",
@@ -263,7 +168,7 @@ export default function DeckListView({
             fontWeight: 600,
             color: "#3b82f6"
           }}>
-            未学习
+            新卡
           </div>
           <div style={{
             width: "60px",
@@ -272,7 +177,7 @@ export default function DeckListView({
             fontWeight: 600,
             color: "#ef4444"
           }}>
-            学习中
+            今日到期
           </div>
           <div style={{
             width: "60px",
@@ -281,7 +186,7 @@ export default function DeckListView({
             fontWeight: 600,
             color: "#22c55e"
           }}>
-            待复习
+            积压
           </div>
           <div style={{ width: "64px" }} />
         </div>
@@ -342,58 +247,6 @@ export default function DeckListView({
               </div>
             </>
           )}
-        </div>
-      </div>
-
-      {/* 底部统计和操作 */}
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "12px"
-      }}>
-        {/* 学习统计 */}
-        <div style={{
-          fontSize: "13px",
-          color: "var(--orca-color-text-2)",
-          textAlign: "center"
-        }}>
-          {searchQuery.trim() ? (
-            <div>
-              <div>搜索结果：{searchStats.deckCount} 个卡组，{searchStats.totalCards} 张卡片</div>
-              <div style={{ marginTop: "2px", opacity: 0.8 }}>
-                {searchStats.newCards} 张新卡，{searchStats.pendingCards} 张待复习
-              </div>
-            </div>
-          ) : (
-            <div>
-              共 {todayStats.totalCount} 张卡片，{todayStats.newCount} 张新卡，{todayStats.pendingCount} 张待复习
-            </div>
-          )}
-        </div>
-
-        {/* 操作按钮 */}
-        <div style={{ display: "flex", gap: "8px" }}>
-          <Button
-            variant="solid"
-            onClick={hasDueCards ? onStartTodayReview : undefined}
-            style={{
-              opacity: hasDueCards ? 1 : 0.5,
-              cursor: hasDueCards ? "pointer" : "not-allowed",
-              padding: "8px 24px"
-            }}
-          >
-            开始今日复习
-          </Button>
-          <Button
-            variant="plain"
-            onClick={onRefresh}
-            style={{ padding: "8px 16px" }}
-            title="刷新数据"
-          >
-            <i className="ti ti-refresh" style={{ marginRight: "4px" }} />
-            刷新
-          </Button>
         </div>
       </div>
     </div>

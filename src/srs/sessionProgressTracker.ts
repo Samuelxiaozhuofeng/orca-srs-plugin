@@ -5,7 +5,7 @@
  * 包含评分分布追踪、准确率计算、时间统计等功能。
  *
  * FC-10：墙钟时长与有效时长归一化的**唯一**实现源。
- * 永久日志、Hook、statisticsManager 均须 import 此处常量与函数，禁止复制规则。
+ * 永久日志与 Hook 均须 import 此处常量与函数，禁止复制规则。
  */
 
 import type { Grade, ReviewLogEntry } from "./types"

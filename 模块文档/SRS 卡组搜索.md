@@ -7,7 +7,8 @@
 
 Flash Home 卡组列表内实时搜索名称与备注，高亮匹配，`Escape` 清空。实现于：
 
-- `src/components/SrsFlashcardHome.tsx` — `HighlightText`、`DeckListView` 过滤与统计
+- `src/components/flashcard-home/DeckListView.tsx` — 过滤与统计
+- `src/components/flashcard-home/HighlightText.tsx` — 高亮
 - 演示：`src/components/DeckSearchDemo.tsx`
 
 历史文中「Ctrl+F 全局快捷键」**已移除**；勿再按该快捷键文档行为验收。
