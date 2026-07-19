@@ -1,39 +1,38 @@
 /**
- * EPUB image asset upload with path cache.
+ * EPUB image asset upload with path cache, MIME magic checks, and budget limits.
  */
 
 import type JSZip from "jszip"
-
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  ".apng": "image/apng",
-  ".avif": "image/avif",
-  ".gif": "image/gif",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-  ".webp": "image/webp"
-}
+import {
+  assertImageSize,
+  type DecompressedBudgetTracker
+} from "./epubLimits"
+import { resolveImageUploadMime } from "./epubMime"
 
 export class EpubAssetUploader {
   private readonly uploadedAssetPaths = new Map<string, string>()
+  private omitReasons: Array<{ path: string; reason: string }> = []
 
-  constructor(private readonly zip: JSZip) {}
+  constructor(
+    private readonly zip: JSZip,
+    private readonly budget?: DecompressedBudgetTracker
+  ) {}
+
+  getOmitReasons(): ReadonlyArray<{ path: string; reason: string }> {
+    return this.omitReasons
+  }
 
   async uploadImage(
     src: string,
     htmlFilePath: string
   ): Promise<string | null> {
-    if (isExternalSrc(src) || src.startsWith("data:")) {
-      return src
-    }
-
-    const imagePath = resolveRelativePath(src, getDirname(htmlFilePath))
-    const mimeType = getImageMimeType(imagePath)
-    if (!mimeType) {
+    // Security: never pass through external / data / blob / file URLs.
+    if (isRejectedSrc(src)) {
+      this.omitReasons.push({ path: src, reason: "rejected_src" })
       return null
     }
 
+    const imagePath = resolveRelativePath(src, getDirname(htmlFilePath))
     const cachedPath = this.uploadedAssetPaths.get(imagePath)
     if (cachedPath) {
       return cachedPath
@@ -41,13 +40,32 @@ export class EpubAssetUploader {
 
     const file = this.zip.file(imagePath)
     if (!file) {
-      throw new Error(`Image file not found in EPUB: ${imagePath}`)
+      this.omitReasons.push({ path: imagePath, reason: "missing_in_zip" })
+      return null
     }
 
     const data = await file.async("arraybuffer")
+    this.budget?.add(data.byteLength, imagePath)
+
+    try {
+      assertImageSize(data.byteLength, imagePath)
+    } catch (error) {
+      this.omitReasons.push({
+        path: imagePath,
+        reason: error instanceof Error ? error.message : "image_too_large"
+      })
+      return null
+    }
+
+    const resolved = resolveImageUploadMime(imagePath, data)
+    if ("reject" in resolved) {
+      this.omitReasons.push({ path: imagePath, reason: resolved.reject })
+      return null
+    }
+
     const assetPath = await orca.invokeBackend(
       "upload-asset-binary",
-      mimeType,
+      resolved.mime,
       data
     )
     if (typeof assetPath !== "string" || assetPath.length === 0) {
@@ -99,16 +117,14 @@ function getDirname(path: string): string {
   return path.slice(0, index + 1)
 }
 
-function getImageMimeType(path: string): string | null {
-  const pathWithoutQuery = path.split(/[?#]/)[0].toLowerCase()
-  const extension = Object.keys(IMAGE_EXTENSIONS).find((ext) =>
-    pathWithoutQuery.endsWith(ext)
-  )
-  return extension ? IMAGE_EXTENSIONS[extension] : null
-}
-
-function isExternalSrc(src: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//")
+function isRejectedSrc(src: string): boolean {
+  const v = src.trim()
+  if (!v) return true
+  if (v.startsWith("//")) return true
+  if (/^(data:|blob:|file:)/i.test(v)) return true
+  // Any scheme (http, https, javascript, …) — local ZIP paths have no scheme.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return true
+  return false
 }
 
 function resolveRelativePath(path: string, baseDir: string): string {

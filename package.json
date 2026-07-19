@@ -1,13 +1,33 @@
 {
-  "name": "orca-plugin-template",
-  "version": "0.0.0",
+  "name": "orca-srs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "虎鲸标记 — Orca Notes 内置间隔重复记忆（SRS）闪卡插件",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Samuelxiaozhuofeng/orca-srs-plugin.git"
+  },
+  "homepage": "https://github.com/Samuelxiaozhuofeng/orca-srs-plugin",
+  "bugs": {
+    "url": "https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/issues"
+  },
   "scripts": {
     "dev": "vite",
     "build": "cross-env NODE_ENV=production tsc && vite build",
-    "postbuild": "node --input-type=module -e \"import fs from 'node:fs'; import path from 'node:path'; const src='dist'; const pluginRoot='/Users/samdagreat/Documents/orca/plugins/orca-srs'; const dst=path.join(pluginRoot,'dist'); if (!fs.existsSync(src)) { console.error('[postbuild] missing source:', src); process.exit(1); } fs.mkdirSync(pluginRoot, { recursive: true }); fs.rmSync(dst, { recursive: true, force: true }); fs.cpSync(src, dst, { recursive: true }); console.log('[postbuild] copied', src, '->', dst);\"",
     "test": "vitest run",
-    "preview": "vite preview"
+    "test:release": "node --test scripts/lib/deploy-target.test.mjs scripts/lib/release-gates.test.mjs scripts/release-verify.integration.test.mjs",
+    "preview": "vite preview",
+    "deploy:local": "node scripts/deploy-local.mjs",
+    "release:licenses": "node scripts/release-licenses.mjs",
+    "release:stage": "node scripts/release-stage.mjs",
+    "release:verify": "node scripts/release-verify.mjs",
+    "release:ready": "node scripts/release-ready.mjs",
+    "release:zip": "node scripts/release-zip.mjs"
   },
   "peerDependencies": {
     "react": "^18.2.0",

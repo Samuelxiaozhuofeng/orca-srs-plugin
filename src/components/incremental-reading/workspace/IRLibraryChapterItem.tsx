@@ -16,9 +16,18 @@ import {
 import { getIRChapterPresentation } from "./irChapterPresentation"
 import IRLibraryRow from "./IRLibraryRow"
 import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
+import {
+  IR_CHAPTER_EXTRACT_PAGE_SIZE,
+  nextExtractDisplayCount,
+  pageExtracts
+} from "./irExtractPaging"
 
 const React = (window as any).React || (globalThis as any).React
-const { useEffect, useRef } = React
+const { useEffect, useRef, useState } = React
+
+export { IR_CHAPTER_EXTRACT_PAGE_SIZE }
+
+const FUTURE_GROUPS = ["明天", "未来7天", "新卡", "7天后"]
 
 type Props = {
   chapter: IRChapterNode
@@ -73,7 +82,6 @@ export default function IRLibraryChapterItem({
   const isFullySelected = allCardIdsInChapter.length > 0 && selectedCount === allCardIdsInChapter.length
   const isPartiallySelected = selectedCount > 0 && !isFullySelected
   const groupCheckboxRef = useRef(null) as { current: HTMLInputElement | null }
-  const FUTURE_GROUPS = ["明天", "未来7天", "新卡", "7天后"]
   const {
     chapterCard,
     isContextOnly,
@@ -245,25 +253,81 @@ export default function IRLibraryChapterItem({
       </div>
 
       {isExpanded && chapter.extracts.length > 0 ? (
-        <div className="ir-library-chapter__extracts">
-          {chapter.extracts.map(extractNode => (
-            <div key={extractNode.card.id} className="ir-library-chapter__extract-row">
-              <IRLibraryRow
-                card={extractNode.card}
-                title={getCardTitle(extractNode.card.id, titleMap)}
-                selected={selectedCardIds.has(extractNode.card.id)}
-                canAdvanceLearn={FUTURE_GROUPS.includes(getIRDateGroup(extractNode.card, now))}
-                isAdvancing={Boolean(advancingIds[String(extractNode.card.id)])}
-                now={now}
-                showSource={false}
-                onToggleSelect={onToggleCardSelection}
-                onOpenDetails={onOpenDetails}
-                onStartReading={onStartReading}
-                onAdvanceLearn={onAdvanceLearn}
-              />
-            </div>
-          ))}
+        <ChapterExtractList
+          chapter={chapter}
+          titleMap={titleMap}
+          selectedCardIds={selectedCardIds}
+          advancingIds={advancingIds}
+          now={now}
+          onToggleCardSelection={onToggleCardSelection}
+          onOpenDetails={onOpenDetails}
+          onStartReading={onStartReading}
+          onAdvanceLearn={onAdvanceLearn}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function ChapterExtractList({
+  chapter,
+  titleMap,
+  selectedCardIds,
+  advancingIds,
+  now,
+  onToggleCardSelection,
+  onOpenDetails,
+  onStartReading,
+  onAdvanceLearn
+}: {
+  chapter: IRChapterNode
+  titleMap: Record<string, string>
+  selectedCardIds: Set<DbId>
+  advancingIds: Record<string, boolean>
+  now: Date
+  onToggleCardSelection: (cardId: DbId) => void
+  onOpenDetails: (cardId: DbId) => void
+  onStartReading: (cardId: DbId) => void
+  onAdvanceLearn: (cardId: DbId) => void
+}) {
+  const [displayCount, setDisplayCount] = useState(IR_CHAPTER_EXTRACT_PAGE_SIZE)
+  const total = chapter.extracts.length
+
+  useEffect(() => {
+    setDisplayCount(IR_CHAPTER_EXTRACT_PAGE_SIZE)
+  }, [chapter.chapterId, total])
+
+  const visible = pageExtracts(chapter.extracts, displayCount)
+
+  return (
+    <div className="ir-library-chapter__extracts">
+      {visible.map((extractNode: IRChapterNode["extracts"][number]) => (
+        <div key={extractNode.card.id} className="ir-library-chapter__extract-row">
+          <IRLibraryRow
+            card={extractNode.card}
+            title={getCardTitle(extractNode.card.id, titleMap)}
+            selected={selectedCardIds.has(extractNode.card.id)}
+            canAdvanceLearn={FUTURE_GROUPS.includes(getIRDateGroup(extractNode.card, now))}
+            isAdvancing={Boolean(advancingIds[String(extractNode.card.id)])}
+            now={now}
+            showSource={false}
+            onToggleSelect={onToggleCardSelection}
+            onOpenDetails={onOpenDetails}
+            onStartReading={onStartReading}
+            onAdvanceLearn={onAdvanceLearn}
+          />
         </div>
+      ))}
+      {displayCount < total ? (
+        <button
+          type="button"
+          className="ir-load-more-btn"
+          onClick={() =>
+            setDisplayCount((n: number) => nextExtractDisplayCount(n, total))
+          }
+        >
+          加载更多摘录（{displayCount}/{total}）
+        </button>
       ) : null}
     </div>
   )

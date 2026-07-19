@@ -1,7 +1,8 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-07-16
-> 变更说明：AI 制卡提示词质量升级——最小信息/独立可理解/唯一答案/高价值筛选/Basic 主动回忆与 Cloze 非琐碎挖空/静默自检/质量优先；接地与输出契约不变。
+> 文档同步日期：2026-07-19
+> 变更说明：HTTP 成功/错误体限字节读取（`safeResponse`）、错误脱敏；Headbar 在 `uiComponents` 外层包 `SrsErrorBoundary`；生成请求在 Mount 卸载时取消并作废旧 token。
+> **未宣称**：真机超时/取消/写卡失败矩阵。
 
 ## 概述
 
@@ -34,9 +35,12 @@ src/srs/ai/
 ├── aiDraftParseValidate.ts  # JSON + 接地校验；本地 draft id
 ├── aiCardWriter.ts          # 分组写入 + 尽力回滚
 ├── aiRequestToken.ts        # 生成请求 token 守卫
-├── aiHttpErrors.ts          # HTTP 错误正文截断
+├── aiHttpErrors.ts          # HTTP 错误正文限字节 + 脱敏
 ├── aiDialogState.ts
 └── aiFlashcardFlow.ts
+src/srs/http/
+├── safeResponse.ts          # Content-Length 预检 + 流式字节上限
+└── redactSecrets.ts         # exact key / Bearer / 常见认证字段
 
 src/components/
 ├── AIDialogMount.tsx

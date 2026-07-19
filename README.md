@@ -65,25 +65,46 @@
 
 ### 方法一：从发布版本安装（推荐）
 
-1. 前往 [Releases](../../releases) 页面下载最新版本的 `dist.zip`
-2. 解压后将 `dist` 文件夹放入虎鲸笔记的插件目录
-3. 在虎鲸笔记中启用插件
+1. 前往 [Releases](https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases) 下载 `orca-srs-<version>.zip`
+2. 解压后得到顶层文件夹 **`orca-srs/`**（内含 `icon.png`、`dist/index.js`、`dist/style.css`、`THIRD_PARTY_NOTICES.md` 等）
+3. 将整个 **`orca-srs`** 文件夹放入虎鲸笔记的 `plugins` 目录（文件夹名即插件 id）
+4. 在虎鲸笔记中启用插件
+
+> 不要只拷贝内部的 `dist/` 一层；Orca 需要插件根目录下同时有 `icon.png` 与 `dist/index.js`。
 
 ### 方法二：从源码构建
 
+**环境要求：** Node.js **20.19+**（与 `package.json` `engines` / CI 一致）
+
 ```bash
-# 克隆仓库
-git clone https://github.com/your-username/orca-srs-plugin.git
+git clone https://github.com/Samuelxiaozhuofeng/orca-srs-plugin.git
 cd orca-srs-plugin
-
-# 安装依赖
-npm install
-
-# 构建生产版本
+npm ci
 npm run build
+npm run test:release     # 发布脚本与门禁回归测试
+# 生成可安装布局（不触碰本机 Orca 目录）
+npm run release:stage
+npm run release:verify   # 默认要求 readiness Go；当前 No-Go 会失败（属预期）
+# 结构自检（不代表可发布）：npm run release:verify -- --allow-incomplete-readiness
+npm run release:ready    # 还要求 dist 证据哈希、干净工作树和 v<version> tag
+npm run release:zip      # 调用严格 ready 门禁；No-Go 时拒绝生成正式 zip
 ```
 
-构建完成后，`dist` 文件夹即为插件文件。
+> **版本确认 ≠ 发布 Go。** 当前元数据版本为 `1.0.0`，但 `release-evidence/release-readiness.json` 在 Orca 真机与证据门禁完成前为 No-Go；正式 `orca-srs-1.0.0.zip` 还必须绑定已验收 `dist/index.js` 的 SHA-256、干净提交和指向该提交的 `v1.0.0` tag。推送 tag 后由 tag-only workflow 复验并发布。
+
+`npm run build` **仅**在仓库内生成 `dist/`，不会复制或删除工作区外路径。
+
+本机热部署（可选，目标路径必须显式提供）：
+
+```bash
+ORCA_PLUGIN_ROOT=/absolute/path/to/orca/plugins/orca-srs npm run deploy:local
+# 或
+npm run deploy:local -- --target=/absolute/path/to/orca/plugins/orca-srs
+```
+
+`deploy:local` 采用临时目录校验后再替换，避免先删除再用的半安装状态。
+
+> **语言：** 当前界面文案以**中文**为主；完整多语言尚未提供（`src/translations/zhCN.ts` 仅为脚手架）。
 
 ---
 
@@ -277,17 +298,17 @@ npm run build
 
 ### 环境要求
 
-- Node.js 18+
-- npm 或 pnpm
+- Node.js **20.19+**
+- npm（推荐 `npm ci`）
 
 ### 本地开发
 
-```bash
-# 安装依赖
-npm install
+插件在 **Orca 宿主**内加载。`index.html` 仅为静态说明页，不运行插件逻辑。
 
-# 启动开发服务器
-npm run dev
+```bash
+npm ci
+npm run build
+ORCA_PLUGIN_ROOT=/absolute/path/to/orca/plugins/orca-srs npm run deploy:local
 ```
 
 ### 项目结构

@@ -24,10 +24,11 @@ import { writeAICardDrafts } from "../srs/ai/aiCardWriter"
 import { createRequestTokenGuard } from "../srs/ai/aiRequestToken"
 import type { AICardDraft, AICardType, MaxCardsOption } from "../srs/ai/aiDraftTypes"
 import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
+import { sanitizePublicError } from "../srs/http/redactSecrets"
 
 const { Valtio } = window
 const { useSnapshot } = Valtio
-const { useRef } = window.React
+const { useEffect, useRef } = window.React
 
 interface AIDialogMountProps {
   pluginName: string
@@ -37,6 +38,14 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
   const snap = useSnapshot(aiDialogState)
   const abortRef = useRef<AbortController | null>(null)
   const tokenGuardRef = useRef(createRequestTokenGuard())
+
+  useEffect(() => {
+    return () => {
+      tokenGuardRef.current.invalidate()
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
+  }, [])
 
   const handleGenerate = async () => {
     if (!snap.sourceBlockId || !snap.sourceText.trim()) {
@@ -76,8 +85,9 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
           setDialogInfo(result.error.message)
           return
         }
-        setDialogError(result.error.message)
-        orca.notify("error", result.error.message, { title: "AI 生成闪卡" })
+        const safe = sanitizePublicError(result.error.message)
+        setDialogError(safe)
+        orca.notify("error", safe, { title: "AI 生成闪卡" })
         return
       }
 
@@ -90,8 +100,9 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       if (!tokenGuardRef.current.isCurrent(token)) {
         return
       }
-      const message =
+      const message = sanitizePublicError(
         error instanceof Error ? error.message : "生成失败，请重试"
+      )
       setDialogError(message)
       orca.notify("error", message, { title: "AI 生成闪卡" })
     } finally {

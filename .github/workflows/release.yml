@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+          cache: npm
+      - run: npm ci
+      - run: npm ls --omit=dev --all
+      - name: Audit production dependencies
+        run: mkdir -p release && npm audit --omit=dev --json > release/npm-audit.json
+      - run: npm run release:licenses
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run test:release
+      - run: npm run build
+      - run: npm run release:stage
+      - name: Verify production readiness
+        run: npm run release:ready -- --expected-tag="$GITHUB_REF_NAME"
+      - run: npm run release:zip
+      - name: Verify checksums
+        working-directory: release
+        run: sha256sum --check SHA256SUMS.txt
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-srs-${{ github.ref_name }}
+          path: |
+            release/orca-srs-*.zip
+            release/SHA256SUMS.txt
+            release/licenses.json
+            release/THIRD_PARTY_NOTICES.md
+            release/npm-audit.json
+            release-evidence/
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release/orca-srs-*.zip
+          release/SHA256SUMS.txt
+          --verify-tag
+          --generate-notes

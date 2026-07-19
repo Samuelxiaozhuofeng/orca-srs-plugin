@@ -10,6 +10,7 @@ import {
   scrapeWebArticle,
   WebImportError
 } from "../../importers/web/webImport"
+import { createRequestTokenGuard } from "../../srs/ai/aiRequestToken"
 
 const { useState, useCallback, useRef, useEffect } = window.React
 // Mount open-state uses Valtio from host window (same pattern as IRBookDialogMount)
@@ -44,18 +45,25 @@ interface WebImportDialogMountProps {
 export function WebImportDialogMount({ pluginName }: WebImportDialogMountProps) {
   const snap = useSnapshot(webImportDialogState)
   const { ModalOverlay } = orca.components
+  const [isWorking, setIsWorking] = useState(false)
+
+  const handleClose = useCallback(() => {
+    if (isWorking) return
+    closeWebImportDialog()
+  }, [isWorking])
 
   if (!snap.isOpen) return null
 
   return (
     <ModalOverlay
       visible={snap.isOpen}
-      canClose={true}
-      onClose={closeWebImportDialog}
+      canClose={!isWorking}
+      onClose={handleClose}
     >
       <WebImportDialog
         pluginName={snap.pluginName || pluginName}
         onClose={closeWebImportDialog}
+        onWorkingChange={setIsWorking}
       />
     </ModalOverlay>
   )
@@ -70,11 +78,13 @@ type DialogStep = "url" | "preview"
 export type WebImportDialogProps = {
   pluginName: string
   onClose: () => void
+  onWorkingChange?: (working: boolean) => void
 }
 
 export default function WebImportDialog({
   pluginName,
-  onClose
+  onClose,
+  onWorkingChange
 }: WebImportDialogProps) {
   const { Button } = orca.components
   const [step, setStep] = useState<DialogStep>("url")
@@ -85,20 +95,37 @@ export default function WebImportDialog({
   const [error, setError] = useState<string | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const tokenGuardRef = useRef(createRequestTokenGuard())
+  const importCancelledRef = useRef(false)
+
+  useEffect(() => {
+    onWorkingChange?.(isWorking)
+  }, [isWorking, onWorkingChange])
 
   // Abort in-flight scrape when dialog unmounts / closes
   useEffect(() => {
     return () => {
       abortRef.current?.abort()
       abortRef.current = null
+      tokenGuardRef.current.invalidate()
+      importCancelledRef.current = true
     }
   }, [])
 
-  const handleClose = useCallback(() => {
+  const finishAndClose = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
+    tokenGuardRef.current.invalidate()
+    importCancelledRef.current = true
+    setIsWorking(false)
     onClose()
   }, [onClose])
+
+  const handleClose = useCallback(() => {
+    // Busy: block mask/Escape; do not finish-and-close (import write cancel is evidence-gated).
+    if (isWorking) return
+    finishAndClose()
+  }, [isWorking, finishAndClose])
 
   const handleScrape = useCallback(async () => {
     if (isWorking) return
@@ -107,23 +134,26 @@ export default function WebImportDialog({
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
+    const token = tokenGuardRef.current.next()
     try {
       const scraped = await scrapeWebArticle({
         url,
         pluginName,
         signal: controller.signal
       })
-      if (controller.signal.aborted) return
+      if (!tokenGuardRef.current.isCurrent(token) || controller.signal.aborted) return
       setArticle(scraped)
       setStep("preview")
     } catch (e) {
-      if (controller.signal.aborted) return
+      if (!tokenGuardRef.current.isCurrent(token) || controller.signal.aborted) return
       setError(formatError(e))
     } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null
+      if (tokenGuardRef.current.isCurrent(token)) {
+        if (abortRef.current === controller) {
+          abortRef.current = null
+        }
+        setIsWorking(false)
       }
-      setIsWorking(false)
     }
   }, [url, pluginName, isWorking])
 
@@ -131,6 +161,8 @@ export default function WebImportDialog({
     if (isWorking || !article) return
     setError(null)
     setIsWorking(true)
+    importCancelledRef.current = false
+    const token = tokenGuardRef.current.next()
     try {
       const result = await importScrapedArticle({
         article,
@@ -138,6 +170,11 @@ export default function WebImportDialog({
         joinIncrementalReading: joinIR,
         scheduleToday: joinIR && scheduleToday
       })
+
+      // Do not update UI / notify after cancel or a newer operation started.
+      if (!tokenGuardRef.current.isCurrent(token) || importCancelledRef.current) {
+        return
+      }
 
       if (result.kind === "already_exists") {
         orca.notify(
@@ -157,14 +194,20 @@ export default function WebImportDialog({
           { title: "网页导入" }
         )
       }
-      handleClose()
+      // Success must close even though isWorking is still true (handleClose blocks busy).
+      finishAndClose()
     } catch (e) {
+      if (!tokenGuardRef.current.isCurrent(token) || importCancelledRef.current) {
+        return
+      }
       setError(formatError(e))
       console.error("[web-import] import failed:", e)
     } finally {
-      setIsWorking(false)
+      if (tokenGuardRef.current.isCurrent(token)) {
+        setIsWorking(false)
+      }
     }
-  }, [article, pluginName, joinIR, scheduleToday, isWorking, handleClose])
+  }, [article, pluginName, joinIR, scheduleToday, isWorking, finishAndClose])
 
   return (
     <div

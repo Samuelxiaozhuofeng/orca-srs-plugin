@@ -1,15 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Orca Note plugin template</title>
+  <title>orca-srs — static note</title>
 </head>
 
 <body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.tsx"></script>
+  <div id="root">
+    <main style="font-family: system-ui, sans-serif; padding: 1.5rem; max-width: 40rem; line-height: 1.55;">
+      <h1 style="font-size: 1.25rem;">orca-srs 插件说明页</h1>
+      <p>
+        本仓库是 <strong>Orca Notes</strong> 插件，不能作为独立 SPA 在浏览器中运行。
+        本页为静态说明桩，<strong>不加载</strong> <code>src/main.ts</code>。
+      </p>
+      <p>推荐开发与安装流程：</p>
+      <ol>
+        <li>Node.js <strong>20.19+</strong></li>
+        <li><code>npm ci</code></li>
+        <li><code>npm run build</code>（仅仓库内 <code>dist/</code>）</li>
+        <li>
+          <code>ORCA_PLUGIN_ROOT=/absolute/path/to/orca/plugins/orca-srs npm run deploy:local</code>
+        </li>
+        <li>在 Orca 中启用插件</li>
+      </ol>
+      <p>发布布局：<code>npm run release:stage</code> →
+        <code>release:verify</code> →（版本非 0.0.0 时）<code>release:zip</code>。
+      </p>
+    </main>
+  </div>
 </body>
 
 </html>

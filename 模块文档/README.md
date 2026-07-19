@@ -2,7 +2,7 @@
 
 本文件夹包含 SRS 插件各功能模块的中文技术文档。**以仓库当前代码为实现真相**；计划类文档须标明已落地 / 仍为计划。
 
-> **全量对照同步日期：2026-07-13**（多 agent 按代码修订；禁止将本文索引中的路径当作臆造 API 使用）。
+> **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 
 ## 文档分类
 
@@ -91,11 +91,11 @@
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression、整本/章节移出
     - 关联：`src/srs/book-ir/*`、`bookIRCreator.ts`
 
-26. **[EPUB导入.md](EPUB导入.md)**
+26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-19 更新
     - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
-27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-18 更新
+27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-19 更新
     - Firecrawl 抓取、本地主文提取（Readability）、标题/链接/代码清洗、预览摘要与告警、去重原子写入、可选 Topic / 今天阅读
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
 
@@ -104,7 +104,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** — Plan B：单次生成最终草稿、本地校验、预览确认与分组写入
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-19 更新 — Plan B：单次生成最终草稿、本地校验、预览确认与分组写入
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
 
@@ -150,3 +150,4 @@
 - **2026-07-19**：IR 调度 Batch B1 第二轮——collector `{ readOnly: true }` 跳过 `ensureIRState`；会话主收集/fallback/focus 均显式只读；默认路径保留惰性 ensure；见 [渐进阅读.md](渐进阅读.md)
 - **2026-07-19**：IR 调度 Batch B2——priority 单一真相与 cardType clamp；sibling queueDelay 只影响首次 due；嵌套 Extract `sourceTopicId`；postpone 只移 due；overflow 真实成功/失败；见 [渐进阅读.md](渐进阅读.md)、[记忆排期推送.md](记忆排期推送.md)、[问题经验.md](问题经验.md)
 - **2026-07-19**：Batch B2 第一轮 Codex 修补——overflow 保留 position；create 先 invalidate 再 ensure；sibling 硬 cap/同源/截断 warn；`irOverflowDefer` 拆分；见 HANDOFF
+- **2026-07-19**：发布前安全收口——HTTP 无流响应 fail-closed、EPUB 解压后取消检查、AI 生成卸载取消；发布脚本增加严格 `release:ready` 与 tag-only workflow

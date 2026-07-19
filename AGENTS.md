@@ -57,8 +57,8 @@ When a task requires Orca APIs, types, commands, editor behavior, backend calls,
 - `npm test`: run the Vitest suite once.
 - `npx vitest run <path>`: run a focused test file.
 - `npx tsc --noEmit`: type-check without producing a bundle.
-- `npm run build`: type-check and build. Its `postbuild` copies `dist/` to the workstation-specific `/Users/samdagreat/Documents/orca/plugins/orca-srs/dist`; verify or adjust that path before relying on deployment.
-- `npm run dev` and `npm run preview`: local development and preview servers.
+- `npm run build`: type-check and build **in-repo only** (`dist/`). Local install: `ORCA_PLUGIN_ROOT=/abs/path/to/orca/plugins/orca-srs npm run deploy:local` (basename must be `orca-srs`). Release layout: `release:stage` / `release:verify` / `release:zip`. Default verify requires `release-evidence/release-readiness.json` Go (`go` + `orcaRuntimeVerified` + empty `blockers`); CI structure checks may use `--allow-incomplete-readiness` only. Version confirmation is not Go; formal zip is readiness-gated.
+- `npm run dev` / `npm run preview`: optional Vite tooling; `index.html` is a **static note only** (does not load plugin entry). Real development loads the plugin inside Orca after build/deploy.
 
 Run the narrowest relevant tests first, then the broader checks appropriate to the change. Do not claim a fix without an actual check; report blocked commands and their errors plainly. Separate automated verification from manual Orca verification in the final report.
 

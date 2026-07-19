@@ -86,3 +86,6 @@ export const CONNECTION_TEST_TIMEOUT_MS = 15_000
 
 /** Max chars kept from plain-text HTTP error bodies */
 export const HTTP_ERROR_BODY_MAX = 500
+
+/** Hard cap for AI Chat Completions success JSON body (bytes). */
+export const AI_MAX_RESPONSE_BYTES = 1 * 1024 * 1024

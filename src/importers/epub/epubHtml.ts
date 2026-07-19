@@ -98,11 +98,17 @@ export async function rewriteImageSources(
   const images = Array.from(root.querySelectorAll("img[src]"))
   for (const image of images) {
     const src = image.getAttribute("src")
-    if (!src) continue
+    if (!src) {
+      image.remove()
+      continue
+    }
 
     const rewrittenSrc = await rewriteSrc(src)
     if (rewrittenSrc) {
       image.setAttribute("src", rewrittenSrc)
+    } else {
+      // Security: never leave external/data/blob/failed images in import HTML.
+      image.remove()
     }
   }
 }

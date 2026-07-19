@@ -12,9 +12,19 @@ import {
   parseHtml,
   preferChapterTitle,
   removeMatchingTopHeading,
-  rewriteImageSources,
-  sanitizeHtmlForOrca
+  rewriteImageSources
 } from "./epubHtml"
+import {
+  assertChapterCount,
+  assertEpubCompressedSize,
+  assertXhtmlSize,
+  assertZipEntryCount,
+  DecompressedBudgetTracker,
+  isHardEpubControlError,
+  throwIfAborted,
+  yieldToMain
+} from "./epubLimits"
+import { sanitizeEpubHtmlForImport } from "./epubSanitize"
 import type {
   EpubChapter,
   EpubManifestItem,
@@ -28,10 +38,23 @@ export class EpubParser {
   private assetUploader: EpubAssetUploader | null = null
   private opfPath = ""
   private opfDir = ""
+  private budget: DecompressedBudgetTracker | null = null
+  private compressedBytes = 0
+  private signal: AbortSignal | undefined
 
-  async load(data: ArrayBuffer): Promise<void> {
+  async load(data: ArrayBuffer, options?: { signal?: AbortSignal }): Promise<void> {
+    throwIfAborted(options?.signal)
+    assertEpubCompressedSize(data.byteLength)
+    this.compressedBytes = data.byteLength
+    this.signal = options?.signal
+    this.budget = new DecompressedBudgetTracker(data.byteLength)
+
     this.zip = await JSZip.loadAsync(data)
-    this.assetUploader = new EpubAssetUploader(this.zip)
+    throwIfAborted(this.signal)
+    const entryCount = Object.keys(this.zip.files).length
+    assertZipEntryCount(entryCount)
+
+    this.assetUploader = new EpubAssetUploader(this.zip, this.budget)
 
     const containerXml = await this.getFile("META-INF/container.xml")
     const containerDoc = new DOMParser().parseFromString(
@@ -125,6 +148,8 @@ export class EpubParser {
       }
     })
 
+    assertChapterCount(chapters.length)
+
     await this.enrichChapterTitles(chapters, doc, manifestItems)
     await this.enrichChapterTitlesFromContent(chapters)
 
@@ -175,7 +200,8 @@ export class EpubParser {
         }
       })
     } catch (error) {
-      // Fall through to NCX; keep prior behavior of not failing the whole parse.
+      if (isHardEpubControlError(error)) throw error
+      // Soft nav failure only: fall through to NCX.
       if (typeof console !== "undefined" && console.warn) {
         console.warn("[epub] Failed to parse navigation document titles", error)
       }
@@ -213,6 +239,7 @@ export class EpubParser {
         }
       })
     } catch (error) {
+      if (isHardEpubControlError(error)) throw error
       if (typeof console !== "undefined" && console.warn) {
         console.warn("[epub] Failed to parse NCX titles", error)
       }
@@ -223,6 +250,7 @@ export class EpubParser {
     chapters: EpubChapter[]
   ): Promise<void> {
     for (let index = 0; index < chapters.length; index++) {
+      throwIfAborted(this.signal)
       const chapter = chapters[index]
       try {
         const content = await this.getFile(this.resolvePath(chapter.href))
@@ -238,7 +266,7 @@ export class EpubParser {
           ])
         }
       } catch (error) {
-        // Keep previous title; do not fail remaining chapters.
+        if (isHardEpubControlError(error)) throw error
         if (typeof console !== "undefined" && console.warn) {
           console.warn(
             `[epub] Failed to extract content title for ${chapter.href}`,
@@ -247,10 +275,15 @@ export class EpubParser {
         }
       }
       if (!chapter.title) chapter.title = `未命名章节 ${index + 1}`
+      // Macrotask yield so AbortSignal handlers can run (Promise.resolve does not).
+      if (index > 0 && index % 20 === 0) {
+        await yieldToMain(this.signal)
+      }
     }
   }
 
   async getChapterContent(href: string, pageTitle: string): Promise<string> {
+    throwIfAborted(this.signal)
     const fullPath = this.resolvePath(href)
     const content = await this.getFile(fullPath)
 
@@ -259,7 +292,8 @@ export class EpubParser {
     removeMatchingTopHeading(root, pageTitle)
 
     await this.rewriteImageSourcesForChapter(root, fullPath)
-    sanitizeHtmlForOrca(root)
+    // Strict security sanitizer (not the Orca <a href> compatibility helper alone).
+    sanitizeEpubHtmlForImport(root as HTMLElement)
 
     return root.innerHTML
   }
@@ -281,13 +315,20 @@ export class EpubParser {
     if (!this.zip) {
       throw new Error("EPUB not loaded. Call load() first.")
     }
+    throwIfAborted(this.signal)
 
     const file = this.zip.file(path)
     if (!file) {
       throw new Error(`File not found in EPUB: ${path}`)
     }
 
-    return await file.async("string")
+    const data = await file.async("arraybuffer")
+    throwIfAborted(this.signal)
+    this.budget?.add(data.byteLength, path)
+    if (/\.(x?html?|xml)$/i.test(path)) {
+      assertXhtmlSize(data.byteLength, path)
+    }
+    return new TextDecoder("utf-8", { fatal: false }).decode(data)
   }
 
   private resolvePath(href: string): string {
@@ -427,14 +468,23 @@ function isCoverManifestItem(
   return /(^|[^a-z0-9])cover(?:[_-]?page)?([^a-z0-9]|$)/.test(semanticName)
 }
 
+export interface ParseEpubOptions {
+  signal?: AbortSignal
+}
+
 /**
  * Parse an EPUB buffer into metadata + ordered chapters + fingerprint.
- * Does not write to Orca.
+ * Does not write to Orca. Enforces resource budgets before any backend call.
  */
-export async function parseEpub(buffer: ArrayBuffer): Promise<ParsedEpub> {
+export async function parseEpub(
+  buffer: ArrayBuffer,
+  options?: ParseEpubOptions
+): Promise<ParsedEpub> {
+  throwIfAborted(options?.signal)
+  assertEpubCompressedSize(buffer.byteLength)
   const fingerprint = await computeSha256Hex(buffer)
   const parser = new EpubParser()
-  await parser.load(buffer)
+  await parser.load(buffer, { signal: options?.signal })
   const metadata = await parser.getMetadata()
   const chapters = await parser.getChapters()
   return { metadata, chapters, fingerprint }

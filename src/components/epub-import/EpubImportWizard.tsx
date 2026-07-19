@@ -10,6 +10,7 @@ import type {
   ParsedEpub
 } from "../../importers/epub/types"
 import { parseEpub, importEpub, resumeEpubImport } from "../../importers/epub/epubImportService"
+import { assertFileSizeBeforeRead } from "../../importers/epub/epubLimits"
 import { initializeBookIR, retryFailedBookIRInit } from "../../srs/book-ir/bookIRService"
 import type { BookIRPlanV1 } from "../../importers/epub/types"
 import {
@@ -25,15 +26,21 @@ import EpubChapterSelector from "./EpubChapterSelector"
 import EpubImportProgress from "./EpubImportProgress"
 import EpubImportResultView from "./EpubImportResult"
 
-const { useState, useCallback, useMemo } = window.React
+const { useState, useCallback, useMemo, useRef, useEffect } = window.React
 const { Button } = orca.components
 
 export type EpubImportWizardProps = {
   pluginName: string
   onClose: () => void
+  /** Report busy state so host ModalOverlay can block Escape/mask close. */
+  onWorkingChange?: (working: boolean) => void
 }
 
-export default function EpubImportWizard({ pluginName, onClose }: EpubImportWizardProps) {
+export default function EpubImportWizard({
+  pluginName,
+  onClose,
+  onWorkingChange
+}: EpubImportWizardProps) {
   const labels = accessibilityLabels()
   const [step, setStep] = useState<WizardStep>("file")
   const [fileName, setFileName] = useState("")
@@ -45,6 +52,19 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ImportEpubResult | null>(null)
   const [isWorking, setIsWorking] = useState(false)
+  /** Parse-only cancel (pure epubParser); not wired to Orca write paths (evidence-gated). */
+  const parseAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    onWorkingChange?.(isWorking)
+  }, [isWorking, onWorkingChange])
+
+  useEffect(() => {
+    return () => {
+      parseAbortRef.current?.abort()
+      parseAbortRef.current = null
+    }
+  }, [])
 
   // IR setup state (independent second selection)
   const [irSelectedIds, setIrSelectedIds] = useState<DbId[]>([])
@@ -73,10 +93,17 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
   const handleFile = useCallback(async (file: File | null) => {
     if (!file) return
     setError(null)
+    parseAbortRef.current?.abort()
+    const controller = new AbortController()
+    parseAbortRef.current = controller
     setIsWorking(true)
     try {
+      assertFileSizeBeforeRead(file)
       const ab = await file.arrayBuffer()
-      const p = await parseEpub(ab)
+      if (controller.signal.aborted) return
+      // Pure parse layer supports AbortSignal; import/write path does not yet (evidence-gated).
+      const p = await parseEpub(ab, { signal: controller.signal })
+      if (controller.signal.aborted) return
       setBuffer(ab)
       setParsed(p)
       setFileName(file.name)
@@ -84,9 +111,11 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
       setSelectedKeys(selectAllChapterKeys(p.chapters))
       setStep("title")
     } catch (e) {
+      if (controller.signal.aborted) return
       setError(e instanceof Error ? e.message : String(e))
       setStep("file")
     } finally {
+      if (parseAbortRef.current === controller) parseAbortRef.current = null
       setIsWorking(false)
     }
   }, [])
@@ -97,6 +126,7 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
       setError("请填写书名并至少选择一章")
       return
     }
+    // UI busy gate only — do not claim Orca write cancel (WP-08 evidence-gated).
     setIsWorking(true)
     setError(null)
     setStep("progress")
@@ -128,6 +158,7 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
 
   const handleResume = useCallback(async () => {
     if (!result) return
+    // Resume write path has no AbortSignal yet (evidence-gated); busy UI only.
     setIsWorking(true)
     setError(null)
     setStep("progress")
@@ -142,6 +173,16 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
       setIsWorking(false)
     }
   }, [result])
+
+  const handleClose = useCallback(() => {
+    if (isWorking) {
+      // Can cancel in-flight pure parse; cannot cancel mid-import Orca writes yet.
+      parseAbortRef.current?.abort()
+      parseAbortRef.current = null
+      return
+    }
+    onClose()
+  }, [isWorking, onClose])
 
   const openIRSetup = useCallback(() => {
     if (!result) return
@@ -246,7 +287,7 @@ export default function EpubImportWizard({ pluginName, onClose }: EpubImportWiza
         <Button
           variant="outline"
           onClick={() => {
-            if (!isWorking) onClose()
+            if (!isWorking) handleClose()
           }}
           aria-label={labels.cancel}
           aria-disabled={isWorking}

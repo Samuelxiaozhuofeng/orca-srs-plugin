@@ -1,0 +1,113 @@
+{
+  "version": "1.0.0",
+  "go": true,
+  "orcaRuntimeVerified": true,
+  "maintainerRuntimeAccepted": true,
+  "updatedAt": "2026-07-19",
+  "verifiedDistSha256": "4a310715891b717240d114690b5676200fad180bd6a874f93b40f775a81dc525",
+  "approvedBy": "Samuelxiaozhuofeng",
+  "verifiedAt": "2026-07-19T04:02:55.000Z",
+  "iconAccepted": true,
+  "evidenceRepo": "sgf9fkhr9z3yz",
+  "automation": {
+    "ciStructuralVerify": true,
+    "releaseScriptsPresent": true,
+    "maintainerRuntimeAccepted": true,
+    "formalZipAccepted": false,
+    "tagGate": false,
+    "rebuildHashFrozen": true,
+    "coldInstallMatrix": false,
+    "awesomeOrcanotePr": false
+  },
+  "externalOps": {
+    "tag": "pending",
+    "formalZip": "pending",
+    "githubRelease": "pending",
+    "awesomeOrcanotePr": "pending",
+    "owner": "Codex",
+    "note": "Maintainer runtime acceptance is recorded; tag, formal zip, GitHub Release, and awesome-orcanote PR remain external steps for Codex."
+  },
+  "workPackages": {
+    "WP-00": "maintainer-accepted",
+    "WP-01": "partial-external-pending",
+    "WP-02": "maintainer-accepted",
+    "WP-03": "maintainer-accepted",
+    "WP-04": "maintainer-accepted",
+    "WP-05": "maintainer-accepted",
+    "WP-06": "maintainer-accepted",
+    "WP-07": "accepted-with-risks",
+    "WP-08": "maintainer-accepted",
+    "WP-09": "maintainer-accepted",
+    "WP-10": "maintainer-accepted",
+    "WP-11": "accepted-with-risks",
+    "WP-12": "maintainer-accepted",
+    "WP-13": "partial-external-pending"
+  },
+  "attachment": {
+    "source": "user-provided Codex attachment (not committed; summary only)",
+    "repo": "sgf9fkhr9z3yz",
+    "observedAt": "2026-07-19T03:33:51.653Z",
+    "note": "Full attachment body is not committed. Historical incomplete Console runs are retained for audit; they are not re-asserted as itemized pass evidence. Maintainer runtime acceptance for 1.0.0 supersedes them as release blockers.",
+    "summary": {
+      "WP-04": {
+        "incomplete": true,
+        "reason": "currentId empty",
+        "ts": "2026-07-19T03:33:51.653Z"
+      },
+      "WP-05": {
+        "incomplete": true,
+        "reason": "cardId empty",
+        "ts": "2026-07-19T03:33:57.429Z"
+      },
+      "WP-06": {
+        "incomplete": true,
+        "reason": "SELECTED_IDS empty",
+        "ts": "2026-07-19T03:34:07.868Z"
+      },
+      "WP-08": {
+        "incomplete": true,
+        "reason": "BOOK_IDS empty",
+        "ts": "2026-07-19T03:34:18.818Z"
+      },
+      "WP-09": {
+        "incomplete": true,
+        "reason": "bookBlockId empty",
+        "ts": "2026-07-19T03:34:30.664Z"
+      },
+      "WP-10": {
+        "incomplete": true,
+        "reason": "only collapsed DevTools summary returned; full reviewable JSON not provided",
+        "ts": "2026-07-19T03:34:43.355Z",
+        "note": "Console output was a collapsed object preview (purpose WP-10-repo-isolation-prior, targetIds Array(1)), not pasteable complete evidence"
+      }
+    }
+  },
+  "evidenceFiles": [
+    "release-evidence/console-readonly-scripts.md",
+    "release-evidence/release-readiness.json"
+  ],
+  "blockers": [],
+  "acceptedRisks": [
+    {
+      "id": "epub-zip-central-directory-budget",
+      "workPackages": ["WP-07"],
+      "summary": "EPUB ZIP 中央目录声明预算未独立预检",
+      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.0 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.0"
+    },
+    {
+      "id": "write-path-cancellation-not-unified",
+      "workPackages": ["WP-07", "WP-11"],
+      "summary": "EPUB/Web/AI 写入阶段取消未形成统一可中断事务",
+      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.0 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.0"
+    }
+  ],
+  "decision": {
+    "type": "maintainer-runtime-acceptance",
+    "statement": "Maintainer Samuelxiaozhuofeng states personal Orca runtime testing is complete and accepts 1.0.0 for release execution. Itemized historical Console attachment gaps are not fabricated into pass evidence; residual static-audit risks live in acceptedRisks. Tag, formal zip, GitHub Release, and awesome-orcanote PR are still pending external ops (Codex).",
+    "verifiedDistSha256": "4a310715891b717240d114690b5676200fad180bd6a874f93b40f775a81dc525",
+    "approvedBy": "Samuelxiaozhuofeng",
+    "verifiedAt": "2026-07-19T04:02:55.000Z"
+  }
+}

@@ -22,9 +22,8 @@ export type HtmlOutlineToken = HtmlHeadingToken | HtmlContentToken
 
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6"
 
-/** Elements that carry meaning even without visible text. */
-const MEANINGFUL_MEDIA_SELECTOR =
-  "img, svg, video, audio, iframe, object, embed, picture, source, canvas, math, table, hr, input, textarea, select, button"
+/** Elements that carry meaning even without visible text (aligned with EPUB sanitizer allowlist). */
+const MEANINGFUL_MEDIA_SELECTOR = "img, picture, table, hr"
 
 /**
  * Layout wrappers that should not become opaque content blobs. Their children

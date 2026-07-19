@@ -8,8 +8,14 @@ import { readHttpErrorMessage } from "./aiHttpErrors"
 import {
   type GenerateDraftsOptions,
   type GenerateDraftsResult,
+  AI_MAX_RESPONSE_BYTES,
   GENERATION_TIMEOUT_MS
 } from "./aiDraftTypes"
+import {
+  readResponseJsonLimited,
+  ResponseTooLargeError
+} from "../http/safeResponse"
+import { sanitizePublicError } from "../http/redactSecrets"
 
 function buildSystemPrompt(cardType: "basic" | "cloze"): string {
   const common = [
@@ -142,15 +148,34 @@ export async function generateFlashcardDrafts(
 
     if (!response.ok) {
       const fallback = `请求失败: ${response.status}`
-      const errorMessage = await readHttpErrorMessage(response, fallback)
+      const errorMessage = await readHttpErrorMessage(
+        response,
+        fallback,
+        settings.apiKey
+      )
       return {
         success: false,
         error: { code: `HTTP_${response.status}`, message: errorMessage }
       }
     }
 
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
+    let data: { choices?: Array<{ message?: { content?: string } }> }
+    try {
+      data = await readResponseJsonLimited(response, AI_MAX_RESPONSE_BYTES)
+    } catch (error) {
+      if (error instanceof ResponseTooLargeError) {
+        return {
+          success: false,
+          error: {
+            code: "RESPONSE_TOO_LARGE",
+            message: sanitizePublicError(
+              `AI 响应过大（上限 ${AI_MAX_RESPONSE_BYTES} 字节）`,
+              settings.apiKey
+            )
+          }
+        }
+      }
+      throw error
     }
     const aiContent = data.choices?.[0]?.message?.content
 
@@ -179,7 +204,10 @@ export async function generateFlashcardDrafts(
     const errorMessage = error instanceof Error ? error.message : "网络错误"
     return {
       success: false,
-      error: { code: "NETWORK_ERROR", message: errorMessage }
+      error: {
+        code: "NETWORK_ERROR",
+        message: sanitizePublicError(errorMessage, settings.apiKey)
+      }
     }
   } finally {
     clearTimeout(timeoutId)

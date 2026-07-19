@@ -5,6 +5,7 @@
 import { getAISettings } from "./aiSettingsSchema"
 import { readHttpErrorMessage } from "./aiHttpErrors"
 import { CONNECTION_TEST_TIMEOUT_MS } from "./aiDraftTypes"
+import { sanitizePublicError } from "../http/redactSecrets"
 
 export interface AIConfigValidation {
   isValid: boolean
@@ -132,7 +133,11 @@ export function formatAIConfigError(
   settings: ReturnType<typeof getAISettings>
 ): string {
   const errorCode = error?.code || "UNKNOWN"
-  const errorMessage = error?.message || String(error)
+  // Redact before any UI/log surface (exact key + Bearer/auth patterns).
+  const errorMessage = sanitizePublicError(
+    error?.message || String(error),
+    settings.apiKey
+  )
 
   let detailedMessage = `AI API 错误 (${errorCode}): ${errorMessage}\n\n`
 
@@ -230,7 +235,23 @@ export async function testAIConfigWithDetails(pluginName: string): Promise<{
     })
 
     if (response.ok) {
-      const data = await response.json()
+      const { readResponseJsonLimited, ResponseTooLargeError } = await import(
+        "../http/safeResponse"
+      )
+      const { AI_MAX_RESPONSE_BYTES } = await import("./aiDraftTypes")
+      let data: { model?: string }
+      try {
+        data = await readResponseJsonLimited(response, AI_MAX_RESPONSE_BYTES)
+      } catch (error) {
+        if (error instanceof ResponseTooLargeError) {
+          return {
+            success: false,
+            message: `连接响应过大（上限 ${AI_MAX_RESPONSE_BYTES} 字节）`,
+            details: { error: "RESPONSE_TOO_LARGE" }
+          }
+        }
+        throw error
+      }
       const modelUsed = data.model || settings.model
       return {
         success: true,
@@ -240,7 +261,11 @@ export async function testAIConfigWithDetails(pluginName: string): Promise<{
     }
 
     const fallback = `HTTP ${response.status}`
-    const bodyMessage = await readHttpErrorMessage(response, fallback)
+    const bodyMessage = await readHttpErrorMessage(
+      response,
+      fallback,
+      settings.apiKey
+    )
     const detailedError = formatAIConfigError(
       { code: `HTTP_${response.status}`, message: bodyMessage },
       settings
@@ -267,10 +292,12 @@ export async function testAIConfigWithDetails(pluginName: string): Promise<{
       }
     }
 
+    const raw = error instanceof Error ? error.message : String(error)
+    const safe = sanitizePublicError(raw, settings.apiKey)
     const detailedError = formatAIConfigError(
       {
         code: "NETWORK_ERROR",
-        message: error instanceof Error ? error.message : String(error)
+        message: safe
       },
       settings
     )
@@ -279,7 +306,7 @@ export async function testAIConfigWithDetails(pluginName: string): Promise<{
       success: false,
       message: detailedError,
       details: {
-        error: error instanceof Error ? error.message : String(error)
+        error: safe
       }
     }
   } finally {

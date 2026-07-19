@@ -30,13 +30,18 @@ describe("generateFlashcardDrafts", () => {
   })
 
   function mockOkFetch(content: string) {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        choices: [{ message: { content } }]
+    const payload = JSON.stringify({
+      choices: [{ message: { content } }]
+    })
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
+      return new Response(payload, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": String(new TextEncoder().encode(payload).byteLength)
+        }
       })
-    }))
+    })
     vi.stubGlobal("fetch", fetchMock)
     return fetchMock
   }
@@ -240,13 +245,18 @@ describe("generateFlashcardDrafts", () => {
   })
 
   it("preserves a plain-text HTTP error body", async () => {
+    const body = "quota exceeded for this account"
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: false,
-        status: 429,
-        text: async () => "quota exceeded for this account"
-      }))
+      vi.fn(async () =>
+        new Response(body, {
+          status: 429,
+          headers: {
+            "Content-Type": "text/plain",
+            "Content-Length": String(new TextEncoder().encode(body).byteLength)
+          }
+        })
+      )
     )
 
     const result = await generateFlashcardDrafts({

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.19", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm ls --omit=dev --all
+      - run: npm run release:licenses
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --json > release/npm-audit.json
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run test:release
+      - run: npm run build
+      - name: Stage release layout
+        run: npm run release:stage
+      - name: Verify release structure (allow incomplete readiness only)
+        run: npm run release:verify -- --allow-incomplete-readiness
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-node-${{ matrix.node }}
+          path: |
+            release/licenses.json
+            release/THIRD_PARTY_NOTICES.md
+            release/npm-audit.json

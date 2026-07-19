@@ -131,17 +131,27 @@ describe("validateAndNormalizeUrl", () => {
 // ---------------------------------------------------------------------------
 
 describe("scrapeWithFirecrawl", () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    const payload = JSON.stringify(body)
+    return new Response(payload, {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": String(new TextEncoder().encode(payload).byteLength)
+      }
+    })
+  }
+
   it("parses success response with html and metadata", async () => {
-    const fetchImpl = vi.fn(async () => ({
-      status: 200,
-      json: async () => ({
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(200, {
         success: true,
         data: {
           html: "<article><h1>Hello</h1><p>Body text here</p></article>",
           metadata: { title: "Hello", author: "Ada" }
         }
       })
-    }))
+    )
 
     const result = await scrapeWithFirecrawl({
       url: "https://example.com/a",
@@ -165,10 +175,7 @@ describe("scrapeWithFirecrawl", () => {
     ).rejects.toMatchObject({ code: "missing_api_key" })
 
     const makeFetch = (status: number, body: unknown) =>
-      vi.fn(async () => ({
-        status,
-        json: async () => body
-      })) as unknown as typeof fetch
+      vi.fn(async () => jsonResponse(status, body)) as unknown as typeof fetch
 
     await expect(
       scrapeWithFirecrawl({
@@ -234,14 +241,13 @@ describe("scrapeWithFirecrawl", () => {
   it("redacts arbitrary configured api key echoed in API error body", async () => {
     // Non fc-/sk- shape — must still be stripped via exact key replace
     const secret = "my-custom-firecrawl-token-xyz-987"
-    const fetchImpl = vi.fn(async () => ({
-      status: 500,
-      json: async () => ({
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(500, {
         success: false,
         error: `upstream rejected key ${secret}`,
         message: `invalid token: ${secret}`
       })
-    })) as unknown as typeof fetch
+    ) as unknown as typeof fetch
 
     try {
       await scrapeWithFirecrawl({
@@ -358,18 +364,28 @@ describe("sanitizeWebHtml", () => {
   })
 })
 
+function jsonResponseShared(status: number, body: unknown): Response {
+  const payload = JSON.stringify(body)
+  return new Response(payload, {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Length": String(new TextEncoder().encode(payload).byteLength)
+    }
+  })
+}
+
 describe("scrapeWebArticle integration (mocked fetch)", () => {
   it("returns preview without writing Orca", async () => {
-    const fetchImpl = vi.fn(async () => ({
-      status: 200,
-      json: async () => ({
+    const fetchImpl = vi.fn(async () =>
+      jsonResponseShared(200, {
         success: true,
         data: {
           html: "<h1>T</h1><p>Hello from the web with enough characters for a real article body.</p>",
           metadata: { title: "T", siteName: "Blog" }
         }
       })
-    })) as unknown as typeof fetch
+    ) as unknown as typeof fetch
 
     const article = await scrapeWebArticle({
       url: "https://example.com/post",
@@ -388,16 +404,15 @@ describe("scrapeWebArticle integration (mocked fetch)", () => {
   })
 
   it("rejects markup-only cleaned body as empty_html", async () => {
-    const fetchImpl = vi.fn(async () => ({
-      status: 200,
-      json: async () => ({
+    const fetchImpl = vi.fn(async () =>
+      jsonResponseShared(200, {
         success: true,
         data: {
           html: "<div><span class='x'></span><i></i></div>",
           metadata: { title: "Empty" }
         }
       })
-    })) as unknown as typeof fetch
+    ) as unknown as typeof fetch
 
     await expect(
       scrapeWebArticle({

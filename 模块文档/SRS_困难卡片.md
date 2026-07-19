@@ -1,7 +1,8 @@
 # 困难卡片
 
-> **文档同步日期：2026-07-13**  
+> **文档同步日期：2026-07-19**
 > 以 `difficultCardsManager.ts` + `DifficultCardsView.tsx` 为准。
+> 列表：`DIFFICULT_CARDS_PAGE_SIZE=20` 无限滚动 + `DIFFICULT_CARDS_HARD_CAP=500` 硬上限（`difficultCardsPaging.ts`）。
 
 ## 概述
 
@@ -99,7 +100,7 @@ interface DifficultCardsStats {
 
 1. 头部：返回、标题与总数、「复习困难卡片」（当前筛选非空时）
 2. 说明文案：三类困难定义
-3. 筛选标签：全部 / 频繁遗忘 / 遗忘次数多 / 难度较高  
+3. 筛选标签：全部 / 频繁遗忘 / 遗忘次数多 / 难度较高
    - 选某一类时 **包含** `reason === "multiple"` 且满足该类条件的卡（UI 用 reason 或 multiple 计数）
 4. 列表项：原因徽章、Deck 名、`SafeBlockPreview`、Again / 遗忘 / 难度、Cloze/Direction 标记
 5. 点击卡片：`orca.nav.openInLastPanel("block", { blockId })`

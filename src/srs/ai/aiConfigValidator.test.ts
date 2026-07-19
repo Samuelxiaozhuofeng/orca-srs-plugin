@@ -59,13 +59,18 @@ describe("testAIConfigWithDetails", () => {
   })
 
   it("preserves plain-text HTTP error bodies", async () => {
+    const body = "upstream gateway exploded: detail-xyz"
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: false,
-        status: 502,
-        text: async () => "upstream gateway exploded: detail-xyz"
-      }))
+      vi.fn(async () =>
+        new Response(body, {
+          status: 502,
+          headers: {
+            "Content-Type": "text/plain",
+            "Content-Length": String(new TextEncoder().encode(body).byteLength)
+          }
+        })
+      )
     )
 
     const result = await testAIConfigWithDetails(PLUGIN)

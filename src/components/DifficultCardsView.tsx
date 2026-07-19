@@ -12,8 +12,17 @@ import type { ReviewCard } from "../srs/types"
 import type { DifficultCardInfo, DifficultReason } from "../srs/difficultCardsManager"
 import SafeBlockPreview from "./SafeBlockPreview"
 
-const { useState, useEffect, useCallback, useMemo } = window.React
+import {
+  applyHardCap,
+  DIFFICULT_CARDS_HARD_CAP,
+  DIFFICULT_CARDS_PAGE_SIZE,
+  pageSlice
+} from "./difficultCardsPaging"
+
+const { useState, useEffect, useCallback, useMemo, useRef } = window.React
 const { Button } = orca.components
+
+export { DIFFICULT_CARDS_HARD_CAP, DIFFICULT_CARDS_PAGE_SIZE }
 
 // ========================================
 // 类型定义
@@ -193,6 +202,8 @@ export default function DifficultCardsView({
   const [difficultCards, setDifficultCards] = useState<DifficultCardInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<FilterType>("all")
+  const [displayCount, setDisplayCount] = useState(DIFFICULT_CARDS_PAGE_SIZE)
+  const loaderRef = useRef<HTMLDivElement | null>(null)
 
   // 加载困难卡片
   const loadDifficultCards = useCallback(async () => {
@@ -215,9 +226,28 @@ export default function DifficultCardsView({
 
   // 筛选卡片
   const filteredCards = useMemo(() => {
+    let list: DifficultCardInfo[]
     if (filter === "all") {
-      return difficultCards
+      list = difficultCards
+    } else {
+      list = difficultCards.filter((info: DifficultCardInfo) => {
+        if (filter === "high_again_rate") {
+          return info.reason === "high_again_rate" || info.reason === "multiple"
+        }
+        if (filter === "high_lapses") {
+          return info.reason === "high_lapses" || info.reason === "multiple"
+        }
+        if (filter === "high_difficulty") {
+          return info.reason === "high_difficulty" || info.reason === "multiple"
+        }
+        return true
+      })
     }
+    return applyHardCap(list, DIFFICULT_CARDS_HARD_CAP)
+  }, [difficultCards, filter])
+
+  const totalMatching = useMemo(() => {
+    if (filter === "all") return difficultCards.length
     return difficultCards.filter((info: DifficultCardInfo) => {
       if (filter === "high_again_rate") {
         return info.reason === "high_again_rate" || info.reason === "multiple"
@@ -229,8 +259,34 @@ export default function DifficultCardsView({
         return info.reason === "high_difficulty" || info.reason === "multiple"
       }
       return true
-    })
+    }).length
   }, [difficultCards, filter])
+
+  useEffect(() => {
+    setDisplayCount(DIFFICULT_CARDS_PAGE_SIZE)
+  }, [filter, filteredCards.length])
+
+  useEffect(() => {
+    const loader = loaderRef.current
+    if (!loader) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && displayCount < filteredCards.length) {
+          setDisplayCount((prev: number) =>
+            Math.min(prev + DIFFICULT_CARDS_PAGE_SIZE, filteredCards.length)
+          )
+        }
+      },
+      { threshold: 0.1 }
+    )
+    observer.observe(loader)
+    return () => observer.disconnect()
+  }, [displayCount, filteredCards.length])
+
+  const visibleCards = useMemo(
+    () => pageSlice(filteredCards, displayCount),
+    [filteredCards, displayCount]
+  )
 
   // 统计各类型数量
   const stats = useMemo(() => {
@@ -254,7 +310,7 @@ export default function DifficultCardsView({
     return result
   }, [difficultCards])
 
-  // 处理开始复习
+  // 处理开始复习（对当前筛选结果；受硬上限约束）
   const handleStartReview = useCallback(() => {
     const cards = filteredCards.map((info: DifficultCardInfo) => info.card)
     if (cards.length === 0) {
@@ -396,14 +452,41 @@ export default function DifficultCardsView({
             </div>
           </div>
         ) : (
-          filteredCards.map((info: DifficultCardInfo, index: number) => (
-            <DifficultCardItem
-              key={`${info.card.id}-${info.card.clozeNumber || 0}-${info.card.directionType || "basic"}-${info.card.listItemId || 0}-${index}`}
-              info={info}
-              panelId={panelId}
-              onCardClick={handleCardClick}
-            />
-          ))
+          <>
+            {visibleCards.map((info: DifficultCardInfo, index: number) => (
+              <DifficultCardItem
+                key={`${info.card.id}-${info.card.clozeNumber || 0}-${info.card.directionType || "basic"}-${info.card.listItemId || 0}-${index}`}
+                info={info}
+                panelId={panelId}
+                onCardClick={handleCardClick}
+              />
+            ))}
+            {displayCount < filteredCards.length ? (
+              <div
+                ref={loaderRef}
+                style={{
+                  textAlign: "center",
+                  padding: "12px",
+                  fontSize: "12px",
+                  color: "var(--orca-color-text-3)"
+                }}
+              >
+                滚动加载更多（已显示 {displayCount}/{filteredCards.length}）
+              </div>
+            ) : null}
+            {totalMatching > DIFFICULT_CARDS_HARD_CAP ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "8px",
+                  fontSize: "12px",
+                  color: "var(--orca-color-text-3)"
+                }}
+              >
+                仅显示前 {DIFFICULT_CARDS_HARD_CAP} 张困难卡片（共 {totalMatching} 张匹配）。请用筛选缩小范围。
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>

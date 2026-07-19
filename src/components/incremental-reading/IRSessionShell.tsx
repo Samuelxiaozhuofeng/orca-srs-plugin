@@ -41,6 +41,7 @@ import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
 import IRSessionSummary from "./IRSessionSummary"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
+import { readIRReaderTheme, writeIRReaderTheme } from "./irReaderThemeStorage"
 
 const { useEffect, useMemo, useRef, useState } = window.React
 const { Button, ConfirmBox, ModalOverlay } = orca.components
@@ -100,15 +101,34 @@ export default function IRSessionShell({
   /** 阅读模式（默认）压平大纲视觉；编辑模式恢复原生结构操作。仅作用于本会话阅读条目。 */
   const [viewMode, setViewMode] = useState<"reading" | "edit">("reading")
   const [theme, setTheme] = useState<"mint" | "sepia" | "academic">(() => {
-    const saved = localStorage.getItem("orca-ir-reader-theme")
-    return (saved === "sepia" || saved === "academic" || saved === "mint") ? saved : "mint"
+    const result = readIRReaderTheme()
+    if (!result.ok) {
+      console.warn("[IR] localStorage 读取主题失败，使用默认 mint:", result.error)
+    }
+    return result.theme
   })
   /** 顺序解锁「完成本章」：询问下一章 today / tomorrow；取消不得推进 */
   const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
   const [isSequentialActive, setIsSequentialActive] = useState(false)
+  const themeStorageWarnedRef = useRef(false)
 
   useEffect(() => {
-    localStorage.setItem("orca-ir-reader-theme", theme)
+    const result = writeIRReaderTheme(theme)
+    if (!result.ok) {
+      console.warn("[IR] localStorage 写入主题失败:", result.error)
+      if (!themeStorageWarnedRef.current) {
+        themeStorageWarnedRef.current = true
+        try {
+          orca.notify(
+            "warn",
+            "无法保存阅读主题偏好（localStorage 不可用），已使用当前主题继续会话",
+            { title: "渐进阅读" }
+          )
+        } catch (notifyError) {
+          console.warn("[IR] 主题存储失败后发送 notify 也失败:", notifyError)
+        }
+      }
+    }
   }, [theme])
 
   const sessionRootRef = useRef<HTMLDivElement | null>(null)

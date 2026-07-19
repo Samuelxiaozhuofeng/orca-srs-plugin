@@ -7,27 +7,37 @@
  * 当前编辑器工具栏仅保留"填空卡"入口，其它命令通过斜杠命令触发。
  */
 
-import React from "react"
 import { AIDialogMount } from "../../components/AIDialogMount"
 import { IRBookDialogMount } from "../../components/IRBookDialogMount"
 import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDialogMount"
 import { WebImportDialogMount } from "../../components/web-import/WebImportDialogMount"
+import SrsErrorBoundary from "../../components/SrsErrorBoundary"
+
+const React = window.React
 
 export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.aiDialogMount`, () => (
-    <AIDialogMount pluginName={pluginName} />
+    <SrsErrorBoundary componentName="AI 生成闪卡">
+      <AIDialogMount pluginName={pluginName} />
+    </SrsErrorBoundary>
   ))
 
   orca.headbar.registerHeadbarButton(`${pluginName}.irBookDialogMount`, () => (
-    <IRBookDialogMount pluginName={pluginName} />
+    <SrsErrorBoundary componentName="Book IR 创建">
+      <IRBookDialogMount pluginName={pluginName} />
+    </SrsErrorBoundary>
   ))
 
   orca.headbar.registerHeadbarButton(`${pluginName}.epubImportDialogMount`, () => (
-    <EpubImportDialogMount pluginName={pluginName} />
+    <SrsErrorBoundary componentName="EPUB 导入">
+      <EpubImportDialogMount pluginName={pluginName} />
+    </SrsErrorBoundary>
   ))
 
   orca.headbar.registerHeadbarButton(`${pluginName}.webImportDialogMount`, () => (
-    <WebImportDialogMount pluginName={pluginName} />
+    <SrsErrorBoundary componentName="网页导入">
+      <WebImportDialogMount pluginName={pluginName} />
+    </SrsErrorBoundary>
   ))
 
   // 复习按钮 - 开始复习会话

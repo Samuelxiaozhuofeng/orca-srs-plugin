@@ -4,10 +4,18 @@
  */
 
 import { DEFAULT_FIRECRAWL_SCRAPE_URL } from "../../srs/settings/webImportSettingsSchema"
+import {
+  readResponseJsonLimited,
+  ResponseTooLargeError
+} from "../../srs/http/safeResponse"
+import { sanitizePublicError } from "../../srs/http/redactSecrets"
 import { WebImportError } from "./types"
 
 /** Client-side request timeout (ms); also passed to Firecrawl as timeout. */
 export const FIRECRAWL_TIMEOUT_MS = 60_000
+
+/** Hard cap for Firecrawl success/error JSON bodies (bytes). */
+export const FIRECRAWL_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 export interface FirecrawlScrapeOptions {
   url: string
@@ -89,8 +97,25 @@ export async function scrapeWithFirecrawl(
     const status = response.status
     let body: unknown = null
     try {
-      body = await response.json()
-    } catch {
+      body = await readResponseJsonLimited(response, FIRECRAWL_MAX_RESPONSE_BYTES)
+    } catch (error) {
+      if (isAbortError(error) || controller.signal.aborted) {
+        if (options.signal?.aborted) {
+          throw new WebImportError("已取消解析", "aborted")
+        }
+        throw new WebImportError(
+          `解析超时（${Math.round(timeoutMs / 1000)} 秒）。请检查网络后重试`,
+          "timeout"
+        )
+      }
+      if (error instanceof ResponseTooLargeError) {
+        throw new WebImportError(
+          `Firecrawl 响应过大（上限 ${FIRECRAWL_MAX_RESPONSE_BYTES} 字节），已中止`,
+          "http_error",
+          { cause: error }
+        )
+      }
+      // Non-abort parse failures leave body null → handled as unparseable below.
       body = null
     }
 
@@ -167,22 +192,8 @@ function isAbortError(error: unknown): boolean {
   return name === "AbortError" || name === "TimeoutError"
 }
 
-/**
- * Strip bearer / common key shapes and the exact configured API key from public messages.
- * Never log the key; only replace it with a redaction marker.
- */
-export function sanitizePublicError(message: string, apiKey?: string): string {
-  let out = message
-  const key = (apiKey ?? "").trim()
-  if (key.length > 0) {
-    // Exact key first (any shape, not only fc-/sk-)
-    out = out.split(key).join("***")
-  }
-  return out
-    .replace(/Bearer\s+\S+/gi, "Bearer ***")
-    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
-    .replace(/fc-[A-Za-z0-9_-]+/g, "fc-***")
-}
+/** Re-export shared redaction (exact key + Bearer + common auth fields). */
+export { sanitizePublicError }
 
 export function extractApiErrorSummary(body: unknown, apiKey?: string): string {
   if (!body || typeof body !== "object") return ""

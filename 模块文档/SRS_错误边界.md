@@ -1,7 +1,7 @@
 # SRS 错误边界组件
 
-> 文档同步日期：2026-07-13  
-> 变更说明：对齐 `SrsErrorBoundary` 现行 Props/行为；补全项目中全部挂载点（含 Choice / List / Direction / IR / 面板）；注明 `_isMounted` 与通知失败静默。
+> 文档同步日期：2026-07-19
+> 变更说明：Headbar 对话框（AI / Web / EPUB / Book IR）增加局部 `SrsErrorBoundary`，避免单对话框拖垮 headbar 子树。
 
 ## 概述
 
@@ -78,6 +78,10 @@ interface ErrorBoundaryState {
 | `SrsFlashcardHomeRenderer` | Flash Home | Flash Home 加载出错 |
 | `SrsFlashcardHomePanel` | 闪卡主页 | 闪卡主页加载出错 |
 | `SrsCardBlockRenderer` | SRS卡片 | 卡片加载出错 |
+| `AIDialogMount` | AI 生成闪卡 | （默认） |
+| `WebImportDialogMount` | 网页导入 | （默认） |
+| `EpubImportDialogMount` | EPUB 导入 | （默认） |
+| `IRBookDialogMount` | Book IR 创建 | （默认） |
 | `ChoiceCardBlockRenderer` | 选择题卡片 | 选择题卡片加载出错 |
 | `SrsCardDemo` → Basic 路径 | 复习卡片 | 卡片加载出错 |
 | `SrsCardDemo` → Cloze | 填空卡片 | 填空卡片加载出错 |
@@ -143,5 +147,5 @@ import SrsErrorBoundary from "./SrsErrorBoundary"
 
 ## 更新历史
 
-- **2025-12-10**：初始创建并接入主要渲染器  
-- **2026-07-13**：文档同步——补全挂载点与实现细节；明确无 `SrsCardBrowser` 依赖  
+- **2025-12-10**：初始创建并接入主要渲染器
+- **2026-07-13**：文档同步——补全挂载点与实现细节；明确无 `SrsCardBrowser` 依赖
