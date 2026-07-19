@@ -1,6 +1,7 @@
 import type { Block, DbId } from "../../../orca.d.ts"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
 import { getIRDateGroup } from "../../../srs/incrementalReadingManagerUtils"
+import { attachHideableDisplayManager } from "../../../srs/hideableDisplayManager"
 import {
   shouldInvokePanelWideViewToggle,
   shouldManageHostEditorChrome
@@ -101,6 +102,17 @@ export default function IRWorkspaceShell({
     window.addEventListener(IR_WORKSPACE_MODE_EVENT, handleModeRequest)
     return () => window.removeEventListener(IR_WORKSPACE_MODE_EVENT, handleModeRequest)
   }, [handleModeChange, panelId])
+
+  /**
+   * Orca inactive views keep `.orca-hideable-hidden` but may leave inline `display: flex`,
+   * so hidden IR subtrees still participate in layout / content-visibility paint.
+   * Reuse the panel-level manager already used by Flashcard Home; cleanup on unmount.
+   */
+  useEffect(() => {
+    const rootEl = rootRef.current
+    if (!rootEl) return
+    return attachHideableDisplayManager(rootEl)
+  }, [])
 
   /**
    * When IR is the panel main block view: default Wide View + hide host editor chrome.

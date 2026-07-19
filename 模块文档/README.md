@@ -151,3 +151,4 @@
 - **2026-07-19**：IR 调度 Batch B2——priority 单一真相与 cardType clamp；sibling queueDelay 只影响首次 due；嵌套 Extract `sourceTopicId`；postpone 只移 due；overflow 真实成功/失败；见 [渐进阅读.md](渐进阅读.md)、[记忆排期推送.md](记忆排期推送.md)、[问题经验.md](问题经验.md)
 - **2026-07-19**：Batch B2 第一轮 Codex 修补——overflow 保留 position；create 先 invalidate 再 ensure；sibling 硬 cap/同源/截断 warn；`irOverflowDefer` 拆分；见 HANDOFF
 - **2026-07-19**：发布前安全收口——HTTP 无流响应 fail-closed、EPUB 解压后取消检查、AI 生成卸载取消；发布脚本增加严格 `release:ready` 与 tag-only workflow
+- **2026-07-19**：渐进阅读 `IRWorkspaceShell` 挂接既有 `attachHideableDisplayManager`，隐藏 `.orca-hideable-hidden` 时强制 `display:none` 并在恢复/卸载时还原；见 [渐进阅读.md](渐进阅读.md)
