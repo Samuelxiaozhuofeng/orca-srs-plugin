@@ -10,6 +10,7 @@
 import "./styles/srs-review.css"
 import "./styles/ai-card-dialog.css"
 import "./styles/ir-workspace.css"
+import "./styles/flashcard-home.css"
 import { setupL10N } from "./libs/l10n"
 import zhCN from "./translations/zhCN"
 import { collectReviewCards, buildReviewQueue, buildReviewQueueWithChildren } from "./srs/cardCollector"

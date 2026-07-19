@@ -51,7 +51,8 @@
 10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)**
     - **即 Flashcard Home**（单页：上摘要三卡 + 下卡组列表；次级全页：卡片列表 / 困难卡）；**不存在** `SrsCardBrowser.tsx`
     - 已删除学习统计页与 `FlashcardDashboard`；`ViewMode = home | card-list | difficult-cards`
-    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/FlashHomePage.tsx`、`flashcard-home/HomeSummaryBar.tsx`、`flashcard-home/DeckListView.tsx`、`flashcard-home/DeckRow.tsx`、`flashcard-home/StatCard.tsx`、`DifficultCardsView.tsx`、`SrsFlashcardHomeRenderer.tsx`、`panels/SrsFlashcardHomePanel.tsx`、`flashcardHomeManager.ts`
+    - Deck 下钻列表：`CardFrame` 左色条 + `.srs-card-list-frame` 间距分离；`cardStatus.ts`（新卡/今日/积压/未来）；样式 `styles/flashcard-home.css`
+    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/FlashHomePage.tsx`、`flashcard-home/HomeSummaryBar.tsx`、`flashcard-home/DeckListView.tsx`、`flashcard-home/DeckRow.tsx`、`flashcard-home/StatCard.tsx`、`flashcard-home/CardListView.tsx`、`flashcard-home/CardListItem.tsx`、`flashcard-home/CardFrame.tsx`、`flashcard-home/cardStatus.ts`、`styles/flashcard-home.css`、`DifficultCardsView.tsx`、`SrsFlashcardHomeRenderer.tsx`、`panels/SrsFlashcardHomePanel.tsx`、`flashcardHomeManager.ts`
 
 11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** — 主页 `HomeSummaryBar` 三卡（新卡/今日到期/积压）与 `calculateHomeStats`
 12. **[SRS_困难卡片.md](SRS_困难卡片.md)** — 困难集合与 fixed repeat 专项复习
@@ -159,3 +160,4 @@
 - **2026-07-19**：重要性 UX——用户可见「重要性」（存储 `ir.priority`）；建书/导入 setup 三档 20/50/80（`importanceSetupOptions`）；阅读主栏「重要性」相对微调（±15 / 设回 50，`IRImportanceMenu`，`Alt+P`）；推后移出主栏（更多 + Shift+Enter）；见 [渐进阅读.md](渐进阅读.md)、[渐进阅读_BookIR.md](渐进阅读_BookIR.md)、[EPUB导入.md](EPUB导入.md)
 - **2026-07-19**：IR 会话 UX——主栏 **下一篇 → 摘录|挖空 → 重要性 → 完成 → ⋯**；挖空=`keep_extract`（不 strip IR、不离队）；完成统一文案（顺序章对话框 / 非顺序确认）；更多无归档/跳过；顺序 toast 与资料库徽标（在读/未解锁/已完成/已跳过）；见 [渐进阅读.md](渐进阅读.md)、[渐进阅读_BookIR.md](渐进阅读_BookIR.md)
 - **2026-07-19**：Flash Home UI 简化——单页主页（`HomeSummaryBar` + `DeckListView`）；删除 Dashboard / 学习统计页；三卡标签改为 **新卡/今日到期/积压**；困难卡返回 `home`；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)、[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)、[SRS_困难卡片.md](SRS_困难卡片.md)
+- **2026-07-19**：Flash Home Deck 下钻卡片列表视觉帧——`CardFrame` 左状态色条、`.srs-card-list-frame` 托盘间距、`cardStatus.ts` + `styles/flashcard-home.css`；标签 **新卡**；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)

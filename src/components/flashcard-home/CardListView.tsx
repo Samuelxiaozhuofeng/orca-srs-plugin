@@ -155,18 +155,16 @@ export default function CardListView({
         ))}
       </div>
 
-      {/* 卡片列表 */}
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px"
-      }}>
+      {cards.length > 0 && (
+        <div className="srs-card-list-frame__count">
+          共 {cards.length} 张
+        </div>
+      )}
+
+      {/* 卡片列表 tray */}
+      <div className="srs-card-list-frame">
         {cards.length === 0 ? (
-          <div style={{
-            textAlign: "center",
-            padding: "24px",
-            color: "var(--orca-color-text-3)"
-          }}>
+          <div className="srs-card-list-frame--empty">
             没有符合条件的卡片
           </div>
         ) : (
@@ -182,16 +180,7 @@ export default function CardListView({
               />
             ))}
 
-            {/* 加载触发器 */}
-            <div
-              ref={loaderRef}
-              style={{
-                padding: "16px",
-                textAlign: "center",
-                color: "var(--orca-color-text-3)",
-                fontSize: "13px"
-              }}
-            >
+            <div ref={loaderRef} className="srs-card-list-loader">
               {hasMore ? (
                 <span>加载更多... ({displayCount}/{cards.length})</span>
               ) : cards.length > PAGE_SIZE ? (

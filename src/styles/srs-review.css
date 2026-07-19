@@ -203,22 +203,6 @@
   }
 }
 
-/* 统计视图进入动画 */
-.srs-statistics-view {
-  animation: slideInFromRight 0.3s ease-out;
-}
-
-@keyframes slideInFromRight {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 /* 返回牌组列表动画 */
 .srs-deck-list-view {
   animation: slideInFromLeft 0.3s ease-out;

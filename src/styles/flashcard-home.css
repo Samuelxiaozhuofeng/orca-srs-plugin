@@ -1,0 +1,207 @@
+/**
+ * Flash Home — card list visual frame
+ * Uses Orca CSS tokens; cards sit as discrete shells on a tray surface.
+ */
+
+/* ---------- List tray ---------- */
+
+.srs-card-list-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--orca-color-border-1);
+  background: var(--orca-color-bg-2);
+  box-sizing: border-box;
+}
+
+/* 空状态文案（托盘内） */
+.srs-card-list-frame--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 28px 16px;
+  color: var(--orca-color-text-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.srs-card-list-frame__count {
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+  margin: 0 0 2px 2px;
+}
+
+/* ---------- Single card shell ---------- */
+
+.srs-card-frame {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  background: var(--orca-color-bg-1);
+  border: 1px solid var(--orca-color-border-1);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.06);
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.srs-card-frame:hover {
+  border-color: var(--orca-color-border-2, var(--orca-color-border-1));
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* Left status accent strip */
+.srs-card-frame__accent {
+  width: 4px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.srs-card-frame__accent--new {
+  background: var(--orca-color-primary-6);
+}
+
+.srs-card-frame__accent--today {
+  background: var(--orca-color-danger-6);
+}
+
+.srs-card-frame__accent--backlog {
+  background: var(--orca-color-success-6);
+}
+
+.srs-card-frame__accent--future {
+  background: var(--orca-color-text-3);
+}
+
+.srs-card-frame__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.srs-card-frame__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.srs-card-frame__header-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.srs-card-frame__type-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.srs-card-frame__preview {
+  min-height: 28px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--orca-color-bg-2);
+  border: 1px solid var(--orca-color-border-1);
+  box-sizing: border-box;
+}
+
+.srs-card-frame__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+  border-top: 1px solid var(--orca-color-border-1);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.srs-card-frame__meta {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.srs-card-frame__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* ---------- Status badges ---------- */
+
+.srs-card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.srs-card-badge--new {
+  background: var(--orca-color-primary-1, var(--orca-color-bg-2));
+  color: var(--orca-color-primary-6);
+}
+
+.srs-card-badge--today {
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-danger-6);
+}
+
+.srs-card-badge--backlog {
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-success-6);
+}
+
+.srs-card-badge--future {
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-2);
+}
+
+.srs-card-badge--meta {
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-2);
+}
+
+.srs-card-badge--warn {
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-warning-6);
+}
+
+/* ---------- Loader / end of list ---------- */
+
+.srs-card-list-loader {
+  text-align: center;
+  padding: 16px;
+  color: var(--orca-color-text-3);
+  font-size: 13px;
+}
