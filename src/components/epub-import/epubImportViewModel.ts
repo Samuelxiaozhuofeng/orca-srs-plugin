@@ -9,6 +9,7 @@ import {
   normalizePriority,
   SAC_MAX_INTERVAL_DAYS
 } from "../../srs/incrementalReadingScheduler"
+import { formatImportanceTierLabelFromPriority } from "../../srs/incremental-reading/irImportance"
 
 export type WizardStep =
   | "file"
@@ -82,7 +83,9 @@ function formatApproxIntervalDays(days: number): string {
 
 /**
  * Preview copy for IR book creation schedule mode.
- * `priority` only affects sequential mode; default 50 keeps 3-arg call sites compatible.
+ * Sequential: SAC base interval depends on importance (priority 0–100).
+ * Distributed: totalDays spread is independent of importance; importance still
+ * affects later queue/cadence. Default priority 50 keeps 3-arg call sites compatible.
  */
 export function schedulePreviewText(
   mode: "distributed" | "sequential",
@@ -91,18 +94,22 @@ export function schedulePreviewText(
   priority: number = DEFAULT_IR_PRIORITY
 ): string {
   if (chapterCount <= 0) return "请至少选择 1 章"
+  const p = normalizePriority(priority)
+  const importanceLabel = formatImportanceTierLabelFromPriority(p)
   if (mode === "sequential") {
-    const p = normalizePriority(priority)
     const intervalDays = getSequentialActiveBaseIntervalDays(p)
     const intervalLabel = formatApproxIntervalDays(intervalDays)
     return (
-      `顺序解锁：同时仅 1 章激活；当前优先级 ${p}，当前章节约每 ${intervalLabel} 天再次推送；` +
+      `顺序解锁：同时仅 1 章激活；当前重要性：${importanceLabel}，当前章节约每 ${intervalLabel} 天再次推送；` +
       `完成或跳过当前章后当天解锁下一章（共 ${chapterCount} 章）。` +
       `如果连续没有阅读进展，间隔会逐步放宽，最长约 ${SAC_MAX_INTERVAL_DAYS} 天。`
     )
   }
   const interval = Math.max(1, Math.round(totalDays / Math.max(1, chapterCount)))
-  return `分散排期：第 1 章今天到期，其余按约 ${totalDays} 天跨度分散（约每 ${interval} 天一章）`
+  return (
+    `分散排期：第 1 章今天到期，其余按约 ${totalDays} 天跨度分散（约每 ${interval} 天一章）。` +
+    `重要性（${importanceLabel}）影响之后进队与再推节奏，不改变总天数跨度。`
+  )
 }
 
 export function isImportStatus(value: string): value is EpubImportStatus {

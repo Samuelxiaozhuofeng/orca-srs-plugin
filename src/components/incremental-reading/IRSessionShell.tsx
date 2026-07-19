@@ -32,7 +32,13 @@ import type { NextChapterSchedule } from "../../importers/epub/types"
 import { isSequentialActiveChapter } from "../../srs/incremental-reading/irSchedulingHelpers"
 import { resolveSessionItemizeIntercept } from "../../srs/incremental-reading/irSessionActionsLogic"
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
-import { tierToPriority, priorityToTier } from "../../srs/incremental-reading/irQueuePolicy"
+import {
+  applyImportanceNudge,
+  formatImportanceTierCompact,
+  formatImportanceTierLabel,
+  importanceToTier,
+  type ImportanceNudgeDirection
+} from "../../srs/incremental-reading/irImportance"
 import { recordDwellSample } from "../../srs/incremental-reading/irCostCalibration"
 import type { IRSessionProgress } from "../../srs/incremental-reading/irTypes"
 import {
@@ -44,18 +50,23 @@ import { useIRShortcuts } from "../../hooks/useIRShortcuts"
 import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
 import IRMixedReviewPane from "./IRMixedReviewPane"
 import IRActionBar from "./IRActionBar"
+import IRImportanceMenu from "./IRImportanceMenu"
 import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
+import IRSessionMorePanel from "./IRSessionMorePanel"
 import IRSessionSummary from "./IRSessionSummary"
 import IRCompleteChapterDialog from "./IRCompleteChapterDialog"
 import { useIRReadingContext } from "./useIRReadingContext"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
 import { readIRReaderTheme, writeIRReaderTheme } from "./irReaderThemeStorage"
-import { shouldDismissIRMorePanel } from "./irMorePanelDismiss"
+import {
+  shouldDismissIRImportancePanel,
+  shouldDismissIRMorePanel
+} from "./irMorePanelDismiss"
 
 const { useEffect, useMemo, useRef, useState } = window.React
-const { Button, ConfirmBox } = orca.components
+const { Button } = orca.components
 
 export type IRSessionShellProps = {
   entries?: IRSessionEntry[]
@@ -106,6 +117,7 @@ export default function IRSessionShell({
   const [isWorking, setIsWorking] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [postponeOpen, setPostponeOpen] = useState(false)
+  const [importanceOpen, setImportanceOpen] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
   const [breakpointError, setBreakpointError] = useState<string | null>(null)
   /** 阅读模式（默认）压平大纲视觉；编辑模式恢复原生结构操作。仅作用于本会话阅读条目。 */
@@ -242,6 +254,7 @@ export default function IRSessionShell({
     setShowSummary(false)
     setMoreOpen(false)
     setPostponeOpen(false)
+    setImportanceOpen(false)
     setViewMode("reading")
     setSummaryMetrics(null)
     setSummaryStorageWarning(null)
@@ -341,8 +354,16 @@ export default function IRSessionShell({
       if (!detail?.action || showSummary || loadFailed) return
       if (detail.panelId !== panelId) return
       if (detail.action === "next") void handleNext()
-      if (detail.action === "postpone") setPostponeOpen(true)
-      if (detail.action === "priority") setMoreOpen(true)
+      if (detail.action === "postpone") {
+        setPostponeOpen(true)
+        setMoreOpen(false)
+        setImportanceOpen(false)
+      }
+      if (detail.action === "priority") {
+        setImportanceOpen(true)
+        setMoreOpen(false)
+        setPostponeOpen(false)
+      }
       if (detail.action === "toggleViewMode") toggleViewMode()
       if (detail.action === "skipChapter") {
         event.preventDefault()
@@ -538,10 +559,25 @@ export default function IRSessionShell({
     }
   })
 
-  const handlePriorityTier = (tier: "low" | "medium" | "high") => withWork(async () => {
+  const handleImportanceNudge = (direction: ImportanceNudgeDirection) => withWork(async () => {
     if (!currentCard) return
     try {
-      const next = await performPriorityAdjust(currentCard.id, tierToPriority(tier))
+      const nudge = applyImportanceNudge(currentCard.priority, direction)
+      if (nudge.blockedAtBound) {
+        orca.notify(
+          "info",
+          direction === "down" ? "已经最低" : "已经最高",
+          { title: "渐进阅读" }
+        )
+        setImportanceOpen(false)
+        return
+      }
+      if (!nudge.changed) {
+        orca.notify("info", "已是正常", { title: "渐进阅读" })
+        setImportanceOpen(false)
+        return
+      }
+      const next = await performPriorityAdjust(currentCard.id, nudge.nextPriority)
       setQueue((prev: IRSessionEntry[]) => prev.map((entry: IRSessionEntry, i: number) => {
         if (i !== currentIndex || entry.kind !== "reading") return entry
         return {
@@ -555,12 +591,45 @@ export default function IRSessionShell({
           }
         }
       }))
-      orca.notify("success", `重要性已设为${tier === "high" ? "高" : tier === "medium" ? "中" : "低"}`, { title: "渐进阅读" })
+      orca.notify(
+        "success",
+        `重要性：${formatImportanceTierLabel(nudge.tier)}`,
+        { title: "渐进阅读" }
+      )
+      setImportanceOpen(false)
     } catch (error) {
       console.error("[IR Session] 调整重要性失败:", error)
       orca.notify("error", "调整重要性失败", { title: "渐进阅读" })
     }
   })
+
+  const openImportanceMenu = () => {
+    setImportanceOpen((v: boolean) => {
+      const next = !v
+      if (next) {
+        setMoreOpen(false)
+        setPostponeOpen(false)
+      }
+      return next
+    })
+  }
+
+  const openPostponeMenu = () => {
+    setPostponeOpen(true)
+    setMoreOpen(false)
+    setImportanceOpen(false)
+  }
+
+  const toggleMorePanel = () => {
+    setMoreOpen((v: boolean) => {
+      const next = !v
+      if (next) {
+        setImportanceOpen(false)
+        setPostponeOpen(false)
+      }
+      return next
+    })
+  }
 
   const finishClose = () => {
     if (!sessionMetricsFinalizedRef.current && startedRef.current) {
@@ -602,11 +671,12 @@ export default function IRSessionShell({
     sessionRootRef,
     handlers: {
       onNext: handleNext,
-      onPostpone: () => setPostponeOpen(true),
-      onPriority: () => setMoreOpen(true),
+      onPostpone: openPostponeMenu,
+      onPriority: openImportanceMenu,
       onEscape: () => {
         setPostponeOpen(false)
         setMoreOpen(false)
+        setImportanceOpen(false)
       }
     }
   })
@@ -624,6 +694,20 @@ export default function IRSessionShell({
       document.removeEventListener("pointerdown", onPointerDown, true)
     }
   }, [moreOpen])
+
+  /** 点击「重要性」面板外区域时自动收起 */
+  useEffect(() => {
+    if (!importanceOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (shouldDismissIRImportancePanel(event.target)) {
+        setImportanceOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true)
+    }
+  }, [importanceOpen])
 
   const sourceLabel = useMemo(() => {
     if (!currentCard) return null
@@ -754,104 +838,41 @@ export default function IRSessionShell({
         onClose={() => setPostponeOpen(false)}
       />
 
-      {moreOpen ? (
-        <div className="ir-reading__more" style={{ padding: "6px 12px" }}>
-          <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
-            重要性（当前 {priorityToTier(currentCard.priority)}）
-          </span>
-          <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("low")}>低</Button>
-          <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("medium")}>中</Button>
-          <Button tabIndex={0} variant="plain" onClick={() => void handlePriorityTier("high")}>高</Button>
-          <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
-            主题模式
-          </span>
-          <Button
-            tabIndex={0}
-            variant={theme === "mint" ? "solid" : "plain"}
-            onClick={() => setTheme("mint")}
-            style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
-          >
-            绿茶
-          </Button>
-          <Button
-            tabIndex={0}
-            variant={theme === "sepia" ? "solid" : "plain"}
-            onClick={() => setTheme("sepia")}
-            style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
-          >
-            书卷
-          </Button>
-          <Button
-            tabIndex={0}
-            variant={theme === "academic" ? "solid" : "plain"}
-            onClick={() => setTheme("academic")}
-            style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
-          >
-            文献
-          </Button>
-          <Button
-            tabIndex={0}
-            variant="plain"
-            onClick={toggleViewMode}
-            aria-label={viewMode === "reading" ? "编辑模式" : "阅读模式"}
-            title={viewMode === "reading" ? "编辑模式" : "阅读模式"}
-          >
-            {viewMode === "reading" ? "编辑模式" : "阅读模式"}
-          </Button>
-          {isSequentialActive ? (
-            <Button
-              tabIndex={0}
-              variant="plain"
-              onClick={() => {
-                if (isWorking) return
-                setCompleteChapterOpen(true)
-              }}
-              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
-            >
-              完成本章
-            </Button>
-          ) : (
-            <ConfirmBox
-              text="确认归档？将清除 IR 身份并保留正文。"
-              onConfirm={async (_e: unknown, close: () => void) => {
-                await handleArchive()
-                close()
-              }}
-            >
-              {(open) => (
-                <Button tabIndex={0} variant="plain" onClick={open}>
-                  {currentCard?.sourceBookId != null ? "完成本章" : "归档"}
-                </Button>
-              )}
-            </ConfirmBox>
-          )}
-          {isSequentialActive ? (
-            <ConfirmBox
-              text="确认跳过本章并继续？与「完成」结果不同，但同样会解锁下一章并保留笔记。下一章默认安排到今天。"
-              onConfirm={async (_e: unknown, close: () => void) => {
-                await handleSkipChapter()
-                close()
-              }}
-            >
-              {(open) => (
-                <Button tabIndex={0} variant="plain" onClick={open}>跳过本章并继续</Button>
-              )}
-            </ConfirmBox>
-          ) : null}
-          {embedded && onBackToLibrary ? (
-            <Button tabIndex={0} variant="plain" onClick={onBackToLibrary}>返回资料库</Button>
-          ) : null}
-        </div>
-      ) : null}
+      <IRImportanceMenu
+        open={importanceOpen}
+        isWorking={isWorking}
+        currentPriority={currentCard.priority}
+        onChoose={(direction) => void handleImportanceNudge(direction)}
+        onClose={() => setImportanceOpen(false)}
+      />
+
+      <IRSessionMorePanel
+        open={moreOpen}
+        isWorking={isWorking}
+        theme={theme}
+        viewMode={viewMode}
+        isSequentialActive={isSequentialActive}
+        sourceBookId={currentCard.sourceBookId}
+        embedded={embedded}
+        onPostpone={openPostponeMenu}
+        onThemeChange={setTheme}
+        onToggleViewMode={toggleViewMode}
+        onOpenCompleteChapter={() => setCompleteChapterOpen(true)}
+        onArchive={() => handleArchive()}
+        onSkipChapter={() => handleSkipChapter()}
+        onBackToLibrary={onBackToLibrary}
+      />
 
       <IRActionBar
         isTopic={isTopic}
         isWorking={isWorking}
         onNext={handleNext}
-        onPostpone={() => setPostponeOpen(true)}
         onExtract={handleExtract}
         onItemize={handleItemize}
-        onMore={() => setMoreOpen((v: boolean) => !v)}
+        onImportance={openImportanceMenu}
+        importanceOpen={importanceOpen}
+        importanceTierLabel={formatImportanceTierCompact(importanceToTier(currentCard.priority))}
+        onMore={toggleMorePanel}
         moreOpen={moreOpen}
         showReturn={readingContext.showReturn}
         onReturn={readingContext.onReturnFromBrowse}

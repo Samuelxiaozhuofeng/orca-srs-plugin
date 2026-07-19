@@ -10,6 +10,8 @@ import { initializeBookIR, retryFailedBookIRInit } from "../srs/book-ir/bookIRSe
 import type { BookIRMode, BookIRPlanV1 } from "../importers/epub/types"
 import { schedulePreviewText } from "./epub-import/epubImportViewModel"
 import EpubChapterSelector from "./epub-import/EpubChapterSelector"
+import IRImportanceSetupField from "./incremental-reading/IRImportanceSetupField"
+import { DEFAULT_IR_PRIORITY } from "../srs/incremental-reading/irImportance"
 
 const { React, Valtio } = window as any
 const { useSnapshot } = Valtio
@@ -49,7 +51,7 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
   const { ModalOverlay, Button } = orca.components
 
   const chapterCount = snap.chapterIds?.length ?? 0
-  const [priority, setPriority] = useState(50)
+  const [priority, setPriority] = useState(DEFAULT_IR_PRIORITY)
   const [totalDays, setTotalDays] = useState(30)
   const [mode, setMode] = useState("distributed" as BookIRMode)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -64,7 +66,7 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
       setFailedCount(0)
       setSuccessCount(0)
       setMode("distributed")
-      setPriority(50)
+      setPriority(DEFAULT_IR_PRIORITY)
       setTotalDays(Math.max(30, chapterCount * 2))
       setSelectedChapterIds([...snap.chapterIds] as DbId[])
     }
@@ -232,25 +234,11 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
           </label>
         </div>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <span style={{ fontSize: "13px" }}>优先级（0-100）</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            value={priority}
-            disabled={isSubmitting || failedCount > 0}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setPriority(Math.min(100, Math.max(0, Number(e.target.value) || 0)))
-            }
-            style={{
-              padding: "8px 10px",
-              borderRadius: "8px",
-              border: "1px solid var(--orca-border, #d0d0d0)"
-            }}
-          />
-        </label>
+        <IRImportanceSetupField
+          valuePriority={priority}
+          onChange={setPriority}
+          disabled={isSubmitting || failedCount > 0}
+        />
 
         <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <span style={{ fontSize: "13px" }}>分散到期跨度（天）</span>

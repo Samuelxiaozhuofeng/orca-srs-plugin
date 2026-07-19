@@ -1,3 +1,6 @@
+import { DEFAULT_IR_PRIORITY } from "../srs/incremental-reading/irImportance"
+import IRImportanceSetupField from "./incremental-reading/IRImportanceSetupField"
+
 const { useState, useMemo, useCallback } = window.React
 const { ModalOverlay, Button } = orca.components
 
@@ -14,14 +17,6 @@ function clampInteger(value: number, min: number): number {
   return rounded < min ? min : rounded
 }
 
-function clampRange(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min
-  const rounded = Math.round(value)
-  if (rounded < min) return min
-  if (rounded > max) return max
-  return rounded
-}
-
 export default function IRBookSetupDialog({
   chapterCount,
   bookTitle,
@@ -33,11 +28,10 @@ export default function IRBookSetupDialog({
     return normalized
   }, [chapterCount])
 
-  const [priorityInput, setPriorityInput] = useState<number>(50)
+  const [priority, setPriority] = useState<number>(DEFAULT_IR_PRIORITY)
   const [totalDaysInput, setTotalDaysInput] = useState<number>(() => minDays * 2)
   const [isWorking, setIsWorking] = useState(false)
 
-  const priority = useMemo(() => clampRange(priorityInput, 0, 100), [priorityInput])
   const totalDays = useMemo(() => clampInteger(totalDaysInput, minDays), [totalDaysInput, minDays])
 
   const schedulePreview = useMemo(() => {
@@ -138,47 +132,28 @@ export default function IRBookSetupDialog({
           </div>
         </div>
 
-        <div style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "12px"
-        }}>
-          <div style={{ flex: "1 1 220px", minWidth: "220px", display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={labelStyle}>优先级（0-100）</div>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={priorityInput}
-              onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-                const next = Number(event.currentTarget.value)
-                if (!Number.isFinite(next)) return
-                setPriorityInput(next)
-              }}
-              style={inputBaseStyle}
-            />
-            <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
-              数值越高，章节推送越频繁。
-            </div>
-          </div>
+        <IRImportanceSetupField
+          valuePriority={priority}
+          onChange={setPriority}
+          disabled={isWorking}
+        />
 
-          <div style={{ flex: "1 1 220px", minWidth: "220px", display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={labelStyle}>计划天数</div>
-            <input
-              type="number"
-              min={minDays}
-              value={totalDaysInput}
-              onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-                const next = Number(event.currentTarget.value)
-                if (!Number.isFinite(next)) return
-                setTotalDaysInput(next)
-              }}
-              style={inputBaseStyle}
-            />
-            <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
-              最少 {minDays} 天（每章至少留出 1 天）。
-            </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={labelStyle}>计划天数</div>
+          <input
+            type="number"
+            min={minDays}
+            value={totalDaysInput}
+            disabled={isWorking}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+              const next = Number(event.currentTarget.value)
+              if (!Number.isFinite(next)) return
+              setTotalDaysInput(next)
+            }}
+            style={inputBaseStyle}
+          />
+          <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
+            最少 {minDays} 天（每章至少留出 1 天）。重要性影响进队与再推节奏，不改变总天数跨度。
           </div>
         </div>
 

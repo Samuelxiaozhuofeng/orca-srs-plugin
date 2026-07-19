@@ -6,6 +6,8 @@
 > 排期写回细节见 [`记忆排期推送.md`](记忆排期推送.md)。  
 >
 > 2026-07-19：**已完成章节资料库保留（landed）**——完成本章/归档 strip 章节 Topic IR，笔记保留；资料库书下仍显示章节结构与「已完成」；摘录靠 `ir.sourceTopicId` + `ir.sourceBookId` 挂回。详见下文「资料库展示」与 [`渐进阅读.md`](渐进阅读.md) 资料库三级树。
+>
+> 2026-07-19：**建书重要性 UI**——创建 Book IR 时用户选「重要性」三档（低 20 / 中 50 默认 / 高 80，`importanceSetupOptions`），不再暴露 0–100 数字输入；plan 字段名仍为 `priority`，写入各章 `ir.priority`。阅读中改重要性见 [`渐进阅读.md`](渐进阅读.md)。
 
 ## 概述
 
@@ -36,7 +38,7 @@
 | `version` | `1` | 计划 schema 版本，固定 1 |
 | `bookBlockId` | `DbId` | 稳定书籍身份（不用 `batchId` 当书身份） |
 | `mode` | `"distributed" \| "sequential"` | 排期/解锁模式 |
-| `priority` | `number` | 章节 Topic 初始化优先级（写入各章 `ir.priority`；顺序激活章的 SAC 也读该优先级） |
+| `priority` | `number` | 章节 Topic 初始化重要性（0–100，写入各章 `ir.priority`；顺序激活章的 SAC 也读该值）。**建书 UI** 用三档绝对映射 low/medium/high → 20/50/80（`tierToPriority` / `importanceSetupOptions`），不直接录入任意整数 |
 | `totalDays` | `number` | **仅分散模式**用于首次 due 跨度（天）。顺序模式会保存该字段（schema 必填、UI 可录入），但**不参与**顺序解锁、不作为每章间隔、也不驱动 SAC。勿把它当成「每章 N 天」 |
 | `selectedChapterIds` | `DbId[]` | 第二阶段选中的章节，顺序即阅读/解锁顺序 |
 | `activeChapterId` | `DbId \| null` | 顺序模式当前章；无激活则为 `null`（含暂停、全书完成、或推进失败后的可重试态） |
@@ -293,8 +295,8 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 
 | 入口 | 实现 |
 | --- | --- |
-| EPUB 导入向导第二阶段 | `EpubImportWizard.tsx` → 建书参数 |
-| 独立建书对话框 | `IRBookSetupDialog.tsx` + `IRBookDialogMount.tsx` |
+| EPUB 导入向导第二阶段 | `EpubImportWizard` → `EpubIRSetupStep`：章节 / 模式 / **重要性三档**（`IRImportanceSetupField`）/ totalDays → `initializeBookIR` |
+| 独立建书对话框 | `IRBookSetupDialog.tsx` + `IRBookDialogMount.tsx`（共用 `IRImportanceSetupField` / `importanceSetupOptions`） |
 | 右键「创建渐进阅读书籍」 | `contextMenuRegistry.tsx` → 章节 refs → `showIRBookDialog` |
 | 右键整本移出 | 同上 + `removeBookFromIR` 命令 |
 | 会话完成本章 / 跳过 | `IRSessionShell` + `irSessionService` |
@@ -321,7 +323,9 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 - `src/srs/incremental-reading/irSessionService.ts`（顺序完成/跳过桥接）
 - `src/components/incremental-reading/IRSessionShell.tsx`
 - `src/components/IRBookSetupDialog.tsx` / `IRBookDialogMount.tsx`
-- `src/components/epub-import/EpubImportWizard.tsx`
+- `src/components/epub-import/EpubImportWizard.tsx` / `EpubIRSetupStep.tsx`
+- `src/components/incremental-reading/IRImportanceSetupField.tsx`（建书三档 UI）
+- `src/srs/incremental-reading/irImportance.ts`（建书三档与阅读中 nudge）
 - `src/srs/registry/contextMenuRegistry.tsx` / `commands.ts`
 - `模块文档/渐进阅读.md`
 - `模块文档/EPUB导入.md`

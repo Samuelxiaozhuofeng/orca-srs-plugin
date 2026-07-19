@@ -1296,6 +1296,7 @@
 }
 
 .ir-reading__postpone,
+.ir-reading__importance,
 .ir-reading__more {
   position: fixed;
   top: var(--ir-action-bar-top, 50%);
@@ -1318,10 +1319,17 @@
   z-index: 10000 !important;
 }
 
-.ir-reading__postpone {
+.ir-reading__postpone,
+.ir-reading__importance {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.ir-reading__importance-current {
+  font-size: 12px;
+  color: var(--orca-color-text-3, #64748b);
+  line-height: 1.4;
 }
 
 .ir-reading__more {
@@ -1334,13 +1342,10 @@
   grid-column: span 3;
 }
 
-.ir-reading__more > *:nth-child(2),
-.ir-reading__more > *:nth-child(3),
-.ir-reading__more > *:nth-child(4) {
-  grid-column: span 1;
-}
+/* Theme swatches use inline gridColumn: span 1 */
 
 .ir-reading__postpone button,
+.ir-reading__importance button,
 .ir-reading__more button {
   width: 100%;
   justify-content: center;

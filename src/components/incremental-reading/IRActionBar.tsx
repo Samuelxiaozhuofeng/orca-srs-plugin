@@ -1,5 +1,5 @@
 /**
- * 右侧竖排阅读动作栏：返回(可选)、下一篇、摘录|记住、推后、更多。
+ * 右侧竖排阅读动作栏：返回(可选)、下一篇、摘录|记住、重要性、更多。
  * position:fixed，跟随所属 `.ir-reading` 面板的可视区域垂直居中，
  * 并按面板宽度三档（wide / medium / narrow）缩放；不覆盖正文。
  */
@@ -16,9 +16,12 @@ export type IRActionBarProps = {
   isTopic: boolean
   isWorking?: boolean
   onNext: () => void
-  onPostpone: () => void
   onExtract?: () => void
   onItemize?: () => void
+  onImportance: () => void
+  importanceOpen?: boolean
+  /** Compact tier label for the importance control, e.g. 低/中/高 */
+  importanceTierLabel?: string
   onMore: () => void
   moreOpen?: boolean
   /** Chapter browse mode: show return-to-excerpt control (parent via shouldShowReturnButton). */
@@ -63,9 +66,11 @@ export default function IRActionBar({
   isTopic,
   isWorking,
   onNext,
-  onPostpone,
   onExtract,
   onItemize,
+  onImportance,
+  importanceOpen,
+  importanceTierLabel,
   onMore,
   moreOpen,
   showReturn = false,
@@ -171,12 +176,14 @@ export default function IRActionBar({
     if (measured > 0) {
       panel.style.setProperty(CSS_WIDTH, `${measured}px`)
     }
-  }, [tier, showReturn])
+  }, [tier, showReturn, importanceTierLabel, importanceOpen, moreOpen])
 
   const returnLabel = compact ? "↩" : "返回"
   const nextLabel = compact ? "→" : "下一篇"
   const secondLabel = compact ? "+" : isTopic ? "摘录" : "记住"
-  const postponeLabel = compact ? "↷" : "推后"
+  const importanceLabel = compact
+    ? (importanceTierLabel ?? "中")
+    : "重要性"
   const moreLabel = compact ? "⋯" : moreOpen ? "收起" : "更多"
 
   return (
@@ -244,14 +251,16 @@ export default function IRActionBar({
         <Button
           tabIndex={0}
           variant="plain"
-          onClick={isWorking ? undefined : onPostpone}
+          data-ir-importance-toggle=""
+          onClick={isWorking ? undefined : onImportance}
           onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
           style={style}
           aria-disabled={isWorking}
-          aria-label="推后"
-          title="推后 Shift+Enter"
+          aria-expanded={importanceOpen}
+          aria-label="重要性"
+          title="重要性 Alt+P"
         >
-          {postponeLabel}
+          {importanceLabel}
         </Button>
         <Button
           tabIndex={0}

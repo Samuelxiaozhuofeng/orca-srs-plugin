@@ -79,10 +79,11 @@ describe("epubImportViewModel", () => {
     expect(schedulePreviewText("distributed", 5, 10)).toMatch(/分散排期/)
   })
 
-  it("sequential preview reflects SAC base interval by priority", () => {
+  it("sequential preview reflects SAC base interval by importance tier", () => {
     const p0 = schedulePreviewText("sequential", 16, 10, 0)
     expect(p0).toMatch(/约每 3 天/)
-    expect(p0).toMatch(/当前优先级 0/)
+    expect(p0).toMatch(/当前重要性：想读但不急/)
+    expect(p0).not.toMatch(/当前优先级/)
     expect(p0).toMatch(/完成或跳过/)
     expect(p0).toMatch(/当天解锁下一章/)
     expect(p0).toMatch(/没有阅读进展/)
@@ -92,29 +93,34 @@ describe("epubImportViewModel", () => {
 
     const p50 = schedulePreviewText("sequential", 16, 10, 50)
     expect(p50).toMatch(/约每 2 天/)
-    expect(p50).toMatch(/当前优先级 50/)
+    expect(p50).toMatch(/当前重要性：正常/)
 
     const p100 = schedulePreviewText("sequential", 16, 10, 100)
     expect(p100).toMatch(/约每 1 天/)
-    expect(p100).toMatch(/当前优先级 100/)
+    expect(p100).toMatch(/当前重要性：很重要/)
   })
 
-  it("sequential preview defaults priority to 50 for 3-arg calls", () => {
+  it("sequential preview defaults importance to medium for 3-arg calls", () => {
     const text = schedulePreviewText("sequential", 8, 30)
-    expect(text).toMatch(/当前优先级 50/)
+    expect(text).toMatch(/当前重要性：正常/)
     expect(text).toMatch(/约每 2 天/)
+    expect(text).not.toMatch(/当前优先级/)
   })
 
-  it("distributed preview is unchanged by priority", () => {
+  it("distributed preview keeps totalDays spread and notes importance cadence", () => {
     const a = schedulePreviewText("distributed", 5, 10)
     const b = schedulePreviewText("distributed", 5, 10, 0)
     const c = schedulePreviewText("distributed", 5, 10, 100)
-    expect(a).toBe(b)
-    expect(a).toBe(c)
     expect(a).toMatch(/分散排期/)
     expect(a).toMatch(/约 10 天跨度/)
+    expect(a).toMatch(/当前重要性：正常|重要性（正常）/)
     expect(a).not.toMatch(/当前优先级/)
     expect(a).not.toMatch(/没有阅读进展/)
+    // totalDays spread is identical; importance label differs by tier
+    expect(b).toMatch(/想读但不急/)
+    expect(c).toMatch(/很重要/)
+    expect(a).not.toBe(b)
+    expect(a).not.toBe(c)
   })
 
   it("exposes accessibility labels", () => {

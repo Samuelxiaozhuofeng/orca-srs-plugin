@@ -3,6 +3,7 @@
 > 文档同步日期：2026-07-19
 > 变更说明：WP-07 **纯层**已落地严格 HTML 清洗、资源预算、MIME 魔数、解析层 AbortSignal；ZIP load 与 entry 解压完成后会再次检查取消。
 > **未验收 / 证据阻塞**：`importEpub` / `resumeEpubImport` 写入链取消、超限图片「省略 vs 零写入拒绝」preflight、真机 Network 与 resume 一致性。
+> 2026-07-19：ir_setup 重要性字段——用户文案「重要性」，三档绝对档位（20/50/80，默认中），选项来自 `importanceSetupOptions`（`irImportance.ts`）；存储仍写 `priority` → 各章 `ir.priority`。
 
 ## 概述
 
@@ -108,7 +109,11 @@ chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|impo
 3. **chapters**：默认全选；可过滤后开始导入
 4. **progress**：`importEpub({ buffer, sourceFileName, bookTitle, selectedChapterKeys, onProgress })`
 5. **result**：完成 / 部分失败 / 已存在；可「继续导入」或「继续创建渐进阅读书籍」
-6. **ir_setup**（可选）：独立章节多选 + `distributed` | `sequential` + priority / totalDays → `initializeBookIR`
+6. **ir_setup**（可选）：独立章节多选 + `distributed` | `sequential` + **重要性**三档 / totalDays → `initializeBookIR`
+   - 用户字段名：**重要性**（非「优先级」）；选项 `importanceSetupOptions()`（`src/srs/incremental-reading/irImportance.ts`）
+   - 绝对档位：`tierToPriority` 低=20 / 中=50（默认）/ 高=80；写入 `initializeBookIR({ priority })` → plan 与各章 `ir.priority`
+   - 组件：`EpubIRSetupStep` + 共用 `IRImportanceSetupField`（`EpubImportWizard` 只负责步骤状态；与 `IRBookSetupDialog` 同一套档位语义）
+   - 预览文案 `schedulePreviewText`：顺序模式展示「当前重要性：…」与 SAC 间隔，**不**暴露 0–100 数字；分散模式保留 totalDays 跨度，并简述重要性影响之后进队/再推、不改总天数
 
 ### `importEpub` 编排要点
 

@@ -6,12 +6,23 @@
  * (ConfirmBox / Popup / Modal).
  */
 
-const KEEP_OPEN_SELECTOR = [
+const KEEP_OPEN_MORE_SELECTOR = [
   ".ir-reading__more",
-  // more 切换钮（IRActionBar 上唯一带 aria-expanded 的 footer 按钮；兼 data-ir-more-toggle）
-  ".ir-reading__footer [aria-expanded]",
+  // more 切换钮（data-ir-more-toggle）；勿用泛化 [aria-expanded]——重要性按钮也有 aria-expanded
   "[data-ir-more-toggle]",
   // Orca ConfirmBox / Popup / Modal 可能 portal 到面板外
+  '[role="dialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="alertdialog"]',
+  ".orca-popup",
+  ".orca-menu",
+  ".orca-modal"
+].join(", ")
+
+const KEEP_OPEN_IMPORTANCE_SELECTOR = [
+  ".ir-reading__importance",
+  "[data-ir-importance-toggle]",
   '[role="dialog"]',
   '[role="menu"]',
   '[role="listbox"]',
@@ -34,5 +45,12 @@ export function resolveEventElement(target: EventTarget | null): Element | null 
 export function shouldDismissIRMorePanel(target: EventTarget | null): boolean {
   const el = resolveEventElement(target)
   if (!el) return true
-  return el.closest(KEEP_OPEN_SELECTOR) == null
+  return el.closest(KEEP_OPEN_MORE_SELECTOR) == null
+}
+
+/** @returns true when the importance panel should close */
+export function shouldDismissIRImportancePanel(target: EventTarget | null): boolean {
+  const el = resolveEventElement(target)
+  if (!el) return true
+  return el.closest(KEEP_OPEN_IMPORTANCE_SELECTOR) == null
 }

@@ -18,13 +18,14 @@ import {
   canProceedFromChapters,
   canProceedFromTitle,
   defaultBookTitle,
-  schedulePreviewText,
   selectAllChapterKeys,
   type WizardStep
 } from "./epubImportViewModel"
 import EpubChapterSelector from "./EpubChapterSelector"
 import EpubImportProgress from "./EpubImportProgress"
 import EpubImportResultView from "./EpubImportResult"
+import EpubIRSetupStep from "./EpubIRSetupStep"
+import { DEFAULT_IR_PRIORITY } from "../../srs/incremental-reading/irImportance"
 
 const { useState, useCallback, useMemo, useRef, useEffect } = window.React
 const { Button } = orca.components
@@ -69,7 +70,7 @@ export default function EpubImportWizard({
   // IR setup state (independent second selection)
   const [irSelectedIds, setIrSelectedIds] = useState<DbId[]>([])
   const [irMode, setIrMode] = useState<"distributed" | "sequential">("distributed")
-  const [irPriority, setIrPriority] = useState(50)
+  const [irPriority, setIrPriority] = useState(DEFAULT_IR_PRIORITY)
   const [irTotalDays, setIrTotalDays] = useState(30)
   const [irPlan, setIrPlan] = useState<BookIRPlanV1 | null>(null)
   const [irFailedCount, setIrFailedCount] = useState(0)
@@ -421,126 +422,24 @@ export default function EpubImportWizard({
       ) : null}
 
       {step === "ir_setup" && result ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>创建渐进阅读书籍</div>
-          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
-            默认全选已成功导入章节；取消的章节保持普通笔记，之后可再加入。
-          </div>
-          <EpubChapterSelector
-            chapters={importedChapterOptions}
-            selectedKeys={irSelectedIds.map(String)}
-            onChange={(keys) => setIrSelectedIds(keys.map(Number).filter(Number.isFinite))}
-            disabled={isWorking}
-            label="渐进阅读章节"
-          />
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <label style={{ fontSize: 13 }}>
-              <input
-                type="radio"
-                name="ir-mode"
-                checked={irMode === "distributed"}
-                onChange={() => setIrMode("distributed")}
-                disabled={isWorking}
-                aria-label={labels.modeDistributed}
-              />{" "}
-              {labels.modeDistributed}
-            </label>
-            <label style={{ fontSize: 13 }}>
-              <input
-                type="radio"
-                name="ir-mode"
-                checked={irMode === "sequential"}
-                onChange={() => setIrMode("sequential")}
-                disabled={isWorking}
-                aria-label={labels.modeSequential}
-              />{" "}
-              {labels.modeSequential}
-            </label>
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <label style={{ fontSize: 13, flex: "1 1 140px" }}>
-              优先级
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={irPriority}
-                disabled={isWorking}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setIrPriority(Math.min(100, Math.max(0, Number(e.target.value) || 0)))
-                }
-                style={{ display: "block", width: "100%", marginTop: 4, padding: 8 }}
-              />
-            </label>
-            <label style={{ fontSize: 13, flex: "1 1 140px" }}>
-              计划天数
-              <input
-                type="number"
-                min={1}
-                value={irTotalDays}
-                disabled={isWorking || irMode === "sequential"}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setIrTotalDays(Math.max(1, Number(e.target.value) || 1))
-                }
-                style={{ display: "block", width: "100%", marginTop: 4, padding: 8 }}
-              />
-            </label>
-          </div>
-          <div
-            style={{
-              border: "1px dashed var(--orca-color-border-1)",
-              borderRadius: 8,
-              padding: 10,
-              fontSize: 13
-            }}
-          >
-            {schedulePreviewText(irMode, irSelectedIds.length, irTotalDays, irPriority)}
-          </div>
-          {irFailedCount > 0 ? (
-            <div role="status" style={{ fontSize: 13, color: "var(--orca-color-warning-6, #a60)" }}>
-              成功 {irSuccessCount}，失败 {irFailedCount}。成功章节已写入计划，可重试失败项。
-            </div>
-          ) : null}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Button
-              variant="outline"
-              onClick={isWorking ? undefined : () => (irFailedCount > 0 ? onClose() : setStep("result"))}
-              aria-disabled={isWorking}
-              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
-            >
-              {irFailedCount > 0 ? "稍后" : "返回"}
-            </Button>
-            {irFailedCount > 0 ? (
-              <Button
-                variant="solid"
-                onClick={() => {
-                  if (isWorking) return
-                  void retryIRInit()
-                }}
-                aria-disabled={isWorking}
-                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
-              >
-                {isWorking ? "重试中…" : "重试失败项"}
-              </Button>
-            ) : (
-              <Button
-                variant="solid"
-                onClick={() => {
-                  if (isWorking || irSelectedIds.length === 0) return
-                  void runIRInit()
-                }}
-                aria-disabled={isWorking || irSelectedIds.length === 0}
-                style={
-                  isWorking || irSelectedIds.length === 0
-                    ? { opacity: 0.5, pointerEvents: "none" }
-                    : undefined
-                }
-              >
-                {isWorking ? "创建中…" : "确认创建"}
-              </Button>
-            )}
-          </div>
-        </div>
+        <EpubIRSetupStep
+          chapterOptions={importedChapterOptions}
+          selectedChapterIds={irSelectedIds}
+          onSelectedChapterIdsChange={setIrSelectedIds}
+          mode={irMode}
+          onModeChange={setIrMode}
+          priority={irPriority}
+          onPriorityChange={setIrPriority}
+          totalDays={irTotalDays}
+          onTotalDaysChange={setIrTotalDays}
+          isWorking={isWorking}
+          failedCount={irFailedCount}
+          successCount={irSuccessCount}
+          onBack={() => setStep("result")}
+          onConfirm={() => void runIRInit()}
+          onRetry={() => void retryIRInit()}
+          onDeferFailures={onClose}
+        />
       ) : null}
     </div>
   )
