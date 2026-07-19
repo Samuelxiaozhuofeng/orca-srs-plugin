@@ -72,15 +72,24 @@ export type IRChapterNode = {
   priority: number
   extracts: IRExtractNode[]
   /**
-   * Sequential Book IR outline status. Set for plan chapters (with or without a live card).
-   * Null/undefined for non-sequential topics and fallback extract groups.
+   * Outline / library status for the chapter row.
+   * - Sequential Book IR: plan-derived (active / pending / completed / skipped).
+   * - Completed-context nodes (Topic IR stripped, extracts hang back): `"completed"`.
+   * Null/undefined for ordinary live topics and fallback extract groups.
    */
   sequentialStatus?: IRSequentialChapterStatus | null
   /**
-   * True when this node exists only as plan outline (no live Topic IR card).
+   * True when this node exists only as outline / structure (no live Topic IR card).
+   * Includes sequential plan placeholders and completed-context hang-back chapters.
    * Placeholders must not expose IR card actions or enter selection.
    */
   isSequentialPlaceholder?: boolean
+  /**
+   * True when this node was synthesized because extracts still point at a topic
+   * that no longer has a live Topic IR card (archived / completed / distributed).
+   * Context-only: card is null; extracts remain actionable.
+   */
+  isCompletedContext?: boolean
   /** Index in plan.selectedChapterIds for stable sequential ordering. */
   sequentialOrder?: number
 }
@@ -281,7 +290,7 @@ function getCardTitle(cardId: DbId, titleMap?: Record<string, string>): string {
  * activeChapterId wins over stale outcomes when they disagree.
  */
 export function resolveSequentialChapterStatus(
-  chapterId: DbId,
+  chapterId: DbId | string,
   plan: Pick<SequentialBookTreeContext, "activeChapterId" | "outcomes">
 ): IRSequentialChapterStatus | null {
   const key = String(chapterId)
@@ -511,9 +520,17 @@ export function buildIRSourceTree(
 
     const unassignedExtracts: IRCard[] = []
 
-    // 摘录归入真实章节或记录到孤立列表（含顺序占位章节：完成后若仍有摘录可挂回）
+    // 摘录挂载：
+    // 1) sourceTopicId 已在 chapterMap（真实 Topic 或顺序占位）→ 直接挂回
+    // 2) 书籍来源下 sourceTopicId 仍指向已剥离/缺失的主题 → 合成 completed 上下文章节并挂回
+    //    （顺序书：优先沿用 plan status；分布式书：isCompletedContext + sequentialStatus "completed"）
+    // 3) 无 sourceTopicId 或无法归入 → 「未关联章节的摘录」兜底
     for (const extractCard of group.extracts) {
-      const parentTopicId = extractCard.sourceTopicId != null ? String(extractCard.sourceTopicId) : null
+      const parentTopicId =
+        extractCard.sourceTopicId != null && String(extractCard.sourceTopicId).trim() !== ""
+          ? String(extractCard.sourceTopicId).trim()
+          : null
+
       if (parentTopicId && chapterMap.has(parentTopicId)) {
         const parentChapter = chapterMap.get(parentTopicId)!
         parentChapter.extracts.push({
@@ -521,9 +538,54 @@ export function buildIRSourceTree(
           card: extractCard,
           title: getCardTitle(extractCard.id, titleMap)
         })
-      } else {
-        unassignedExtracts.push(extractCard)
+        continue
       }
+
+      // Book group with a concrete sourceTopicId but no live/plan chapter yet:
+      // synthesize a context-only chapter so extracts hang under book → chapter, not fallback.
+      if (parentTopicId && group.sourceType === "book") {
+        let parentChapter = chapterMap.get(parentTopicId)
+        if (!parentChapter) {
+          const sequentialStatus = sequentialCtx
+            ? resolveSequentialChapterStatus(parentTopicId, sequentialCtx)
+            : "completed"
+          // removed from sequential plan → cannot place under outline
+          if (sequentialStatus == null) {
+            unassignedExtracts.push(extractCard)
+            continue
+          }
+          parentChapter = {
+            type: "chapter",
+            chapterId: parentTopicId,
+            isFallback: false,
+            card: null,
+            cardMatches: false,
+            title: resolveChapterTitle(
+              parentTopicId,
+              titleMap,
+              sequentialCtx?.chapterTitles
+            ),
+            due: null,
+            sortDue: null,
+            stage: "",
+            priority: 0,
+            extracts: [],
+            sequentialStatus,
+            isSequentialPlaceholder: true,
+            isCompletedContext: sequentialCtx ? sequentialStatus === "completed" : true,
+            sequentialOrder: sequentialOrder.get(parentTopicId)
+          }
+          chapterMap.set(parentTopicId, parentChapter)
+        }
+        parentChapter.extracts.push({
+          type: "extract",
+          card: extractCard,
+          title: getCardTitle(extractCard.id, titleMap)
+        })
+        continue
+      }
+
+      unassignedExtracts.push(extractCard)
     }
 
     // 若存在未能归到具体章节的摘录，创建该来源下的稳定兜底章节
@@ -646,8 +708,9 @@ export function buildIRSourceTree(
           cardMatches: Boolean(chapterCardMatches),
           sortDue,
           extracts: matchedExtracts,
-          // 占位节点在仅靠 outline 保留时仍标记为占位
-          isSequentialPlaceholder: chapter.isSequentialPlaceholder === true && !chapter.card
+          // 占位 / 完成上下文节点在无 live card 时仍标记为结构-only
+          isSequentialPlaceholder: chapter.isSequentialPlaceholder === true && !chapter.card,
+          isCompletedContext: chapter.isCompletedContext === true && !chapter.card
         })
       }
     }

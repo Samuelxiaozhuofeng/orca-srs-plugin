@@ -1,9 +1,11 @@
 # 渐进阅读 Book IR（建书 / 顺序 / 退出）
 
-> **文档同步日期：2026-07-18**  
+> **文档同步日期：2026-07-19**  
 > 以 `src/srs/book-ir/*`、`src/srs/bookIRCreator.ts`、会话内顺序推进与右键/命令入口为实现真相。  
 > 通用 IR 会话与工作区见 [`渐进阅读.md`](渐进阅读.md)。EPUB 纯笔记导入见 [`EPUB导入.md`](EPUB导入.md)。  
-> 排期写回细节见 [`记忆排期推送.md`](记忆排期推送.md)。
+> 排期写回细节见 [`记忆排期推送.md`](记忆排期推送.md)。  
+>
+> 2026-07-19：**已完成章节资料库保留（landed）**——完成本章/归档 strip 章节 Topic IR，笔记保留；资料库书下仍显示章节结构与「已完成」；摘录靠 `ir.sourceTopicId` + `ir.sourceBookId` 挂回。详见下文「资料库展示」与 [`渐进阅读.md`](渐进阅读.md) 资料库三级树。
 
 ## 概述
 
@@ -90,7 +92,11 @@
 - 打开/阅读、下一篇、推后、改优先级**不得**解锁下一章
 - `completed` 与 `skipped` 在 plan 中可区分，但对解锁行为等价（都会尝试激活下一 `pending`）
 
-### 资料库展示（顺序大纲，非队列）
+### 资料库展示（大纲结构 vs 队列）
+
+资料库树展示**书籍大纲 + live IR 卡 + 仍存活的 Extract**；真实阅读队列仍只含 live IR 卡。完成本章 / 归档会 strip 章节 Topic 身份，但**不得**让该书在资料库中「塌成只剩无章节的摘录桶」。
+
+#### 顺序模式大纲（plan 驱动）
 
 顺序模式同一时间通常只有**一张** Topic IR（`activeChapterId`）。资料库树不能只渲染真实卡，否则完成第一章后用户会只看到下一激活章、甚至在短暂无卡窗口看到「没有匹配的渐进阅读卡片」。
 
@@ -99,11 +105,23 @@
 | 发现 | `loadSequentialBookTreeContexts`：合并 **live 卡 `sourceBookId`** 与 **repo 级顺序书注册表**（`sequentialBookRegistry`，localStorage，按 `orca.state.repo` 隔离），加载 `mode === "sequential"` 的 `ir.bookPlan`；章节标题优先 manifest，其次块标题。plan/manifest 失败写 `console.error` 并进入 `warnings`，**不**静默清空整本，也**不**在读失败时 prune 注册表 |
 | 注册表 | `saveBookIRPlan`（sequential）时 `registerSequentialBookId`；`clearBookIRPlan` 时 `unregister`。仅在确认无 sequential plan 时 prune 过期 id。上限 500，不扫描 `get-all-blocks` |
 | 树构建 | `buildIRSourceTree` 选项 `sequentialBooks`：即使 **零 live 卡** 也创建 book source 组；对 `selectedChapterIds` 中尚无 Topic 卡的章创建占位 `IRChapterNode`（`card: null`，`isSequentialPlaceholder: true`，`sequentialStatus`） |
+| 已完成章 | plan `outcomes[id]=completed` → 占位节点保留在大纲中；徽标 **「已完成」**；`card: null`、不可操作；**其下 Extract** 经 `ir.sourceTopicId === chapterId` 挂回（摘录仍 actionable） |
 | 真实队列 | **不变**：仍仅 `collectAllIRCards`；占位**不**写 `#card`、**不**入索引、不进批量选择 |
 | UI | 激活章：徽标「当前激活」+ 原有 due/阶段/开始阅读等；未激活/已完成/已跳过：灰化 + 文案，无操作按钮、不进 `selectedCardIds` |
 | 筛选 | 默认「全部」保留大纲；时间带与属性筛选不把纯占位当匹配卡 |
 
-相关文件：`workspace/loadSequentialBookTreeContexts.ts`、`workspace/irSourceTreeBuilder.ts`、`src/srs/book-ir/sequentialBookRegistry.ts`、`workspace/IRLibraryChapterItem.tsx`、`workspace/useIRWorkspaceLibrary.ts`。
+#### 分散模式与跨模式：已完成章 + 摘录挂靠（landed）
+
+| 要点 | 行为 |
+| --- | --- |
+| 完成本章 / 归档 | `completeIRCard` / progression strip：**只**清章节上的 `#card`、`srs.*`、`ir.*` 与索引；**不删**章节块与正文 |
+| Extract 耐久溯源 | 创建摘录时写 `ir.sourceTopicId`；来源为书章节时再写 `ir.sourceBookId` / `ir.sourceBookTitle`（见 [`渐进阅读.md`](渐进阅读.md) 跨块摘录） |
+| 分散书上下文节点 | 章节 strip 后无 live Topic 时，`buildIRSourceTree` 用同书 Extract 的 `sourceTopicId` **合成**上下文章节（`card: null`，标「已完成」）；**不是**「未关联章节的摘录」fallback |
+| 收集器 legacy | 父 Topic 仍 live 时，Extract 可在内存继承 book meta；章节完成后必须依赖 Extract 上的耐久 `sourceBookId` |
+| 「未关联章节的摘录」 | **仅**无法在该来源组内解析到父章节（无可用 `sourceTopicId` / 无对应上下文）时的兜底桶 |
+| 标题 | `titleMap` 对 Extract 的 `sourceTopicId` 做 `get-blocks`，即使该章已非 IR 卡 |
+
+相关文件：`workspace/loadSequentialBookTreeContexts.ts`、`workspace/irSourceTreeBuilder.ts`、`workspace/irChapterPresentation.ts`、`src/srs/book-ir/sequentialBookRegistry.ts`、`workspace/IRLibraryChapterItem.tsx`、`workspace/useIRWorkspaceLibrary.ts`、`src/srs/extractUtils.ts`、`src/srs/incrementalReadingCollector.ts`。
 
 ### Sequential Active Cadence（SAC）：当前激活章的短节奏
 
@@ -172,6 +190,8 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
    - **失败则抛错**：plan 与当前章均未改动，不得 plain-complete，不得整本清理
 4. 写 plan — 记录当前 outcome，`outcomes[next]=active`（若有），`activeChapterId=next|null`
 5. `completeIRCard(request.chapterId)` **仅**剥离当前章 IR 身份（单 id：`#card` / `srs.*` / `ir.*` / 索引）  
+   - **不删除**章节笔记内容；plan 已记 `completed` 后资料库大纲仍保留该章结构节点（见上「资料库展示」）
+   - 该章下已创建的 Extract **保留**自身 `ir.sourceTopicId` / `ir.sourceBookId`，继续可调度、可操作
    - 清理失败 → `kind: "partial"`，`currentChapterRemoved: false`（下一章已激活、plan 已指向 next）
 6. 若有下一章，从后端校验**完全激活**（`#card` + `ir.due` + `sourceBookId`）；失败 → `partial` 且 `currentChapterRemoved: true`（当前章已清理）
 

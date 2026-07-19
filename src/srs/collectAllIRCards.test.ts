@@ -217,4 +217,142 @@ describe("collectAllIRCardsFromBlocks", () => {
       sourceWebSiteName: "Example"
     })
   })
+
+  it("should inherit book source metadata from the parent Topic in the same batch", async () => {
+    const now = new Date("2026-01-19T00:00:00Z")
+    const topic = createBlock(40, "topic")
+    topic.properties = [
+      { name: "ir.sourceBookId", value: 99, type: 3 },
+      { name: "ir.sourceBookTitle", value: "深入 TypeScript", type: 2 }
+    ]
+    const extract = createBlock(41, "extracts")
+    extract.properties = [
+      { name: "ir.sourceTopicId", value: 40, type: 3 }
+    ]
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+    vi.mocked(loadIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+
+    const results = await collectAllIRCardsFromBlocks([topic, extract])
+    const extractCard = results.find(card => card.id === 41)
+
+    expect(extractCard).toMatchObject({
+      sourceTopicId: 40,
+      sourceBookId: 99,
+      sourceBookTitle: "深入 TypeScript"
+    })
+  })
+
+  it("should not overwrite Extract sourceBookId with parent Topic book meta", async () => {
+    const now = new Date("2026-01-19T00:00:00Z")
+    const topic = createBlock(50, "topic")
+    topic.properties = [
+      { name: "ir.sourceBookId", value: 99, type: 3 },
+      { name: "ir.sourceBookTitle", value: "Parent Book", type: 2 }
+    ]
+    const extract = createBlock(51, "extracts")
+    extract.properties = [
+      { name: "ir.sourceTopicId", value: 50, type: 3 },
+      { name: "ir.sourceBookId", value: 77, type: 3 },
+      { name: "ir.sourceBookTitle", value: "Extract Own Book", type: 2 }
+    ]
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+    vi.mocked(loadIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+
+    const results = await collectAllIRCardsFromBlocks([topic, extract])
+    const extractCard = results.find(card => card.id === 51)
+
+    expect(extractCard).toMatchObject({
+      sourceTopicId: 50,
+      sourceBookId: 77,
+      sourceBookTitle: "Extract Own Book"
+    })
+  })
+
+  it("should not inherit book meta when parent Topic is missing from the batch", async () => {
+    const now = new Date("2026-01-19T00:00:00Z")
+    const extract = createBlock(61, "extracts")
+    extract.properties = [
+      { name: "ir.sourceTopicId", value: 60, type: 3 }
+    ]
+
+    vi.mocked(ensureIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+    vi.mocked(loadIRState).mockResolvedValue({
+      priority: 5,
+      lastRead: null,
+      readCount: 0,
+      due: now,
+      intervalDays: 5,
+      postponeCount: 0,
+      stage: "extract.raw",
+      lastAction: "init",
+      position: null,
+      resumeBlockId: null
+    })
+
+    const results = await collectAllIRCardsFromBlocks([extract])
+    const extractCard = results.find(card => card.id === 61)
+
+    expect(extractCard).toMatchObject({
+      sourceTopicId: 60,
+      sourceBookId: null,
+      sourceBookTitle: null
+    })
+  })
 })

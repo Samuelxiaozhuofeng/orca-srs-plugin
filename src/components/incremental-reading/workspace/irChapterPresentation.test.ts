@@ -117,5 +117,82 @@ describe("getIRChapterPresentation", () => {
     expect(presentation.isSequentialPlaceholder).toBe(false)
     expect(presentation.isNonActionable).toBe(false)
     expect(presentation.sequentialStatusLabel).toBe("当前激活")
+    expect(presentation.isCompletedContext).toBe(false)
+  })
+
+  it("marks sequential completed outline as non-actionable with 已完成 label", () => {
+    const extract = { ...makeCard(40), cardType: "extracts" as const }
+    const presentation = getIRChapterPresentation(makeChapter({
+      chapterId: "3",
+      card: null,
+      cardMatches: false,
+      title: "第三章",
+      due: null,
+      sortDue: null,
+      stage: "",
+      sequentialStatus: "completed",
+      isSequentialPlaceholder: true,
+      extracts: [{ type: "extract", card: extract, title: "遗留摘录" }]
+    }))
+
+    expect(presentation.chapterCard).toBeNull()
+    expect(presentation.isContextOnly).toBe(true)
+    expect(presentation.isCompletedContext).toBe(true)
+    expect(presentation.isNonActionable).toBe(true)
+    expect(presentation.canExpand).toBe(true)
+    expect(presentation.sequentialStatus).toBe("completed")
+    expect(presentation.sequentialStatusLabel).toBe("已完成")
+    expect(presentation.extractCountLabel).toBe("1 个匹配摘录")
+  })
+
+  it("shows 已完成 for non-sequential completed context via isCompletedContext", () => {
+    const extract = { ...makeCard(50), cardType: "extracts" as const }
+    const presentation = getIRChapterPresentation(makeChapter({
+      chapterId: "99",
+      card: null,
+      cardMatches: false,
+      title: "已读完的主题",
+      due: null,
+      sortDue: null,
+      stage: "",
+      sequentialStatus: null,
+      isCompletedContext: true,
+      extracts: [{ type: "extract", card: extract, title: "摘录 A" }]
+    }))
+
+    expect(presentation.chapterCard).toBeNull()
+    expect(presentation.isCompletedContext).toBe(true)
+    expect(presentation.isNonActionable).toBe(true)
+    expect(presentation.canExpand).toBe(true)
+    expect(presentation.sequentialStatus).toBe("completed")
+    expect(presentation.sequentialStatusLabel).toBe("已完成")
+  })
+
+  it("shows 已完成 when sequentialStatus completed without isCompletedContext flag", () => {
+    const presentation = getIRChapterPresentation(makeChapter({
+      card: null,
+      cardMatches: false,
+      sequentialStatus: "completed",
+      isSequentialPlaceholder: false,
+      extracts: []
+    }))
+
+    expect(presentation.isCompletedContext).toBe(true)
+    expect(presentation.isNonActionable).toBe(true)
+    expect(presentation.canExpand).toBe(false)
+    expect(presentation.sequentialStatusLabel).toBe("已完成")
+  })
+
+  it("does not treat extract-only context as completed without status flags", () => {
+    const extract = { ...makeCard(60), cardType: "extracts" as const }
+    const presentation = getIRChapterPresentation(makeChapter({
+      cardMatches: false,
+      extracts: [{ type: "extract", card: extract, title: "命中摘录" }]
+    }))
+
+    expect(presentation.isNonActionable).toBe(true)
+    expect(presentation.isCompletedContext).toBe(false)
+    expect(presentation.sequentialStatusLabel).toBeNull()
+    expect(presentation.canExpand).toBe(true)
   })
 })

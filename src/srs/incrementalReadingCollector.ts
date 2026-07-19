@@ -122,6 +122,35 @@ function inheritWebSourceMeta(
 }
 
 /**
+ * In-memory only: Extract without `ir.sourceBookId` inherits book meta from its
+ * parent Topic when that Topic is present in the same collection batch.
+ * Does not write block properties.
+ */
+function inheritBookSourceMeta(
+  meta: IRSourceMeta,
+  sourceMetaById: Map<DbId, IRSourceMeta>
+): IRSourceMeta {
+  if (meta.sourceBookId != null || meta.sourceTopicId == null) return meta
+  const parentMeta = sourceMetaById.get(meta.sourceTopicId)
+  if (parentMeta?.sourceBookId == null) return meta
+  return {
+    ...meta,
+    sourceBookId: parentMeta.sourceBookId,
+    sourceBookTitle: meta.sourceBookTitle ?? parentMeta.sourceBookTitle
+  }
+}
+
+function inheritSourceMeta(
+  meta: IRSourceMeta,
+  sourceMetaById: Map<DbId, IRSourceMeta>
+): IRSourceMeta {
+  return inheritBookSourceMeta(
+    inheritWebSourceMeta(meta, sourceMetaById),
+    sourceMetaById
+  )
+}
+
+/**
  * 收集所有带 #card 标签的块（只用于渐进阅读过滤）
  *
  * 查询失败会抛错，不得静默返回 [] 伪装成“没有卡片”。
@@ -339,7 +368,7 @@ export async function collectIRCardsFromBlocksDetailed(
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
       const dueDayStartTime = getDayStart(state.due).getTime()
-      const sourceMeta = inheritWebSourceMeta(
+      const sourceMeta = inheritSourceMeta(
         sourceMetaById.get(block.id) ?? readIRSourceMeta(block),
         sourceMetaById
       )
@@ -402,7 +431,7 @@ export async function collectAllIRCardsFromBlocks(
       }
       const state = await loadIRState(block.id)
       const isNew = !state.lastRead
-      const sourceMeta = inheritWebSourceMeta(
+      const sourceMeta = inheritSourceMeta(
         sourceMetaById.get(block.id) ?? readIRSourceMeta(block),
         sourceMetaById
       )

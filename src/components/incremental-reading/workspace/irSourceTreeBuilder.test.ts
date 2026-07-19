@@ -68,23 +68,35 @@ describe("irSourceTreeBuilder", () => {
     expect(chapter.extracts.map(e => e.card.id)).toEqual([201, 202])
   })
 
-  it("3. 无法匹配章节的摘录进入兜底分支且不会消失", () => {
+  it("3. 无 sourceTopicId 的摘录进入兜底；缺失主题但有 sourceTopicId 的书籍摘录挂回上下文章节", () => {
     const cards = [
       makeCard({ id: 101, cardType: "topic", sourceBookId: 1, sourceBookTitle: "计算机网络" }),
-      // sourceTopicId 为 999（列表中不存在的主题）
+      // sourceTopicId 为 999（列表中不存在的主题）→ 合成 completed 上下文，不进兜底
       makeCard({ id: 301, cardType: "extracts", sourceBookId: 1, sourceBookTitle: "计算机网络", sourceTopicId: 999 }),
-      // sourceTopicId 为 null
+      // sourceTopicId 为 null → 仍进兜底
       makeCard({ id: 302, cardType: "extracts", sourceBookId: 1, sourceBookTitle: "计算机网络", sourceTopicId: null })
     ]
     const filters = createDefaultIRLibraryFilters()
-    const result = buildIRSourceTree(cards, filters, "all", { now })
+    const result = buildIRSourceTree(cards, filters, "all", {
+      now,
+      titleMap: { "101": "第1章", "999": "已归档章" }
+    })
 
-    expect(result.sources[0].chapters).toHaveLength(2)
-    const fallbackChapter = result.sources[0].chapters.find(c => c.isFallback)
+    const chapters = result.sources[0].chapters
+    const contextChapter = chapters.find(c => c.chapterId === "999")
+    expect(contextChapter).toBeDefined()
+    expect(contextChapter?.isFallback).toBe(false)
+    expect(contextChapter?.card).toBeNull()
+    expect(contextChapter?.sequentialStatus).toBe("completed")
+    expect(contextChapter?.isCompletedContext).toBe(true)
+    expect(contextChapter?.isSequentialPlaceholder).toBe(true)
+    expect(contextChapter?.title).toBe("已归档章")
+    expect(contextChapter?.extracts.map(e => e.card.id)).toEqual([301])
+
+    const fallbackChapter = chapters.find(c => c.isFallback)
     expect(fallbackChapter).toBeDefined()
     expect(fallbackChapter?.title).toBe("未关联章节的摘录")
-    expect(fallbackChapter?.extracts).toHaveLength(2)
-    expect(fallbackChapter?.extracts.map(e => e.card.id)).toEqual([301, 302])
+    expect(fallbackChapter?.extracts.map(e => e.card.id)).toEqual([302])
   })
 
   it("4. 无来源卡片进入「未归入来源」", () => {
@@ -579,6 +591,145 @@ describe("irSourceTreeBuilder", () => {
       expect(result.sources[0].chapters).toHaveLength(1)
       expect(result.sources[0].chapters[0].chapterId).toBe("2")
       expect(result.sources[0].chapters[0].sequentialStatus).toBe("active")
+    })
+
+    it("22. 顺序书：第一章完成后摘录仍挂在章节 1 下（completed），不进兜底", () => {
+      // 仅 ch2 仍有 live Topic IR；ch1 已剥离，但摘录仍带 sourceTopicId=1
+      const cards = [
+        makeCard({
+          id: 2,
+          cardType: "topic",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          due: new Date(2026, 6, 12)
+        }),
+        makeCard({
+          id: 201,
+          cardType: "extracts",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          sourceTopicId: 1,
+          due: new Date(2026, 6, 11)
+        }),
+        makeCard({
+          id: 202,
+          cardType: "extracts",
+          sourceBookId: 1,
+          sourceBookTitle: "顺序阅读示例",
+          sourceTopicId: 1,
+          due: new Date(2026, 6, 13)
+        })
+      ]
+      const planAfterCh1 = {
+        ...sequentialPlan,
+        activeChapterId: 2,
+        outcomes: {
+          "1": "completed" as const,
+          "2": "active" as const,
+          "3": "pending" as const
+        }
+      }
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", {
+        now,
+        sequentialBooks: [planAfterCh1],
+        titleMap: { "2": "第二章", "201": "摘录甲", "202": "摘录乙" }
+      })
+
+      expect(result.sources).toHaveLength(1)
+      const source = result.sources[0]
+      const fallback = source.chapters.find(c => c.isFallback)
+      expect(fallback).toBeUndefined()
+
+      const ch1 = source.chapters.find(c => c.chapterId === "1")!
+      expect(ch1.card).toBeNull()
+      expect(ch1.isFallback).toBe(false)
+      expect(ch1.sequentialStatus).toBe("completed")
+      expect(ch1.isSequentialPlaceholder).toBe(true)
+      expect(ch1.title).toBe("第一章") // from sequential plan chapterTitles
+      expect(ch1.extracts.map(e => e.card.id)).toEqual([201, 202])
+      // completed chapter is structure-only: matched card ids are extracts only
+      expect(collectIRChapterMatchedCardIds(ch1)).toEqual([201, 202])
+
+      const ch2 = source.chapters.find(c => c.chapterId === "2")!
+      expect(ch2.card?.id).toBe(2)
+      expect(ch2.sequentialStatus).toBe("active")
+      expect(ch2.extracts).toHaveLength(0)
+    })
+  })
+
+  describe("完成后上下文章节挂回（分布式 / 无顺序计划）", () => {
+    it("23. 分布式书：主题 101 已消失，摘录 sourceTopicId=101 挂到 completed 上下文，不进兜底", () => {
+      const cards = [
+        makeCard({
+          id: 102,
+          cardType: "topic",
+          sourceBookId: 9,
+          sourceBookTitle: "分布式阅读书",
+          due: new Date(2026, 6, 12)
+        }),
+        makeCard({
+          id: 301,
+          cardType: "extracts",
+          sourceBookId: 9,
+          sourceBookTitle: "分布式阅读书",
+          sourceTopicId: 101,
+          due: new Date(2026, 6, 11)
+        })
+      ]
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", {
+        now,
+        // no sequentialBooks — pure distributed
+        titleMap: { "102": "仍存活章", "101": "已完成章", "301": "旧摘录" }
+      })
+
+      expect(result.sources).toHaveLength(1)
+      expect(result.sources[0].sourceId).toBe("9")
+      const fallback = result.sources[0].chapters.find(c => c.isFallback)
+      expect(fallback).toBeUndefined()
+
+      const completed = result.sources[0].chapters.find(c => c.chapterId === "101")!
+      expect(completed).toMatchObject({
+        isFallback: false,
+        card: null,
+        sequentialStatus: "completed",
+        isCompletedContext: true,
+        isSequentialPlaceholder: true,
+        title: "已完成章"
+      })
+      expect(completed.extracts.map(e => e.card.id)).toEqual([301])
+      expect(collectIRChapterMatchedCardIds(completed)).toEqual([301])
+
+      const live = result.sources[0].chapters.find(c => c.chapterId === "102")!
+      expect(live.card?.id).toBe(102)
+      expect(live.sequentialStatus ?? null).toBeNull()
+      expect(live.isCompletedContext).toBeFalsy()
+    })
+
+    it("24. 有 sourceBookId 但 sourceTopicId null 的摘录仍进「未关联章节的摘录」", () => {
+      const cards = [
+        makeCard({
+          id: 101,
+          cardType: "topic",
+          sourceBookId: 5,
+          sourceBookTitle: "某书"
+        }),
+        makeCard({
+          id: 401,
+          cardType: "extracts",
+          sourceBookId: 5,
+          sourceBookTitle: "某书",
+          sourceTopicId: null
+        })
+      ]
+      const result = buildIRSourceTree(cards, createDefaultIRLibraryFilters(), "all", { now })
+
+      expect(result.sources).toHaveLength(1)
+      const fallback = result.sources[0].chapters.find(c => c.isFallback)
+      expect(fallback).toBeDefined()
+      expect(fallback!.title).toBe("未关联章节的摘录")
+      expect(fallback!.extracts.map(e => e.card.id)).toEqual([401])
+      // live chapter still present; orphan extract is not under it
+      expect(result.sources[0].chapters.find(c => c.chapterId === "101")!.extracts).toHaveLength(0)
     })
   })
 })

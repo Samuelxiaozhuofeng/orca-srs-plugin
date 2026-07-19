@@ -52,15 +52,28 @@ function getCardTitle(cardId: DbId, titleMap: Record<string, string>): string {
   return resolveBlockDisplayTitle(fromState, `(#${cardId})`)
 }
 
-function sequentialChapterClassName(chapter: IRChapterNode): string {
-  if (!chapter.sequentialStatus) return ""
-  if (chapter.sequentialStatus === "active" && chapter.card) {
+/**
+ * Row tone class for sequential outline + completed-context chapters.
+ * Reuses sequential-completed styles for any completed context (incl. non-sequential).
+ */
+function chapterStatusClassName(
+  chapter: IRChapterNode,
+  sequentialStatus: ReturnType<typeof getIRChapterPresentation>["sequentialStatus"],
+  isCompletedContext: boolean
+): string {
+  if (sequentialStatus === "active" && chapter.card) {
     return "ir-library-chapter--sequential-active"
   }
-  if (chapter.isSequentialPlaceholder || chapter.sequentialStatus !== "active") {
-    return `ir-library-chapter--sequential-${chapter.sequentialStatus}`
+  if (isCompletedContext || sequentialStatus === "completed") {
+    return "ir-library-chapter--sequential-completed"
   }
-  return "ir-library-chapter--sequential-active"
+  if (sequentialStatus === "pending" || sequentialStatus === "skipped") {
+    return `ir-library-chapter--sequential-${sequentialStatus}`
+  }
+  if (sequentialStatus === "active") {
+    return "ir-library-chapter--sequential-active"
+  }
+  return ""
 }
 
 export default function IRLibraryChapterItem({
@@ -89,7 +102,9 @@ export default function IRLibraryChapterItem({
     extractCountLabel,
     sequentialStatus,
     sequentialStatusLabel,
-    isSequentialPlaceholder
+    isSequentialPlaceholder,
+    isCompletedContext,
+    isNonActionable
   } = getIRChapterPresentation(chapter)
   const dueLabel = chapter.due ? formatIRDueDate(chapter.due) : "无到期日"
   const stageLabel = formatIRStageLabel(chapter.stage)
@@ -97,7 +112,11 @@ export default function IRLibraryChapterItem({
   const canAdvanceLearn = chapterCard
     ? FUTURE_GROUPS.includes(getIRDateGroup(chapterCard, now))
     : false
-  const sequentialClass = sequentialChapterClassName(chapter)
+  const sequentialClass = chapterStatusClassName(
+    chapter,
+    sequentialStatus,
+    isCompletedContext
+  )
   const contentAriaLabel = [
     chapter.title,
     sequentialStatusLabel,
@@ -182,11 +201,11 @@ export default function IRLibraryChapterItem({
                     ? `${chapter.title}（${sequentialStatusLabel}）`
                     : chapter.title
             }
-            disabled={isSequentialPlaceholder && !canExpand}
+            disabled={isNonActionable && !canExpand}
           >
             <span className="ir-library-chapter__title" title={chapter.title}>{chapter.title}</span>
             <span className="ir-library-chapter__metadata">
-              {sequentialStatusLabel ? (
+              {sequentialStatusLabel && sequentialStatus ? (
                 <span
                   className={[
                     "ir-library-chapter__status",

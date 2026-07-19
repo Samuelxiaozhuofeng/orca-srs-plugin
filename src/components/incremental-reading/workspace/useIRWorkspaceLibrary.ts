@@ -131,7 +131,15 @@ export function useIRWorkspaceLibrary(loadPluginName: () => Promise<string>, plu
       const sequentialChapterIds = (sequentialBooks as SequentialBookTreeContext[]).flatMap(
         (book: SequentialBookTreeContext) => book.selectedChapterIds
       )
-      const ids: DbId[] = Array.from(new Set([...cardIds, ...sequentialChapterIds]))
+      // Extract 的 sourceTopicId 可能是已完成章节（不再是 live IR card），仍需显示真实标题
+      const extractSourceTopicIds = libraryCards
+        .map((card: IRCard) => card.sourceTopicId)
+        .filter((id: DbId | null | undefined): id is DbId =>
+          typeof id === "number" && Number.isFinite(id)
+        )
+      const ids: DbId[] = Array.from(
+        new Set([...cardIds, ...sequentialChapterIds, ...extractSourceTopicIds])
+      )
       if (ids.length === 0) return
       try {
         const next: Record<string, string> = {}

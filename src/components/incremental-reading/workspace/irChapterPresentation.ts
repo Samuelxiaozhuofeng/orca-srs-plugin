@@ -6,9 +6,18 @@ export type IRChapterPresentation = {
   isContextOnly: boolean
   canExpand: boolean
   extractCountLabel: string | null
+  /**
+   * Effective status for badge/CSS. Prefer chapter.sequentialStatus; when only
+   * `isCompletedContext` is set, this is `"completed"`.
+   */
   sequentialStatus: IRSequentialChapterStatus | null
   sequentialStatusLabel: string | null
   isSequentialPlaceholder: boolean
+  /**
+   * True for structural-only completed outline rows (no matching chapter card),
+   * whether marked via sequentialStatus completed or isCompletedContext.
+   */
+  isCompletedContext: boolean
   /** True when the row must not expose IR card actions / selection. */
   isNonActionable: boolean
 }
@@ -33,14 +42,25 @@ export function getSequentialStatusLabel(
  * or expose the filtered-out Topic's scheduling actions.
  *
  * Sequential placeholders (plan outline without IR card) are also non-actionable.
+ * Completed context chapters (card null + sequentialStatus completed, or
+ * isCompletedContext) show 「已完成」 and stay non-actionable while extracts remain expandable.
  */
 export function getIRChapterPresentation(chapter: IRChapterNode): IRChapterPresentation {
-  const sequentialStatus = chapter.sequentialStatus ?? null
+  const rawSequentialStatus = chapter.sequentialStatus ?? null
   const isSequentialPlaceholder = chapter.isSequentialPlaceholder === true && !chapter.card
   const chapterCard =
     !isSequentialPlaceholder && chapter.card && chapter.cardMatches ? chapter.card : null
   const isContextOnly = chapterCard == null
   const extractCount = chapter.extracts.length
+
+  // Tree builder may set sequentialStatus "completed" and/or isCompletedContext.
+  const flaggedCompletedContext = chapter.isCompletedContext === true
+  const isCompletedContext =
+    flaggedCompletedContext || (rawSequentialStatus === "completed" && isContextOnly)
+
+  // Unified display status: sequential wins; bare isCompletedContext → completed.
+  const sequentialStatus: IRSequentialChapterStatus | null =
+    rawSequentialStatus ?? (flaggedCompletedContext ? "completed" : null)
   const sequentialStatusLabel = getSequentialStatusLabel(sequentialStatus)
 
   return {
@@ -57,6 +77,7 @@ export function getIRChapterPresentation(chapter: IRChapterNode): IRChapterPrese
     sequentialStatus,
     sequentialStatusLabel,
     isSequentialPlaceholder,
+    isCompletedContext,
     isNonActionable: chapterCard == null
   }
 }

@@ -16,10 +16,88 @@ import {
   loadIRState,
   updatePriority
 } from "./incrementalReadingStorage"
+import { getBlockCached } from "./incremental-reading/irBlockCache"
 import { DEFAULT_IR_PRIORITY, normalizePriority } from "./incrementalReadingScheduler"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { isCardTag } from "./tagUtils"
 import { buildCardTagData } from "./cardTagDataBuilder"
+
+export type TopicBookProvenance = {
+  sourceBookId: DbId | null
+  sourceBookTitle: string | null
+}
+
+/**
+ * Read durable book provenance from a Topic (or any block) properties.
+ * Unwraps single-element Orca arrays; coerces finite numbers / non-empty strings.
+ */
+export function readTopicBookProvenance(block: Block): TopicBookProvenance {
+  const readProp = (name: string): unknown => {
+    const raw = block.properties?.find((p) => p.name === name)?.value
+    if (Array.isArray(raw)) {
+      return raw.length > 0 ? raw[0] : null
+    }
+    return raw
+  }
+
+  const idRaw = readProp("ir.sourceBookId")
+  let sourceBookId: DbId | null = null
+  if (typeof idRaw === "number" && Number.isFinite(idRaw)) {
+    sourceBookId = idRaw
+  } else if (typeof idRaw === "string") {
+    const next = Number(idRaw)
+    if (Number.isFinite(next)) sourceBookId = next
+  }
+
+  const titleRaw = readProp("ir.sourceBookTitle")
+  const sourceBookTitle =
+    typeof titleRaw === "string" && titleRaw.trim().length > 0
+      ? titleRaw.trim()
+      : null
+
+  return { sourceBookId, sourceBookTitle }
+}
+
+async function resolveSourceTopicBookProvenance(
+  sourceTopicId: DbId,
+  explicit?: {
+    sourceBookId?: DbId | null
+    sourceBookTitle?: string | null
+  }
+): Promise<TopicBookProvenance> {
+  if (
+    explicit?.sourceBookId !== undefined
+    || explicit?.sourceBookTitle !== undefined
+  ) {
+    return {
+      sourceBookId: explicit.sourceBookId ?? null,
+      sourceBookTitle:
+        typeof explicit.sourceBookTitle === "string"
+          && explicit.sourceBookTitle.trim().length > 0
+          ? explicit.sourceBookTitle.trim()
+          : null
+    }
+  }
+
+  const fromState = orca.state.blocks?.[sourceTopicId] as Block | undefined
+  if (fromState) {
+    return readTopicBookProvenance(fromState)
+  }
+
+  try {
+    const fromCache = await getBlockCached(sourceTopicId)
+    if (fromCache) {
+      return readTopicBookProvenance(fromCache)
+    }
+  } catch (error) {
+    console.warn("[IR] Failed to read source topic book provenance", {
+      sourceTopicId,
+      error
+    })
+  }
+
+  return { sourceBookId: null, sourceBookTitle: null }
+}
 
 /**
  * 新 Extract 排期初始化生产顺序（可注入依赖以便测试约束调用序）。
@@ -28,14 +106,21 @@ import { buildCardTagData } from "./cardTagDataBuilder"
  * 必须先 invalidate，再 ensure，避免按 basic 错误 cardType 初始化。
  *
  * 有 sourceTopicId：
- *   invalidate(tag) → setSource → invalidate(source) → ensure → updatePriority
+ *   invalidate(tag) → setSource (topic + optional book meta) → invalidate(source) → ensure → updatePriority
  * 无 source：
  *   invalidate(tag) → ensure → updatePriority
+ *
+ * When the source Topic carries book meta, durable ir.sourceBookId / ir.sourceBookTitle
+ * are written on the extract in the same setProperties batch as ir.sourceTopicId so
+ * completed chapters (which strip chapter IR) can still group extracts under the book.
  */
 export async function initializeExtractScheduleAfterCreate(args: {
   extractBlockId: DbId
   sourceTopicId: DbId | null
   priority: number
+  /** Optional explicit book provenance; when omitted, read from the source Topic block. */
+  sourceBookId?: DbId | null
+  sourceBookTitle?: string | null
   deps?: {
     ensureIRState?: typeof ensureIRState
     setSourceTopicId?: (blockId: DbId, topicId: DbId) => Promise<void>
@@ -49,17 +134,34 @@ export async function initializeExtractScheduleAfterCreate(args: {
   const setSource =
     args.deps?.setSourceTopicId
     ?? (async (blockId: DbId, topicId: DbId) => {
+      const book = await resolveSourceTopicBookProvenance(topicId, {
+        sourceBookId: args.sourceBookId,
+        sourceBookTitle: args.sourceBookTitle
+      })
+      const props: Array<{ name: string; value: unknown; type: number }> = [
+        { name: "ir.sourceTopicId", value: topicId, type: 3 }
+      ]
+      if (book.sourceBookId != null) {
+        props.push({ name: "ir.sourceBookId", value: book.sourceBookId, type: 3 })
+      }
+      if (book.sourceBookTitle != null) {
+        props.push({
+          name: "ir.sourceBookTitle",
+          value: book.sourceBookTitle,
+          type: 2
+        })
+      }
       await orca.commands.invokeEditorCommand(
         "core.editor.setProperties",
         null,
         [blockId],
-        [{ name: "ir.sourceTopicId", value: topicId, type: 3 }]
+        props
       )
     })
 
   // 1) 标签刚写入：先失效 cache，确保 ensure 读到 #card/type=extracts
   invalidate(args.extractBlockId)
-  // 2) 有来源时写 sourceTopicId，写后再失效
+  // 2) 有来源时写 sourceTopicId（+ 可选 book 出处），写后再失效
   if (args.sourceTopicId != null) {
     await setSource(args.extractBlockId, args.sourceTopicId)
     invalidate(args.extractBlockId)
