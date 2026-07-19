@@ -236,6 +236,7 @@ export default function IRActionBar({
         <Button
           tabIndex={0}
           variant="outline"
+          data-ir-more-toggle=""
           onClick={isWorking ? undefined : onMore}
           onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
           style={style}

@@ -50,6 +50,7 @@ import IRSessionHeader from "./IRSessionHeader"
 import IRSessionSummary from "./IRSessionSummary"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
 import { readIRReaderTheme, writeIRReaderTheme } from "./irReaderThemeStorage"
+import { shouldDismissIRMorePanel } from "./irMorePanelDismiss"
 
 const { useEffect, useMemo, useRef, useState } = window.React
 const { Button, ConfirmBox, ModalOverlay } = orca.components
@@ -612,6 +613,20 @@ export default function IRSessionShell({
       }
     }
   })
+
+  /** 点击「更多操作」面板外区域时自动收起（「更多/收起」按钮仍由 onMore 切换） */
+  useEffect(() => {
+    if (!moreOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (shouldDismissIRMorePanel(event.target)) {
+        setMoreOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true)
+    }
+  }, [moreOpen])
 
   const sourceLabel = useMemo(() => {
     if (!currentCard) return null
