@@ -13,23 +13,24 @@
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
     "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": false,
-    "tagGate": false,
+    "formalZipAccepted": true,
+    "tagGate": true,
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
-    "awesomeOrcanotePr": false
+    "githubReleasePublished": true,
+    "awesomeOrcanotePr": true
   },
   "externalOps": {
-    "tag": "pending",
-    "formalZip": "pending",
-    "githubRelease": "pending",
-    "awesomeOrcanotePr": "pending",
+    "tag": "completed: v1.0.0",
+    "formalZip": "completed: orca-srs-1.0.0.zip",
+    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.0",
+    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/94",
     "owner": "Codex",
-    "note": "Maintainer runtime acceptance is recorded; tag, formal zip, GitHub Release, and awesome-orcanote PR remain external steps for Codex."
+    "note": "GitHub Release is published. awesome-orcanote PR #94 is submitted and awaits upstream review/merge."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
-    "WP-01": "partial-external-pending",
+    "WP-01": "completed",
     "WP-02": "maintainer-accepted",
     "WP-03": "maintainer-accepted",
     "WP-04": "maintainer-accepted",
@@ -41,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "partial-external-pending"
+    "WP-13": "release-published-upstream-pr-pending"
   },
   "attachment": {
     "source": "user-provided Codex attachment (not committed; summary only)",
@@ -105,7 +106,7 @@
   ],
   "decision": {
     "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng states personal Orca runtime testing is complete and accepts 1.0.0 for release execution. Itemized historical Console attachment gaps are not fabricated into pass evidence; residual static-audit risks live in acceptedRisks. Tag, formal zip, GitHub Release, and awesome-orcanote PR are still pending external ops (Codex).",
+    "statement": "Maintainer Samuelxiaozhuofeng states personal Orca runtime testing is complete and accepts 1.0.0. The v1.0.0 GitHub Release is published and awesome-orcanote PR #94 is submitted. Itemized historical Console attachment gaps are not fabricated into pass evidence; residual static-audit risks live in acceptedRisks.",
     "verifiedDistSha256": "4a310715891b717240d114690b5676200fad180bd6a874f93b40f775a81dc525",
     "approvedBy": "Samuelxiaozhuofeng",
     "verifiedAt": "2026-07-19T04:02:55.000Z"
