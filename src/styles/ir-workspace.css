@@ -848,13 +848,17 @@
 }
 
 /*
- * 阅读模式（默认）：仅作用于本会话 .ir-reading[data-ir-view-mode="reading"] 内的
- * .ir-reading__body，隐藏 Orca 大纲 chrome、压平左侧缩进、正文排版。
- * 不触碰 documentElement / 全局 class；混合复习条目不带 data-ir-view-mode。
+ * 阅读模式（默认）：作用于本会话 .ir-reading[data-ir-view-mode="reading"] 内的
+ * .ir-reading__body 与近邻上下文 .ir-reading__context，隐藏 Orca 大纲 chrome、
+ * 压平左侧缩进、正文排版。不触碰 documentElement / 全局 class；
+ * 混合复习条目不带 data-ir-view-mode。
  * 保留 .orca-repr-main-content 的 contenteditable。
  * 不覆盖 .ir-reading__inner 的 padding-right（动作栏 safe padding）。
+ * 上下文中当前 extract 由 JS（IRReadingPane / MutationObserver）标记
+ * .ir-reading__context-hide-self 后隐藏；其余子块仍强制可见。
  */
-.ir-reading[data-ir-view-mode="reading"] .ir-reading__body {
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__body,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context {
   font-size: 17px;
   line-height: 1.75;
   width: 100%;
@@ -875,7 +879,20 @@
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body [data-role="bullet"],
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body [data-role="handle"],
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body [data-role="collapse"],
-.ir-reading[data-ir-view-mode="reading"] .ir-reading__body [data-testid="collapse"] {
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__body [data-testid="collapse"],
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-repr-scope-line,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block-bullet,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block-handle,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-repr-handle,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block-folding-handle,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block-drag-handle,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-repr-collapse,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block-collapse-btn,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-repr-main-none-editable,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context [data-role="bullet"],
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context [data-role="handle"],
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context [data-role="collapse"],
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context [data-testid="collapse"] {
   display: none !important;
   width: 0 !important;
   min-width: 0 !important;
@@ -889,7 +906,9 @@
 
 /* 压平子块左侧缩进（大纲层级视觉），并在阅读模式下强制子树可见（不写后端折叠属性） */
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-block-children,
-.ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-repr-children {
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-repr-children,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block-children,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-repr-children {
   padding-left: 0 !important;
   margin-left: 0 !important;
   --orca-indent-width: 0px;
@@ -900,14 +919,38 @@
   overflow: visible !important;
 }
 
-.ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-block {
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-block,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-block {
   margin-block: 0.55em;
 }
 
-.ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content,
+.ir-reading[data-ir-view-mode="reading"] .ir-reading__context .orca-repr-main-content {
   font-size: 1.0625rem;
   line-height: 1.75;
   /* 显式保留可编辑能力，勿设 pointer-events / user-select 限制 */
+}
+
+/*
+ * 近邻上下文：隐藏当前 extract 自身（由 JS 在对应 .orca-block 上加 class）。
+ * 其余 context 子块保持可见（见上方 children force-show）。
+ */
+.orca-block.ir-reading__context-hide-self {
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  border: none !important;
+}
+
+/* 定位高亮：跳转到块时短暂描边/背景（由 JS 挂 class） */
+.ir-reading .orca-block.ir-reading__locate-highlight,
+.ir-reading .ir-reading__locate-highlight {
+  outline: 2px solid var(--orca-color-primary-6, #3b82f6);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 12%, transparent);
+  transition: background 0.3s ease;
 }
 
 /* 编辑模式（data-ir-view-mode="edit"）：无额外正文规则，Orca 原生大纲视觉与缩进原样保留 */
@@ -2224,17 +2267,21 @@
   transition: all 0.25s ease;
 }
 .ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__body,
-.ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+.ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content,
+.ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__context,
+.ir-reading[data-ir-theme="mint"][data-ir-view-mode="reading"] .ir-reading__context .orca-repr-main-content {
   font-family: Georgia, Charter, "Times New Roman", "Songti SC", "Noto Serif SC", serif !important;
   font-size: 19px !important;
   line-height: 1.8 !important;
   color: #1a2f23 !important;
   letter-spacing: 0.015em !important;
 }
-.ir-reading[data-ir-theme="mint"] .ir-reading__body .orca-block {
+.ir-reading[data-ir-theme="mint"] .ir-reading__body .orca-block,
+.ir-reading[data-ir-theme="mint"] .ir-reading__context .orca-block {
   margin-block: 1.25em !important;
 }
-.ir-reading[data-ir-theme="mint"] .ir-reading__body ::selection {
+.ir-reading[data-ir-theme="mint"] .ir-reading__body ::selection,
+.ir-reading[data-ir-theme="mint"] .ir-reading__context ::selection {
   background-color: rgba(52, 211, 153, 0.25) !important;
   color: inherit !important;
 }
@@ -2294,17 +2341,21 @@
   transition: all 0.25s ease;
 }
 .ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__body,
-.ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+.ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content,
+.ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__context,
+.ir-reading[data-ir-theme="sepia"][data-ir-view-mode="reading"] .ir-reading__context .orca-repr-main-content {
   font-family: Charter, Georgia, "Nimbus Roman No9 L", "Songti SC", "Noto Serif SC", serif !important;
   font-size: 19.5px !important;
   line-height: 1.85 !important;
   color: #2c251e !important;
   letter-spacing: 0.02em !important;
 }
-.ir-reading[data-ir-theme="sepia"] .ir-reading__body .orca-block {
+.ir-reading[data-ir-theme="sepia"] .ir-reading__body .orca-block,
+.ir-reading[data-ir-theme="sepia"] .ir-reading__context .orca-block {
   margin-block: 1.25em !important;
 }
-.ir-reading[data-ir-theme="sepia"] .ir-reading__body ::selection {
+.ir-reading[data-ir-theme="sepia"] .ir-reading__body ::selection,
+.ir-reading[data-ir-theme="sepia"] .ir-reading__context ::selection {
   background-color: rgba(230, 126, 34, 0.22) !important;
   color: inherit !important;
 }
@@ -2365,7 +2416,9 @@
   transition: all 0.25s ease;
 }
 .ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__body,
-.ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content {
+.ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__body .orca-repr-main-content,
+.ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__context,
+.ir-reading[data-ir-theme="academic"][data-ir-view-mode="reading"] .ir-reading__context .orca-repr-main-content {
   font-family: "Charter", "Baskerville", "Times New Roman", Times, serif !important;
   font-size: 18.5px !important;
   line-height: 1.95 !important;
@@ -2374,10 +2427,12 @@
   text-justify: inter-word !important;
   letter-spacing: 0.005em !important;
 }
-.ir-reading[data-ir-theme="academic"] .ir-reading__body .orca-block {
+.ir-reading[data-ir-theme="academic"] .ir-reading__body .orca-block,
+.ir-reading[data-ir-theme="academic"] .ir-reading__context .orca-block {
   margin-block: 1.4em !important;
 }
-.ir-reading[data-ir-theme="academic"] .ir-reading__body ::selection {
+.ir-reading[data-ir-theme="academic"] .ir-reading__body ::selection,
+.ir-reading[data-ir-theme="academic"] .ir-reading__context ::selection {
   background-color: rgba(254, 240, 138, 0.85) !important;
   color: #000000 !important;
 }

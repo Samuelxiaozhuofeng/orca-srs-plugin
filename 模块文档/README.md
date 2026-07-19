@@ -84,8 +84,8 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)**
-    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**（上下文节点 + 摘录 `sourceTopicId`/`sourceBookId`）、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话启动只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
-    - 关联：`src/components/incremental-reading/**`、`src/srs/incremental-reading/*`（含 `irDailyStatsStorage.ts`）、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
+    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**（`extract_focus`/`chapter_browse`、hide-self、locate、返回）、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话启动只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
+    - 关联：`src/components/incremental-reading/**`（含 `irReadingContextModel.ts`、`useIRReadingContext.ts`）、`src/srs/incremental-reading/*`（含 `irDailyStatsStorage.ts`）、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)**
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression、整本/章节移出、完成本章后大纲保留「已完成」结构
@@ -154,3 +154,4 @@
 - **2026-07-19**：渐进阅读 `IRWorkspaceShell` 挂接既有 `attachHideableDisplayManager`，隐藏 `.orca-hideable-hidden` 时强制 `display:none` 并在恢复/卸载时还原；见 [渐进阅读.md](渐进阅读.md)
 - **2026-07-19**：渐进阅读修复——阅读模式面板内默认展开（`initiallyCollapsed=false` + DOM expand helper）；切卡先归零再恢复断点（`resolveVerticalScrollOwner` 解析真实 host 滚动祖先）；完成页「今日学习完毕」+ `irDailyStatsStorage` 按 repo/plugin/本地日累计；见 [渐进阅读.md](渐进阅读.md)
 - **2026-07-19**：已完成章节资料库保留——完成本章 strip Topic IR 不删笔记；资料库书下保留「已完成」上下文节点；摘录耐久 `ir.sourceTopicId` + 书章节时 `ir.sourceBookId`；顺序 plan outcomes / 分散合成上下文；「未关联章节的摘录」仅无父章时；见 [渐进阅读.md](渐进阅读.md)、[渐进阅读_BookIR.md](渐进阅读_BookIR.md)
+- **2026-07-19**：摘录近上下文 / 章节浏览 landed——`extract_focus` 默认父近上下文 + hide-self；`chapter_browse` 单正文 + locate 高亮 + 动作栏「返回」；断点 preview 永不存 browseBlockId；见 [渐进阅读.md](渐进阅读.md)

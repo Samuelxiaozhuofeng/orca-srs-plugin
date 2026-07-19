@@ -48,12 +48,14 @@ import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
 import IRSessionSummary from "./IRSessionSummary"
+import IRCompleteChapterDialog from "./IRCompleteChapterDialog"
+import { useIRReadingContext } from "./useIRReadingContext"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
 import { readIRReaderTheme, writeIRReaderTheme } from "./irReaderThemeStorage"
 import { shouldDismissIRMorePanel } from "./irMorePanelDismiss"
 
 const { useEffect, useMemo, useRef, useState } = window.React
-const { Button, ConfirmBox, ModalOverlay } = orca.components
+const { Button, ConfirmBox } = orca.components
 
 export type IRSessionShellProps = {
   entries?: IRSessionEntry[]
@@ -101,7 +103,6 @@ export default function IRSessionShell({
   const [queue, setQueue] = useState<IRSessionEntry[]>(initialEntries)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [progress, setProgress] = useState<IRSessionProgress>(() => createSessionProgress(initialEntries.length))
-  const [previewBlockId, setPreviewBlockId] = useState<DbId | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [postponeOpen, setPostponeOpen] = useState(false)
@@ -165,6 +166,8 @@ export default function IRSessionShell({
     ? nextEntry.card.id
     : undefined
 
+  const readingContext = useIRReadingContext(currentCard)
+
   const timer = useIRSessionTimer({
     budgetMinutes: timeBudgetMinutes,
     running: !showSummary && !loadFailed && queue.length > 0,
@@ -184,7 +187,7 @@ export default function IRSessionShell({
     containerRef: currentCardContainerRef,
     scrollContainerRef,
     previewContainerRef,
-    previewBlockId,
+    previewBlockId: readingContext.breakpointPreviewId,
     initialBreakpoint: currentCard?.readingBreakpoint ?? null,
     initialResumeBlockId: currentCard?.resumeBlockId ?? null,
     enabled: Boolean(currentCard) && !showSummary && !isReviewEntry,
@@ -327,12 +330,6 @@ export default function IRSessionShell({
   useEffect(() => {
     onQueueSnapshot?.({ queue, currentIndex })
   }, [queue, currentIndex, onQueueSnapshot])
-
-  useEffect(() => {
-    if (!currentCard) return
-    const nextPreview = currentCard.readingBreakpoint?.previewBlockId
-    setPreviewBlockId(nextPreview && nextPreview !== currentCard.id ? nextPreview : null)
-  }, [currentCard?.id])
 
   useEffect(() => {
     const onAction = (event: Event) => {
@@ -739,13 +736,12 @@ export default function IRSessionShell({
           cardId={currentCard.id}
           panelId={panelId}
           cardType={currentCard.cardType}
-          previewBlockId={previewBlockId}
+          contextState={readingContext.contextState}
           containerRef={currentCardContainerRef}
           previewContainerRef={previewContainerRef}
-          onBreadcrumbClick={(id) => {
-            const next = id === currentCard.id ? null : (previewBlockId === id ? null : id)
-            setPreviewBlockId(next)
-          }}
+          scrollContainerRef={scrollContainerRef}
+          onBreadcrumbClick={readingContext.onBreadcrumbClick}
+          onToggleNearContext={readingContext.onToggleNearContext}
           sourceLabel={sourceLabel}
           viewMode={viewMode}
         />
@@ -857,82 +853,17 @@ export default function IRSessionShell({
         onItemize={handleItemize}
         onMore={() => setMoreOpen((v: boolean) => !v)}
         moreOpen={moreOpen}
+        showReturn={readingContext.showReturn}
+        onReturn={readingContext.onReturnFromBrowse}
       />
 
-      {completeChapterOpen ? (
-        <ModalOverlay
-          visible={true}
-          canClose={!isWorking}
-          onClose={() => {
-            if (isWorking) return
-            setCompleteChapterOpen(false)
-          }}
-        >
-          <div
-            style={{
-              minWidth: 320,
-              maxWidth: 420,
-              padding: "18px 20px",
-              borderRadius: 12,
-              background: "var(--orca-color-bg-1)",
-              border: "1px solid var(--orca-color-border-1)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12
-            }}
-          >
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--orca-color-text-1)" }}>
-              完成本章
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
-              当前章节将标记为<strong>已完成</strong>，并清除其 IR 身份（正文与笔记保留）。
-              若还有下一章，请选择如何安排：
-            </div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
-              <li><strong>今天安排下一章</strong>：下一章 due 为今天，立即进入今日 IR 队列。</li>
-              <li><strong>明天安排下一章</strong>：下一章写入计划为当前激活章，但 due 从明天起，今日不作为到期卡。</li>
-            </ul>
-            <div style={{ fontSize: 12, color: "var(--orca-color-text-3)", lineHeight: 1.45 }}>
-              取消不会清理当前章节，也不会解锁下一章。若无下一章，完成本章后书籍计划正常结束。
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
-              <Button
-                tabIndex={0}
-                variant="outline"
-                onClick={() => {
-                  if (isWorking) return
-                  setCompleteChapterOpen(false)
-                }}
-                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
-              >
-                取消
-              </Button>
-              <Button
-                tabIndex={0}
-                variant="outline"
-                onClick={() => {
-                  if (isWorking) return
-                  void handleArchive({ nextChapterSchedule: "tomorrow" })
-                }}
-                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
-              >
-                {isWorking ? "处理中…" : "明天安排下一章"}
-              </Button>
-              <Button
-                tabIndex={0}
-                variant="solid"
-                onClick={() => {
-                  if (isWorking) return
-                  void handleArchive({ nextChapterSchedule: "today" })
-                }}
-                style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
-              >
-                {isWorking ? "处理中…" : "今天安排下一章"}
-              </Button>
-            </div>
-          </div>
-        </ModalOverlay>
-      ) : null}
+      <IRCompleteChapterDialog
+        open={completeChapterOpen}
+        isWorking={isWorking}
+        onClose={() => setCompleteChapterOpen(false)}
+        onConfirmToday={() => void handleArchive({ nextChapterSchedule: "today" })}
+        onConfirmTomorrow={() => void handleArchive({ nextChapterSchedule: "tomorrow" })}
+      />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 /**
- * 右侧竖排阅读动作栏：下一篇、摘录|记住、推后、更多。
+ * 右侧竖排阅读动作栏：返回(可选)、下一篇、摘录|记住、推后、更多。
  * position:fixed，跟随所属 `.ir-reading` 面板的可视区域垂直居中，
  * 并按面板宽度三档（wide / medium / narrow）缩放；不覆盖正文。
  */
@@ -21,6 +21,9 @@ export type IRActionBarProps = {
   onItemize?: () => void
   onMore: () => void
   moreOpen?: boolean
+  /** Chapter browse mode: show return-to-excerpt control (parent via shouldShowReturnButton). */
+  showReturn?: boolean
+  onReturn?: () => void
 }
 
 const CSS_TOP = "--ir-action-bar-top"
@@ -64,7 +67,9 @@ export default function IRActionBar({
   onExtract,
   onItemize,
   onMore,
-  moreOpen
+  moreOpen,
+  showReturn = false,
+  onReturn
 }: IRActionBarProps) {
   const footerRef = useRef<HTMLDivElement | null>(null)
   const [tier, setTier] = useState<IRActionBarTier>("wide")
@@ -156,7 +161,7 @@ export default function IRActionBar({
     }
   }, [])
 
-  // Compact labels change footer width after tier flips; remeasure for secondary menus.
+  // Compact labels / optional return control change footer width; remeasure for secondary menus.
   useLayoutEffect(() => {
     const footer = footerRef.current
     if (!footer) return
@@ -166,8 +171,9 @@ export default function IRActionBar({
     if (measured > 0) {
       panel.style.setProperty(CSS_WIDTH, `${measured}px`)
     }
-  }, [tier])
+  }, [tier, showReturn])
 
+  const returnLabel = compact ? "↩" : "返回"
   const nextLabel = compact ? "→" : "下一篇"
   const secondLabel = compact ? "+" : isTopic ? "摘录" : "记住"
   const postponeLabel = compact ? "↷" : "推后"
@@ -182,6 +188,20 @@ export default function IRActionBar({
       data-ir-action-bar-tier={tier}
     >
       <div className="ir-reading__footer-inner">
+        {showReturn ? (
+          <Button
+            tabIndex={0}
+            variant="outline"
+            onClick={isWorking ? undefined : onReturn}
+            onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
+            style={style}
+            aria-disabled={isWorking}
+            aria-label="返回摘录"
+            title="返回摘录"
+          >
+            {returnLabel}
+          </Button>
+        ) : null}
         <Button
           tabIndex={0}
           variant="solid"
