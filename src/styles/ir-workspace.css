@@ -887,12 +887,17 @@
   pointer-events: none !important;
 }
 
-/* 压平子块左侧缩进（大纲层级视觉），保留 DOM 结构 */
+/* 压平子块左侧缩进（大纲层级视觉），并在阅读模式下强制子树可见（不写后端折叠属性） */
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-block-children,
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-repr-children {
   padding-left: 0 !important;
   margin-left: 0 !important;
   --orca-indent-width: 0px;
+  display: block !important;
+  visibility: visible !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
 }
 
 .ir-reading[data-ir-view-mode="reading"] .ir-reading__body .orca-block {

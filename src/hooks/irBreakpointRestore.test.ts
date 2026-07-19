@@ -7,8 +7,12 @@ import type { DbId } from "../orca.d.ts"
 import {
   BreakpointRestoreRunGuard,
   getRestoreTargetKey,
+  planCardEnterScroll,
+  resetScrollContainerTop,
   resolveRestoreTarget,
   scheduleBreakpointRestore,
+  ScrollCaptureSuppression,
+  shouldAllowScrollVisibleCapture,
   shouldRunRestoreForTarget
 } from "./irBreakpointRestore"
 
@@ -25,6 +29,157 @@ describe("irBreakpointRestore", () => {
     const target = resolveRestoreTarget(3790, null, 3852)
     expect(getRestoreTargetKey(target)).toBe("3790:3790:3852")
     expect(shouldRunRestoreForTarget("3790:3790:3852", "3790:3790:3852")).toBe(false)
+  })
+
+  it("plans top-only enter for cards without a breakpoint", () => {
+    const target = resolveRestoreTarget(100, null, null)
+    expect(planCardEnterScroll(target)).toEqual({ kind: "top-only", cardId: 100 })
+  })
+
+  it("plans reset-then-restore when a resume target exists", () => {
+    const target = resolveRestoreTarget(100, null, 200)
+    expect(planCardEnterScroll(target)).toEqual({
+      kind: "reset-then-restore",
+      cardId: 100,
+      targetRootBlockId: 100,
+      targetBlockId: 200
+    })
+  })
+
+  it("resets scroll to top for cards without breakpoint before success", async () => {
+    const scroll = { scrollTop: 420 }
+    const onSuccess = vi.fn()
+    const target = resolveRestoreTarget(100, null, null)
+
+    scheduleBreakpointRestore(target, {
+      getContentContainer: () => document.createElement("div"),
+      getScrollContainer: () => scroll,
+      restoreSelection: vi.fn(async () => undefined),
+      scrollIntoView: vi.fn(),
+      onSuccess
+    })
+
+    expect(scroll.scrollTop).toBe(0)
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
+
+  it("resets scroll first then restores target block for cards with breakpoint", async () => {
+    const scroll = { scrollTop: 800 }
+    const content = document.createElement("div")
+    const block = document.createElement("div")
+    block.id = "block-200"
+    content.appendChild(block)
+    const scrollIntoView = vi.fn()
+    const order: string[] = []
+
+    const target = resolveRestoreTarget(100, null, 200)
+    scheduleBreakpointRestore(target, {
+      getContentContainer: () => {
+        order.push("container")
+        return content
+      },
+      getScrollContainer: () => {
+        order.push(`reset@${scroll.scrollTop}`)
+        return scroll
+      },
+      restoreSelection: vi.fn(async () => undefined),
+      scrollIntoView: (el) => {
+        order.push("restore")
+        scrollIntoView(el)
+        scroll.scrollTop = 55
+      },
+      schedule: (fn, delayMs) => window.setTimeout(fn, delayMs),
+      clearSchedule: (id) => window.clearTimeout(id)
+    })
+
+    expect(scroll.scrollTop).toBe(0)
+    expect(order[0]).toBe("reset@800")
+
+    await vi.advanceTimersByTimeAsync(60)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(order).toContain("restore")
+    expect(order.indexOf("reset@800")).toBeLessThan(order.indexOf("restore"))
+  })
+
+  it("resetScrollContainerTop is a no-op for null containers", () => {
+    expect(() => resetScrollContainerTop(null)).not.toThrow()
+    const el = { scrollTop: 12 }
+    resetScrollContainerTop(el)
+    expect(el.scrollTop).toBe(0)
+  })
+
+  it("ScrollCaptureSuppression begin/end uses generation tokens and force-end", () => {
+    const suppress = new ScrollCaptureSuppression()
+    expect(suppress.isActive()).toBe(false)
+
+    const t1 = suppress.begin()
+    expect(suppress.isActive()).toBe(true)
+
+    const t2 = suppress.begin()
+    expect(t2).not.toBe(t1)
+    // 旧 token 不得结束新一轮
+    suppress.end(t1)
+    expect(suppress.isActive()).toBe(true)
+
+    suppress.end(t2)
+    expect(suppress.isActive()).toBe(false)
+
+    suppress.begin()
+    suppress.end() // 强制
+    expect(suppress.isActive()).toBe(false)
+  })
+
+  it("shouldAllowScrollVisibleCapture blocks while suppressed or card mismatch", () => {
+    expect(shouldAllowScrollVisibleCapture({
+      suppressActive: true,
+      listeningForCardId: 1,
+      activeCardId: 1
+    })).toBe(false)
+    expect(shouldAllowScrollVisibleCapture({
+      suppressActive: false,
+      listeningForCardId: 1,
+      activeCardId: 2
+    })).toBe(false)
+    expect(shouldAllowScrollVisibleCapture({
+      suppressActive: false,
+      listeningForCardId: 1,
+      activeCardId: 1
+    })).toBe(true)
+  })
+
+  it("cancel path releases suppression so capture is not permanently stuck", () => {
+    const suppress = new ScrollCaptureSuppression()
+    const token = suppress.begin()
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      suppress.end(token)
+    }
+
+    const content = document.createElement("div")
+    const target = resolveRestoreTarget(100, null, 200)
+    const handle = scheduleBreakpointRestore(target, {
+      getContentContainer: () => content,
+      getScrollContainer: () => ({ scrollTop: 50 }),
+      restoreSelection: vi.fn(async () => undefined),
+      scrollIntoView: vi.fn(),
+      maxAttempts: 2,
+      schedule: (fn, delayMs) => window.setTimeout(fn, delayMs),
+      clearSchedule: (id) => window.clearTimeout(id),
+      onSuccess: release,
+      onFailure: release
+    })
+
+    expect(suppress.isActive()).toBe(true)
+    handle.cancel()
+    release() // mirror hook cancel → releaseSuppression
+    expect(suppress.isActive()).toBe(false)
+    expect(shouldAllowScrollVisibleCapture({
+      suppressActive: suppress.isActive(),
+      listeningForCardId: 100,
+      activeCardId: 100
+    })).toBe(true)
   })
 
   it("allows restore once after cardId changes", () => {

@@ -1,8 +1,9 @@
 /**
- * 会话结束摘要
+ * 会话结束摘要：今日累计统计 + 完成标题
  */
 
 import type { IRSessionMetricsSnapshot } from "../../srs/incremental-reading/irMetrics"
+import { IR_SESSION_COMPLETE_TITLE } from "./irSessionSummaryCopy"
 
 const { Button } = orca.components
 
@@ -12,6 +13,8 @@ type Props = {
   reviewCompleted?: number
   onClose?: () => void
   closeLabel?: string
+  /** localStorage 日统计失败时的非阻断提示 */
+  storageWarning?: string | null
 }
 
 export default function IRSessionSummary({
@@ -19,7 +22,8 @@ export default function IRSessionSummary({
   autoPostponeCount = 0,
   reviewCompleted = 0,
   onClose,
-  closeLabel = "关闭"
+  closeLabel = "关闭",
+  storageWarning = null
 }: Props) {
   const readingCompleted = Math.max(0, metrics.completedCount - reviewCompleted)
   const durationMins = metrics.durationMs != null ? Math.round(metrics.durationMs / 60000) : 0
@@ -32,16 +36,22 @@ export default function IRSessionSummary({
             <i className="ti ti-circle-check" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="ir-session-summary__title">专注阅读结束</h3>
-            <p className="ir-session-summary__subtitle">本次渐进阅读会话已顺利完成</p>
+            <h3 className="ir-session-summary__title">{IR_SESSION_COMPLETE_TITLE}</h3>
           </div>
         </div>
 
+        {storageWarning ? (
+          <div className="ir-session-summary__hint" role="status">
+            <i className="ti ti-alert-triangle" aria-hidden="true" />
+            {storageWarning}
+          </div>
+        ) : null}
+
         <div className="ir-session-summary__stats">
           <div className="ir-stat-box">
-            <span className="ir-stat-box__label">本次阅读 / 复习</span>
+            <span className="ir-stat-box__label">今日阅读 / 复习</span>
             <div className="ir-stat-box__value">
-              本次阅读 <strong>{readingCompleted}</strong> · 复习 <strong>{reviewCompleted}</strong>
+              今日阅读 <strong>{readingCompleted}</strong> · 复习 <strong>{reviewCompleted}</strong>
             </div>
           </div>
           <div className="ir-stat-box">

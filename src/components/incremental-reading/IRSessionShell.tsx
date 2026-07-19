@@ -8,6 +8,14 @@ import type { IRCard } from "../../srs/incrementalReadingCollector"
 import { createExtract } from "../../srs/extractUtils"
 import { convertExtractToItem } from "../../srs/incremental-reading/irConversionService"
 import { IRSessionMetrics } from "../../srs/incremental-reading/irMetrics"
+import type { IRSessionMetricsSnapshot } from "../../srs/incremental-reading/irMetrics"
+import {
+  commitIRSessionToDailyStats,
+  createIRSessionId,
+  dailyTotalsToMetricsSnapshot,
+  loadIRDailyStats,
+  resolveOrcaRepo
+} from "../../srs/incremental-reading/irDailyStatsStorage"
 import {
   createSessionProgress,
   markSessionItemCompleted,
@@ -111,6 +119,9 @@ export default function IRSessionShell({
   const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
   const [isSequentialActive, setIsSequentialActive] = useState(false)
   const themeStorageWarnedRef = useRef(false)
+  /** 完成页展示的今日累计（或会话回退）指标 */
+  const [summaryMetrics, setSummaryMetrics] = useState<IRSessionMetricsSnapshot | null>(null)
+  const [summaryStorageWarning, setSummaryStorageWarning] = useState<string | null>(null)
 
   useEffect(() => {
     const result = writeIRReaderTheme(theme)
@@ -138,6 +149,11 @@ export default function IRSessionShell({
   const metricsRef = useRef(new IRSessionMetrics())
   const startedRef = useRef(false)
   const cardEnteredAtRef = useRef<number>(Date.now())
+  /** 本 Shell 挂载的稳定会话 ID，完成时一次性 commit 去重 */
+  const sessionIdRef = useRef(createIRSessionId())
+  const sessionMetricsFinalizedRef = useRef(false)
+  const dailyStatsSettledRef = useRef(false)
+  const dailyStatsWarnedRef = useRef(false)
 
   const currentEntry = queue[currentIndex]
   const currentCard = currentEntry?.kind === "reading" ? currentEntry.card : undefined
@@ -223,11 +239,89 @@ export default function IRSessionShell({
     setMoreOpen(false)
     setPostponeOpen(false)
     setViewMode("reading")
+    setSummaryMetrics(null)
+    setSummaryStorageWarning(null)
+    sessionMetricsFinalizedRef.current = false
+    dailyStatsSettledRef.current = false
     if (!startedRef.current && nextEntries.length > 0) {
       startedRef.current = true
       metricsRef.current.record("session.start", nextEntries.length)
     }
   }, [sessionSeed])
+
+  /**
+   * 完成页：结束指标只在 effect 中结算一次；有活动会话才 commit 日统计；
+   * 初始空队列只读取今日累计，不写入全零会话。
+   */
+  useEffect(() => {
+    if (loadFailed) return
+    const isCompleteView = showSummary || queue.length === 0
+    if (!isCompleteView) return
+    if (dailyStatsSettledRef.current) return
+    dailyStatsSettledRef.current = true
+
+    const repo = resolveOrcaRepo()
+    const hasSessionActivity = startedRef.current
+
+    const finalizeSessionMetricsOnce = (): IRSessionMetricsSnapshot => {
+      if (!sessionMetricsFinalizedRef.current) {
+        sessionMetricsFinalizedRef.current = true
+        const snap = metricsRef.current.getSnapshot()
+        if (!snap.sessionStartedAt && progress.planned > 0) {
+          metricsRef.current.record("session.start", progress.planned)
+        }
+        if (metricsRef.current.getSnapshot().sessionEndedAt == null) {
+          metricsRef.current.record("session.end", progress.completed)
+        }
+      }
+      return metricsRef.current.getSnapshot()
+    }
+
+    const notifyStorageFailure = (message: string) => {
+      console.error("[IR Session] 今日统计持久化失败:", message)
+      setSummaryStorageWarning(message)
+      if (!dailyStatsWarnedRef.current) {
+        dailyStatsWarnedRef.current = true
+        try {
+          orca.notify("warn", message, { title: "渐进阅读" })
+        } catch (notifyError) {
+          console.warn("[IR Session] 日统计失败后 notify 也失败:", notifyError)
+        }
+      }
+    }
+
+    if (hasSessionActivity) {
+      const sessionSnap = finalizeSessionMetricsOnce()
+      const commitResult = commitIRSessionToDailyStats({
+        sessionId: sessionIdRef.current,
+        snapshot: sessionSnap,
+        repo,
+        pluginName
+      })
+      if (!commitResult.ok) {
+        notifyStorageFailure(
+          `今日统计保存失败，仍显示当前会话数据：${commitResult.error.message}`
+        )
+        setSummaryMetrics(sessionSnap)
+        return
+      }
+      setSummaryMetrics(dailyTotalsToMetricsSnapshot(commitResult.record.totals))
+      setSummaryStorageWarning(null)
+      return
+    }
+
+    // 初始空队列：只读今日累计
+    const loaded = loadIRDailyStats({ repo, pluginName })
+    if (!loaded.ok) {
+      notifyStorageFailure(
+        `今日统计读取失败，显示为空：${loaded.error.message}`
+      )
+      setSummaryMetrics(dailyTotalsToMetricsSnapshot(loaded.record.totals))
+      return
+    }
+    setSummaryMetrics(dailyTotalsToMetricsSnapshot(loaded.record.totals))
+    setSummaryStorageWarning(null)
+  }, [loadFailed, showSummary, queue.length, progress.planned, progress.completed, pluginName])
 
   useEffect(() => {
     onQueueSnapshot?.({ queue, currentIndex })
@@ -471,7 +565,12 @@ export default function IRSessionShell({
   })
 
   const finishClose = () => {
-    metricsRef.current.record("session.end", progress.completed)
+    if (!sessionMetricsFinalizedRef.current && startedRef.current) {
+      sessionMetricsFinalizedRef.current = true
+      if (metricsRef.current.getSnapshot().sessionEndedAt == null) {
+        metricsRef.current.record("session.end", progress.completed)
+      }
+    }
     if (onClose) onClose()
   }
 
@@ -536,17 +635,15 @@ export default function IRSessionShell({
   }
 
   if (showSummary || queue.length === 0) {
-    const snap = metricsRef.current.getSnapshot()
-    if (!snap.sessionStartedAt && progress.planned > 0) {
-      metricsRef.current.record("session.start", progress.planned)
-    }
-    metricsRef.current.record("session.end", progress.completed)
+    // effect 结算前用会话快照占位；空队列无活动时为零，结算后为今日累计
+    const displayMetrics = summaryMetrics ?? metricsRef.current.getSnapshot()
     return (
       <div className="ir-reading" data-ir-theme={theme}>
         <IRSessionSummary
-          metrics={metricsRef.current.getSnapshot()}
+          metrics={displayMetrics}
           autoPostponeCount={0}
-          reviewCompleted={metricsRef.current.getSnapshot().reviewProcessed}
+          reviewCompleted={displayMetrics.reviewProcessed}
+          storageWarning={summaryStorageWarning}
           onClose={embedded ? onBackToLibrary : () => void handleClose()}
           closeLabel={embedded ? "返回资料库" : "关闭"}
         />
@@ -635,6 +732,7 @@ export default function IRSessionShell({
             setPreviewBlockId(next)
           }}
           sourceLabel={sourceLabel}
+          viewMode={viewMode}
         />
       </div>
 

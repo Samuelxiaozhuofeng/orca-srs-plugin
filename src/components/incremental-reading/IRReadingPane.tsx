@@ -4,8 +4,9 @@
 
 import type { DbId } from "../../orca.d.ts"
 import IncrementalReadingBreadcrumb from "../IncrementalReadingBreadcrumb"
+import { expandReadingModeBlocks } from "./irReadingExpand"
 
-const { useState } = window.React
+const { useEffect, useState } = window.React
 const { Block: OrcaBlock } = orca.components
 
 type Props = {
@@ -19,6 +20,8 @@ type Props = {
   sourceLabel?: string | null
   /** 外层已提供滚动时，正文不再自建 overflow */
   nestedScroll?: boolean
+  /** 阅读模式强制展开；编辑模式不干预折叠 */
+  viewMode?: "reading" | "edit"
 }
 
 export default function IRReadingPane({
@@ -30,10 +33,38 @@ export default function IRReadingPane({
   previewContainerRef,
   onBreadcrumbClick,
   sourceLabel,
-  nestedScroll = false
+  nestedScroll = false,
+  viewMode = "reading"
 }: Props) {
   const shouldShowPreview = Boolean(previewBlockId && previewBlockId !== cardId)
   const [contextOpen, setContextOpen] = useState(true)
+
+  useEffect(() => {
+    if (viewMode !== "reading") return
+    const root = containerRef.current
+    if (!root) return
+
+    const runExpand = () => {
+      expandReadingModeBlocks(root)
+    }
+
+    runExpand()
+
+    let debounceId: number | null = null
+    const observer = new MutationObserver(() => {
+      if (debounceId != null) window.clearTimeout(debounceId)
+      debounceId = window.setTimeout(() => {
+        debounceId = null
+        runExpand()
+      }, 80)
+    })
+    observer.observe(root, { childList: true, subtree: true })
+
+    return () => {
+      observer.disconnect()
+      if (debounceId != null) window.clearTimeout(debounceId)
+    }
+  }, [cardId, containerRef, viewMode])
 
   return (
     <div className="ir-reading__inner">
@@ -61,7 +92,13 @@ export default function IRReadingPane({
 
       {shouldShowPreview && contextOpen ? (
         <div className="ir-reading__context" ref={previewContainerRef}>
-          <OrcaBlock panelId={panelId} blockId={previewBlockId!} blockLevel={0} indentLevel={0} />
+          <OrcaBlock
+            panelId={panelId}
+            blockId={previewBlockId!}
+            blockLevel={0}
+            indentLevel={0}
+            initiallyCollapsed={viewMode === "reading" ? false : undefined}
+          />
         </div>
       ) : (
         <div ref={previewContainerRef} style={{ display: "none" }} />
@@ -72,7 +109,13 @@ export default function IRReadingPane({
         ref={containerRef}
         style={nestedScroll ? { overflow: "auto", flex: 1, minHeight: 0 } : undefined}
       >
-        <OrcaBlock panelId={panelId} blockId={cardId} blockLevel={0} indentLevel={0} />
+        <OrcaBlock
+          panelId={panelId}
+          blockId={cardId}
+          blockLevel={0}
+          indentLevel={0}
+          initiallyCollapsed={viewMode === "reading" ? false : undefined}
+        />
       </div>
     </div>
   )

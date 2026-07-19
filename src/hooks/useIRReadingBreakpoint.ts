@@ -16,22 +16,49 @@ import { findBlockElement } from "./irBreakpointDom"
 import {
   collectVisibleBlockTops,
   computeVisibleResumeBaseline,
+  resolveVerticalScrollOwner,
   subscribeToBreakpointScroll
 } from "./irBreakpointViewport"
 import {
   BreakpointRestoreRunGuard,
   getRestoreTargetKey,
   resolveRestoreTarget,
-  scheduleBreakpointRestore
+  scheduleBreakpointRestore,
+  ScrollCaptureSuppression,
+  shouldAllowScrollVisibleCapture,
+  SCROLL_DEBOUNCE_MS
+} from "./irBreakpointRestore"
+
+export {
+  planCardEnterScroll,
+  resetScrollContainerTop,
+  ScrollCaptureSuppression,
+  shouldAllowScrollVisibleCapture,
+  SCROLL_DEBOUNCE_MS
 } from "./irBreakpointRestore"
 
 export { findBlockElement } from "./irBreakpointDom"
-export { collectVisibleBlockTops } from "./irBreakpointViewport"
+export {
+  collectVisibleBlockTops,
+  resolveVerticalScrollOwner
+} from "./irBreakpointViewport"
+
+/**
+ * Session-scoped vertical scroll owner: prefer the real scrollable ancestor of
+ * `.ir-reading__scroll` (host editor when the internal node has no range).
+ */
+function resolveSessionScrollOwner(
+  scrollContainerRef: { current: HTMLElement | null } | undefined,
+  containerRef: { current: HTMLElement | null }
+): HTMLElement | null {
+  return resolveVerticalScrollOwner(
+    scrollContainerRef?.current ?? containerRef.current
+  )
+}
 
 const { useCallback, useEffect, useMemo, useRef } = window.React
 
 const DEBOUNCE_MS = 180
-const SCROLL_DEBOUNCE_MS = 280
 
 export type UseIRReadingBreakpointOptions = {
   cardId: DbId | null
@@ -105,6 +132,15 @@ export function useIRReadingBreakpoint(
   const lastErrorRef = useRef<Error | null>(null)
   const pendingFlushResolvers = useRef<Array<() => void>>([])
   const restoreRunGuardRef = useRef(new BreakpointRestoreRunGuard())
+  /** 恢复生命周期内抑制 scroll 可见块捕获（reset/restore 程序化滚动） */
+  const scrollSuppressRef = useRef(new ScrollCaptureSuppression())
+
+  const clearScrollDebounce = useCallback(() => {
+    if (scrollDebounceRef.current != null) {
+      window.clearTimeout(scrollDebounceRef.current)
+      scrollDebounceRef.current = null
+    }
+  }, [])
 
   const restoreTarget = useMemo(() => {
     if (!cardId) return null
@@ -170,7 +206,7 @@ export function useIRReadingBreakpoint(
   const captureFromVisibleBlock = useCallback(() => {
     if (!cardId || !enabled) return
     const contentContainer = containerRef.current
-    const viewportContainer = scrollContainerRef?.current ?? containerRef.current
+    const viewportContainer = resolveSessionScrollOwner(scrollContainerRef, containerRef)
     if (!contentContainer || !viewportContainer) return
     const candidates = collectVisibleBlockTops(contentContainer, viewportContainer)
     const baseline = computeVisibleResumeBaseline(viewportContainer)
@@ -219,10 +255,26 @@ export function useIRReadingBreakpoint(
     const guard = restoreRunGuardRef.current
     if (!guard.begin(targetKey)) return null
 
+    // 在程序化 reset/restore 之前开启抑制，并清掉残留 scroll debounce
+    const suppressToken = scrollSuppressRef.current.begin()
+    clearScrollDebounce()
+
+    let released = false
+    const releaseSuppression = () => {
+      if (released) return
+      released = true
+      scrollSuppressRef.current.end(suppressToken)
+      // 释放时清掉恢复期间排队的程序化滚动 debounce，避免紧接着把顶部写回后端
+      clearScrollDebounce()
+    }
+
     const handle = scheduleBreakpointRestore(target, {
       getContentContainer: (targetRootBlockId) => targetRootBlockId === cardId
         ? containerRef.current
         : (previewContainerRef?.current ?? containerRef.current),
+      // Resolve at call time so card-enter reset hits the host owner, not a
+      // non-scrollable expanded `.ir-reading__scroll`.
+      getScrollContainer: () => resolveSessionScrollOwner(scrollContainerRef, containerRef),
       restoreSelection: async (selection) => {
         await orca.utils.setSelectionFromCursorData({
           ...selection,
@@ -231,14 +283,18 @@ export function useIRReadingBreakpoint(
         })
       },
       scrollIntoView: (element) => {
+        // Native scrollIntoView scrolls the resolved host ancestor chain;
+        // reset already zeroed the same owner via getScrollContainer.
         element.scrollIntoView({ behavior: "smooth", block: "center" })
       },
       onSuccess: () => {
         guard.complete(targetKey)
+        releaseSuppression()
         onRestoreSuccessRef.current?.()
       },
       onFailure: (error) => {
         guard.cancel(targetKey)
+        releaseSuppression()
         onRestoreFailureRef.current?.(error)
       }
     })
@@ -247,9 +303,11 @@ export function useIRReadingBreakpoint(
       cancel: () => {
         handle.cancel()
         guard.cancel(targetKey)
+        // cancel 必须释放抑制，避免永久卡住
+        releaseSuppression()
       }
     }
-  }, [cardId, containerRef, panelId, previewContainerRef])
+  }, [cardId, clearScrollDebounce, containerRef, panelId, previewContainerRef, scrollContainerRef])
 
   const restore = useCallback(() => {
     if (!cardId || !enabled || !restoreTarget || !restoreTargetKey) return
@@ -257,20 +315,32 @@ export function useIRReadingBreakpoint(
     return handle ? () => handle.cancel() : undefined
   }, [cardId, enabled, restoreTarget, restoreTargetKey, startRestore])
 
-  useEffect(() => {
-    if (!cardId || !enabled || !restoreTarget || !restoreTargetKey) return
-    const handle = startRestore(restoreTargetKey, restoreTarget)
-    return () => handle?.cancel()
-  }, [cardId, enabled, restoreTargetKey, restoreTarget, startRestore])
+  const activeCardIdRef = useLatestRef(cardId)
 
+  // 滚动捕获与恢复用显式 suppression 门闩，不依赖 effect 声明顺序作为唯一保障。
+  // 监听真实纵向滚动 owner（可能是 host `.orca-block-editor` 祖先），而非仅内部节点。
   useEffect(() => {
-    const scrollContainer = scrollContainerRef?.current ?? containerRef.current
-    if (!scrollContainer || !enabled) return
+    const scrollContainer = resolveSessionScrollOwner(scrollContainerRef, containerRef)
+    if (!scrollContainer || !enabled || !cardId) return
 
+    const listeningForCardId = cardId
     const onScroll = () => {
+      // 恢复抑制中：不排队 debounce（程序化 reset/restore 的 scroll 直接丢弃）
+      if (scrollSuppressRef.current.isActive()) {
+        clearScrollDebounce()
+        return
+      }
+
       if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current)
       scrollDebounceRef.current = window.setTimeout(() => {
         scrollDebounceRef.current = null
+        if (!shouldAllowScrollVisibleCapture({
+          suppressActive: scrollSuppressRef.current.isActive(),
+          listeningForCardId,
+          activeCardId: activeCardIdRef.current
+        })) {
+          return
+        }
         const sel = window.getSelection()
         if (sel && !sel.isCollapsed && sel.toString().trim()) return
         captureFromVisibleBlock()
@@ -280,14 +350,25 @@ export function useIRReadingBreakpoint(
     const unsubscribe = subscribeToBreakpointScroll(scrollContainer, onScroll)
     return () => {
       unsubscribe()
-      if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current)
+      clearScrollDebounce()
     }
-  }, [captureFromVisibleBlock, containerRef, enabled, cardId, scrollContainerRef])
+  }, [activeCardIdRef, captureFromVisibleBlock, clearScrollDebounce, containerRef, enabled, cardId, scrollContainerRef])
+
+  // 进入新卡：先归零再按有效断点恢复（归零在 scheduleBreakpointRestore 内；cleanup cancel 并释放 suppress）
+  useEffect(() => {
+    if (!cardId || !enabled || !restoreTarget || !restoreTargetKey) return
+    const handle = startRestore(restoreTargetKey, restoreTarget)
+    return () => {
+      handle?.cancel()
+    }
+  }, [cardId, enabled, restoreTargetKey, restoreTarget, startRestore])
 
   useEffect(() => () => {
     if (debounceRef.current != null) window.clearTimeout(debounceRef.current)
-    if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current)
-  }, [])
+    clearScrollDebounce()
+    // unmount：强制释放，防止 suppress 泄漏
+    scrollSuppressRef.current.end()
+  }, [clearScrollDebounce])
 
   return {
     scheduleCapture,
