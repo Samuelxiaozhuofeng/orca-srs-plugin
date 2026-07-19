@@ -1,6 +1,7 @@
 import type { DbId } from "../orca.d.ts"
 import type { IRState } from "./incrementalReadingStorage"
 import {
+  deleteIRSchedulingState,
   deleteIRState,
   loadIRState,
   markAsRead,
@@ -9,8 +10,9 @@ import {
   saveIRState,
   updatePriority as updatePriorityInternal
 } from "./incrementalReadingStorage"
-import { deleteCardSrsData } from "./storage"
+import { deleteCardSrsData, invalidateBlockCache } from "./storage"
 import { removeIRIndexId } from "./incremental-reading/irIndex"
+import { extractCardType } from "./deckUtils"
 
 export { markAsRead, markAsReadWithPriority }
 export { postpone }
@@ -26,13 +28,26 @@ const shiftPriority = (current: number, direction: "forward" | "back"): number =
 }
 
 /**
- * 完成渐进阅读：移除 #card 标签并清理 SRS/IR 状态
+ * 完成渐进阅读：
+ * - 普通 Topic/Extract：移除 #card、清理 SRS + 全部 ir.*
+ * - 已挖空 hybrid（type=cloze 仍带 IR）：只结束 IR 调度，保留 #card 与 cloze SRS
  */
 export async function completeIRCard(
   blockId: DbId,
   pluginName = "orca-srs"
 ): Promise<void> {
   try {
+    invalidateBlockCache(blockId)
+    const block = (await orca.invokeBackend("get-block", blockId)) as any
+    const cardType = block ? extractCardType(block) : "basic"
+
+    if (cardType === "cloze") {
+      // keep_extract 后 type 已是 cloze：完成摘录 = 只退 IR 调度，保留 #card / cloze SRS / ir.source*
+      await deleteIRSchedulingState(blockId)
+      removeIRIndexId(pluginName, blockId)
+      return
+    }
+
     await deleteCardSrsData(blockId)
     await deleteIRState(blockId)
     await orca.commands.invokeEditorCommand(

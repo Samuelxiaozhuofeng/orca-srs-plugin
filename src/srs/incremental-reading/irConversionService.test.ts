@@ -53,6 +53,7 @@ function makeDeps(overrides: Partial<ConversionDeps> = {}): ConversionDeps {
     initSrs: vi.fn(async () => undefined),
     deleteIncompleteItem: vi.fn(async () => undefined),
     getCardType: vi.fn(async () => "extracts"),
+    hasLiveIR: vi.fn(async () => true),
     readSelectedText: vi.fn(() => "test"),
     findTopicId: vi.fn(async () => 1 as any),
     readBookMeta: vi.fn(async () => ({ sourceBookId: 99, sourceBookTitle: "Book" })),
@@ -186,12 +187,52 @@ describe("convertExtractToItem", () => {
 
   it("fails validation for non-extract cards without side effects", async () => {
     const deps = makeDeps({
-      getCardType: vi.fn(async () => "topic")
+      getCardType: vi.fn(async () => "topic"),
+      hasLiveIR: vi.fn(async () => false)
     })
     const result = await convertExtractToItem({
       extractId: 10,
       cursor,
       pluginName: "orca-srs",
+      deps
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.step).toBe("validate")
+    expect(deps.createClozeOnBlock).not.toHaveBeenCalled()
+  })
+
+  it("keep_extract allows second dig when type already cloze but IR still live", async () => {
+    const deps = makeDeps({
+      getCardType: vi.fn(async () => "cloze"),
+      hasLiveIR: vi.fn(async () => true),
+      createClozeOnBlock: vi.fn(async () => ({ blockId: 10, clozeNumber: 2 }))
+    })
+    const result = await convertExtractToItem({
+      extractId: 10,
+      cursor,
+      pluginName: "orca-srs",
+      strategy: "keep_extract",
+      deps
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.clozeNumber).toBe(2)
+      expect(result.completedExtract).toBe(false)
+    }
+    expect(deps.deleteIrOnly).not.toHaveBeenCalled()
+    expect(deps.createClozeOnBlock).toHaveBeenCalled()
+  })
+
+  it("rejects cloze without live IR (finished extract / pure item)", async () => {
+    const deps = makeDeps({
+      getCardType: vi.fn(async () => "cloze"),
+      hasLiveIR: vi.fn(async () => false)
+    })
+    const result = await convertExtractToItem({
+      extractId: 10,
+      cursor,
+      pluginName: "orca-srs",
+      strategy: "keep_extract",
       deps
     })
     expect(result.ok).toBe(false)

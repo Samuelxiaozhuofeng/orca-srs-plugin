@@ -23,6 +23,7 @@ import {
   type BlockContentSnapshot
 } from "./irConversionBlockState"
 import { removeIRIndexId } from "./irIndex"
+import { blockHasLiveIRScheduling, isConvertExtractTarget } from "./irHybridExtract"
 import type { IRConversionStrategy, IRItemSourceMeta } from "./irTypes"
 
 export type { BlockContentSnapshot } from "./irConversionBlockState"
@@ -79,6 +80,8 @@ export type ConversionDeps = {
   initSrs: (blockId: DbId, clozeNumber: number) => Promise<void>
   deleteIncompleteItem: (blockId: DbId) => Promise<void>
   getCardType: (blockId: DbId) => Promise<string>
+  /** True when block still has IR scheduling (e.g. ir.due) after keep_extract dig. */
+  hasLiveIR: (blockId: DbId) => Promise<boolean>
   readSelectedText: (cursor: CursorData) => string
   findTopicId: (extractId: DbId) => Promise<DbId | null>
   readBookMeta: (extractId: DbId) => Promise<{ sourceBookId: DbId | null; sourceBookTitle: string | null }>
@@ -114,6 +117,11 @@ async function defaultDeleteIncompleteItem(blockId: DbId): Promise<void> {
 async function defaultGetCardType(blockId: DbId): Promise<string> {
   const block = await orca.invokeBackend("get-block", blockId)
   return extractCardType(block as any)
+}
+
+async function defaultHasLiveIR(blockId: DbId): Promise<boolean> {
+  const block = (await orca.invokeBackend("get-block", blockId)) as any
+  return blockHasLiveIRScheduling(block)
 }
 
 function defaultReadSelectedText(cursor: CursorData): string {
@@ -219,6 +227,7 @@ function resolveDeps(partial?: Partial<ConversionDeps>): ConversionDeps {
     }),
     deleteIncompleteItem: partial?.deleteIncompleteItem ?? defaultDeleteIncompleteItem,
     getCardType: partial?.getCardType ?? defaultGetCardType,
+    hasLiveIR: partial?.hasLiveIR ?? defaultHasLiveIR,
     readSelectedText: partial?.readSelectedText ?? defaultReadSelectedText,
     findTopicId: partial?.findTopicId ?? defaultFindTopicId,
     readBookMeta: partial?.readBookMeta ?? defaultReadBookMeta,
@@ -254,8 +263,16 @@ export async function convertExtractToItem(
 
   try {
     const cardType = await deps.getCardType(extractId)
-    if (cardType !== "extracts") {
-      return fail(extractId, "validate", `目标不是 Extract（type=${cardType}）`)
+    const hasLiveIR = await deps.hasLiveIR(extractId)
+    // First dig: type=extracts. Subsequent keep_extract digs: type=cloze but IR still live.
+    if (!isConvertExtractTarget(cardType, hasLiveIR)) {
+      return fail(
+        extractId,
+        "validate",
+        hasLiveIR
+          ? `目标不是可挖空的摘录（type=${cardType}）`
+          : `目标不是 Extract（type=${cardType}）`
+      )
     }
     if (!cursor?.anchor?.blockId) {
       return fail(extractId, "validate", "缺少有效选区")

@@ -5,7 +5,7 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import { extractCardType } from "./deckUtils"
+import { resolveIRCardType } from "./incremental-reading/irHybridExtract"
 import { isCardTag } from "./tagUtils"
 import { ensureIRState, loadIRState } from "./incrementalReadingStorage"
 import type { IRLastAction, IRReadingBreakpoint, IRStage } from "./incrementalReadingStorage"
@@ -245,9 +245,9 @@ async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
           pluginName,
           full
             .map(b => {
-              const t = extractCardType(b)
-              if (t !== "topic" && t !== "extracts") return null
-              return { id: b.id, cardType: t as "topic" | "extracts" }
+              const t = resolveIRCardType(b)
+              if (!t) return null
+              return { id: b.id, cardType: t }
             })
             .filter((x): x is { id: DbId; cardType: "topic" | "extracts" } => x != null)
         )
@@ -266,9 +266,9 @@ async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
       pluginName,
       full
         .map(b => {
-          const t = extractCardType(b)
-          if (t !== "topic" && t !== "extracts") return null
-          return { id: b.id, cardType: t as "topic" | "extracts" }
+          const t = resolveIRCardType(b)
+          if (!t) return null
+          return { id: b.id, cardType: t }
         })
         .filter((x): x is { id: DbId; cardType: "topic" | "extracts" } => x != null)
     )
@@ -342,10 +342,7 @@ export async function collectIRCardsFromBlocksDetailed(
 ): Promise<CollectIRCardsFromBlocksResult> {
   const readOnly = options?.readOnly === true
   const todayStartTime = getDayStart(new Date()).getTime()
-  const candidates = blocks.filter(block => {
-    const cardType = extractCardType(block)
-    return cardType === "topic" || cardType === "extracts"
-  })
+  const candidates = blocks.filter(block => resolveIRCardType(block) != null)
   const sourceMetaById = new Map<DbId, IRSourceMeta>(
     blocks.map(block => [block.id, readIRSourceMeta(block)])
   )
@@ -374,7 +371,8 @@ export async function collectIRCardsFromBlocksDetailed(
       )
       if (dueDayStartTime > todayStartTime) return null
 
-      const cardType = extractCardType(block) as IRCardType
+      // Hybrid cloze+IR is exposed as extracts for session UI / scheduling.
+      const cardType = (resolveIRCardType(block) ?? "extracts") as IRCardType
       return {
         id: block.id,
         cardType,
@@ -422,8 +420,8 @@ export async function collectAllIRCardsFromBlocks(
   )
 
   for (const block of blocks) {
-    const cardType = extractCardType(block)
-    if (cardType !== "topic" && cardType !== "extracts") continue
+    const cardType = resolveIRCardType(block)
+    if (!cardType) continue
 
     try {
       if (!readOnly) {

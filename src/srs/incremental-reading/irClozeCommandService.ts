@@ -2,6 +2,7 @@ import type { Block, CursorData, DbId } from "../../orca.d.ts"
 import { createCloze } from "../clozeUtils"
 import { extractCardType } from "../deckUtils"
 import { convertExtractToItem } from "./irConversionService"
+import { blockHasLiveIRScheduling } from "./irHybridExtract"
 
 export type ClozeCommandResult = {
   blockId: DbId
@@ -35,7 +36,12 @@ export async function createClozeFromEditorCommand(
   const blockId = cursor.anchor.blockId
   const block = await deps.getBlock(blockId)
 
-  if (!block || extractCardType(block) !== "extracts") {
+  const cardType = block ? extractCardType(block) : "basic"
+  // First dig: extracts. Later digs after keep_extract: type=cloze + live IR.
+  const useExtractConvert =
+    cardType === "extracts"
+    || (cardType === "cloze" && blockHasLiveIRScheduling(block))
+  if (!block || !useExtractConvert) {
     return deps.createRegularCloze(cursor, pluginName)
   }
 

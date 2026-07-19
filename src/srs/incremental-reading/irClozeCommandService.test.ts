@@ -10,7 +10,7 @@ const cursor: CursorData = {
   isForward: true
 }
 
-function blockWithType(type: string): Block {
+function blockWithType(type: string, withIrDue = false): Block {
   return {
     id: 10,
     content: [{ t: "t", v: "test" }],
@@ -19,7 +19,9 @@ function blockWithType(type: string): Block {
     modified: new Date(),
     children: [],
     aliases: [],
-    properties: [],
+    properties: withIrDue
+      ? [{ name: "ir.due", type: 5, value: new Date() } as any]
+      : [],
     refs: [{
       id: 1,
       from: 10,
@@ -74,5 +76,31 @@ describe("IR Cloze editor command routing", () => {
     })
     expect(result).toEqual({ blockId: 10, clozeNumber: 1 })
     expect(convertExtract).not.toHaveBeenCalled()
+  })
+
+  it("routes hybrid cloze+live-IR blocks through convert (second dig)", async () => {
+    const convertExtract = vi.fn(async () => ({
+      ok: true as const,
+      itemId: 10,
+      clozeNumber: 3,
+      extractId: 10,
+      source: {
+        extractId: 10,
+        topicId: 1,
+        sourceBookId: null,
+        sourceBookTitle: null,
+        selectedText: "test"
+      },
+      completedExtract: false
+    }))
+    const createRegularCloze = vi.fn()
+    const result = await createClozeFromEditorCommand(cursor, "orca-srs", {
+      getBlock: vi.fn(async () => blockWithType("cloze", true)),
+      convertExtract,
+      createRegularCloze
+    })
+    expect(result).toEqual({ blockId: 10, clozeNumber: 3 })
+    expect(convertExtract).toHaveBeenCalled()
+    expect(createRegularCloze).not.toHaveBeenCalled()
   })
 })
