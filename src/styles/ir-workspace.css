@@ -9,6 +9,11 @@
  * virtual block (class on nearest .orca-block-editor). Never match bare
  * selectors — embedded IR in Journal / query / ref previews must keep host chrome.
  */
+.orca-block-editor.srs-ir-host-panel-chrome-managed {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
 .orca-block-editor.srs-ir-host-panel-chrome-managed .orca-block-bullet,
 .orca-block-editor.srs-ir-host-panel-chrome-managed [data-role="bullet"],
 .orca-block-editor.srs-ir-host-panel-chrome-managed .orca-repr-scope-line,
@@ -452,7 +457,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 0 88px;
+  padding: 0 0 16px;
 }
 
 .ir-library-group {
@@ -737,22 +742,20 @@
 /* ---------- Bulk action bar ---------- */
 
 .ir-bulk-bar {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 18px;
-  z-index: 50;
+  position: relative;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 20px;
-  border: 1px solid var(--orca-color-primary-5, #3b82f6);
-  border-radius: 12px;
+  border-top: 1px solid var(--orca-color-border-1, #e2e8f0);
   background: var(--orca-color-bg-1, #ffffff);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.05);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .ir-bulk-bar__label {
@@ -1721,9 +1724,9 @@
   }
 
   .ir-bulk-bar {
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
+    left: 0;
+    right: 0;
+    bottom: 0;
     flex-direction: column;
     align-items: stretch;
   }
