@@ -13,20 +13,20 @@
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
     "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": false,
-    "tagGate": false,
+    "formalZipAccepted": true,
+    "tagGate": true,
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
-    "githubReleasePublished": false,
-    "awesomeOrcanotePr": false
+    "githubReleasePublished": true,
+    "awesomeOrcanotePr": true
   },
   "externalOps": {
-    "tag": "pending",
-    "formalZip": "pending",
-    "githubRelease": "pending",
-    "awesomeOrcanotePr": "pending",
+    "tag": "completed: v1.0.1",
+    "formalZip": "completed: orca-srs-1.0.1.zip",
+    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.1",
+    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/96",
     "owner": "Grok",
-    "note": "Maintainer requested v1.0.1 publish. verifiedDistSha256 frozen from local production stage; tag/zip/GitHub Release/awesome-orcanote PR remain external steps."
+    "note": "GitHub Release is published. awesome-orcanote PR #96 is submitted and awaits upstream review/merge. v1.0.0 tag was not moved."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-1.0.1-pending"
+    "WP-13": "release-published-upstream-pr-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
@@ -67,7 +67,7 @@
   ],
   "decision": {
     "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.1 and accepts release readiness. Residual static-audit risks live in acceptedRisks. Tag, formal zip, GitHub Release, and awesome-orcanote PR are external ops.",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.1 and accepts release readiness. The v1.0.1 GitHub Release is published and awesome-orcanote PR #96 is submitted. Residual static-audit risks live in acceptedRisks.",
     "verifiedDistSha256": "37d7c1f060398b038862219afa66636786eee645bd9ce69e21fc74f3dd62f864",
     "approvedBy": "Samuelxiaozhuofeng",
     "verifiedAt": "2026-07-20T01:45:00.000Z"
