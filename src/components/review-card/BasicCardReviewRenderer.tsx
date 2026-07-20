@@ -225,7 +225,28 @@ export default function BasicCardReviewRenderer({
           borderRadius: "8px",
           minHeight: "80px"
         }}>
-          <EmbeddedQuestionBlock blockId={blockId} panelId={panelId} fallback={front} />
+          {/*
+            显示答案时只挂一份卡根 live Block（答案区），题目改静态 front，
+            避免同 panelId+blockId 双实例抢 selection / 破坏编辑会话。
+            摘录路径不走此处；无答案子块时仍用题目 live Block。
+          */}
+          {showAnswer && totalChildCount > 0 ? (
+            <div
+              className="srs-question-static"
+              contentEditable={false}
+              style={{
+                padding: "12px",
+                fontSize: "16px",
+                color: "var(--orca-color-text-1)",
+                lineHeight: "1.6",
+                whiteSpace: "pre-wrap"
+              }}
+            >
+              {front}
+            </div>
+          ) : (
+            <EmbeddedQuestionBlock blockId={blockId} panelId={panelId} fallback={front} />
+          )}
         </div>
       )}
 

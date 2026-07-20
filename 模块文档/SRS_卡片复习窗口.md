@@ -1,7 +1,7 @@
 # SRS 卡片复习窗口模块
 
 > 文档同步日期：2026-07-20  
-> 变更说明：复习嵌入块默认展开（`initiallyCollapsed={false}`），原笔记折叠时题目仍可见；对齐当前会话 UI 流程、块加载三态、评分门控与进度。
+> 变更说明：Basic 答案区改为 CSS 精确隐藏卡根正文（移除长期 MutationObserver）；显示答案后题目改静态 `front`，同 panel 仅一份卡根 live Block。自动化契约已覆盖；**Orca 实例 Tab/Enter 编辑会话仍待用户验证**。
 
 ## 概述
 
@@ -314,11 +314,27 @@ stateDiagram-v2
 | `inferredCardType === "choice"` | `ChoiceCardReviewRenderer` |
 | 其它 Basic / 摘录 | Demo 内联 UI |
 
-- Basic 题目区：`EmbeddedQuestionBlock` 渲染宿主 `Block`，MutationObserver **移除**子块容器（避免答案泄漏）；答案区：`EmbeddedAnswerBlock` 隐藏父块正文、强制展示子块。
+- Basic 题目区（答案未显示）：`EmbeddedQuestionBlock` 渲染宿主 `Block`，MutationObserver **移除**子块容器（避免答案泄漏）。
+- Basic 题目区（答案已显示且有子块）：**静态** `front` 文本（`.srs-question-static`），**卸载**题目 live `Block`，避免与答案区同 `panelId`+卡根 `blockId` 双实例抢 selection。
+- Basic 答案区：`EmbeddedAnswerBlock` 挂一份卡根 `Block`（`initiallyCollapsed={false}`）。父正文/根句柄/根折叠钮由 **CSS 直接子选择器** 隐藏：
+  - `.srs-answer-block > .orca-block > .orca-repr > .orca-repr-main { display: none }`
+  - 根 handle / bullet / repr-handle / collapse 同理仅直接子级
+  - **禁止**用后代选择器隐藏全部 `.orca-repr-main`（会误伤答案子块）
+  - **不**长期 `MutationObserver`、**不** `collapse.click()`、**不**定时重写宿主 `style`（避免覆盖 Tab/Enter 引发的宿主 DOM 更新、破坏编辑会话）
 - **默认展开（局部语义）**：复习内所有嵌入 `Block` 传 `initiallyCollapsed={false}`（题目 / 答案 / 摘录 / Cloze / 选择题 SafeBlockPreview / 选项）。仅影响复习面板渲染实例，**不写**块属性、不改原笔记折叠态。否则原笔记折叠时 `BlockShell` 隐藏内容 → 「看不到题目」。CSS `.srs-question-block .orca-repr-main { display: block !important }` 作兜底。
-- 复习中可直接编辑块内容（依赖编辑器能力，非 `contentEditable: false` 锁死）。
+- **Tab / Enter 策略（当前）**：**不**全局禁止 Tab；**不** `preventDefault` + `indentSelection` + 过期 `CursorData` 回写（半成品已证明可输入但 Enter 无法建块）。优先让宿主原生 handler 完整执行；若回归仍坏，再独立可测逻辑接管，且不得用 indent 前快照覆盖选区。
+- 摘录路径不变：不走题目静态/答案嵌入策略。
+- 复习中可直接编辑答案子块（依赖编辑器能力，非 `contentEditable: false` 锁死）。
 - 评分按钮：Again / Hard / Good / Easy；间隔/到期预览走 F2-08。
 - 界面默认**不展示**完整 SRS 技术字段（稳定度、完整时间戳等）；评分后日志可用简化日期 `M-D`。
+
+### Basic 答案编辑：自动化 vs Orca 实例验证
+
+| 层级 | 内容 | 状态 |
+| ---- | ---- | ---- |
+| 自动化 | `reviewBlockExpand.test.ts`：答案区无 MutationObserver/click/style；CSS 只藏根 main；showAnswer 时题目静态、仅答案 live 根 | 代码契约可跑 |
+| 只读诊断 | `src/test/diagnose-review-tab-focus.js` 粘贴 Console：Tab/Shift+Tab/Enter 前后 CursorData / selection / state / `get-block` | 用户手动 |
+| Orca 实例 | 显示答案 → 编辑子块 → Tab 缩进后可输入 → Enter 建块；Shift+Tab 后同理 | **待用户验证**；本文不宣称运行时已修复 |
 
 ### 宿主 chrome 最大化
 
