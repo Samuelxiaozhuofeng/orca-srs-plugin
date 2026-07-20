@@ -31,6 +31,38 @@ export const IR_BLOCK_EXPLAIN_TRIGGER_CLASS = "ir-block-explain-trigger"
 export const IR_BLOCK_EXPLAIN_HOST_CLASS = "ir-block-explain-host"
 export const IR_BLOCK_EXPLAIN_ACTIVE_CLASS = "ir-block-explain-active"
 
+/** 会话正文内快捷键：讲清楚当前块 / 选区（不走 Orca 全局 assign） */
+export const IR_BLOCK_EXPLAIN_SHORTCUT_HINT = "Alt+E"
+
+function resolveTargetBlockEl(
+  body: HTMLElement,
+  eventTarget: EventTarget | null
+): HTMLElement | null {
+  const fromEvent =
+    eventTarget instanceof Element
+      ? eventTarget.closest<HTMLElement>(".orca-block[data-id]")
+      : null
+  if (fromEvent && body.contains(fromEvent)) return fromEvent
+
+  const active = document.activeElement
+  const fromFocus =
+    active instanceof Element
+      ? active.closest<HTMLElement>(".orca-block[data-id]")
+      : null
+  if (fromFocus && body.contains(fromFocus)) return fromFocus
+
+  const sel = window.getSelection?.()
+  const anchor = sel?.anchorNode
+  const fromSel =
+    anchor instanceof Element
+      ? anchor.closest<HTMLElement>(".orca-block[data-id]")
+      : anchor?.parentElement?.closest<HTMLElement>(".orca-block[data-id]") ??
+        null
+  if (fromSel && body.contains(fromSel)) return fromSel
+
+  return null
+}
+
 type Status = "idle" | "loading" | "ready" | "error"
 
 const idleSide = (): SideSectionState => ({
@@ -454,8 +486,11 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
         const btn = document.createElement("button")
         btn.type = "button"
         btn.className = IR_BLOCK_EXPLAIN_TRIGGER_CLASS
-        btn.setAttribute("aria-label", "讲清楚这块")
-        btn.title = "讲清楚这块"
+        btn.setAttribute(
+          "aria-label",
+          `讲清楚这块（${IR_BLOCK_EXPLAIN_SHORTCUT_HINT}）`
+        )
+        btn.title = `讲清楚这块（移到块右侧边缘显示 · ${IR_BLOCK_EXPLAIN_SHORTCUT_HINT}）`
         btn.textContent = "?"
         btn.addEventListener("click", (e) => {
           e.preventDefault()
@@ -493,6 +528,42 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
         .forEach((n) => n.remove())
     }
   }, [enabled, bodyRef, cardId, openForBlock])
+
+  // Alt+E：当前焦点/选区所在块打开解释（仅会话正文树内，不全局抢键）
+  useEffect(() => {
+    if (!enabled) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.metaKey || event.ctrlKey) return
+      if (event.key !== "e" && event.key !== "E") return
+      if (event.isComposing) return
+
+      const body = bodyRef.current
+      if (!body) return
+
+      const target = event.target
+      if (!(target instanceof Node) || !body.contains(target)) return
+
+      let blockEl = resolveTargetBlockEl(body, target)
+      // 焦点在解释面板内时，回落到当前已打开的块
+      if (!blockEl && openRef.current) {
+        blockEl = body.querySelector<HTMLElement>(
+          `.orca-block[data-id="${openRef.current.blockId}"]`
+        )
+      }
+      if (!blockEl) {
+        orca.notify("warn", "请先将光标放在要解释的块内", { title: "块解释" })
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      openForBlock(blockEl)
+    }
+
+    document.addEventListener("keydown", onKeyDown, true)
+    return () => document.removeEventListener("keydown", onKeyDown, true)
+  }, [enabled, bodyRef, openForBlock])
 
   // Mount / update panel host when open state changes
   useEffect(() => {

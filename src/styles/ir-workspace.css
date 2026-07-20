@@ -2504,52 +2504,63 @@
 
 
 /* ---------- Block explain (inline under block) ---------- */
+/*
+ * 触发策略：右侧 gutter 隐形热区；只有指针进入热区（或键盘 focus-visible）
+ * 才淡入「?」。整块 hover / focus-within / 面板已开 均不显示图标。
+ * 键盘主路径：Alt+E（见 useIRBlockExplain）。热区不叠第一行正文。
+ */
 
 .ir-reading__body .orca-block[data-id] {
   position: relative;
+  /* 右侧 gutter：正文不伸入热区 */
+  padding-right: 1.5rem;
+  box-sizing: border-box;
 }
 
 .ir-block-explain-trigger {
   position: absolute;
-  top: 2px;
-  right: 4px;
+  top: 0;
+  right: 0;
   z-index: 5;
-  width: 22px;
-  height: 22px;
+  /*
+   * 热区：宽=整条 gutter，高≈首行（不用 bottom:0，避免盖住子块右缘）。
+   * 默认 opacity:0 但仍 pointer-events:auto，才能「摸到才显形」。
+   */
+  width: 1.5rem;
+  height: 1.75em;
+  margin: 0;
   padding: 0;
-  border-radius: 999px;
-  border: 1px solid var(--orca-color-border-1, #cbd5e1);
-  background: var(--orca-color-bg-1, #fff);
-  color: var(--orca-color-text-2, #64748b);
-  font-size: 12px;
-  font-weight: 700;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--orca-color-text-3, #94a3b8);
+  font-size: 11px;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
-  box-shadow: 0 1px 2px color-mix(in srgb, CanvasText 8%, transparent);
-}
-
-.ir-reading__body .orca-block[data-id]:hover > .ir-block-explain-trigger,
-.ir-reading__body .orca-block[data-id]:focus-within > .ir-block-explain-trigger,
-.ir-reading__body .orca-block.ir-block-explain-active > .ir-block-explain-trigger,
-.ir-block-explain-trigger:focus-visible {
-  opacity: 1;
   pointer-events: auto;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+  box-shadow: none;
 }
 
+/* 仅指针进入热区 / 键盘聚焦到按钮 时显形 */
 .ir-block-explain-trigger:hover,
 .ir-block-explain-trigger:focus-visible {
-  background: color-mix(in srgb, var(--ir-explain-primary, #3b82f6) 12%, var(--orca-color-bg-1, #ffffff));
+  opacity: 1;
+  background: color-mix(
+    in srgb,
+    var(--ir-explain-primary, #3b82f6) 8%,
+    transparent
+  );
   color: var(--ir-explain-primary, #3b82f6);
-  border-color: color-mix(in srgb, var(--ir-explain-primary, #3b82f6) 40%, var(--orca-color-border-1, #cbd5e1));
-}
-
-/* Always show trigger lightly in edit mode so it is discoverable */
-.ir-reading[data-ir-view-mode="edit"] .ir-block-explain-trigger {
-  opacity: 0.55;
-  pointer-events: auto;
+  border-radius: 4px;
 }
 
 .ir-block-explain-host {
