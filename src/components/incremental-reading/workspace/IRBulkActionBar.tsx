@@ -71,6 +71,8 @@ export default function IRBulkActionBar({
         {selectedCount > 0 ? (
           <ConfirmBox
             text={`确认将已选的 ${selectedCount} 张卡片移出渐进阅读吗？这会保留原始块内容，但会移除 #card 及 srs.* / ir.*。`}
+            defaultPlacement="top"
+            allowBeyondContainer={true}
             onConfirm={async (_e: unknown, close: () => void) => {
               await onBatchRemove()
               close()
