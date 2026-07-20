@@ -90,7 +90,7 @@ npm run release:ready    # 还要求 dist 证据哈希、干净工作树和 v<ve
 npm run release:zip      # 调用严格 ready 门禁；No-Go 时拒绝生成正式 zip
 ```
 
-> **版本确认 ≠ 发布 Go。** 当前元数据版本为 `1.0.0`，但 `release-evidence/release-readiness.json` 在 Orca 真机与证据门禁完成前为 No-Go；正式 `orca-srs-1.0.0.zip` 还必须绑定已验收 `dist/index.js` 的 SHA-256、干净提交和指向该提交的 `v1.0.0` tag。推送 tag 后由 tag-only workflow 复验并发布。
+> **版本确认 ≠ 发布 Go。** 当前元数据版本为 `1.0.1`。正式 `orca-srs-1.0.1.zip` 必须绑定已验收 `dist/index.js` 的 SHA-256、干净提交和指向该提交的 `v1.0.1` tag。推送 tag 后由 tag-only workflow 复验并发布。
 
 `npm run build` **仅**在仓库内生成 `dist/`，不会复制或删除工作区外路径。
 
