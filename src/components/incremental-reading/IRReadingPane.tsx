@@ -16,6 +16,7 @@ import {
 } from "./irReadingContextLocate"
 import { expandReadingModeBlocks } from "./irReadingExpand"
 import { applyContextHideSelf } from "./irReadingContextSuppress"
+import IRBlockExplainController from "./IRBlockExplainController"
 
 const { useEffect } = window.React
 const { Block: OrcaBlock } = orca.components
@@ -36,6 +37,9 @@ export type IRReadingPaneProps = {
   nestedScroll?: boolean
   /** 阅读模式强制展开；编辑模式不干预折叠 */
   viewMode?: "reading" | "edit"
+  /** AI 块解释（复用插件 AI 设置）；默认启用 */
+  pluginName?: string
+  enableBlockExplain?: boolean
 }
 
 function observeExpand(root: HTMLElement): () => void {
@@ -72,7 +76,9 @@ export default function IRReadingPane({
   onToggleNearContext,
   sourceLabel,
   nestedScroll = false,
-  viewMode = "reading"
+  viewMode = "reading",
+  pluginName = "orca-srs",
+  enableBlockExplain = true
 }: IRReadingPaneProps) {
   const nearRenderId = resolveNearContextRenderId(contextState, cardId)
   const bodyBlockId = resolveBodyBlockId(contextState, cardId)
@@ -194,6 +200,12 @@ export default function IRReadingPane({
           blockLevel={0}
           indentLevel={0}
           initiallyCollapsed={viewMode === "reading" ? false : undefined}
+        />
+        <IRBlockExplainController
+          enabled={enableBlockExplain}
+          pluginName={pluginName}
+          cardId={cardId}
+          bodyRef={containerRef}
         />
       </div>
     </div>

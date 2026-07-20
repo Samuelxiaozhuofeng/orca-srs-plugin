@@ -648,6 +648,8 @@ export default function IRSessionShell({
           onToggleNearContext={readingContext.onToggleNearContext}
           sourceLabel={sourceLabel}
           viewMode={viewMode}
+          pluginName={pluginName}
+          enableBlockExplain
         />
       </div>
 
