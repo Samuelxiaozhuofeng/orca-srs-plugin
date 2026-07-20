@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-07-20
+
+### 新增
+- 渐进阅读块解释（Block Explain）：会话内对当前块生成解释、侧栏内容与追问，并写入规范化子块
+- 块解释 UI 与主题变量：`IRBlockExplainInline` / controller，配套 `ir-workspace` 样式
+
+### 变更
+- 基础卡答案编辑改为单一 live block，避免双块编辑错位
+- 复习内嵌块默认 `initiallyCollapsed: false`，折叠笔记中仍可见正文
+- AI 制卡 grounding 校验增强 Markdown 链接识别，并更新 service prompts
+
+### 已知限制
+- EPUB ZIP 中央目录声明体积尚未独立预检，仍依赖实际解压预算限制。
+- EPUB、网页导入和 AI 保存的写入阶段尚未统一为可中断事务。
+
 ## [1.0.1] - 2026-07-20
 
 ### 新增

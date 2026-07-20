@@ -1,6 +1,6 @@
 {
   "name": "orca-srs",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "虎鲸标记 — Orca Notes 内置间隔重复记忆（SRS）闪卡插件",
   "license": "MIT",
