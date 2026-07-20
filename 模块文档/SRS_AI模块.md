@@ -1,7 +1,7 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-07-19
-> 变更说明：HTTP 成功/错误体限字节读取（`safeResponse`）、错误脱敏；Headbar 在 `uiComponents` 外层包 `SrsErrorBoundary`；生成请求在 Mount 卸载时取消并作废旧 token。
+> 文档同步日期：2026-07-20
+> 变更说明：接地校验兼容 Markdown 链接纯文本摘录（`normalizeForGrounding` / `stripMarkdownLinks`）；提示词允许 link label 与完整 MD 二选一。HTTP 成功/错误体限字节读取（`safeResponse`）、错误脱敏；生成请求可取消。
 > **未宣称**：真机超时/取消/写卡失败矩阵。
 
 ## 概述
@@ -92,6 +92,7 @@ makeAICard / interactiveAICard（别名）
 - 内部 `id`：**始终**本地分配 `draft_1…`，不信任模型 id
 - Basic：`answer` 须出现在 `sourceQuote` 中（规范化空白）；`sourceQuote` 接地且长度 ≥ `min(8, 源规范化长度)`
 - Cloze：`text` 须为源的连续摘录；`clozeText ⊆ text`；`sourceQuote` 同上
+- **接地匹配**：先做空白规范化包含；失败再对源与摘录做 `normalizeForGrounding`（`[label](url)` → label，剥离 `[1]` 类数字脚注）后比较。解决维基/Markdown 粘贴源 vs 模型返回纯文本导致整批 `sourceQuote 未出现在源文本中`
 - 去重、`maxCards`：超限计入 `truncatedCount`，**不**写入 `rejected`
 - 用户编辑后保存：结构校验 + 接地/信息量足够的 `sourceQuote`（不再强制 answer⊆quote / text⊆source）
 

@@ -5,7 +5,9 @@ import {
   isContiguousExcerpt,
   isSourceQuoteGrounded,
   minSourceQuoteLength,
+  normalizeForGrounding,
   parseAndValidateDrafts,
+  stripMarkdownLinks,
   validateEditableDraft
 } from "./aiDraftParseValidate"
 
@@ -228,6 +230,86 @@ describe("parseAndValidateDrafts grounding", () => {
     })
 
     const result = parseAndValidateDrafts(raw, SOURCE_ZH, "basic", 3)
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.rejected?.[0]?.reason).toMatch(/sourceQuote/)
+  })
+
+  it("accepts plain-text sourceQuote when source uses Markdown links (wiki paste)", () => {
+    const SOURCE_MD =
+      "Love encompasses a range of strong and positive emotional and [mental states](https://en.wikipedia.org/wiki/Mental_states), from the most sublime [virtue](https://en.wikipedia.org/wiki/Virtue) or good habit, the deepest [interpersonal](https://en.wikipedia.org/wiki/Interpersonal_relationship) [affection](https://en.wikipedia.org/wiki/Affection), to the simplest pleasure.[1] An example of this range of meanings is that the love of a mother differs from the love of a [spouse](https://en.wikipedia.org/wiki/Spouse), which differs from the love for [food](https://en.wikipedia.org/wiki/Food). Most commonly, love refers to a feeling of strong attraction and emotional [attachment](https://en.wikipedia.org/wiki/Attachment_(psychology)).[2]"
+
+    // Model typically returns visible labels without [label](url) and drops [1]/[2]
+    const plainQuote =
+      "Most commonly, love refers to a feeling of strong attraction and emotional attachment."
+    const plainAnswer = "strong attraction and emotional attachment"
+
+    expect(isSourceQuoteGrounded(SOURCE_MD, plainQuote)).toBe(true)
+    expect(isContiguousExcerpt(plainQuote, plainAnswer)).toBe(true)
+
+    const raw = JSON.stringify({
+      cards: [
+        {
+          id: "b1",
+          type: "basic",
+          question: "What does love most commonly refer to?",
+          answer: plainAnswer,
+          sourceQuote: plainQuote
+        }
+      ]
+    })
+
+    const result = parseAndValidateDrafts(raw, SOURCE_MD, "basic", 3)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.cards).toHaveLength(1)
+    expect(result.cards[0]).toMatchObject({
+      type: "basic",
+      answer: plainAnswer,
+      sourceQuote: plainQuote
+    })
+  })
+
+  it("accepts cloze plain excerpt against Markdown-linked source", () => {
+    const SOURCE_MD =
+      "from the most sublime [virtue](https://en.wikipedia.org/wiki/Virtue) or good habit"
+    const raw = JSON.stringify({
+      cards: [
+        {
+          id: "c1",
+          type: "cloze",
+          text: "from the most sublime virtue or good habit",
+          clozeText: "virtue",
+          sourceQuote: "from the most sublime virtue or good habit"
+        }
+      ]
+    })
+    const result = parseAndValidateDrafts(raw, SOURCE_MD, "cloze", 3)
+    expect(result.success).toBe(true)
+  })
+
+  it("stripMarkdownLinks handles Wikipedia parentheses in URL", () => {
+    const s =
+      "emotional [attachment](https://en.wikipedia.org/wiki/Attachment_(psychology)).[2]"
+    expect(stripMarkdownLinks(s)).toBe("emotional attachment.[2]")
+    expect(normalizeForGrounding(s)).toBe("emotional attachment.")
+  })
+
+  it("still rejects invented plain text that is not in the source", () => {
+    const SOURCE_MD =
+      "Love encompasses a range of strong and positive emotional and [mental states](https://en.wikipedia.org/wiki/Mental_states)."
+    const raw = JSON.stringify({
+      cards: [
+        {
+          id: "b1",
+          type: "basic",
+          question: "Q",
+          answer: "completely fabricated answer text",
+          sourceQuote: "completely fabricated answer text that is long enough"
+        }
+      ]
+    })
+    const result = parseAndValidateDrafts(raw, SOURCE_MD, "basic", 3)
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.rejected?.[0]?.reason).toMatch(/sourceQuote/)

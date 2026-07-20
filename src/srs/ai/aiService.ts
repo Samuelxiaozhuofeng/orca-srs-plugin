@@ -28,6 +28,7 @@ function buildSystemPrompt(cardType: "basic" | "cloze"): string {
     "Unique, clear answer: avoid questions that are too broad, admit multiple reasonable answers, or leak the answer in the wording.",
     "High-value filter: prioritize core concepts, definitions, causal links, mechanisms, conditions, and important distinctions clearly supported by the source. Do not invent filler or edge-case cards to hit a count.",
     "Every card needs a short sourceQuote: an informative contiguous excerpt from the source (not a single character).",
+    "If the source contains Markdown links like [label](url), copy either the full Markdown or the visible label text consistently; do not invent wording not present in the source.",
     "Before returning, silently self-check and drop cards that are vague, trivial, duplicate, ungrounded, or not independently answerable.",
     "If the source cannot support good cards, return fewer cards or an empty cards array."
   ]
@@ -42,7 +43,7 @@ function buildSystemPrompt(cardType: "basic" | "cloze"): string {
       "Basic cards:",
       "- The question must name the topic and scope clearly and trigger active recall of one fact (not yes/no trivia).",
       "- The answer must be a concise contiguous excerpt copied from sourceQuote (whitespace may be normalized).",
-      "- sourceQuote must be a contiguous excerpt of the source."
+      "- sourceQuote must be a contiguous excerpt of the source (Markdown link labels count as the visible text)."
     ].join("\n")
   }
 
@@ -56,9 +57,9 @@ function buildSystemPrompt(cardType: "basic" | "cloze"): string {
     "- Cloze only core, non-trivial concepts, terms, conditions, relations, numbers, or phrases — never articles, connectives, or ordinary verbs alone.",
     "- Provide enough context to locate the tested item without directly leaking the answer.",
     "- One primary cloze target per card.",
-    "- The text field must be a contiguous excerpt copied from the source (do not invent sentences).",
+    "- The text field must be a contiguous excerpt copied from the source (do not invent sentences; Markdown link labels may be used as plain text).",
     "- clozeText must occur exactly as a substring of text.",
-    "- sourceQuote must be a contiguous excerpt of the source."
+    "- sourceQuote must be a contiguous excerpt of the source (Markdown link labels count as the visible text)."
   ].join("\n")
 }
 

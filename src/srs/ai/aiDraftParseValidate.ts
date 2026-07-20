@@ -32,6 +32,34 @@ export function normalizeForContainment(text: string): string {
 }
 
 /**
+ * Strip Markdown link/image syntax for grounding only.
+ * `[label](url)` / `![alt](url)` → visible label/alt.
+ * Supports one level of parentheses inside the URL (Wikipedia-style).
+ * Does not mutate stored draft fields.
+ */
+export function stripMarkdownLinks(text: string): string {
+  // Image first so `![...](...)` is not partially handled as a link.
+  let s = text.replace(
+    /!\[([^\]]*)\]\(((?:[^()]|\([^)]*\))*)\)/g,
+    "$1"
+  )
+  s = s.replace(/\[([^\]]+)\]\(((?:[^()]|\([^)]*\))*)\)/g, "$1")
+  return s
+}
+
+/**
+ * Grounding-only normalization: strip Markdown links, drop bare numeric
+ * footnote markers like `[1]` common in wiki paste, then collapse whitespace.
+ * Used when models return plain readable text while the block still has MD links.
+ */
+export function normalizeForGrounding(text: string): string {
+  let s = stripMarkdownLinks(text)
+  // Wikipedia-style citation markers; strip on both sides so quote/source align.
+  s = s.replace(/\[(\d+)\]/g, "")
+  return normalizeForContainment(s)
+}
+
+/**
  * Minimum informative sourceQuote length for a given source.
  * Documented rule: min(8, normalized source length).
  */
@@ -42,23 +70,33 @@ export function minSourceQuoteLength(sourceText: string): number {
 }
 
 /**
- * sourceQuote 是否 grounded 于 source（规范化空白后包含）
+ * Contiguous-excerpt check: exact whitespace-normalized first, then
+ * Markdown-stripped grounding form (models often drop link markup).
  */
-export function isSourceQuoteGrounded(sourceText: string, sourceQuote: string): boolean {
-  const source = normalizeForContainment(sourceText)
-  const quote = normalizeForContainment(sourceQuote)
-  if (!source || !quote) return false
-  return source.includes(quote)
+function isGroundedExcerpt(sourceText: string, excerpt: string): boolean {
+  const sourceWs = normalizeForContainment(sourceText)
+  const partWs = normalizeForContainment(excerpt)
+  if (sourceWs && partWs && sourceWs.includes(partWs)) return true
+
+  const sourceG = normalizeForGrounding(sourceText)
+  const partG = normalizeForGrounding(excerpt)
+  if (!sourceG || !partG) return false
+  return sourceG.includes(partG)
 }
 
 /**
- * Whether `excerpt` is a contiguous excerpt of `source` (normalized whitespace).
+ * sourceQuote 是否 grounded 于 source（空白规范化；兼容 Markdown 链接纯文本摘录）
+ */
+export function isSourceQuoteGrounded(sourceText: string, sourceQuote: string): boolean {
+  return isGroundedExcerpt(sourceText, sourceQuote)
+}
+
+/**
+ * Whether `excerpt` is a contiguous excerpt of `source` (normalized whitespace;
+ * Markdown link labels accepted when source uses `[label](url)`).
  */
 export function isContiguousExcerpt(sourceText: string, excerpt: string): boolean {
-  const source = normalizeForContainment(sourceText)
-  const part = normalizeForContainment(excerpt)
-  if (!source || !part) return false
-  return source.includes(part)
+  return isGroundedExcerpt(sourceText, excerpt)
 }
 
 function isSourceQuoteInformative(sourceText: string, sourceQuote: string): boolean {
