@@ -782,6 +782,17 @@
   height: 100%;
   min-height: 0;
   position: relative;
+
+  /* Custom block-explain theme variables - fallback to default theme primary colors */
+  --ir-explain-primary: var(--orca-color-primary-6, #3b82f6);
+  --ir-explain-primary-hover: var(--orca-color-primary-7, #1d4ed8);
+  --ir-explain-primary-bg: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 6%, var(--orca-color-bg-1, #ffffff));
+  --ir-explain-border: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 20%, var(--orca-color-border-1, #cbd5e1));
+  --ir-explain-card-border: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 10%, var(--orca-color-border-1, #cbd5e1));
+  --ir-explain-msg-user-bg: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 8%, transparent);
+  --ir-explain-msg-user-border: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 12%, transparent);
+  --ir-explain-quote-border: var(--orca-color-primary-5, #3b82f6);
+  --ir-explain-quote-bg: color-mix(in srgb, var(--orca-color-primary-6, #3b82f6) 4%, var(--orca-color-bg-1, #ffffff));
 }
 
 .ir-reading__scroll {
@@ -2254,6 +2265,17 @@
   --orca-color-border-1: #dbe7e1 !important;
   background: #ebf2ee !important;
   transition: background 0.25s ease, color 0.25s ease;
+
+  /* Custom block-explain theme variables for mint green theme */
+  --ir-explain-primary: #0d7a53;
+  --ir-explain-primary-hover: #0a5c3e;
+  --ir-explain-primary-bg: color-mix(in srgb, #0d7a53 6%, var(--orca-color-bg-1));
+  --ir-explain-border: color-mix(in srgb, #0d7a53 20%, var(--orca-color-border-1));
+  --ir-explain-card-border: color-mix(in srgb, #0d7a53 10%, var(--orca-color-border-1));
+  --ir-explain-msg-user-bg: color-mix(in srgb, #0d7a53 8%, transparent);
+  --ir-explain-msg-user-border: color-mix(in srgb, #0d7a53 12%, transparent);
+  --ir-explain-quote-border: #0d7a53;
+  --ir-explain-quote-bg: color-mix(in srgb, #0d7a53 4%, var(--orca-color-bg-1));
 }
 .ir-reading[data-ir-theme="mint"] .ir-reading__scroll {
   background: transparent !important;
@@ -2328,6 +2350,17 @@
   --orca-color-border-1: #ebdcb9 !important;
   background: #f4ede2 !important;
   transition: background 0.25s ease, color 0.25s ease;
+
+  /* Custom block-explain theme variables for sepia warm theme */
+  --ir-explain-primary: #b25900;
+  --ir-explain-primary-hover: #934900;
+  --ir-explain-primary-bg: color-mix(in srgb, #b25900 6%, var(--orca-color-bg-1));
+  --ir-explain-border: color-mix(in srgb, #b25900 20%, var(--orca-color-border-1));
+  --ir-explain-card-border: color-mix(in srgb, #b25900 10%, var(--orca-color-border-1));
+  --ir-explain-msg-user-bg: color-mix(in srgb, #b25900 8%, transparent);
+  --ir-explain-msg-user-border: color-mix(in srgb, #b25900 12%, transparent);
+  --ir-explain-quote-border: #b25900;
+  --ir-explain-quote-bg: color-mix(in srgb, #b25900 4%, var(--orca-color-bg-1));
 }
 .ir-reading[data-ir-theme="sepia"] .ir-reading__scroll {
   background: transparent !important;
@@ -2508,9 +2541,9 @@
 
 .ir-block-explain-trigger:hover,
 .ir-block-explain-trigger:focus-visible {
-  background: color-mix(in srgb, #2f6fed 12%, var(--orca-color-bg-1, #fff));
-  color: #2f6fed;
-  border-color: color-mix(in srgb, #2f6fed 40%, var(--orca-color-border-1, #cbd5e1));
+  background: color-mix(in srgb, var(--ir-explain-primary, #3b82f6) 12%, var(--orca-color-bg-1, #ffffff));
+  color: var(--ir-explain-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--ir-explain-primary, #3b82f6) 40%, var(--orca-color-border-1, #cbd5e1));
 }
 
 /* Always show trigger lightly in edit mode so it is discoverable */
@@ -2525,88 +2558,101 @@
 
 .ir-block-explain {
   margin: 0 0 4px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: 10px;
-  border: 1px dashed color-mix(in srgb, #2f6fed 50%, var(--orca-color-border-1, #cbd5e1));
-  background: color-mix(in srgb, #2f6fed 7%, var(--orca-color-bg-1, #fff));
+  border: 1px solid var(--ir-explain-border);
+  background: var(--ir-explain-primary-bg);
   color: var(--orca-color-text-1, #0f172a);
   font-size: 13px;
   line-height: 1.55;
+  box-shadow: 0 4px 12px color-mix(in srgb, CanvasText 2%, transparent), 0 1px 3px color-mix(in srgb, CanvasText 1%, transparent);
 }
 
 .ir-block-explain__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .ir-block-explain__title {
-  font-weight: 650;
-  font-size: 13px;
+  font-weight: 600;
+  font-size: 13.5px;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
+  color: var(--orca-color-text-1, #0f172a);
 }
 
 .ir-block-explain__meta {
   font-weight: 400;
   font-size: 11px;
   opacity: 0.65;
+  color: var(--orca-color-text-3, #64748b);
 }
 
 .ir-block-explain__icon-btn {
   border: none;
   background: transparent;
-  color: inherit;
+  color: var(--orca-color-text-3, #64748b);
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
   padding: 0 4px;
   opacity: 0.7;
+  transition: opacity 0.15s ease, color 0.15s ease;
 }
 
 .ir-block-explain__icon-btn:hover {
   opacity: 1;
+  color: var(--orca-color-text-1, #0f172a);
 }
 
 .ir-block-explain__quote {
-  font-style: italic;
-  opacity: 0.85;
-  padding: 6px 8px;
-  margin-bottom: 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, CanvasText 5%, transparent);
+  font-style: normal;
+  color: var(--orca-color-text-2, #475569);
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--ir-explain-quote-border);
+  background: var(--ir-explain-quote-bg);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .ir-block-explain__body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .ir-block-explain__card {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 8px;
-  background: color-mix(in srgb, CanvasText 4%, transparent);
+  background: var(--orca-color-bg-1, #ffffff);
+  border: 1px solid var(--ir-explain-card-border);
+  box-shadow: 0 1px 2px color-mix(in srgb, CanvasText 1%, transparent);
 }
 
 .ir-block-explain__label {
   font-size: 11px;
-  opacity: 0.65;
+  font-weight: 600;
+  color: var(--ir-explain-primary);
   margin-bottom: 4px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .ir-block-explain__terms {
+  list-style: none;
+  padding-left: 0;
   margin: 0;
-  padding-left: 1.1em;
 }
 
 .ir-block-explain__terms li {
-  margin: 2px 0;
+  margin: 4px 0;
 }
 
 .ir-block-explain__loading,
@@ -2623,36 +2669,48 @@
 .ir-block-explain__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin-top: 4px;
 }
 
 .ir-block-explain__btn {
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--orca-color-border-1, #cbd5e1);
-  background: var(--orca-color-bg-1, #fff);
-  color: inherit;
-  padding: 5px 10px;
+  background: var(--orca-color-bg-1, #ffffff);
+  color: var(--orca-color-text-1, #0f172a);
+  padding: 5px 12px;
   font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px color-mix(in srgb, CanvasText 1%, transparent);
 }
 
-.ir-block-explain__btn:hover {
-  background: color-mix(in srgb, CanvasText 4%, var(--orca-color-bg-1, #fff));
+.ir-block-explain__btn:hover:not(:disabled) {
+  background: var(--orca-color-bg-2, #f8fafc);
+  border-color: var(--orca-color-border-2, #cbd5e1);
+  color: var(--orca-color-text-1, #0f172a);
+}
+
+.ir-block-explain__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ir-block-explain__btn--primary {
-  background: color-mix(in srgb, #2f6fed 88%, #fff);
+  background: var(--ir-explain-primary);
   border-color: transparent;
-  color: #fff;
+  color: #ffffff;
 }
 
-.ir-block-explain__btn--primary:hover {
-  background: color-mix(in srgb, #2f6fed 96%, #000);
+.ir-block-explain__btn--primary:hover:not(:disabled) {
+  background: var(--ir-explain-primary-hover);
+  color: #ffffff;
+  border-color: transparent;
 }
 
 .ir-reading__body .orca-block.ir-block-explain-active {
-  outline: 1px solid color-mix(in srgb, #2f6fed 45%, transparent);
+  outline: 1.5px solid color-mix(in srgb, var(--ir-explain-primary, #3b82f6) 45%, transparent);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -2663,7 +2721,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .ir-block-explain__label-row .ir-block-explain__label {
@@ -2672,33 +2730,45 @@
 
 .ir-block-explain__plus {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, #2f6fed 45%, var(--orca-color-border-1, #cbd5e1));
-  background: color-mix(in srgb, #2f6fed 10%, var(--orca-color-bg-1, #fff));
-  color: #2f6fed;
-  font-size: 16px;
-  font-weight: 700;
+  border: 1px solid var(--ir-explain-border);
+  background: var(--ir-explain-primary-bg);
+  color: var(--ir-explain-primary);
+  font-size: 14px;
+  font-weight: bold;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .ir-block-explain__plus:hover:not(:disabled) {
-  background: color-mix(in srgb, #2f6fed 20%, var(--orca-color-bg-1, #fff));
+  background: var(--ir-explain-primary);
+  color: #ffffff;
+  border-color: var(--ir-explain-primary);
 }
 
 .ir-block-explain__plus:disabled {
-  opacity: 0.55;
-  cursor: default;
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .ir-block-explain__plus--done {
-  border-color: color-mix(in srgb, #16a34a 40%, var(--orca-color-border-1, #cbd5e1));
-  background: color-mix(in srgb, #16a34a 12%, var(--orca-color-bg-1, #fff));
-  color: #15803d;
-  font-size: 12px;
+  border-color: color-mix(in srgb, var(--orca-color-success-6, #16a34a) 40%, var(--orca-color-border-1, #cbd5e1));
+  background: color-mix(in srgb, var(--orca-color-success-6, #16a34a) 10%, var(--orca-color-bg-1, #ffffff));
+  color: var(--orca-color-success-6, #16a34a);
+  font-size: 11px;
+}
+
+.ir-block-explain__plus--done:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--orca-color-success-6, #16a34a) 15%, var(--orca-color-bg-1, #ffffff));
+  color: var(--orca-color-success-6, #16a34a);
+  border-color: color-mix(in srgb, var(--orca-color-success-6, #16a34a) 50%, var(--orca-color-border-1, #cbd5e1));
 }
 
 .ir-block-explain__term-row {
@@ -2710,15 +2780,10 @@
   margin: 6px 0;
 }
 
-.ir-block-explain__terms {
-  list-style: none;
-  padding-left: 0;
-  margin: 0;
-}
-
 .ir-block-explain__term-text {
   flex: 1;
   min-width: 0;
+  line-height: 1.5;
 }
 
 .ir-block-explain__follow {
@@ -2729,31 +2794,37 @@
   font-size: 12px;
   opacity: 0.7;
   margin-bottom: 8px;
+  color: var(--orca-color-text-3, #64748b);
 }
 
 .ir-block-explain__chat {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   max-height: 220px;
   overflow: auto;
 }
 
 .ir-block-explain__msg {
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 8px;
-  background: color-mix(in srgb, CanvasText 4%, transparent);
+  background: color-mix(in srgb, var(--orca-color-text-1, #0f172a) 4%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .ir-block-explain__msg--user {
-  background: color-mix(in srgb, #2f6fed 10%, transparent);
+  background: var(--ir-explain-msg-user-bg);
+  border: 1px solid var(--ir-explain-msg-user-border);
 }
 
 .ir-block-explain__msg-role {
   font-size: 11px;
-  opacity: 0.65;
+  font-weight: 600;
+  opacity: 0.7;
   margin-bottom: 4px;
+  color: var(--orca-color-text-3, #64748b);
 }
 
 .ir-block-explain__msg-actions {
@@ -2763,20 +2834,32 @@
 .ir-block-explain__composer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ir-block-explain__input {
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  min-height: 52px;
+  min-height: 56px;
   border-radius: 8px;
   border: 1px solid var(--orca-color-border-1, #cbd5e1);
-  background: var(--orca-color-bg-1, #fff);
-  color: inherit;
-  padding: 8px 10px;
-  font: inherit;
+  background: var(--orca-color-bg-1, #ffffff);
+  color: var(--orca-color-text-1, #0f172a);
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  transition: all 0.15s ease;
+}
+
+.ir-block-explain__input:focus {
+  outline: none;
+  border-color: var(--ir-explain-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ir-explain-primary, #3b82f6) 15%, transparent);
+}
+
+.ir-block-explain__input::placeholder {
+  color: var(--orca-color-text-3, #94a3b8);
 }
 
 .ir-block-explain__btn--small {
