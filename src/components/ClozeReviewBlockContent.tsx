@@ -188,6 +188,7 @@ export default function ClozeReviewBlockContent({
         blockId={blockId}
         blockLevel={0}
         indentLevel={0}
+        initiallyCollapsed={false}
       />
     </div>
   )

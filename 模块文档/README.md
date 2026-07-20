@@ -147,6 +147,7 @@
 - **2026-07-17**：渐进阅读主面板默认启用 Wide View，并清理 Bullet、Query Tabs 与 Query Views 宿主 chrome
 - **2026-07-18**：渐进阅读专注会话新增「绿茶 / 书卷 / 文献」主题模式，默认「绿茶」，并通过 `localStorage` 持久化用户选择
 - **2026-07-18**：网页导入强化本地主文提取、标题后缀去重、安全链接文本、代码/遗留排版与预览诊断（见 [网页导入.md](网页导入.md)、[问题经验.md](问题经验.md)）
+- **2026-07-20**：SRS 复习嵌入块默认展开——题目/答案/Cloze/选择题预览等 `initiallyCollapsed={false}`，原笔记折叠时复习仍可见题目；见 [SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)、[问题经验.md](问题经验.md)
 - **2026-07-19**：IR 时间盒队列 Batch A——`topicQuotaPercent` 映射 Topic 最低曝光、新 Extract 最终比例、Topic floor 诊断、探索受预算/配额约束、本地日 seed；见 [渐进阅读.md](渐进阅读.md)、[记忆排期推送.md](记忆排期推送.md)。算法升级总计划仍见未落地 `记忆算法优化.md`
 - **2026-07-19**：IR 调度 Batch B1——会话创建/打开/刷新只读装配（移除 `loadReadingQueue` 中 `applyAutoPostpone`）；focus 冻结到最终队列首位；`enableAutoDefer` 仅控制资料库显式溢出按钮；见 [渐进阅读.md](渐进阅读.md)、[记忆排期推送.md](记忆排期推送.md)
 - **2026-07-19**：IR 调度 Batch B1 第二轮——collector `{ readOnly: true }` 跳过 `ensureIRState`；会话主收集/fallback/focus 均显式只读；默认路径保留惰性 ensure；见 [渐进阅读.md](渐进阅读.md)

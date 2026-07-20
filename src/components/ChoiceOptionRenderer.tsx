@@ -311,6 +311,7 @@ export default function ChoiceOptionRenderer({
           blockLevel={0}
           indentLevel={0}
           renderingMode="normal"
+          initiallyCollapsed={false}
         />
       </div>
 

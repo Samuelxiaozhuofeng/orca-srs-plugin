@@ -69,6 +69,7 @@ export default function CardBlockPreview({ blockId, panelId }: CardBlockPreviewP
         blockId={blockId}
         blockLevel={0}
         indentLevel={0}
+        initiallyCollapsed={false}
       />
     </div>
   )

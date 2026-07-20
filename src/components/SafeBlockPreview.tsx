@@ -79,6 +79,7 @@ export default function SafeBlockPreview({ blockId, panelId }: SafeBlockPreviewP
         blockLevel={0}
         indentLevel={0}
         renderingMode="normal"
+        initiallyCollapsed={false}
       />
     </div>
   )

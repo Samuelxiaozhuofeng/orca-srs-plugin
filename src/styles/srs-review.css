@@ -57,6 +57,11 @@
   margin: 0 !important;
   padding: 0 !important;
 }
+
+/* 折叠态下宿主可能隐藏 main；复习题目区强制可见（配合 initiallyCollapsed=false） */
+.srs-question-block .orca-repr-main {
+  display: block !important;
+}
 /* 复习会话样式 */
 .srs-review-session {
   position: relative;

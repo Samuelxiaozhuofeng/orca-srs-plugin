@@ -1,7 +1,7 @@
 # SRS 卡片复习窗口模块
 
-> 文档同步日期：2026-07-13  
-> 变更说明：对齐当前会话 UI 流程、块加载三态（F2-06）、评分/动作门控（F2-05）、会话进度（FC-09/FC-10）、关闭 flush；修正路径与组件层次（含 List/Choice）；去除「计划将要做」表述。
+> 文档同步日期：2026-07-20  
+> 变更说明：复习嵌入块默认展开（`initiallyCollapsed={false}`），原笔记折叠时题目仍可见；对齐当前会话 UI 流程、块加载三态、评分门控与进度。
 
 ## 概述
 
@@ -314,7 +314,8 @@ stateDiagram-v2
 | `inferredCardType === "choice"` | `ChoiceCardReviewRenderer` |
 | 其它 Basic / 摘录 | Demo 内联 UI |
 
-- Basic 题目区 `renderingMode="simple"` + MutationObserver 隐藏易泄答案的子块 UI。
+- Basic 题目区：`EmbeddedQuestionBlock` 渲染宿主 `Block`，MutationObserver **移除**子块容器（避免答案泄漏）；答案区：`EmbeddedAnswerBlock` 隐藏父块正文、强制展示子块。
+- **默认展开（局部语义）**：复习内所有嵌入 `Block` 传 `initiallyCollapsed={false}`（题目 / 答案 / 摘录 / Cloze / 选择题 SafeBlockPreview / 选项）。仅影响复习面板渲染实例，**不写**块属性、不改原笔记折叠态。否则原笔记折叠时 `BlockShell` 隐藏内容 → 「看不到题目」。CSS `.srs-question-block .orca-repr-main { display: block !important }` 作兜底。
 - 复习中可直接编辑块内容（依赖编辑器能力，非 `contentEditable: false` 锁死）。
 - 评分按钮：Again / Hard / Good / Easy；间隔/到期预览走 F2-08。
 - 界面默认**不展示**完整 SRS 技术字段（稳定度、完整时间戳等）；评分后日志可用简化日期 `M-D`。

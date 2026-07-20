@@ -66,7 +66,14 @@ export function EmbeddedQuestionBlock({
         className="srs-question-block"
         data-orca-block-root="true"
       >
-        <Block panelId={panelId} blockId={blockId} blockLevel={0} indentLevel={0} />
+        {/* 复习面板局部展开：不沿用原笔记折叠态，否则题目不可见；不写 block 属性 */}
+        <Block
+          panelId={panelId}
+          blockId={blockId}
+          blockLevel={0}
+          indentLevel={0}
+          initiallyCollapsed={false}
+        />
       </div>
     </>
   )

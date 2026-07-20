@@ -248,7 +248,13 @@ export default function BasicCardReviewRenderer({
               摘录
             </div>
             {blockId && panelId ? (
-              <Block panelId={panelId} blockId={blockId} blockLevel={0} indentLevel={0} />
+              <Block
+                panelId={panelId}
+                blockId={blockId}
+                blockLevel={0}
+                indentLevel={0}
+                initiallyCollapsed={false}
+              />
             ) : (
               <div style={{
                 padding: "12px",
