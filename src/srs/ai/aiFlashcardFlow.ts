@@ -68,6 +68,20 @@ export async function startAIFlashcardFlow(
     return
   }
 
+  try {
+    const { isAIQuickInteractOpen } = await import("./aiQuickInteractState")
+    if (isAIQuickInteractOpen()) {
+      orca.notify(
+        "warn",
+        "AI 快捷交互对话框已打开，请先关闭后再试",
+        { title: "AI 生成闪卡" }
+      )
+      return
+    }
+  } catch (error) {
+    console.warn("[AI 生成闪卡] 检查快捷交互弹窗状态失败:", error)
+  }
+
   if (!isAIConfigured(pluginName)) {
     orca.notify("warn", "请先在插件设置中配置 API Key", { title: "AI 生成闪卡" })
     return

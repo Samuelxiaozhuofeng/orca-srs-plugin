@@ -1,7 +1,7 @@
 /**
- * AI 设置 Schema
+ * AI 设置 Schema（仅连接相关，供原生设置页）
  *
- * Plan B 仅保留连接相关设置：apiKey / apiUrl / model
+ * 工具栏提示词库不在此注册，见 aiToolbarPromptStore.ts + 提示词库面板。
  */
 
 export const aiSettingsSchema = {

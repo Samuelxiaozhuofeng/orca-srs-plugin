@@ -328,6 +328,35 @@ export function registerCommands(
     }
   )
 
+  // 选中文本 AI 快捷交互（工具栏下拉）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.aiQuickInteract`,
+    async (editor, promptKey?: string) => {
+      const [, , cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置", { title: "AI 快捷交互" })
+        return null
+      }
+      const { startAIQuickInteractFlow } = await import("../ai/aiQuickInteract")
+      if (promptKey === "__custom__") {
+        await startAIQuickInteractFlow(cursor, _pluginName, { mode: "custom" })
+      } else {
+        await startAIQuickInteractFlow(cursor, _pluginName, {
+          mode: "preset",
+          promptId: String(promptKey ?? "")
+        })
+      }
+      return null
+    },
+    async () => {
+      // 写入在弹窗内 invokeGroup；命令本身无撤销
+    },
+    {
+      label: "SRS: AI 快捷交互",
+      hasArgs: true
+    }
+  )
+
   // AI 连接测试命令
   orca.commands.registerCommand(
     `${pluginName}.testAIConnection`,
@@ -343,6 +372,16 @@ export function registerCommands(
       }
     },
     "SRS: 测试 AI 连接"
+  )
+
+  // 管理工具栏 AI 提示词（无需选区）
+  orca.commands.registerCommand(
+    `${pluginName}.manageAIToolbarPrompts`,
+    async () => {
+      const { openAIPromptManager } = await import("../ai/aiPromptManagerState")
+      openAIPromptManager(_pluginName)
+    },
+    "SRS: 打开 AI 提示词库"
   )
 
   // 打开旧复习面板命令（块渲染器模式）
@@ -696,12 +735,14 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.interactiveAICard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.aiQuickInteract`)
   orca.commands.unregisterEditorCommand(`${pluginName}.irRecordProgress`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionNext`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPostpone`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPriority`)
   orca.commands.unregisterCommand(`${pluginName}.irToggleViewMode`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
+  orca.commands.unregisterCommand(`${pluginName}.manageAIToolbarPrompts`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
   
   // Flash Home 命令注销
