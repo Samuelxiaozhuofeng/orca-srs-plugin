@@ -146,23 +146,11 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.irRecordProgress`
   })
 
-  orca.toolbar.registerToolbarButton(`${pluginName}.importEpubButton`, {
-    icon: "ti ti-book-upload",
-    tooltip: "导入 EPUB",
-    command: `${pluginName}.importEpub`
-  })
-
   orca.slashCommands.registerSlashCommand(`${pluginName}.importEpub`, {
     icon: "ti ti-book-upload",
     group: "SRS",
     title: "导入 EPUB",
     command: `${pluginName}.importEpub`
-  })
-
-  orca.toolbar.registerToolbarButton(`${pluginName}.importWebButton`, {
-    icon: "ti ti-world-download",
-    tooltip: "导入网页",
-    command: `${pluginName}.importWeb`
   })
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.importWeb`, {
@@ -185,8 +173,6 @@ export function unregisterUIComponents(pluginName: string): void {
 
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
-  orca.toolbar.unregisterToolbarButton(`${pluginName}.importEpubButton`)
-  orca.toolbar.unregisterToolbarButton(`${pluginName}.importWebButton`)
 
   // 斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
