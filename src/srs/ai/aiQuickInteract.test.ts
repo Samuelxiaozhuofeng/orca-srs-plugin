@@ -4,12 +4,16 @@ import {
   buildQuickInteractUserPrompt,
   clipText,
   extractSelectedTextFromCursor,
+  insertQuickResult,
   QUICK_SELECTION_MAX
 } from "./aiQuickInteract"
 import {
+  clearToolbarAIPromptCache,
   DEFAULT_TOOLBAR_AI_PROMPTS,
   getToolbarAIPrompts,
+  hydrateToolbarAIPromptLibrary,
   normalizeToolbarAIPromptItems,
+  PROMPT_LIBRARY_DATA_KEY,
   PROMPT_LIBRARY_LEGACY_KEY,
   PROMPT_LIBRARY_STORAGE_KEY,
   resetToolbarAIPromptsToDefault,
@@ -141,6 +145,7 @@ describe("extractSelectedTextFromCursor", () => {
 
 describe("getToolbarAIPrompts (prompt library store)", () => {
   afterEach(() => {
+    clearToolbarAIPromptCache()
     delete (globalThis as any).orca
   })
 
@@ -153,9 +158,10 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
     expect(list[0].label).toBe("举例说明")
     expect(list[0].id).toBe("0")
     expect(list[0].prompt.length).toBeGreaterThan(0)
+    expect(list[0].insertBelowOnComplete).toBe(true)
   })
 
-  it("parses valid custom array from new storage key", () => {
+  it("parses valid custom array from settings fallback before hydrate", () => {
     ;(globalThis as any).orca = {
       state: {
         plugins: {
@@ -183,18 +189,20 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
       id: "0",
       label: "摘要",
       prompt: "请摘要",
-      includeBlockContext: false
+      includeBlockContext: false,
+      insertBelowOnComplete: false
     })
-    // 旧项无字段 → 默认 true
+    // 旧项无 includeBlockContext → true；无 insertBelowOnComplete → false
     expect(list[1]).toEqual({
       id: "1",
       label: "翻译",
       prompt: "译成英文",
-      includeBlockContext: true
+      includeBlockContext: true,
+      insertBelowOnComplete: false
     })
   })
 
-  it("reads legacy key when new key absent", () => {
+  it("reads legacy settings key when new key absent", () => {
     ;(globalThis as any).orca = {
       state: {
         plugins: {
@@ -213,12 +221,13 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         id: "0",
         label: "旧库",
         prompt: "旧提示",
-        includeBlockContext: true
+        includeBlockContext: true,
+        insertBelowOnComplete: false
       }
     ])
   })
 
-  it("prefers new key over legacy", () => {
+  it("prefers settings primary key over legacy", () => {
     ;(globalThis as any).orca = {
       state: {
         plugins: {
@@ -228,7 +237,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
                 {
                   label: "新",
                   prompt: "新内容",
-                  includeBlockContext: false
+                  includeBlockContext: false,
+                  insertBelowOnComplete: true
                 }
               ],
               [PROMPT_LIBRARY_LEGACY_KEY]: [{ label: "旧", prompt: "旧内容" }]
@@ -242,7 +252,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         id: "0",
         label: "新",
         prompt: "新内容",
-        includeBlockContext: false
+        includeBlockContext: false,
+        insertBelowOnComplete: true
       }
     ])
   })
@@ -282,8 +293,9 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
   })
 })
 
-describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts", () => {
+describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () => {
   afterEach(() => {
+    clearToolbarAIPromptCache()
     delete (globalThis as any).orca
     vi.restoreAllMocks()
   })
@@ -291,28 +303,42 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts", () => {
   it("normalize trims and drops empty/dirty items", () => {
     expect(
       normalizeToolbarAIPromptItems([
-        { label: "  A  ", prompt: "  p  ", includeBlockContext: false },
+        {
+          label: "  A  ",
+          prompt: "  p  ",
+          includeBlockContext: false,
+          insertBelowOnComplete: true
+        },
         { label: "", prompt: "x" },
         { label: "y", prompt: "  " },
         null,
         { label: "B", prompt: "q" }
       ])
     ).toEqual([
-      { label: "A", prompt: "p", includeBlockContext: false },
-      { label: "B", prompt: "q", includeBlockContext: true }
+      {
+        label: "A",
+        prompt: "p",
+        includeBlockContext: false,
+        insertBelowOnComplete: true
+      },
+      {
+        label: "B",
+        prompt: "q",
+        includeBlockContext: true,
+        insertBelowOnComplete: false
+      }
     ])
     expect(normalizeToolbarAIPromptItems(undefined)).toEqual([])
     expect(normalizeToolbarAIPromptItems("bad")).toEqual([])
   })
 
-  it("saveToolbarAIPrompts writes new library key and clears legacy", async () => {
-    const setSettings = vi.fn(async (_to: string, _name: string, patch: Record<string, unknown>) => {
-      const prev = (orca.state.plugins[PLUGIN]?.settings ?? {}) as Record<string, unknown>
-      const next = { ...prev, ...patch }
-      for (const [k, v] of Object.entries(patch)) {
-        if (v == null) delete next[k]
-      }
-      ;(orca.state.plugins[PLUGIN] as { settings: Record<string, unknown> }).settings = next
+  it("saveToolbarAIPrompts uses setData and does not call setSettings", async () => {
+    const dataStore: Record<string, string> = {}
+    const setData = vi.fn(async (_name: string, key: string, value: string) => {
+      dataStore[key] = value
+    })
+    const setSettings = vi.fn(async () => {
+      throw new Error("setSettings must not be called for prompt library")
     })
     ;(globalThis as any).orca = {
       state: {
@@ -320,100 +346,296 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts", () => {
           [PLUGIN]: {
             settings: {
               "ai.apiKey": "keep-me",
+              "ai.apiUrl": "https://example.com/v1/chat/completions",
               [PROMPT_LIBRARY_LEGACY_KEY]: [{ label: "旧", prompt: "旧内容" }]
             }
           }
         }
       },
-      plugins: { setSettings }
+      plugins: { setData, setSettings, getData: async (_n: string, key: string) => dataStore[key] ?? null }
     }
 
     const saved = await saveToolbarAIPrompts(PLUGIN, [
       {
         label: "  新  ",
         prompt: "  内容  ",
-        includeBlockContext: false
+        includeBlockContext: false,
+        insertBelowOnComplete: true
       },
-      { label: "", prompt: "丢弃", includeBlockContext: true }
+      {
+        label: "",
+        prompt: "丢弃",
+        includeBlockContext: true,
+        insertBelowOnComplete: false
+      }
     ])
-    expect(setSettings).toHaveBeenCalledWith("app", PLUGIN, {
-      [PROMPT_LIBRARY_STORAGE_KEY]: [
-        { label: "新", prompt: "内容", includeBlockContext: false }
-      ],
-      [PROMPT_LIBRARY_LEGACY_KEY]: null
-    })
+    expect(setSettings).not.toHaveBeenCalled()
+    expect(setData).toHaveBeenCalledWith(
+      PLUGIN,
+      PROMPT_LIBRARY_DATA_KEY,
+      JSON.stringify([
+        {
+          label: "新",
+          prompt: "内容",
+          includeBlockContext: false,
+          insertBelowOnComplete: true
+        }
+      ])
+    )
     expect(saved).toEqual([
       {
         id: "0",
         label: "新",
         prompt: "内容",
-        includeBlockContext: false
+        includeBlockContext: false,
+        insertBelowOnComplete: true
       }
     ])
+    // 原生 AI 设置保持不动
     expect(orca.state.plugins[PLUGIN]?.settings?.["ai.apiKey"]).toBe("keep-me")
-    expect(orca.state.plugins[PLUGIN]?.settings?.[PROMPT_LIBRARY_LEGACY_KEY]).toBeUndefined()
+    expect(orca.state.plugins[PLUGIN]?.settings?.["ai.apiUrl"]).toBe(
+      "https://example.com/v1/chat/completions"
+    )
 
     const empty = await saveToolbarAIPrompts(PLUGIN, [])
-    expect(setSettings).toHaveBeenLastCalledWith("app", PLUGIN, {
-      [PROMPT_LIBRARY_STORAGE_KEY]: [],
-      [PROMPT_LIBRARY_LEGACY_KEY]: null
-    })
+    expect(setData).toHaveBeenLastCalledWith(
+      PLUGIN,
+      PROMPT_LIBRARY_DATA_KEY,
+      "[]"
+    )
     expect(empty).toEqual([])
     expect(getToolbarAIPrompts(PLUGIN)).toEqual([])
   })
 
-  it("resetToolbarAIPromptsToDefault writes DEFAULT list to library key", async () => {
-    const setSettings = vi.fn(async (_to: string, _name: string, patch: Record<string, unknown>) => {
-      const prev = (orca.state.plugins[PLUGIN]?.settings ?? {}) as Record<string, unknown>
-      const next = { ...prev, ...patch }
-      for (const [k, v] of Object.entries(patch)) {
-        if (v == null) delete next[k]
-      }
-      ;(orca.state.plugins[PLUGIN] as { settings: Record<string, unknown> }).settings = next
-    })
+  it("resetToolbarAIPromptsToDefault writes DEFAULT list via setData", async () => {
+    const setData = vi.fn(async () => {})
+    const setSettings = vi.fn()
     ;(globalThis as any).orca = {
       state: {
         plugins: {
           [PLUGIN]: {
-            settings: { [PROMPT_LIBRARY_STORAGE_KEY]: [] }
+            settings: {
+              "ai.apiKey": "secret",
+              [PROMPT_LIBRARY_STORAGE_KEY]: []
+            }
           }
         }
       },
-      plugins: { setSettings }
+      plugins: { setData, setSettings }
     }
 
     const list = await resetToolbarAIPromptsToDefault(PLUGIN)
     expect(list.length).toBe(DEFAULT_TOOLBAR_AI_PROMPTS.length)
     expect(list[0].label).toBe("举例说明")
     expect(list[0].includeBlockContext).toBe(true)
+    expect(list[0].insertBelowOnComplete).toBe(true)
     expect(list[1].includeBlockContext).toBe(false)
-    expect(setSettings).toHaveBeenCalledWith("app", PLUGIN, {
-      [PROMPT_LIBRARY_STORAGE_KEY]: DEFAULT_TOOLBAR_AI_PROMPTS.map((p) => ({
-        label: p.label.trim(),
-        prompt: p.prompt.trim(),
-        includeBlockContext: p.includeBlockContext
-      })),
-      [PROMPT_LIBRARY_LEGACY_KEY]: null
-    })
+    expect(list[1].insertBelowOnComplete).toBe(true)
+    expect(setSettings).not.toHaveBeenCalled()
+    expect(setData).toHaveBeenCalledWith(
+      PLUGIN,
+      PROMPT_LIBRARY_DATA_KEY,
+      JSON.stringify(
+        DEFAULT_TOOLBAR_AI_PROMPTS.map((p) => ({
+          label: p.label.trim(),
+          prompt: p.prompt.trim(),
+          includeBlockContext: p.includeBlockContext,
+          insertBelowOnComplete: p.insertBelowOnComplete
+        }))
+      )
+    )
+    expect(orca.state.plugins[PLUGIN]?.settings?.["ai.apiKey"]).toBe("secret")
   })
 
-  it("saveToolbarAIPrompts propagates setSettings failure", async () => {
-    const setSettings = vi.fn(async () => {
+  it("saveToolbarAIPrompts propagates setData failure", async () => {
+    const setData = vi.fn(async () => {
       throw new Error("disk full")
     })
     ;(globalThis as any).orca = {
       state: {
         plugins: {
-          [PLUGIN]: { settings: {} }
+          [PLUGIN]: { settings: { "ai.apiKey": "keep" } }
         }
       },
-      plugins: { setSettings }
+      plugins: { setData, setSettings: vi.fn() }
     }
     await expect(
       saveToolbarAIPrompts(PLUGIN, [
-        { label: "A", prompt: "B", includeBlockContext: true }
+        {
+          label: "A",
+          prompt: "B",
+          includeBlockContext: true,
+          insertBelowOnComplete: false
+        }
       ])
     ).rejects.toThrow("disk full")
+    expect(orca.state.plugins[PLUGIN]?.settings?.["ai.apiKey"]).toBe("keep")
+  })
+
+  it("hydrate prefers setData over settings and migrates settings → setData", async () => {
+    const dataStore: Record<string, string | null> = {}
+    const setData = vi.fn(async (_n: string, key: string, value: string) => {
+      dataStore[key] = value
+    })
+    const getData = vi.fn(async (_n: string, key: string) => dataStore[key] ?? null)
+    ;(globalThis as any).orca = {
+      state: {
+        plugins: {
+          [PLUGIN]: {
+            settings: {
+              "ai.apiKey": "keep-me",
+              [PROMPT_LIBRARY_STORAGE_KEY]: [
+                { label: "从设置迁移", prompt: "p", includeBlockContext: true }
+              ]
+            }
+          }
+        }
+      },
+      plugins: { getData, setData, setSettings: vi.fn() }
+    }
+
+    const list = await hydrateToolbarAIPromptLibrary(PLUGIN)
+    expect(list).toEqual([
+      {
+        id: "0",
+        label: "从设置迁移",
+        prompt: "p",
+        includeBlockContext: true,
+        insertBelowOnComplete: false
+      }
+    ])
+    expect(setData).toHaveBeenCalled()
+    expect(orca.state.plugins[PLUGIN]?.settings?.["ai.apiKey"]).toBe("keep-me")
+    expect(getToolbarAIPrompts(PLUGIN)[0].label).toBe("从设置迁移")
+  })
+
+  it("hydrate reads setData JSON and ignores settings", async () => {
+    const getData = vi.fn(async () =>
+      JSON.stringify([
+        {
+          label: "data层",
+          prompt: "来自 data",
+          includeBlockContext: false,
+          insertBelowOnComplete: true
+        }
+      ])
+    )
+    const setData = vi.fn()
+    ;(globalThis as any).orca = {
+      state: {
+        plugins: {
+          [PLUGIN]: {
+            settings: {
+              [PROMPT_LIBRARY_STORAGE_KEY]: [
+                { label: "settings层", prompt: "应被忽略" }
+              ]
+            }
+          }
+        }
+      },
+      plugins: { getData, setData, setSettings: vi.fn() }
+    }
+
+    const list = await hydrateToolbarAIPromptLibrary(PLUGIN)
+    expect(list[0].label).toBe("data层")
+    expect(setData).not.toHaveBeenCalled()
+  })
+})
+
+describe("insertQuickResult positions", () => {
+  afterEach(() => {
+    delete (globalThis as any).orca
+    vi.restoreAllMocks()
+  })
+
+  function setupInsertMock(opts?: { batchFail?: boolean }) {
+    let nextId = 100
+    const blocks: Record<number, any> = {
+      10: {
+        id: 10,
+        text: "query",
+        content: [{ t: "t", v: "query" }],
+        children: []
+      }
+    }
+    const invokeEditorCommand = vi.fn(async (cmd: string, _c: unknown, ...args: any[]) => {
+      if (cmd === "core.editor.insertBlock") {
+        const ref = args[0]
+        const position = args[1]
+        const content = args[2]
+        const id = nextId++
+        blocks[id] = {
+          id,
+          text: Array.isArray(content)
+            ? content.map((f: any) => f.v).join("")
+            : "",
+          content,
+          children: [],
+          parent: position === "lastChild" ? ref?.id : ref?.parent,
+          left: ref?.id
+        }
+        return id
+      }
+      if (cmd === "core.editor.batchInsertText") {
+        if (opts?.batchFail) throw new Error("batch fail")
+        return undefined
+      }
+      throw new Error(`unexpected command ${cmd}`)
+    })
+    const invokeGroup = vi.fn(async (fn: () => Promise<void>) => {
+      await fn()
+    })
+    ;(globalThis as any).orca = {
+      state: { blocks },
+      commands: { invokeEditorCommand, invokeGroup },
+      invokeBackend: vi.fn(async () => null)
+    }
+    return { invokeEditorCommand, blocks }
+  }
+
+  it("inserts title as lastChild when position is lastChild", async () => {
+    const { invokeEditorCommand } = setupInsertMock()
+    const result = await insertQuickResult(10, "hello **world**", "举例说明", "lastChild")
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.blockId).toBe(100)
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.insertBlock",
+      null,
+      expect.objectContaining({ id: 10 }),
+      "lastChild",
+      expect.any(Array)
+    )
+  })
+
+  it("inserts title after query block when position is after", async () => {
+    const { invokeEditorCommand } = setupInsertMock()
+    const result = await insertQuickResult(10, "line1\nline2", "翻译", "after")
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.blockId).toBe(100)
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.insertBlock",
+      null,
+      expect.objectContaining({ id: 10 }),
+      "after",
+      expect.any(Array)
+    )
+  })
+
+  it("returns error when result empty", async () => {
+    setupInsertMock()
+    const result = await insertQuickResult(10, "   ", "x", "after")
+    expect(result).toEqual({ success: false, error: "结果为空，无法插入" })
+  })
+
+  it("returns error when target block missing", async () => {
+    setupInsertMock()
+    delete (globalThis as any).orca.state.blocks[10]
+    const result = await insertQuickResult(10, "body", "x", "after")
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toMatch(/找不到目标块/)
   })
 })
 

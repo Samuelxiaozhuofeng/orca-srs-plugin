@@ -95,6 +95,16 @@ export async function load(_name: string) {
   registerContextMenu(pluginName)
   startRecentDeckWatcher(pluginName)
 
+  // 提示词库：从 plugin data hydrate，避免工具栏读到空缓存；失败不阻断加载
+  try {
+    const { hydrateToolbarAIPromptLibrary } = await import(
+      "./srs/ai/aiToolbarPromptStore"
+    )
+    await hydrateToolbarAIPromptLibrary(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载 AI 提示词库失败:`, error)
+  }
+
   try {
     const { registerIRDefaultShortcuts } = await import("./srs/incremental-reading/irShortcutsRegistry")
     await registerIRDefaultShortcuts(pluginName)

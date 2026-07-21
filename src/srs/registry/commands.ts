@@ -379,7 +379,7 @@ export function registerCommands(
     `${pluginName}.manageAIToolbarPrompts`,
     async () => {
       const { openAIPromptManager } = await import("../ai/aiPromptManagerState")
-      openAIPromptManager(_pluginName)
+      await openAIPromptManager(_pluginName)
     },
     "SRS: 打开 AI 提示词库"
   )

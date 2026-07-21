@@ -21,6 +21,7 @@ import {
 import { createRequestTokenGuard } from "../srs/ai/aiRequestToken"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
 import { AIQuickInteractDialog } from "./AIQuickInteractDialog"
+import { AIQuickJobsPanel } from "./AIQuickJobsPanel"
 
 const { Valtio } = window
 const { useSnapshot } = Valtio
@@ -217,38 +218,41 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
     }
   }
 
-  if (!snap.isOpen) return null
-
   return (
-    <AIQuickInteractDialog
-      visible={snap.isOpen}
-      phase={snap.phase}
-      selectedText={snap.selectedText}
-      promptLabel={snap.promptLabel}
-      promptText={snap.promptText}
-      includeBlockContext={snap.includeBlockContext}
-      resultText={snap.resultText}
-      errorMessage={snap.errorMessage}
-      isGenerating={snap.isGenerating}
-      promptEditable={snap.promptEditable}
-      onClose={() => {
-        if (snap.isGenerating) {
-          handleCancelGenerate()
-        }
-        closeAIQuickInteract()
-      }}
-      onPromptTextChange={setQuickPromptText}
-      onIncludeBlockContextChange={setQuickIncludeBlockContext}
-      onGenerate={() => {
-        void runGenerate()
-      }}
-      onCancelGenerate={handleCancelGenerate}
-      onCopy={() => {
-        void handleCopy()
-      }}
-      onInsertChild={() => {
-        void handleInsertChild()
-      }}
-    />
+    <>
+      <AIQuickJobsPanel />
+      {snap.isOpen ? (
+        <AIQuickInteractDialog
+          visible={snap.isOpen}
+          phase={snap.phase}
+          selectedText={snap.selectedText}
+          promptLabel={snap.promptLabel}
+          promptText={snap.promptText}
+          includeBlockContext={snap.includeBlockContext}
+          resultText={snap.resultText}
+          errorMessage={snap.errorMessage}
+          isGenerating={snap.isGenerating}
+          promptEditable={snap.promptEditable}
+          onClose={() => {
+            if (snap.isGenerating) {
+              handleCancelGenerate()
+            }
+            closeAIQuickInteract()
+          }}
+          onPromptTextChange={setQuickPromptText}
+          onIncludeBlockContextChange={setQuickIncludeBlockContext}
+          onGenerate={() => {
+            void runGenerate()
+          }}
+          onCancelGenerate={handleCancelGenerate}
+          onCopy={() => {
+            void handleCopy()
+          }}
+          onInsertChild={() => {
+            void handleInsertChild()
+          }}
+        />
+      ) : null}
+    </>
   )
 }

@@ -107,7 +107,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-20 更新 — Plan B 制卡 + IR 块解释（`generateBlockExplanation`）
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-21 更新 — 制卡 + 块解释 + 工具栏快捷交互（后台插入块下方）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
 

@@ -347,29 +347,39 @@ async function resolveBlockById(blockId: number): Promise<Block | null> {
   }
 }
 
+/** 相对查询块的插入位置 */
+export type QuickResultInsertPosition = "lastChild" | "after"
+
 /**
  * 插入形态：
- *   parent
- *     └── AI · **提示名**          （标题，在上）
- *           ├── 例子 1…            （缩进子块）
- *           └── 例子 2…
+ * - lastChild（插入为子块）:
+ *     parent
+ *       └── AI · **提示名**
+ *             ├── 正文…
+ * - after（插入到查询块下方，同级）:
+ *     parent（查询块）
+ *     AI · **提示名**
+ *       └── 正文…
  *
  * 正文优先用 batchInsertText(skipMarkdown=false) 让宿主解析 ** / 列表；
  * 失败则回退为逐条 insertBlock（无手写 "• "，避免与大纲圆点重叠）。
  */
-export async function insertQuickResultAsChild(
-  parentBlockId: number,
+export async function insertQuickResult(
+  refBlockId: number,
   resultText: string,
-  promptLabel: string
+  promptLabel: string,
+  position: QuickResultInsertPosition
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
   const body = resultText.trim()
   if (!body) {
     return { success: false, error: "结果为空，无法插入" }
   }
 
+  const positionLabel = position === "after" ? "块下方" : "子块"
+
   try {
-    const parent = await resolveBlockById(parentBlockId)
-    if (!parent) {
+    const refBlock = await resolveBlockById(refBlockId)
+    if (!refBlock) {
       return { success: false, error: "找不到目标块，无法插入" }
     }
 
@@ -382,8 +392,8 @@ export async function insertQuickResultAsChild(
         const id = (await orca.commands.invokeEditorCommand(
           "core.editor.insertBlock",
           null,
-          parent,
-          "lastChild",
+          refBlock,
+          position,
           plan.title
         )) as number | null
         if (id == null || !Number.isFinite(id)) {
@@ -440,14 +450,126 @@ export async function insertQuickResultAsChild(
     )
 
     if (titleId == null) {
-      return { success: false, error: "创建子块失败" }
+      return { success: false, error: `创建${positionLabel}失败` }
     }
     return { success: true, blockId: titleId }
   } catch (error) {
-    console.error("[AI QuickInteract] 插入子块失败:", error)
-    const message = error instanceof Error ? error.message : "插入子块失败"
+    console.error(`[AI QuickInteract] 插入${positionLabel}失败:`, error)
+    const message =
+      error instanceof Error ? error.message : `插入${positionLabel}失败`
     return { success: false, error: message }
   }
+}
+
+export async function insertQuickResultAsChild(
+  parentBlockId: number,
+  resultText: string,
+  promptLabel: string
+): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
+  return insertQuickResult(parentBlockId, resultText, promptLabel, "lastChild")
+}
+
+/** 将结果树插入到查询块下方（同级兄弟） */
+export async function insertQuickResultAfter(
+  sourceBlockId: number,
+  resultText: string,
+  promptLabel: string
+): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
+  return insertQuickResult(sourceBlockId, resultText, promptLabel, "after")
+}
+
+/**
+ * 把已插入在查询块下方的结果树，挪成查询块的 lastChild。
+ */
+export async function promoteQuickResultToChild(
+  sourceBlockId: number,
+  resultRootBlockId: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  if (sourceBlockId === resultRootBlockId) {
+    return { success: false, error: "源块与结果块相同，无法移动" }
+  }
+  try {
+    const source = await resolveBlockById(sourceBlockId)
+    if (!source) {
+      return { success: false, error: "找不到查询块，无法移动" }
+    }
+    const result = await resolveBlockById(resultRootBlockId)
+    if (!result) {
+      return { success: false, error: "找不到结果块，可能已被删除" }
+    }
+
+    await orca.commands.invokeGroup(
+      async () => {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.moveBlocks",
+          null,
+          [resultRootBlockId],
+          sourceBlockId,
+          "lastChild"
+        )
+      },
+      { undoable: true, topGroup: true }
+    )
+    return { success: true }
+  } catch (error) {
+    console.error("[AI QuickInteract] 提升为子块失败:", error)
+    const message = error instanceof Error ? error.message : "提升为子块失败"
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * 关闭/丢弃结果：删除结果标题块（含其子树 ID，避免残留）。
+ */
+export async function dismissQuickResult(
+  resultRootBlockId: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const root = await resolveBlockById(resultRootBlockId)
+    if (!root) {
+      // 已不存在视为成功关闭
+      return { success: true }
+    }
+
+    const ids = await collectBlockTreeIds(resultRootBlockId)
+    if (ids.length === 0) {
+      return { success: true }
+    }
+
+    await orca.commands.invokeGroup(
+      async () => {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.deleteBlocks",
+          null,
+          ids
+        )
+      },
+      { undoable: true, topGroup: true }
+    )
+    return { success: true }
+  } catch (error) {
+    console.error("[AI QuickInteract] 关闭结果块失败:", error)
+    const message = error instanceof Error ? error.message : "关闭结果块失败"
+    return { success: false, error: message }
+  }
+}
+
+/** 深度优先收集子树 ID（先子后父，便于宿主删除） */
+async function collectBlockTreeIds(rootId: number): Promise<number[]> {
+  const ordered: number[] = []
+  const walk = async (id: number): Promise<void> => {
+    const block = await resolveBlockById(id)
+    if (!block) return
+    const children = Array.isArray(block.children) ? block.children : []
+    for (const childId of children) {
+      if (typeof childId === "number" && Number.isFinite(childId)) {
+        await walk(childId)
+      }
+    }
+    ordered.push(id)
+  }
+  await walk(rootId)
+  return ordered
 }
 
 export type StartAIQuickInteractOpts =
@@ -514,6 +636,23 @@ export async function startAIQuickInteractFlow(
   const prompt = findToolbarAIPrompt(pluginName, opts.promptId)
   if (!prompt) {
     orca.notify("warn", "未找到该提示词，请打开 AI 提示词库检查", { title })
+    return
+  }
+
+  // 后台插入模式：不弹窗，请求完成后写入查询块下方
+  if (prompt.insertBelowOnComplete) {
+    const { startBackgroundQuickInsertJob } = await import(
+      "./aiQuickInteractJobs"
+    )
+    await startBackgroundQuickInsertJob({
+      pluginName,
+      sourceBlockId: extract.blockId,
+      selectedText: extract.selectedText,
+      blockText: extract.blockText,
+      promptLabel: prompt.label,
+      promptText: prompt.prompt,
+      includeBlockContext: prompt.includeBlockContext
+    })
     return
   }
 

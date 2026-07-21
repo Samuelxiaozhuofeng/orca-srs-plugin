@@ -9,9 +9,6 @@ import {
   closeAIPromptManager,
   enterCreateMode,
   enterEditMode,
-  setManagerDraftIncludeBlockContext,
-  setManagerDraftLabel,
-  setManagerDraftPrompt,
   setManagerError,
   setManagerSaving
 } from "../srs/ai/aiPromptManagerState"
@@ -34,12 +31,14 @@ function itemsToPayload(
     label: string
     prompt: string
     includeBlockContext: boolean
+    insertBelowOnComplete: boolean
   }[]
 ): ToolbarAIPromptItem[] {
   return items.map((i) => ({
     label: i.label,
     prompt: i.prompt,
-    includeBlockContext: i.includeBlockContext
+    includeBlockContext: i.includeBlockContext,
+    insertBelowOnComplete: i.insertBelowOnComplete
   }))
 }
 
@@ -69,15 +68,12 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
     }
   }
 
-  const handleSaveDraft = async () => {
-    const label = aiPromptManagerState.draftLabel.trim()
-    const prompt = aiPromptManagerState.draftPrompt.trim()
-    const includeBlockContext = aiPromptManagerState.draftIncludeBlockContext
-    if (!label) {
+  const handleSaveDraft = async (entry: ToolbarAIPromptItem) => {
+    if (!entry.label.trim()) {
       setManagerError("请填写名称")
       return
     }
-    if (!prompt) {
+    if (!entry.prompt.trim()) {
       setManagerError("请填写提示词")
       return
     }
@@ -85,7 +81,6 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
     const base = itemsToPayload(aiPromptManagerState.items)
     const mode = aiPromptManagerState.mode
     const editIndex = aiPromptManagerState.editIndex
-    const entry: ToolbarAIPromptItem = { label, prompt, includeBlockContext }
 
     let next: ToolbarAIPromptItem[]
     if (mode === "create") {
@@ -139,12 +134,15 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
     <AIPromptManagerDialog
       visible={snap.isOpen}
       mode={snap.mode}
+      editIndex={snap.editIndex}
       items={snap.items}
-      draftLabel={snap.draftLabel}
-      draftPrompt={snap.draftPrompt}
-      draftIncludeBlockContext={snap.draftIncludeBlockContext}
+      initialLabel={snap.draftLabel}
+      initialPrompt={snap.draftPrompt}
+      initialIncludeBlockContext={snap.draftIncludeBlockContext}
+      initialInsertBelowOnComplete={snap.draftInsertBelowOnComplete}
       errorMessage={snap.errorMessage}
       isSaving={snap.isSaving}
+      isLoadingItems={snap.isLoadingItems}
       onClose={() => {
         closeAIPromptManager()
       }}
@@ -156,11 +154,8 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
       onResetDefaults={() => {
         void handleResetDefaults()
       }}
-      onDraftLabelChange={setManagerDraftLabel}
-      onDraftPromptChange={setManagerDraftPrompt}
-      onDraftIncludeBlockContextChange={setManagerDraftIncludeBlockContext}
-      onSaveDraft={() => {
-        void handleSaveDraft()
+      onSaveDraft={(entry) => {
+        void handleSaveDraft(entry)
       }}
       onCancelDraft={backToListMode}
     />

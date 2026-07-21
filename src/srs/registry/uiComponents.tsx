@@ -243,6 +243,13 @@ export function registerUIComponents(pluginName: string): void {
 }
 
 export function unregisterUIComponents(pluginName: string): void {
+  // 中止后台 AI 快捷任务（不删除已写入的结果块）
+  void import("../ai/aiQuickInteractJobs")
+    .then((m) => m.cancelAllBackgroundQuickJobs())
+    .catch((error) => {
+      console.warn(`[${pluginName}] 清理 AI 后台任务失败:`, error)
+    })
+
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiQuickInteractMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiPromptManagerMount`)

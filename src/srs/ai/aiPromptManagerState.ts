@@ -3,7 +3,10 @@
  */
 
 import type { ToolbarAIPrompt } from "./aiToolbarPromptStore"
-import { getToolbarAIPrompts } from "./aiToolbarPromptStore"
+import {
+  getToolbarAIPrompts,
+  hydrateToolbarAIPromptLibrary
+} from "./aiToolbarPromptStore"
 import { isAIDialogBusyOrInReview } from "./aiDialogState"
 import { isAIQuickInteractOpen } from "./aiQuickInteractState"
 
@@ -17,11 +20,14 @@ export interface AIPromptManagerState {
   items: ToolbarAIPrompt[]
   mode: AIPromptManagerMode
   editIndex: number | null
+  /** 进入表单时的初始值（表单内用本地 state 编辑，避免无法输入） */
   draftLabel: string
   draftPrompt: string
   draftIncludeBlockContext: boolean
+  draftInsertBelowOnComplete: boolean
   errorMessage: string | null
   isSaving: boolean
+  isLoadingItems: boolean
 }
 
 export const aiPromptManagerState = proxy({
@@ -33,8 +39,10 @@ export const aiPromptManagerState = proxy({
   draftLabel: "",
   draftPrompt: "",
   draftIncludeBlockContext: true,
+  draftInsertBelowOnComplete: true,
   errorMessage: null as string | null,
-  isSaving: false
+  isSaving: false,
+  isLoadingItems: false
 }) as AIPromptManagerState
 
 export function isAIPromptManagerOpen(): boolean {
@@ -42,10 +50,10 @@ export function isAIPromptManagerOpen(): boolean {
 }
 
 /**
- * 打开管理窗并载入当前提示词。
+ * 打开管理窗并异步 hydrate 提示词库。
  * 若 AI 闪卡 / 快捷交互弹窗已开，则 warn 并 return。
  */
-export function openAIPromptManager(pluginName: string): void {
+export async function openAIPromptManager(pluginName: string): Promise<void> {
   if (isAIDialogBusyOrInReview()) {
     orca.notify("warn", "请先关闭 AI 生成闪卡窗口", { title: "AI 提示词库" })
     return
@@ -62,9 +70,37 @@ export function openAIPromptManager(pluginName: string): void {
   aiPromptManagerState.draftLabel = ""
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
+  aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.errorMessage = null
   aiPromptManagerState.isSaving = false
+  aiPromptManagerState.isLoadingItems = true
   aiPromptManagerState.isOpen = true
+
+  try {
+    const items = await hydrateToolbarAIPromptLibrary(pluginName)
+    if (
+      !aiPromptManagerState.isOpen ||
+      aiPromptManagerState.pluginName !== pluginName
+    ) {
+      return
+    }
+    aiPromptManagerState.items = items
+  } catch (error) {
+    console.error("[AI PromptManager] 加载提示词库失败:", error)
+    if (
+      aiPromptManagerState.isOpen &&
+      aiPromptManagerState.pluginName === pluginName
+    ) {
+      const message =
+        error instanceof Error ? error.message : "加载提示词库失败"
+      aiPromptManagerState.errorMessage = message
+      orca.notify("error", message, { title: "AI 提示词库" })
+    }
+  } finally {
+    if (aiPromptManagerState.pluginName === pluginName) {
+      aiPromptManagerState.isLoadingItems = false
+    }
+  }
 }
 
 export function closeAIPromptManager(): void {
@@ -79,8 +115,10 @@ export function closeAIPromptManager(): void {
     aiPromptManagerState.draftLabel = ""
     aiPromptManagerState.draftPrompt = ""
     aiPromptManagerState.draftIncludeBlockContext = true
+    aiPromptManagerState.draftInsertBelowOnComplete = true
     aiPromptManagerState.errorMessage = null
     aiPromptManagerState.isSaving = false
+    aiPromptManagerState.isLoadingItems = false
   }, 300)
 }
 
@@ -94,6 +132,7 @@ export function enterCreateMode(): void {
   aiPromptManagerState.draftLabel = ""
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
+  aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.errorMessage = null
 }
 
@@ -105,6 +144,7 @@ export function enterEditMode(index: number): void {
   aiPromptManagerState.draftLabel = item.label
   aiPromptManagerState.draftPrompt = item.prompt
   aiPromptManagerState.draftIncludeBlockContext = item.includeBlockContext
+  aiPromptManagerState.draftInsertBelowOnComplete = item.insertBelowOnComplete
   aiPromptManagerState.errorMessage = null
 }
 
@@ -115,19 +155,8 @@ export function backToListMode(): void {
   aiPromptManagerState.draftLabel = ""
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
+  aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.errorMessage = null
-}
-
-export function setManagerDraftLabel(value: string): void {
-  aiPromptManagerState.draftLabel = value
-}
-
-export function setManagerDraftPrompt(value: string): void {
-  aiPromptManagerState.draftPrompt = value
-}
-
-export function setManagerDraftIncludeBlockContext(value: boolean): void {
-  aiPromptManagerState.draftIncludeBlockContext = value
 }
 
 export function setManagerError(message: string | null): void {
@@ -145,5 +174,6 @@ export function applyManagerItems(items: ToolbarAIPrompt[]): void {
   aiPromptManagerState.draftLabel = ""
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
+  aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.errorMessage = null
 }
