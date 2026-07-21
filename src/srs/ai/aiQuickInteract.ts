@@ -333,8 +333,29 @@ export async function runToolbarAIPrompt(
   }
 }
 
+async function resolveBlockById(blockId: number): Promise<Block | null> {
+  const fromState = orca.state.blocks[blockId] as Block | undefined
+  if (fromState) return fromState
+  try {
+    const fromBackend = (await orca.invokeBackend("get-block", blockId)) as
+      | Block
+      | null
+      | undefined
+    return fromBackend ?? null
+  } catch {
+    return null
+  }
+}
+
 /**
- * 将结果作为 parent 的 lastChild 纯文本子块插入。
+ * 插入形态：
+ *   parent
+ *     └── AI · **提示名**          （标题，在上）
+ *           ├── 例子 1…            （缩进子块）
+ *           └── 例子 2…
+ *
+ * 正文优先用 batchInsertText(skipMarkdown=false) 让宿主解析 ** / 列表；
+ * 失败则回退为逐条 insertBlock（无手写 "• "，避免与大纲圆点重叠）。
  */
 export async function insertQuickResultAsChild(
   parentBlockId: number,
@@ -346,20 +367,16 @@ export async function insertQuickResultAsChild(
     return { success: false, error: "结果为空，无法插入" }
   }
 
-  const prefix =
-    promptLabel.trim().length > 0
-      ? `AI · ${promptLabel.trim()}\n`
-      : "AI · 快捷交互\n"
-  const content = `${prefix}${body}`
-
   try {
-    const parent =
-      (orca.state.blocks[parentBlockId] as Block | undefined) ?? null
+    const parent = await resolveBlockById(parentBlockId)
     if (!parent) {
       return { success: false, error: "找不到目标块，无法插入" }
     }
 
-    let createdId: number | null = null
+    const { buildQuickResultInsertPlan } = await import("./aiQuickInteractMd")
+    const plan = buildQuickResultInsertPlan(promptLabel, body)
+
+    let titleId: number | null = null
     await orca.commands.invokeGroup(
       async () => {
         const id = (await orca.commands.invokeEditorCommand(
@@ -367,20 +384,65 @@ export async function insertQuickResultAsChild(
           null,
           parent,
           "lastChild",
-          [{ t: "t", v: content }]
+          plan.title
         )) as number | null
         if (id == null || !Number.isFinite(id)) {
-          throw new Error("insertBlock 未返回有效块 ID")
+          throw new Error("insertBlock 未返回有效标题块 ID")
         }
-        createdId = id
+        titleId = id
+
+        const titleBlock = await resolveBlockById(id)
+        if (!titleBlock) {
+          throw new Error("标题块创建后无法读取")
+        }
+
+        if (!plan.bodyMarkdown) {
+          return
+        }
+
+        // 首选：宿主 Markdown 解析（** 粗体、列表分行）
+        try {
+          await orca.commands.invokeEditorCommand(
+            "core.editor.batchInsertText",
+            null,
+            titleBlock,
+            "lastChild",
+            plan.bodyMarkdown,
+            false, // skipMarkdown = false → 解析 Markdown
+            false
+          )
+          return
+        } catch (batchError) {
+          console.warn(
+            "[AI QuickInteract] batchInsertText 失败，回退逐块插入:",
+            batchError
+          )
+        }
+
+        // 回退：把每个结构块作为标题的 lastChild（顺序插入，挂在标题下缩进）
+        for (const content of plan.children) {
+          const ref = (await resolveBlockById(id)) ?? titleBlock
+          const fragments =
+            content.length > 0 ? content : ([{ t: "t", v: "" }] as const)
+          const childId = (await orca.commands.invokeEditorCommand(
+            "core.editor.insertBlock",
+            null,
+            ref,
+            "lastChild",
+            fragments
+          )) as number | null
+          if (childId == null || !Number.isFinite(childId)) {
+            throw new Error("insertBlock 未返回有效子块 ID")
+          }
+        }
       },
       { undoable: true, topGroup: true }
     )
 
-    if (createdId == null) {
+    if (titleId == null) {
       return { success: false, error: "创建子块失败" }
     }
-    return { success: true, blockId: createdId }
+    return { success: true, blockId: titleId }
   } catch (error) {
     console.error("[AI QuickInteract] 插入子块失败:", error)
     const message = error instanceof Error ? error.message : "插入子块失败"
