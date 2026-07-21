@@ -1,29 +1,29 @@
 /**
- * AI 设置 Schema（仅连接相关，供原生设置页）
+ * AI 连接设置：独立面板 + plugin data 持久化
  *
- * 工具栏提示词库不在此注册，见 aiToolbarPromptStore.ts + 提示词库面板。
+ * 不再注册到原生 setSettingsSchema，避免挤占设置页，也避免 setSettings 副作用。
+ * 兼容：hydrate 时从旧 settings 键 `ai.apiKey` / `ai.apiUrl` / `ai.model` 迁移到 setData。
  */
 
-export const aiSettingsSchema = {
-  "ai.apiKey": {
-    label: "API Key",
-    type: "string" as const,
-    defaultValue: "",
-    description: "OpenAI 兼容的 API Key（请妥善保管，不要泄露）"
-  },
-  "ai.apiUrl": {
-    label: "API URL",
-    type: "string" as const,
-    defaultValue: "https://api.openai.com/v1/chat/completions",
-    description: "API 端点地址，支持 OpenAI 兼容的第三方服务（如 DeepSeek、Ollama 等）"
-  },
-  "ai.model": {
-    label: "AI Model",
-    type: "string" as const,
-    defaultValue: "gpt-3.5-turbo",
-    description: "使用的模型名称（如 gpt-4、deepseek-chat、llama2 等）"
-  }
-}
+export const DEFAULT_AI_API_URL =
+  "https://api.openai.com/v1/chat/completions"
+export const DEFAULT_AI_MODEL = "gpt-3.5-turbo"
+
+/** plugin data 键 */
+export const AI_CONNECTION_DATA_KEY = "ai.connection" as const
+
+/** 历史 settings 键（只读迁移） */
+export const AI_SETTINGS_KEYS = {
+  apiKey: "ai.apiKey",
+  apiUrl: "ai.apiUrl",
+  model: "ai.model"
+} as const
+
+/**
+ * @deprecated 已移出原生设置页；保留空对象以免外部 spread 报错。
+ * 请使用 AI 服务设置面板 + setData。
+ */
+export const aiSettingsSchema = {} as const
 
 export interface AISettings {
   apiKey: string
@@ -31,21 +31,138 @@ export interface AISettings {
   model: string
 }
 
+type CacheEntry = { value: AISettings }
+
+const aiSettingsCache = new Map<string, CacheEntry>()
+
+export function clearAISettingsCache(pluginName?: string): void {
+  if (pluginName) {
+    aiSettingsCache.delete(pluginName)
+    return
+  }
+  aiSettingsCache.clear()
+}
+
+export function normalizeAISettings(input: Partial<AISettings> | null | undefined): AISettings {
+  const apiKey = typeof input?.apiKey === "string" ? input.apiKey.trim() : ""
+  const apiUrlRaw = typeof input?.apiUrl === "string" ? input.apiUrl.trim() : ""
+  const modelRaw = typeof input?.model === "string" ? input.model.trim() : ""
+  return {
+    apiKey,
+    apiUrl: apiUrlRaw || DEFAULT_AI_API_URL,
+    model: modelRaw || DEFAULT_AI_MODEL
+  }
+}
+
+function readAISettingsFromPluginSettings(pluginName: string): AISettings | null {
+  const settings = orca.state.plugins[pluginName]?.settings as
+    | Record<string, unknown>
+    | undefined
+  if (!settings) return null
+  const hasAny =
+    typeof settings[AI_SETTINGS_KEYS.apiKey] === "string" ||
+    typeof settings[AI_SETTINGS_KEYS.apiUrl] === "string" ||
+    typeof settings[AI_SETTINGS_KEYS.model] === "string"
+  if (!hasAny) return null
+  return normalizeAISettings({
+    apiKey: (settings[AI_SETTINGS_KEYS.apiKey] as string) || "",
+    apiUrl: (settings[AI_SETTINGS_KEYS.apiUrl] as string) || "",
+    model: (settings[AI_SETTINGS_KEYS.model] as string) || ""
+  })
+}
+
 /**
- * 获取 AI 连接设置
+ * 同步读取 AI 连接设置。
+ * 优先内存缓存（hydrate/save 后）；否则回退 settings 迁移源；再否则默认值。
  */
 export function getAISettings(pluginName: string): AISettings {
-  const settings = orca.state.plugins[pluginName]?.settings
-  return {
-    apiKey: settings?.["ai.apiKey"] || "",
-    apiUrl: settings?.["ai.apiUrl"] || "https://api.openai.com/v1/chat/completions",
-    model: settings?.["ai.model"] || "gpt-3.5-turbo"
+  const cached = aiSettingsCache.get(pluginName)
+  if (cached) return { ...cached.value }
+
+  const fromSettings = readAISettingsFromPluginSettings(pluginName)
+  if (fromSettings) return fromSettings
+
+  return normalizeAISettings({})
+}
+
+/**
+ * 仅更新内存缓存（不写 setData）。
+ * 用于「测试连接」等读草稿场景；调用方须在 finally 中恢复。
+ */
+export function setAISettingsCache(
+  pluginName: string,
+  value: Partial<AISettings>
+): void {
+  aiSettingsCache.set(pluginName, { value: normalizeAISettings(value) })
+}
+
+export function isAIConfigured(pluginName: string): boolean {
+  return !!getAISettings(pluginName).apiKey
+}
+
+function parseDataPayload(data: unknown): AISettings | null {
+  if (data == null) return null
+  if (typeof data !== "string" || data.trim() === "") return null
+  try {
+    const parsed = JSON.parse(data) as unknown
+    if (!parsed || typeof parsed !== "object") return null
+    return normalizeAISettings(parsed as Partial<AISettings>)
+  } catch (error) {
+    console.warn("[AI Settings] connection data JSON 解析失败:", error)
+    return null
   }
 }
 
 /**
- * 是否已配置 API Key
+ * 从 setData / 旧 settings 装载并缓存。settings 有值而 data 无时迁移到 setData。
  */
-export function isAIConfigured(pluginName: string): boolean {
-  return !!getAISettings(pluginName).apiKey
+export async function hydrateAISettings(pluginName: string): Promise<AISettings> {
+  let fromData: AISettings | null = null
+  try {
+    const data = await orca.plugins.getData(pluginName, AI_CONNECTION_DATA_KEY)
+    fromData = parseDataPayload(data)
+  } catch (error) {
+    console.warn(`[AI Settings] getData(${AI_CONNECTION_DATA_KEY}) 失败:`, error)
+  }
+
+  if (fromData) {
+    aiSettingsCache.set(pluginName, { value: fromData })
+    return { ...fromData }
+  }
+
+  const fromSettings = readAISettingsFromPluginSettings(pluginName)
+  if (fromSettings) {
+    try {
+      await orca.plugins.setData(
+        pluginName,
+        AI_CONNECTION_DATA_KEY,
+        JSON.stringify(fromSettings)
+      )
+    } catch (error) {
+      console.error("[AI Settings] 从 settings 迁移到 setData 失败:", error)
+    }
+    aiSettingsCache.set(pluginName, { value: fromSettings })
+    return { ...fromSettings }
+  }
+
+  const defaults = normalizeAISettings({})
+  aiSettingsCache.set(pluginName, { value: defaults })
+  return { ...defaults }
+}
+
+/**
+ * 写入 AI 连接设置到 plugin data（不触碰 setSettings）。
+ */
+export async function saveAISettings(
+  pluginName: string,
+  next: Partial<AISettings>
+): Promise<AISettings> {
+  const cleaned = normalizeAISettings(next)
+  await orca.plugins.setData(
+    pluginName,
+    AI_CONNECTION_DATA_KEY,
+    JSON.stringify(cleaned)
+  )
+  aiSettingsCache.set(pluginName, { value: cleaned })
+  return { ...cleaned }
 }

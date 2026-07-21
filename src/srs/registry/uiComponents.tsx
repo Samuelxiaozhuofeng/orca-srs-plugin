@@ -10,6 +10,7 @@
 import { AIDialogMount } from "../../components/AIDialogMount"
 import { AIQuickInteractMount } from "../../components/AIQuickInteractMount"
 import { AIPromptManagerMount } from "../../components/AIPromptManagerMount"
+import { AIServiceSettingsMount } from "../../components/AIServiceSettingsMount"
 import { IRBookDialogMount } from "../../components/IRBookDialogMount"
 import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDialogMount"
 import { WebImportDialogMount } from "../../components/web-import/WebImportDialogMount"
@@ -34,6 +35,12 @@ export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.aiPromptManagerMount`, () => (
     <SrsErrorBoundary componentName="管理 AI 提示词">
       <AIPromptManagerMount pluginName={pluginName} />
+    </SrsErrorBoundary>
+  ))
+
+  orca.headbar.registerHeadbarButton(`${pluginName}.aiServiceSettingsMount`, () => (
+    <SrsErrorBoundary componentName="AI 服务设置">
+      <AIServiceSettingsMount pluginName={pluginName} />
     </SrsErrorBoundary>
   ))
 
@@ -100,6 +107,20 @@ export function registerUIComponents(pluginName: string): void {
       title="打开 AI 提示词库"
     >
       <i className="ti ti-books orca-headbar-icon" />
+    </orca.components.Button>
+  ))
+
+  // AI / Firecrawl 服务设置（独立于原生设置页）
+  orca.headbar.registerHeadbarButton(`${pluginName}.aiServiceSettingsButton`, () => (
+    <orca.components.Button
+      variant="plain"
+      tabIndex={-1}
+      onClick={() =>
+        orca.commands.invokeCommand(`${pluginName}.openAIServiceSettings`)
+      }
+      title="AI / Firecrawl 服务设置"
+    >
+      <i className="ti ti-plug-connected orca-headbar-icon" />
     </orca.components.Button>
   ))
 
@@ -204,6 +225,13 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.manageAIToolbarPrompts`
   })
 
+  orca.slashCommands.registerSlashCommand(`${pluginName}.openAIServiceSettings`, {
+    icon: "ti ti-plug-connected",
+    group: "SRS",
+    title: "AI / Firecrawl 服务设置",
+    command: `${pluginName}.openAIServiceSettings`
+  })
+
   // ============ 渐进阅读斜杠命令 ============
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.ir`, {
@@ -253,6 +281,7 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiQuickInteractMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiPromptManagerMount`)
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiServiceSettingsMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.irBookDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.epubImportDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.webImportDialogMount`)
@@ -261,6 +290,7 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.incrementalReadingButton`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiPromptLibraryButton`)
+  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiServiceSettingsButton`)
 
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
@@ -273,6 +303,7 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionBackward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.aiCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.manageAIPrompts`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.openAIServiceSettings`)
   // Legacy slash id (if previously registered on older builds)
   try {
     orca.slashCommands.unregisterSlashCommand(`${pluginName}.interactiveAI`)

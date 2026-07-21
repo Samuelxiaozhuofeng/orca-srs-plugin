@@ -27,7 +27,7 @@ export function validateAIConfig(pluginName: string): AIConfigValidation {
 
   if (!settings.apiKey || settings.apiKey.trim() === "") {
     errors.push("API Key 未配置")
-    suggestions.push("请在插件设置中配置 API Key")
+    suggestions.push("请在「AI / Firecrawl 服务设置」中配置 API Key")
   }
 
   if (!settings.apiUrl || settings.apiUrl.trim() === "") {
@@ -194,15 +194,43 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Detailed connection test used by the registered command.
+ * Detailed connection test used by the registered command / 服务设置面板。
  * Uses a finite timeout and preserves truncated plain-text HTTP bodies.
+ *
+ * @param settingsOverride 若提供则用草稿测连，不依赖已保存配置
  */
-export async function testAIConfigWithDetails(pluginName: string): Promise<{
+export async function testAIConfigWithDetails(
+  pluginName: string,
+  settingsOverride?: ReturnType<typeof getAISettings>
+): Promise<{
   success: boolean
   message: string
   details?: any
 }> {
-  const validation = validateAIConfig(pluginName)
+  const settings = settingsOverride
+    ? {
+        apiKey: settingsOverride.apiKey.trim(),
+        apiUrl:
+          settingsOverride.apiUrl.trim() ||
+          "https://api.openai.com/v1/chat/completions",
+        model: settingsOverride.model.trim() || "gpt-3.5-turbo"
+      }
+    : getAISettings(pluginName)
+
+  let validation: AIConfigValidation
+  if (settingsOverride) {
+    // 临时写入缓存以便 validateAIConfig 读到草稿，再恢复
+    const { setAISettingsCache } = await import("./aiSettingsSchema")
+    const prev = getAISettings(pluginName)
+    setAISettingsCache(pluginName, settings)
+    try {
+      validation = validateAIConfig(pluginName)
+    } finally {
+      setAISettingsCache(pluginName, prev)
+    }
+  } else {
+    validation = validateAIConfig(pluginName)
+  }
 
   if (!validation.isValid) {
     return {
@@ -212,7 +240,6 @@ export async function testAIConfigWithDetails(pluginName: string): Promise<{
     }
   }
 
-  const settings = getAISettings(pluginName)
   const controller = new AbortController()
   const timeoutId = setTimeout(
     () => controller.abort(),

@@ -104,13 +104,20 @@ makeAICard / interactiveAICard（别名）
       → writeAICardDrafts
 ```
 
-### 设置项
+### 设置项（独立面板，不在原生设置页）
 
-| 设置键 | 默认 | 说明 |
-| --- | --- | --- |
-| `ai.apiKey` | `""` | Bearer |
-| `ai.apiUrl` | OpenAI chat/completions | 须 OpenAI 兼容；**拒绝** Ollama 原生 `/api/chat` |
-| `ai.model` | `gpt-3.5-turbo` | |
+入口：Headbar 插头图标 / 命令 `${pluginName}.openAIServiceSettings` / 斜杠「AI / Firecrawl 服务设置」。
+
+| 存储 | 键 / 字段 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| plugin **data** `ai.connection` | `apiKey` | `""` | Bearer |
+| 同上 | `apiUrl` | OpenAI chat/completions | 须 OpenAI 兼容；**拒绝** Ollama 原生 `/api/chat` |
+| 同上 | `model` | `gpt-3.5-turbo` | 可「拉取模型」自 `/models` 列表选择 |
+| plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
+
+- 读取：`getAISettings` / `getWebImportSettings`（内存缓存 → 旧 settings 迁移源 → 默认）
+- hydrate：插件 load + 打开面板；旧 settings 键自动迁移到 setData
+- 面板：`AIServiceSettingsDialog`（本地表单 state + 测连 + 拉模型）
 
 ### 制卡提示词质量规则（`aiService` system/user prompt）
 

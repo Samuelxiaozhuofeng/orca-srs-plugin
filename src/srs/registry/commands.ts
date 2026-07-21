@@ -384,6 +384,18 @@ export function registerCommands(
     "SRS: 打开 AI 提示词库"
   )
 
+  // AI / Firecrawl 服务设置（独立面板，非原生设置页）
+  orca.commands.registerCommand(
+    `${pluginName}.openAIServiceSettings`,
+    async () => {
+      const { openAIServiceSettings } = await import(
+        "../ai/aiServiceSettingsState"
+      )
+      await openAIServiceSettings(_pluginName)
+    },
+    "SRS: AI / Firecrawl 服务设置"
+  )
+
   // 打开旧复习面板命令（块渲染器模式）
   orca.commands.registerCommand(
     `${pluginName}.openOldReviewPanel`,
@@ -743,6 +755,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.irToggleViewMode`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
   orca.commands.unregisterCommand(`${pluginName}.manageAIToolbarPrompts`)
+  orca.commands.unregisterCommand(`${pluginName}.openAIServiceSettings`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)
   
   // Flash Home 命令注销

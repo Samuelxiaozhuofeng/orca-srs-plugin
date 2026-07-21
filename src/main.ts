@@ -24,13 +24,11 @@ import { collectCardsFromQueryBlock, collectCardsFromChildren, isQueryBlock } fr
 import { createRepeatReviewSession } from "./srs/repeatReviewManager"
 import type { DbId } from "./orca.d.ts"
 import { BlockWithRepr } from "./srs/blockUtils"
-import { aiSettingsSchema } from "./srs/ai/aiSettingsSchema"
 import { reviewSettingsSchema } from "./srs/settings/reviewSettingsSchema"
 import {
   getIncrementalReadingSettings,
   incrementalReadingSettingsSchema
 } from "./srs/settings/incrementalReadingSettingsSchema"
-import { webImportSettingsSchema } from "./srs/settings/webImportSettingsSchema"
 import { createReviewSessionBlockWithDescriptor } from "./srs/reviewSessionManager"
 import {
   createFixedRepeatSessionDescriptor,
@@ -74,15 +72,13 @@ export async function load(_name: string) {
   // 设置国际化
   setupL10N(orca.state.locale, { "zh-CN": zhCN })
 
-  // 注册插件设置（合并 AI / 复习 / 渐进阅读 / 网页导入）
+  // 注册插件设置（复习 + 渐进阅读；AI/Firecrawl 已独立到服务设置面板）
   try {
     await orca.plugins.setSettingsSchema(pluginName, {
-      ...aiSettingsSchema,
       ...reviewSettingsSchema,
-      ...incrementalReadingSettingsSchema,
-      ...webImportSettingsSchema
+      ...incrementalReadingSettingsSchema
     })
-    console.log(`[${pluginName}] 插件设置已注册（AI + 复习 + 渐进阅读 + 网页导入）`)
+    console.log(`[${pluginName}] 插件设置已注册（复习 + 渐进阅读）`)
   } catch (error) {
     console.warn(`[${pluginName}] 注册插件设置失败:`, error)
   }
@@ -95,7 +91,7 @@ export async function load(_name: string) {
   registerContextMenu(pluginName)
   startRecentDeckWatcher(pluginName)
 
-  // 提示词库：从 plugin data hydrate，避免工具栏读到空缓存；失败不阻断加载
+  // 提示词库 + AI/Firecrawl 连接：从 plugin data hydrate；失败不阻断加载
   try {
     const { hydrateToolbarAIPromptLibrary } = await import(
       "./srs/ai/aiToolbarPromptStore"
@@ -103,6 +99,20 @@ export async function load(_name: string) {
     await hydrateToolbarAIPromptLibrary(pluginName)
   } catch (error) {
     console.warn(`[${pluginName}] 加载 AI 提示词库失败:`, error)
+  }
+  try {
+    const { hydrateAISettings } = await import("./srs/ai/aiSettingsSchema")
+    await hydrateAISettings(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载 AI 连接设置失败:`, error)
+  }
+  try {
+    const { hydrateWebImportSettings } = await import(
+      "./srs/settings/webImportSettingsSchema"
+    )
+    await hydrateWebImportSettings(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载 Firecrawl 设置失败:`, error)
   }
 
   try {

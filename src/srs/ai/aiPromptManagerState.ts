@@ -62,6 +62,13 @@ export async function openAIPromptManager(pluginName: string): Promise<void> {
     orca.notify("warn", "请先关闭 AI 快捷交互窗口", { title: "AI 提示词库" })
     return
   }
+  const { isAIServiceSettingsOpen } = await import("./aiServiceSettingsState")
+  if (isAIServiceSettingsOpen()) {
+    orca.notify("warn", "请先关闭 AI / Firecrawl 服务设置", {
+      title: "AI 提示词库"
+    })
+    return
+  }
 
   aiPromptManagerState.pluginName = pluginName
   aiPromptManagerState.items = getToolbarAIPrompts(pluginName)
