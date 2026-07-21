@@ -6,13 +6,12 @@
 
 import {
   dismissQuickResult,
-  insertQuickResultAfter,
+  insertQuickResultAsChild,
+  keepQuickResult,
   promoteQuickResultToChild,
   runToolbarAIPrompt
 } from "./aiQuickInteract"
 import { sanitizePublicError } from "../http/redactSecrets"
-
-const { proxy } = window.Valtio
 
 export type QuickBackgroundJobStatus = "generating" | "ready" | "error"
 
@@ -43,7 +42,14 @@ export type StartBackgroundQuickInsertOptions = {
   includeBlockContext: boolean
 }
 
-export const aiQuickJobsState = proxy({
+function getValtioProxy<T extends object>(target: T): T {
+  if (typeof window !== "undefined" && window.Valtio?.proxy) {
+    return window.Valtio.proxy(target)
+  }
+  return target
+}
+
+export const aiQuickJobsState = getValtioProxy({
   jobs: [] as QuickBackgroundJob[]
 })
 
@@ -78,7 +84,7 @@ export function hasActiveQuickBackgroundJobs(): boolean {
 }
 
 /**
- * 启动后台任务：立即请求 AI，成功后插入查询块下方，任务进入 ready 供用户处置。
+ * 启动后台任务：静默请求 AI，成功后直接插入到目标块下方作为子块，过程无右下角 Toast 弹窗打扰。
  */
 export async function startBackgroundQuickInsertJob(
   opts: StartBackgroundQuickInsertOptions
@@ -115,12 +121,6 @@ export async function startBackgroundQuickInsertJob(
   }
   aiQuickJobsState.jobs = [...aiQuickJobsState.jobs, job]
 
-  orca.notify(
-    "info",
-    `「${opts.promptLabel}」已发送，生成后将插入到选中块下方`,
-    { title }
-  )
-
   try {
     const result = await runToolbarAIPrompt({
       pluginName: opts.pluginName,
@@ -142,21 +142,20 @@ export async function startBackgroundQuickInsertJob(
     if (!result.success) {
       if (result.error.code === "CANCELLED") {
         removeJob(id)
-        orca.notify("info", "已取消生成", { title })
         return id
       }
       const safe = sanitizePublicError(result.error.message)
       current.status = "error"
       current.errorMessage = safe
       current.resultText = ""
-      orca.notify("error", safe, { title })
       return id
     }
 
-    const insert = await insertQuickResultAfter(
+    const insert = await insertQuickResultAsChild(
       opts.sourceBlockId,
       result.text,
-      opts.promptLabel
+      opts.promptLabel,
+      opts.selectedText
     )
 
     const afterInsert = findJob(id)
@@ -166,7 +165,6 @@ export async function startBackgroundQuickInsertJob(
       afterInsert.status = "error"
       afterInsert.errorMessage = insert.error
       afterInsert.resultText = result.text
-      orca.notify("error", insert.error, { title })
       return id
     }
 
@@ -174,7 +172,6 @@ export async function startBackgroundQuickInsertJob(
     afterInsert.resultText = result.text
     afterInsert.resultRootBlockId = insert.blockId
     afterInsert.errorMessage = null
-    orca.notify("success", `「${opts.promptLabel}」已插入到块下方`, { title })
     return id
   } catch (error) {
     if (controller.signal.aborted) {
@@ -205,6 +202,22 @@ export function cancelBackgroundQuickJob(jobId: string): void {
   abortByJobId.delete(jobId)
   removeJob(jobId)
   orca.notify("info", "已取消生成", { title: "AI 快捷交互" })
+}
+
+/**
+ * 保留预览结果：更新结果块属性为 kept（沉淀为笔记），并从任务列表中移除。
+ */
+export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
+  const job = findJob(jobId)
+  if (!job) return
+  if (job.resultRootBlockId != null) {
+    const result = await keepQuickResult(job.resultRootBlockId)
+    if (!result.success) {
+      console.error("[AI QuickInteract] 保留结果块失败:", result.error)
+      return
+    }
+  }
+  removeJob(jobId)
 }
 
 /**

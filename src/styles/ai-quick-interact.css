@@ -1,0 +1,130 @@
+/**
+ * AI 快捷交互：后台生成行尾加载图标、内联“罩层”与预览操作栏
+ */
+
+/* 目标块尾部旋转 Sparkles 加载图标：紧贴文本行末，低透明度，不抢视线 */
+.srs-ai-target-block-loading {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--orca-accent-color, #6366f1);
+  font-size: 0.8em;
+  line-height: 1;
+  vertical-align: middle;
+  pointer-events: none;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.srs-ai-target-block-loading .srs-ai-spin {
+  animation: srs-ai-spin-anim 1.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes srs-ai-spin-anim {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+ * AI 结果根块“罩层”
+ * 注意：不要给 .orca-block 加 padding/margin，否则会挤歪句柄/子块缩进；
+ * 视觉只用背景与左侧 accent，定位上下文用 position:relative。
+ */
+.srs-ai-result-block,
+.orca-block[data-srs-ai-result="true"] {
+  position: relative !important;
+  background-color: var(--orca-bg-tertiary, rgba(99, 102, 241, 0.05)) !important;
+  box-shadow: inset 3px 0 0 0 var(--orca-accent-color, #6366f1) !important;
+  border-radius: 6px !important;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* 暗色模式兼容 */
+.theme-dark .srs-ai-result-block,
+.theme-dark .orca-block[data-srs-ai-result="true"],
+[data-theme="dark"] .srs-ai-result-block,
+[data-theme="dark"] .orca-block[data-srs-ai-result="true"] {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+  box-shadow: inset 3px 0 0 0 var(--orca-accent-color, #818cf8) !important;
+}
+
+/* 标题行预留右侧空间，避免长标题顶到保留/取消按钮 */
+.srs-ai-result-block > .orca-repr > .orca-repr-main.srs-ai-result-main,
+.orca-block[data-srs-ai-result="true"] > .orca-repr > .orca-repr-main.srs-ai-result-main,
+.srs-ai-result-block > .orca-repr-main.srs-ai-result-main,
+.orca-block[data-srs-ai-result="true"] > .orca-repr-main.srs-ai-result-main {
+  padding-right: 7.25rem;
+  box-sizing: border-box;
+}
+
+/*
+ * AI 预览块操作栏：绝对定位在结果根块首行右侧末端
+ * （挂在 .orca-block 直接子级，不再塞进 .orca-repr-main 文档流）
+ */
+.srs-ai-preview-actions {
+  position: absolute;
+  top: 0.1em;
+  right: 0.35rem;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 1px 2px;
+  white-space: nowrap;
+  pointer-events: auto;
+  /* 盖在正文上时保持可读 */
+  background: color-mix(
+    in srgb,
+    var(--orca-bg-primary, #ffffff) 88%,
+    transparent
+  );
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08);
+}
+
+.srs-ai-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.3;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+/* [ 保留 ] 按钮：微弱绿色/Accent 提示 */
+.srs-ai-action-btn--keep {
+  color: var(--orca-color-success, #16a34a);
+  background-color: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.srs-ai-action-btn--keep:hover {
+  background-color: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+/* [ 取消 ] 按钮：微弱幽灵/灰色提示 */
+.srs-ai-action-btn--cancel {
+  color: var(--orca-text-secondary, #6b7280);
+  background-color: rgba(107, 114, 128, 0.08);
+  border-color: rgba(107, 114, 128, 0.2);
+}
+
+.srs-ai-action-btn--cancel:hover {
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+}

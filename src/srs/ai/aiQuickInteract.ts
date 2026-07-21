@@ -368,7 +368,8 @@ export async function insertQuickResult(
   refBlockId: number,
   resultText: string,
   promptLabel: string,
-  position: QuickResultInsertPosition
+  position: QuickResultInsertPosition,
+  selectedText?: string
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
   const body = resultText.trim()
   if (!body) {
@@ -384,7 +385,7 @@ export async function insertQuickResult(
     }
 
     const { buildQuickResultInsertPlan } = await import("./aiQuickInteractMd")
-    const plan = buildQuickResultInsertPlan(promptLabel, body)
+    const plan = buildQuickResultInsertPlan(promptLabel, body, selectedText)
 
     let titleId: number | null = null
     await orca.commands.invokeGroup(
@@ -400,6 +401,25 @@ export async function insertQuickResult(
           throw new Error("insertBlock 未返回有效标题块 ID")
         }
         titleId = id
+
+        // 写入 AI 内联块标识属性与预览状态，并失效缓存
+        try {
+          await orca.commands.invokeEditorCommand(
+            "core.editor.setProperties",
+            null,
+            [id],
+            {
+              "srs.ai.quickResult": true,
+              "srs.ai.status": "preview",
+              "srs.ai.promptLabel": promptLabel,
+              ...(selectedText ? { "srs.ai.selectedText": selectedText } : {})
+            }
+          )
+          const { invalidateBlockCache } = await import("../storage")
+          invalidateBlockCache(id)
+        } catch (propErr) {
+          console.warn("[AI QuickInteract] 设置 srs.ai.quickResult 属性失败:", propErr)
+        }
 
         const titleBlock = await resolveBlockById(id)
         if (!titleBlock) {
@@ -464,18 +484,20 @@ export async function insertQuickResult(
 export async function insertQuickResultAsChild(
   parentBlockId: number,
   resultText: string,
-  promptLabel: string
+  promptLabel: string,
+  selectedText?: string
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
-  return insertQuickResult(parentBlockId, resultText, promptLabel, "lastChild")
+  return insertQuickResult(parentBlockId, resultText, promptLabel, "lastChild", selectedText)
 }
 
 /** 将结果树插入到查询块下方（同级兄弟） */
 export async function insertQuickResultAfter(
   sourceBlockId: number,
   resultText: string,
-  promptLabel: string
+  promptLabel: string,
+  selectedText?: string
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
-  return insertQuickResult(sourceBlockId, resultText, promptLabel, "after")
+  return insertQuickResult(sourceBlockId, resultText, promptLabel, "after", selectedText)
 }
 
 /**
@@ -550,6 +572,39 @@ export async function dismissQuickResult(
   } catch (error) {
     console.error("[AI QuickInteract] 关闭结果块失败:", error)
     const message = error instanceof Error ? error.message : "关闭结果块失败"
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * 保留预览结果：更新块属性状态为 kept 并失效缓存。
+ */
+export async function keepQuickResult(
+  resultRootBlockId: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const root = await resolveBlockById(resultRootBlockId)
+    if (!root) {
+      return { success: true }
+    }
+
+    await orca.commands.invokeGroup(
+      async () => {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.setProperties",
+          null,
+          [resultRootBlockId],
+          { "srs.ai.status": "kept" }
+        )
+      },
+      { undoable: true, topGroup: true }
+    )
+    const { invalidateBlockCache } = await import("../storage")
+    invalidateBlockCache(resultRootBlockId)
+    return { success: true }
+  } catch (error) {
+    console.error("[AI QuickInteract] 保留结果块失败:", error)
+    const message = error instanceof Error ? error.message : "保留结果块失败"
     return { success: false, error: message }
   }
 }

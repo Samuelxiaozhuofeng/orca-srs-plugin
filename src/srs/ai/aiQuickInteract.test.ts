@@ -580,6 +580,16 @@ describe("insertQuickResult positions", () => {
         if (opts?.batchFail) throw new Error("batch fail")
         return undefined
       }
+      if (cmd === "core.editor.setProperties") {
+        const targetIds = args[0] as number[]
+        const props = args[1]
+        for (const tid of targetIds) {
+          if (blocks[tid]) {
+            blocks[tid].properties = { ...blocks[tid].properties, ...props }
+          }
+        }
+        return undefined
+      }
       throw new Error(`unexpected command ${cmd}`)
     })
     const invokeGroup = vi.fn(async (fn: () => Promise<void>) => {
@@ -593,19 +603,35 @@ describe("insertQuickResult positions", () => {
     return { invokeEditorCommand, blocks }
   }
 
-  it("inserts title as lastChild when position is lastChild", async () => {
-    const { invokeEditorCommand } = setupInsertMock()
-    const result = await insertQuickResult(10, "hello **world**", "举例说明", "lastChild")
+  it("inserts title as lastChild when position is lastChild and sets srs.ai.quickResult property with preview status", async () => {
+    const { invokeEditorCommand, blocks } = setupInsertMock()
+    const result = await insertQuickResult(10, "hello **world**", "举例说明", "lastChild", "工作记忆")
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.blockId).toBe(100)
     expect(invokeEditorCommand).toHaveBeenCalledWith(
-      "core.editor.insertBlock",
+      "core.editor.setProperties",
       null,
-      expect.objectContaining({ id: 10 }),
-      "lastChild",
-      expect.any(Array)
+      [100],
+      expect.objectContaining({
+        "srs.ai.quickResult": true,
+        "srs.ai.status": "preview",
+        "srs.ai.promptLabel": "举例说明",
+        "srs.ai.selectedText": "工作记忆"
+      })
     )
+    expect(blocks[100].properties["srs.ai.quickResult"]).toBe(true)
+    expect(blocks[100].properties["srs.ai.status"]).toBe("preview")
+  })
+
+  it("updates property to kept when keepQuickResult is called", async () => {
+    const { blocks } = setupInsertMock()
+    const { keepQuickResult } = await import("./aiQuickInteract")
+    const result = await insertQuickResult(10, "hello", "翻译", "lastChild")
+    if (!result.success) return
+    const keptRes = await keepQuickResult(result.blockId)
+    expect(keptRes.success).toBe(true)
+    expect(blocks[result.blockId].properties["srs.ai.status"]).toBe("kept")
   })
 
   it("inserts title after query block when position is after", async () => {

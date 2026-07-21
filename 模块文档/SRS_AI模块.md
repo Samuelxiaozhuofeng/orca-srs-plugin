@@ -1,7 +1,7 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-07-21
-> 变更说明：AI 快捷交互支持提示词选项「后台生成并插入到块下方」；完成后写入查询块同级下方，浮动面板可「插入为子块」或关闭删除。
+> 文档同步日期：2026-07-22
+> 变更说明：后台生成结果块内联「保留/取消」操作栏改为挂在结果根 `.orca-block` 上、首行右侧绝对定位；生成中在源块行尾挂微轻 sparkles 图标。
 > **未宣称**：真机 UI / 写入 / 追问全路径验收。
 
 ## 概述
@@ -57,7 +57,8 @@ src/components/
 ├── AICardDraftCard.tsx
 ├── AIQuickInteractMount.tsx # 弹窗 + 后台任务面板挂载
 ├── AIQuickInteractDialog.tsx
-├── AIQuickJobsPanel.tsx     # 非模态：生成中 / 插入为子块 / 关闭
+├── AIQuickJobsPanel.tsx     # 非模态面板（当前可空挂；主操作已内联到结果块）
+├── AIBlockLoadingMount.tsx  # 源块行尾 loading + 结果根块罩层/保留取消
 ├── AIPromptManagerMount.tsx
 ├── AIPromptManagerDialog.tsx
 └── incremental-reading/
@@ -76,11 +77,13 @@ src/components/
 - **提示词库编辑 UI**：表单用组件本地 state + 键盘事件 stopPropagation，避免宿主编辑器抢键导致无法输入
 - **后台路径**（`insertBelowOnComplete`）：
   1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）
-  2. 用户可继续阅读；右下角 `AIQuickJobsPanel` 显示「生成中…」
-  3. 成功：`insertQuickResultAfter` 写入 `AI · 提示名` 树（标题 + 正文子块）
-  4. 用户操作：`promoteQuickResultToChild`（`moveBlocks` → 查询块 `lastChild`）或 `dismissQuickResult`（删结果树）
+  2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
+  3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`）
+  4. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
+  5. 用户操作：`keepBackgroundQuickJob`（确认沉淀）或 `dismissBackgroundQuickJob`（删预览树）；任务结束后卸掉罩层与操作栏
 - **弹窗路径**（选项关闭或「自定义提示词」）：仍走 `aiQuickInteractState` + `AIQuickInteractDialog`，结果可「插入为子块」
 - **卸载**：`cancelAllBackgroundQuickJobs` 中止进行中请求并清空队列；**不**自动删除已写入的结果块
+- **样式**：`src/styles/ai-quick-interact.css`；结果根块不用 padding/margin 改布局（以免挤歪句柄/子块缩进），仅用背景 + inset box-shadow 做左侧 accent
 
 ### 块解释（`aiBlockExplain.ts` + `aiBlockExplainWrite.ts`）
 

@@ -22,6 +22,7 @@ import { createRequestTokenGuard } from "../srs/ai/aiRequestToken"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
 import { AIQuickInteractDialog } from "./AIQuickInteractDialog"
 import { AIQuickJobsPanel } from "./AIQuickJobsPanel"
+import { AIBlockLoadingMount } from "./AIBlockLoadingMount"
 
 const { Valtio } = window
 const { useSnapshot } = Valtio
@@ -37,6 +38,9 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
   const tokenGuardRef = useRef(createRequestTokenGuard())
   /** 避免 preset 打开时重复自动生成 */
   const autoStartedRef = useRef(false)
+
+  // ... (rest unchanged)
+
 
   useEffect(() => {
     return () => {
@@ -221,6 +225,7 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
   return (
     <>
       <AIQuickJobsPanel />
+      <AIBlockLoadingMount />
       {snap.isOpen ? (
         <AIQuickInteractDialog
           visible={snap.isOpen}

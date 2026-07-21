@@ -186,7 +186,8 @@ export function structuralBlockToFragments(
  */
 export function buildQuickResultInsertPlan(
   promptLabel: string,
-  resultMarkdown: string
+  resultMarkdown: string,
+  selectedText?: string
 ): QuickResultInsertPlan {
   const titleLabel =
     promptLabel.trim().length > 0 ? promptLabel.trim() : "快捷交互"
@@ -194,6 +195,11 @@ export function buildQuickResultInsertPlan(
     { t: "t", v: "AI · " },
     { t: "t", v: titleLabel, f: "b" }
   ]
+  if (selectedText?.trim()) {
+    const text = selectedText.trim()
+    const clipped = text.length > 30 ? `${text.slice(0, 30)}…` : text
+    title.push({ t: "t", v: " · " }, { t: "t", v: clipped, f: "i" })
+  }
 
   const bodyMarkdown = (resultMarkdown ?? "").trim()
   const bodyBlocks = splitMarkdownIntoStructuralBlocks(bodyMarkdown)
