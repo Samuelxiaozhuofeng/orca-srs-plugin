@@ -5,7 +5,6 @@ This file is the canonical coding contract for agents working in this repository
 ## Non-negotiables
 
 - Read the relevant file in `模块文档/` before changing a feature, and read `plugin-docs/modules.md` plus the relevant Orca reference before using an Orca API. The current code and local references are the evidence; do not invent APIs or paths.
-- When a change touches Orca blocks, properties, tags, refs, caches, indexes, editor commands, UI/database consistency, or host DOM/layout/scroll/focus/panel lifecycle, obtain real runtime evidence before editing code. Follow **Console Debugging** below.
 - Every block-property write must invalidate the matching cache (`invalidateBlockCache`; IR writes use `invalidateIrBlockCache`) before later reads rely on the value.
 - Generate and compare `cardKey` only through `src/srs/cardIdentity.ts`; never hand-build identity strings or match identities with substring checks.
 - Review sessions load their frozen descriptor. Do not revive the deprecated global scope/last-session pattern; dynamic requeue must respect the frozen `sessionScope` and daily limits.
@@ -21,7 +20,7 @@ This file is the canonical coding contract for agents working in this repository
 
 For Orca-dependent bugs and behavior changes that can be inspected in the user's running instance:
 
-1. Before editing, provide the smallest useful read-only Console script by default. First identify the real runtime target and source—such as the current repo/panel, blockId, scroll owner, DOM node, cache, or backend value. Do not assume that the first matching selector or apparent container is the real owner.
+1. When runtime evidence would materially reduce uncertainty, provide the smallest useful read-only Console script. First identify the real runtime target and source—such as the current repo/panel, blockId, scroll owner, DOM node, cache, or backend value. Do not assume that the first matching selector or apparent container is the real owner.
 2. For state/data issues, compare the relevant `orca.state` value with an independent `orca.invokeBackend` read. Consult `plugin-docs/` for the exact backend message and arguments. Use top-level `await`, return compact copyable JSON, and include `orca.state.repo`.
 3. Do not provide a mutating Console script until its impact is stated and the user agrees. `insertTag`, `removeTag`, `setProperties`, and similar command success responses are not final evidence; re-read the backend and report the post-write state.
 4. Until runtime evidence is returned, describe explanations only as **candidate causes**. After the fix, distinguish **automated tests passed** from **Orca instance verification passed**, and convert the observed runtime shape into a regression test when practical.

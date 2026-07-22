@@ -45,3 +45,4 @@ dist.zip
 .ccb/agents/grk/provider-state/grok/home/.grok/managed_config.lock
 .ccb/agents/grk/provider-state/grok/home/.grok/worktrees.db
 .codex/agents/fast_implementer.toml
+AGENTS.md
