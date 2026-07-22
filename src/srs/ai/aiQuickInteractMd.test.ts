@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildQuickResultInsertPlan,
   parseInlineMarkdownToFragments,
+  sanitizeAiTextForOrcaInsert,
   splitMarkdownIntoStructuralBlocks,
   structuralBlockToFragments
 } from "./aiQuickInteractMd"
@@ -85,5 +86,29 @@ describe("structuralBlockToFragments + buildQuickResultInsertPlan", () => {
     expect(plan.children[1]).toEqual([{ t: "t", v: "条目甲" }])
     expect(plan.children[2]).toEqual([{ t: "t", v: "条目乙" }])
     expect(plan.bodyMarkdown).toContain("- 条目甲")
+  })
+
+  it("sanitizes web-search numeric footnotes that Orca would treat as block refs", () => {
+    // 与 repo 6emicuv1sv76k block 4457 同形
+    const raw =
+      "金价网约 887.10 元/克1(https://www.jinjia.com.cn/au9999/)\n" +
+      "东方财富2(https://quote.eastmoney.com/globalfuture/AU9999.html)\n" +
+      "另见 [3](https://cn.tradingview.com/symbols/XAUUSD/) 与 [[4]]"
+    const cleaned = sanitizeAiTextForOrcaInsert(raw)
+    expect(cleaned).toContain(
+      "[源1](https://www.jinjia.com.cn/au9999/)"
+    )
+    expect(cleaned).toContain(
+      "[源2](https://quote.eastmoney.com/globalfuture/AU9999.html)"
+    )
+    expect(cleaned).toContain(
+      "[源3](https://cn.tradingview.com/symbols/XAUUSD/)"
+    )
+    expect(cleaned).toContain("〔4〕")
+    expect(cleaned).not.toMatch(/(^|[^\]\w])1\(/)
+    expect(cleaned).not.toContain("[[4]]")
+
+    const plan = buildQuickResultInsertPlan("今日金价", raw)
+    expect(plan.bodyMarkdown).toContain("[源1](https://www.jinjia.com.cn/au9999/)")
   })
 })

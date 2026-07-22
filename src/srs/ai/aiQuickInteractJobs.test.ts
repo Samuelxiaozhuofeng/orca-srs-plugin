@@ -55,7 +55,8 @@ describe("startBackgroundQuickInsertJob", () => {
       expect.objectContaining({
         pluginName: "orca-srs",
         selectedText: "工作记忆",
-        userInstruction: "请举例说明"
+        userInstruction: "请举例说明",
+        model: ""
       })
     )
     expect(insertQuickResultAsChild).toHaveBeenCalledWith(

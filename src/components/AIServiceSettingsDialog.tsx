@@ -2,7 +2,11 @@
  * AI + Firecrawl 服务设置面板（本地表单 state，避免无法输入）
  */
 
-import type { AISettings } from "../srs/ai/aiSettingsSchema"
+import type {
+  AIReasoningEffort,
+  AISettings
+} from "../srs/ai/aiSettingsSchema"
+import { AI_REASONING_EFFORTS } from "../srs/ai/aiSettingsSchema"
 import type { WebImportSettings } from "../srs/settings/webImportSettingsSchema"
 
 export type ServiceSettingsDraft = {
@@ -60,6 +64,12 @@ function ServiceSettingsForm(props: {
   const [apiKey, setApiKey] = useState(props.initialAI.apiKey)
   const [apiUrl, setApiUrl] = useState(props.initialAI.apiUrl)
   const [model, setModel] = useState(props.initialAI.model)
+  const [enableNativeWebSearch, setEnableNativeWebSearch] = useState(
+    props.initialAI.enableNativeWebSearch
+  )
+  const [reasoningEffort, setReasoningEffort] = useState<AIReasoningEffort>(
+    props.initialAI.reasoningEffort
+  )
   const [firecrawlApiKey, setFirecrawlApiKey] = useState(
     props.initialFirecrawl.firecrawlApiKey
   )
@@ -69,7 +79,13 @@ function ServiceSettingsForm(props: {
 
   const busy = props.busy
   const draft = (): ServiceSettingsDraft => ({
-    ai: { apiKey, apiUrl, model },
+    ai: {
+      apiKey,
+      apiUrl,
+      model,
+      enableNativeWebSearch,
+      reasoningEffort
+    },
     firecrawl: { firecrawlApiKey, firecrawlApiUrl }
   })
 
@@ -184,6 +200,58 @@ function ServiceSettingsForm(props: {
               当前模型不在列表中，仍可手动使用
             </p>
           ) : null}
+        </label>
+
+        <label className="ai-service-settings__field ai-service-settings__field--toggle">
+          <span className="ai-service-settings__label">模型原生联网</span>
+          <label className="ai-service-settings__checkbox-row">
+            <input
+              type="checkbox"
+              className="ai-service-settings__checkbox"
+              checked={enableNativeWebSearch}
+              onChange={(e) => setEnableNativeWebSearch(e.target.checked)}
+              onKeyDown={stopKeys}
+              onMouseDown={stopBubble}
+              disabled={busy}
+            />
+            <span>
+              请求时附带{" "}
+              <code className="ai-service-settings__code">
+                {'tools: [{ type: "web_search" }]'}
+              </code>
+            </span>
+          </label>
+          <p className="ai-service-settings__hint">
+            适用于 xAI Grok 等内置 web_search 的模型。不支持该 tool
+            的服务会返回错误。制卡仍做源文本接地校验，联网结果若无法落在源文中会被拒。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">思考强度</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={reasoningEffort}
+            onChange={(e) =>
+              setReasoningEffort(e.target.value as AIReasoningEffort)
+            }
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          >
+            {AI_REASONING_EFFORTS.map((level) => (
+              <option key={level} value={level}>
+                {level === "default"
+                  ? "默认（不传 reasoning_effort）"
+                  : level}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            选择 low / medium / high 时写入{" "}
+            <code className="ai-service-settings__code">reasoning_effort</code>
+            。仅部分推理模型支持；不支持时上游可能返回 400。
+          </p>
         </label>
 
         <div className="ai-service-settings__row-actions">

@@ -2,8 +2,16 @@
  * AI 配置验证和调试工具
  */
 
-import { getAISettings } from "./aiSettingsSchema"
-import { readHttpErrorMessage } from "./aiHttpErrors"
+import {
+  getAISettings,
+  normalizeAISettings,
+  type AISettings
+} from "./aiSettingsSchema"
+import { buildChatCompletionsBody } from "./aiChatRequest"
+import {
+  classifyAiFetchCatchError,
+  readHttpErrorMessage
+} from "./aiHttpErrors"
 import { CONNECTION_TEST_TIMEOUT_MS } from "./aiDraftTypes"
 import { sanitizePublicError } from "../http/redactSecrets"
 
@@ -182,6 +190,19 @@ export function formatAIConfigError(
     detailedMessage += "1. 检查网络连接\n"
     detailedMessage += "2. 如果使用本地服务（如 Ollama），确认服务已启动\n"
     detailedMessage += "3. 检查防火墙设置\n"
+  } else if (
+    errorCode === "RESPONSE_PARSE_ERROR" ||
+    /JSON|Unexpected non-whitespace/i.test(errorMessage)
+  ) {
+    detailedMessage += "可能的原因:\n"
+    detailedMessage += "1. 上游返回了非纯 JSON（SSE 流、NDJSON、JSON 后夹带多余内容）\n"
+    detailedMessage += "2. 该模型在网关上强制流式输出，或错误页 HTML 混入正文\n"
+    detailedMessage += "3. 开启了「模型原生联网」/ 思考强度，但该模型/路由不支持对应字段\n\n"
+
+    detailedMessage += "建议:\n"
+    detailedMessage += "1. 确认 API URL 指向 chat/completions，且网关对该模型返回非流式 JSON\n"
+    detailedMessage += "2. 先将思考强度设为「默认」，关闭模型原生联网后再测\n"
+    detailedMessage += "3. 换用与 grok 相同路由策略的模型，或检查网关对该 model id 的日志\n"
   }
 
   return detailedMessage
@@ -201,20 +222,14 @@ function isAbortError(error: unknown): boolean {
  */
 export async function testAIConfigWithDetails(
   pluginName: string,
-  settingsOverride?: ReturnType<typeof getAISettings>
+  settingsOverride?: Partial<AISettings>
 ): Promise<{
   success: boolean
   message: string
   details?: any
 }> {
   const settings = settingsOverride
-    ? {
-        apiKey: settingsOverride.apiKey.trim(),
-        apiUrl:
-          settingsOverride.apiUrl.trim() ||
-          "https://api.openai.com/v1/chat/completions",
-        model: settingsOverride.model.trim() || "gpt-3.5-turbo"
-      }
+    ? normalizeAISettings(settingsOverride)
     : getAISettings(pluginName)
 
   let validation: AIConfigValidation
@@ -253,11 +268,15 @@ export async function testAIConfigWithDetails(
         "Content-Type": "application/json",
         Authorization: `Bearer ${settings.apiKey}`
       },
-      body: JSON.stringify({
-        model: settings.model,
-        messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 5
-      }),
+      body: JSON.stringify(
+        buildChatCompletionsBody({
+          settings,
+          messages: [{ role: "user", content: "Hi" }],
+          maxTokens: 5,
+          // 测连不触发联网 tool，避免额外延迟/计费；reasoning_effort 仍会带上
+          allowWebSearch: false
+        })
+      ),
       signal: controller.signal
     })
 
@@ -319,11 +338,11 @@ export async function testAIConfigWithDetails(
       }
     }
 
-    const raw = error instanceof Error ? error.message : String(error)
-    const safe = sanitizePublicError(raw, settings.apiKey)
+    const classified = classifyAiFetchCatchError(error)
+    const safe = sanitizePublicError(classified.message, settings.apiKey)
     const detailedError = formatAIConfigError(
       {
-        code: "NETWORK_ERROR",
+        code: classified.code,
         message: safe
       },
       settings
@@ -333,7 +352,8 @@ export async function testAIConfigWithDetails(
       success: false,
       message: detailedError,
       details: {
-        error: safe
+        error: safe,
+        code: classified.code
       }
     }
   } finally {

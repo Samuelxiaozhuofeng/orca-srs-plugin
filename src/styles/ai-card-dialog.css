@@ -672,6 +672,35 @@
   margin-bottom: 6px;
 }
 
+.ai-prompt-manager__field-hint {
+  color: var(--orca-text-secondary, #888);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+}
+
+.ai-prompt-manager__field-error {
+  color: var(--orca-color-dangerous, #c0392b);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.ai-prompt-manager__model-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-prompt-manager__model-row .ai-prompt-manager__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-prompt-manager__select {
+  cursor: pointer;
+}
+
 .ai-prompt-manager__banner {
   border-radius: 6px;
   font-size: 13px;
@@ -1195,10 +1224,40 @@
   gap: 4px;
 }
 
+.ai-service-settings__field--toggle {
+  gap: 6px;
+}
+
 .ai-service-settings__label {
   color: var(--orca-text-secondary, #666);
   font-size: 12px;
   font-weight: 600;
+}
+
+.ai-service-settings__checkbox-row {
+  align-items: flex-start;
+  color: var(--orca-text-primary, #333);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.ai-service-settings__checkbox {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ai-service-settings__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.ai-service-settings__select {
+  cursor: pointer;
 }
 
 .ai-service-settings__input {

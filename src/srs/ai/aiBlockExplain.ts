@@ -3,7 +3,11 @@
  */
 
 import { getAISettings } from "./aiSettingsSchema"
-import { readHttpErrorMessage } from "./aiHttpErrors"
+import { buildChatCompletionsBody } from "./aiChatRequest"
+import {
+  classifyAiFetchCatchError,
+  readHttpErrorMessage
+} from "./aiHttpErrors"
 import {
   AI_MAX_RESPONSE_BYTES,
   GENERATION_TIMEOUT_MS,
@@ -338,12 +342,14 @@ async function chatCompletionsJson(options: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${settings.apiKey}`
       },
-      body: JSON.stringify({
-        model: settings.model,
-        messages: options.messages,
-        temperature: 0.3,
-        max_tokens: options.maxTokens
-      }),
+      body: JSON.stringify(
+        buildChatCompletionsBody({
+          settings,
+          messages: options.messages,
+          temperature: 0.3,
+          maxTokens: options.maxTokens
+        })
+      ),
       signal: timeoutController.signal
     })
 
@@ -400,12 +406,12 @@ async function chatCompletionsJson(options: {
         }
       }
     }
-    const errorMessage = error instanceof Error ? error.message : "网络错误"
+    const classified = classifyAiFetchCatchError(error)
     return {
       success: false,
       error: {
-        code: "NETWORK_ERROR",
-        message: sanitizePublicError(errorMessage, settings.apiKey)
+        code: classified.code,
+        message: sanitizePublicError(classified.message, settings.apiKey)
       }
     }
   } finally {

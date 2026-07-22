@@ -3,8 +3,12 @@
  */
 
 import { getAISettings } from "./aiSettingsSchema"
+import { buildChatCompletionsBody } from "./aiChatRequest"
 import { parseAndValidateDrafts } from "./aiDraftParseValidate"
-import { readHttpErrorMessage } from "./aiHttpErrors"
+import {
+  classifyAiFetchCatchError,
+  readHttpErrorMessage
+} from "./aiHttpErrors"
 import {
   type GenerateDraftsOptions,
   type GenerateDraftsResult,
@@ -132,18 +136,20 @@ export async function generateFlashcardDrafts(
         "Content-Type": "application/json",
         Authorization: `Bearer ${settings.apiKey}`
       },
-      body: JSON.stringify({
-        model: settings.model,
-        messages: [
-          { role: "system", content: buildSystemPrompt(cardType) },
-          {
-            role: "user",
-            content: buildUserPrompt(trimmedSource, cardType, maxCards)
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 2000
-      }),
+      body: JSON.stringify(
+        buildChatCompletionsBody({
+          settings,
+          messages: [
+            { role: "system", content: buildSystemPrompt(cardType) },
+            {
+              role: "user",
+              content: buildUserPrompt(trimmedSource, cardType, maxCards)
+            }
+          ],
+          temperature: 0.2,
+          maxTokens: 2000
+        })
+      ),
       signal: timeoutController.signal
     })
 
@@ -202,12 +208,12 @@ export async function generateFlashcardDrafts(
       }
     }
 
-    const errorMessage = error instanceof Error ? error.message : "网络错误"
+    const classified = classifyAiFetchCatchError(error)
     return {
       success: false,
       error: {
-        code: "NETWORK_ERROR",
-        message: sanitizePublicError(errorMessage, settings.apiKey)
+        code: classified.code,
+        message: sanitizePublicError(classified.message, settings.apiKey)
       }
     }
   } finally {

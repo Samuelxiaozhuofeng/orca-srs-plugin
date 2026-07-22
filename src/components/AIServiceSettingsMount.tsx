@@ -14,6 +14,7 @@ import {
   type WebImportSettings
 } from "../srs/settings/webImportSettingsSchema"
 import { fetchCompatibleModels } from "../srs/ai/aiModelsFetch"
+import { setCompatibleModelsCache } from "../srs/ai/aiModelsCache"
 import { testAIConfigWithDetails } from "../srs/ai/aiConfigValidator"
 import {
   AIServiceSettingsDialog,
@@ -42,7 +43,15 @@ export function AIServiceSettingsMount({
   if (!snap.isOpen) return null
 
   const activePlugin = aiServiceSettingsState.pluginName || pluginName
-  const formKey = `${activePlugin}:${snap.isLoading ? "loading" : "ready"}:${snap.initialAI.apiKey.length}:${snap.initialAI.apiUrl}:${snap.initialAI.model}`
+  const formKey = [
+    activePlugin,
+    snap.isLoading ? "loading" : "ready",
+    snap.initialAI.apiKey.length,
+    snap.initialAI.apiUrl,
+    snap.initialAI.model,
+    snap.initialAI.enableNativeWebSearch ? "web1" : "web0",
+    snap.initialAI.reasoningEffort
+  ].join(":")
 
   const handleSave = async (draft: ServiceSettingsDraft) => {
     setServiceSettingsSaving(true)
@@ -85,6 +94,7 @@ export function AIServiceSettingsMount({
         return
       }
       setModelOptions(result.models)
+      setCompatibleModelsCache(activePlugin, result.models, draft.ai.apiUrl)
       setStatusMessage(`已拉取 ${result.models.length} 个模型`)
       orca.notify("success", `已拉取 ${result.models.length} 个模型`, {
         title: "拉取模型"

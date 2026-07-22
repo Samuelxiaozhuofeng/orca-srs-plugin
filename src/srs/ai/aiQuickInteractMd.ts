@@ -8,9 +8,41 @@
  * 支持：
  * - 行级：空行分段、`-`/`*`/`+`/`1.` 列表项、# 标题
  * - 行内：`**bold**` / `__bold__`、`*italic*` / `_italic_`、`` `code` ``
+ *
+ * Web-search 脚注：`1(https://…)` / `[1](url)` 在 Orca 中会被当成块引用
+ * （常见误链到 id=1 Reminder、id=3 AI Prompt 等），插入前需净化。
  */
 
 import type { ContentFragment } from "../../orca.d.ts"
+
+/**
+ * 净化 AI 正文中易被 Orca 误解析为块引用的 web 脚注写法。
+ *
+ * 真机证据（repo 6emicuv1sv76k / block 4457）：
+ * `…872.00）1(https://www.jinjia.com.cn/…)` → links:[1]（Reminder 标签页）
+ */
+export function sanitizeAiTextForOrcaInsert(text: string): string {
+  if (!text) return text
+  let s = text
+
+  // [[123]] 纯数字 wiki → 全角括号，避免块引用
+  s = s.replace(/\[\[(\d+)\]\]/g, "〔$1〕")
+
+  // [1](https://…) → [源1](https://…)  （链接文案不能是纯数字块 id）
+  s = s.replace(
+    /\[(\d+)\]\((https?:\/\/[^)\s]+)\)/gi,
+    "[源$1]($2)"
+  )
+
+  // 1(https://…) → [源1](https://…)
+  // 不匹配已是 markdown 链接目标里的内容；要求数字前不是 ] 或单词字符
+  s = s.replace(
+    /(^|[^\]A-Za-z0-9_])(\d+)\((https?:\/\/[^)\s]+)\)/gi,
+    "$1[源$2]($3)"
+  )
+
+  return s
+}
 
 export type MdStructuralBlock =
   | { kind: "paragraph"; text: string }
@@ -201,7 +233,9 @@ export function buildQuickResultInsertPlan(
     title.push({ t: "t", v: " · " }, { t: "t", v: clipped, f: "i" })
   }
 
-  const bodyMarkdown = (resultMarkdown ?? "").trim()
+  const bodyMarkdown = sanitizeAiTextForOrcaInsert(
+    (resultMarkdown ?? "").trim()
+  )
   const bodyBlocks = splitMarkdownIntoStructuralBlocks(bodyMarkdown)
   const children = bodyBlocks.map(structuralBlockToFragments)
 

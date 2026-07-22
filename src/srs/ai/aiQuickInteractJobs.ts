@@ -24,6 +24,8 @@ export interface QuickBackgroundJob {
   promptLabel: string
   promptText: string
   includeBlockContext: boolean
+  /** 覆盖全局 model；空 = 默认 */
+  model: string
   status: QuickBackgroundJobStatus
   resultText: string
   errorMessage: string | null
@@ -40,6 +42,7 @@ export type StartBackgroundQuickInsertOptions = {
   promptLabel: string
   promptText: string
   includeBlockContext: boolean
+  model?: string
 }
 
 function getValtioProxy<T extends object>(target: T): T {
@@ -104,6 +107,9 @@ export async function startBackgroundQuickInsertJob(
   const controller = new AbortController()
   abortByJobId.set(id, controller)
 
+  const model =
+    typeof opts.model === "string" ? opts.model.trim() : ""
+
   const job: QuickBackgroundJob = {
     id,
     pluginName: opts.pluginName,
@@ -113,6 +119,7 @@ export async function startBackgroundQuickInsertJob(
     promptLabel: opts.promptLabel,
     promptText: instruction,
     includeBlockContext: opts.includeBlockContext,
+    model,
     status: "generating",
     resultText: "",
     errorMessage: null,
@@ -127,6 +134,7 @@ export async function startBackgroundQuickInsertJob(
       selectedText: opts.selectedText,
       blockText: opts.blockText,
       includeBlockContext: opts.includeBlockContext,
+      model,
       userInstruction: instruction,
       signal: controller.signal
     })

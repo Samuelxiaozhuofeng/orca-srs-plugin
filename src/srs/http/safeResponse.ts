@@ -112,15 +112,87 @@ export async function readResponseTextLimited(
   )
 }
 
+/**
+ * Parse one JSON value from a response body that may contain trailing junk,
+ * NDJSON, or SSE `data:` frames (common on multi-model OpenAI-compatible proxies).
+ */
+export function parseJsonResponseText(text: string): unknown {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    throw new SyntaxError("Empty JSON response")
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch (firstError) {
+    // SSE / event-stream: take the first non-[DONE] data payload
+    if (/^data:\s*/m.test(trimmed) || trimmed.includes("\ndata:")) {
+      const fromSse = tryParseSseDataJson(trimmed)
+      if (fromSse !== undefined) return fromSse
+    }
+
+    // Trailing garbage after a complete value: `{"a":1}extra`
+    if (firstError instanceof SyntaxError) {
+      const posMatch = /position\s+(\d+)/i.exec(firstError.message)
+      if (posMatch) {
+        const pos = Number(posMatch[1])
+        if (Number.isFinite(pos) && pos > 0 && pos <= trimmed.length) {
+          const head = trimmed.slice(0, pos).trimEnd()
+          if (head) {
+            try {
+              return JSON.parse(head)
+            } catch {
+              // fall through
+            }
+          }
+        }
+      }
+    }
+
+    // NDJSON / multi-line: first non-empty line that parses
+    const lines = trimmed.split(/\r?\n/)
+    if (lines.length > 1) {
+      for (const line of lines) {
+        const t = line.trim()
+        if (!t || t === "[DONE]") continue
+        const payload = t.startsWith("data:")
+          ? t.slice("data:".length).trim()
+          : t
+        if (!payload || payload === "[DONE]") continue
+        try {
+          return JSON.parse(payload)
+        } catch {
+          // try next line
+        }
+      }
+    }
+
+    throw firstError
+  }
+}
+
+function tryParseSseDataJson(text: string): unknown | undefined {
+  const lines = text.split(/\r?\n/)
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith("data:")) continue
+    const payload = trimmed.slice("data:".length).trim()
+    if (!payload || payload === "[DONE]") continue
+    try {
+      return JSON.parse(payload)
+    } catch {
+      // keep scanning for a later complete data frame
+    }
+  }
+  return undefined
+}
+
 export async function readResponseJsonLimited<T = unknown>(
   response: Response,
   maxBytes: number
 ): Promise<T> {
   const text = await readResponseTextLimited(response, maxBytes)
-  if (!text.trim()) {
-    throw new SyntaxError("Empty JSON response")
-  }
-  return JSON.parse(text) as T
+  return parseJsonResponseText(text) as T
 }
 
 function concatUint8(chunks: Uint8Array[], total: number): Uint8Array {

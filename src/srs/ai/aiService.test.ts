@@ -84,6 +84,8 @@ describe("generateFlashcardDrafts", () => {
       model: "test-model",
       temperature: 0.2
     })
+    expect(body).not.toHaveProperty("tools")
+    expect(body).not.toHaveProperty("reasoning_effort")
     expect(body.messages).toHaveLength(2)
     expect(result.success).toBe(true)
     if (!result.success) return

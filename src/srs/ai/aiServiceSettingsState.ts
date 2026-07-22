@@ -31,7 +31,9 @@ export interface AIServiceSettingsState {
 const emptyAI: AISettings = {
   apiKey: "",
   apiUrl: "",
-  model: ""
+  model: "",
+  enableNativeWebSearch: false,
+  reasoningEffort: "default"
 }
 
 const emptyFirecrawl: WebImportSettings = {

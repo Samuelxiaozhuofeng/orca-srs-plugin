@@ -190,15 +190,17 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
       label: "摘要",
       prompt: "请摘要",
       includeBlockContext: false,
-      insertBelowOnComplete: false
+      insertBelowOnComplete: false,
+      model: ""
     })
-    // 旧项无 includeBlockContext → true；无 insertBelowOnComplete → false
+    // 旧项无 includeBlockContext → true；无 insertBelowOnComplete → false；无 model → ""
     expect(list[1]).toEqual({
       id: "1",
       label: "翻译",
       prompt: "译成英文",
       includeBlockContext: true,
-      insertBelowOnComplete: false
+      insertBelowOnComplete: false,
+      model: ""
     })
   })
 
@@ -222,7 +224,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         label: "旧库",
         prompt: "旧提示",
         includeBlockContext: true,
-        insertBelowOnComplete: false
+        insertBelowOnComplete: false,
+        model: ""
       }
     ])
   })
@@ -253,7 +256,40 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         label: "新",
         prompt: "新内容",
         includeBlockContext: false,
-        insertBelowOnComplete: true
+        insertBelowOnComplete: true,
+        model: ""
+      }
+    ])
+  })
+
+  it("preserves per-prompt model override and trims it", () => {
+    ;(globalThis as any).orca = {
+      state: {
+        plugins: {
+          [PLUGIN]: {
+            settings: {
+              [PROMPT_LIBRARY_STORAGE_KEY]: [
+                {
+                  label: "金价查询",
+                  prompt: "查今日金价",
+                  includeBlockContext: false,
+                  insertBelowOnComplete: true,
+                  model: "  grok-4.5  "
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+    expect(getToolbarAIPrompts(PLUGIN)).toEqual([
+      {
+        id: "0",
+        label: "金价查询",
+        prompt: "查今日金价",
+        includeBlockContext: false,
+        insertBelowOnComplete: true,
+        model: "grok-4.5"
       }
     ])
   })
@@ -319,13 +355,15 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         label: "A",
         prompt: "p",
         includeBlockContext: false,
-        insertBelowOnComplete: true
+        insertBelowOnComplete: true,
+        model: ""
       },
       {
         label: "B",
         prompt: "q",
         includeBlockContext: true,
-        insertBelowOnComplete: false
+        insertBelowOnComplete: false,
+        model: ""
       }
     ])
     expect(normalizeToolbarAIPromptItems(undefined)).toEqual([])
@@ -360,13 +398,15 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         label: "  新  ",
         prompt: "  内容  ",
         includeBlockContext: false,
-        insertBelowOnComplete: true
+        insertBelowOnComplete: true,
+        model: ""
       },
       {
         label: "",
         prompt: "丢弃",
         includeBlockContext: true,
-        insertBelowOnComplete: false
+        insertBelowOnComplete: false,
+        model: ""
       }
     ])
     expect(setSettings).not.toHaveBeenCalled()
@@ -378,7 +418,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           label: "新",
           prompt: "内容",
           includeBlockContext: false,
-          insertBelowOnComplete: true
+          insertBelowOnComplete: true,
+          model: ""
         }
       ])
     )
@@ -388,7 +429,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         label: "新",
         prompt: "内容",
         includeBlockContext: false,
-        insertBelowOnComplete: true
+        insertBelowOnComplete: true,
+        model: ""
       }
     ])
     // 原生 AI 设置保持不动
@@ -440,7 +482,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           label: p.label.trim(),
           prompt: p.prompt.trim(),
           includeBlockContext: p.includeBlockContext,
-          insertBelowOnComplete: p.insertBelowOnComplete
+          insertBelowOnComplete: p.insertBelowOnComplete,
+          model: p.model
         }))
       )
     )
@@ -465,7 +508,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           label: "A",
           prompt: "B",
           includeBlockContext: true,
-          insertBelowOnComplete: false
+          insertBelowOnComplete: false,
+          model: ""
         }
       ])
     ).rejects.toThrow("disk full")
@@ -501,7 +545,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         label: "从设置迁移",
         prompt: "p",
         includeBlockContext: true,
-        insertBelowOnComplete: false
+        insertBelowOnComplete: false,
+        model: ""
       }
     ])
     expect(setData).toHaveBeenCalled()

@@ -14,6 +14,26 @@ import { sanitizePublicError } from "../http/redactSecrets"
 export const AI_HTTP_ERROR_READ_MAX = 8_192
 
 /**
+ * Map thrown fetch/parse failures to a stable error code.
+ * JSON parse issues are not network failures (common on multi-model proxies).
+ */
+export function classifyAiFetchCatchError(error: unknown): {
+  code: "RESPONSE_PARSE_ERROR" | "NETWORK_ERROR"
+  message: string
+} {
+  const message = error instanceof Error ? error.message : "网络错误"
+  const isParseError =
+    error instanceof SyntaxError ||
+    /JSON|Unexpected non-whitespace|Unexpected end of JSON|Empty JSON/i.test(
+      message
+    )
+  return {
+    code: isParseError ? "RESPONSE_PARSE_ERROR" : "NETWORK_ERROR",
+    message
+  }
+}
+
+/**
  * Prefer JSON error.message, else truncated plain text. Always redacted.
  */
 export async function readHttpErrorMessage(

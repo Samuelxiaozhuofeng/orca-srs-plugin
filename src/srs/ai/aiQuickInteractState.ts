@@ -20,6 +20,8 @@ export interface AIQuickInteractState {
   promptText: string
   /** 是否把整块作为 context 与选区一起发给 AI */
   includeBlockContext: boolean
+  /** 本条提示词覆盖模型；空 = 全局默认 */
+  model: string
   phase: AIQuickInteractPhase
   resultText: string
   errorMessage: string | null
@@ -37,6 +39,7 @@ export const aiQuickInteractState = proxy({
   promptLabel: "",
   promptText: "",
   includeBlockContext: false,
+  model: "",
   phase: "edit-prompt" as AIQuickInteractPhase,
   resultText: "",
   errorMessage: null as string | null,
@@ -56,6 +59,8 @@ export type OpenAIQuickInteractOptions = {
   promptLabel: string
   promptText: string
   includeBlockContext?: boolean
+  /** 覆盖全局 model；空 / 未传 = 用服务设置 */
+  model?: string
   /** custom：先编辑提示词；preset：可立刻生成 */
   mode: "preset" | "custom"
 }
@@ -68,6 +73,8 @@ export function openAIQuickInteract(opts: OpenAIQuickInteractOptions): void {
   aiQuickInteractState.promptLabel = opts.promptLabel
   aiQuickInteractState.promptText = opts.promptText
   aiQuickInteractState.includeBlockContext = opts.includeBlockContext === true
+  aiQuickInteractState.model =
+    typeof opts.model === "string" ? opts.model.trim() : ""
   aiQuickInteractState.promptEditable = true
   aiQuickInteractState.resultText = ""
   aiQuickInteractState.errorMessage = null
@@ -89,6 +96,7 @@ export function closeAIQuickInteract(): void {
     aiQuickInteractState.promptLabel = ""
     aiQuickInteractState.promptText = ""
     aiQuickInteractState.includeBlockContext = false
+    aiQuickInteractState.model = ""
     aiQuickInteractState.phase = "edit-prompt"
     aiQuickInteractState.resultText = ""
     aiQuickInteractState.errorMessage = null

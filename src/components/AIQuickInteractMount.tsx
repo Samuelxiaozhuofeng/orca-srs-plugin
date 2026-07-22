@@ -94,6 +94,7 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
         selectedText: aiQuickInteractState.selectedText,
         blockText: aiQuickInteractState.blockText,
         includeBlockContext: aiQuickInteractState.includeBlockContext,
+        model: aiQuickInteractState.model,
         userInstruction: instruction,
         signal: controller.signal
       })

@@ -25,6 +25,8 @@ export interface AIPromptManagerState {
   draftPrompt: string
   draftIncludeBlockContext: boolean
   draftInsertBelowOnComplete: boolean
+  /** 覆盖全局 model；空 = 用服务设置 */
+  draftModel: string
   errorMessage: string | null
   isSaving: boolean
   isLoadingItems: boolean
@@ -40,6 +42,7 @@ export const aiPromptManagerState = proxy({
   draftPrompt: "",
   draftIncludeBlockContext: true,
   draftInsertBelowOnComplete: true,
+  draftModel: "",
   errorMessage: null as string | null,
   isSaving: false,
   isLoadingItems: false
@@ -78,6 +81,7 @@ export async function openAIPromptManager(pluginName: string): Promise<void> {
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
+  aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
   aiPromptManagerState.isSaving = false
   aiPromptManagerState.isLoadingItems = true
@@ -123,6 +127,7 @@ export function closeAIPromptManager(): void {
     aiPromptManagerState.draftPrompt = ""
     aiPromptManagerState.draftIncludeBlockContext = true
     aiPromptManagerState.draftInsertBelowOnComplete = true
+    aiPromptManagerState.draftModel = ""
     aiPromptManagerState.errorMessage = null
     aiPromptManagerState.isSaving = false
     aiPromptManagerState.isLoadingItems = false
@@ -140,6 +145,7 @@ export function enterCreateMode(): void {
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
+  aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
 }
 
@@ -152,6 +158,7 @@ export function enterEditMode(index: number): void {
   aiPromptManagerState.draftPrompt = item.prompt
   aiPromptManagerState.draftIncludeBlockContext = item.includeBlockContext
   aiPromptManagerState.draftInsertBelowOnComplete = item.insertBelowOnComplete
+  aiPromptManagerState.draftModel = item.model ?? ""
   aiPromptManagerState.errorMessage = null
 }
 
@@ -163,6 +170,7 @@ export function backToListMode(): void {
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
+  aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
 }
 
@@ -182,5 +190,6 @@ export function applyManagerItems(items: ToolbarAIPrompt[]): void {
   aiPromptManagerState.draftPrompt = ""
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
+  aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
 }

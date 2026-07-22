@@ -41,7 +41,9 @@ describe("AI / Firecrawl settings setData store", () => {
     expect(getAISettings(PLUGIN)).toEqual({
       apiKey: "sk-from-settings",
       apiUrl: "https://example.test/v1/chat/completions",
-      model: "gpt-test"
+      model: "gpt-test",
+      enableNativeWebSearch: false,
+      reasoningEffort: "default"
     })
   })
 
@@ -72,7 +74,9 @@ describe("AI / Firecrawl settings setData store", () => {
     const saved = await saveAISettings(PLUGIN, {
       apiKey: " sk-new ",
       apiUrl: " https://api.deepseek.com/chat/completions ",
-      model: " deepseek-chat "
+      model: " deepseek-chat ",
+      enableNativeWebSearch: true,
+      reasoningEffort: "high"
     })
     expect(setSettings).not.toHaveBeenCalled()
     expect(setData).toHaveBeenCalledWith(
@@ -81,11 +85,16 @@ describe("AI / Firecrawl settings setData store", () => {
       JSON.stringify({
         apiKey: "sk-new",
         apiUrl: "https://api.deepseek.com/chat/completions",
-        model: "deepseek-chat"
+        model: "deepseek-chat",
+        enableNativeWebSearch: true,
+        reasoningEffort: "high"
       })
     )
     expect(saved.apiKey).toBe("sk-new")
+    expect(saved.enableNativeWebSearch).toBe(true)
+    expect(saved.reasoningEffort).toBe("high")
     expect(getAISettings(PLUGIN).apiKey).toBe("sk-new")
+    expect(getAISettings(PLUGIN).enableNativeWebSearch).toBe(true)
     expect(orca.state.plugins[PLUGIN]?.settings?.["review.something"]).toBe(
       "keep"
     )
@@ -114,8 +123,34 @@ describe("AI / Firecrawl settings setData store", () => {
 
     const ai = await hydrateAISettings(PLUGIN)
     expect(ai.apiKey).toBe("migrate-me")
+    expect(ai.enableNativeWebSearch).toBe(false)
+    expect(ai.reasoningEffort).toBe("default")
     expect(setData).toHaveBeenCalled()
     expect(getAISettings(PLUGIN).model).toBe("m1")
+  })
+
+  it("normalizeAISettings rejects invalid reasoningEffort and keeps booleans", async () => {
+    const dataStore: Record<string, string> = {}
+    ;(globalThis as any).orca = {
+      state: { plugins: { [PLUGIN]: { settings: {} } } },
+      plugins: {
+        setData: async (_n: string, key: string, value: string) => {
+          dataStore[key] = value
+        },
+        getData: async (_n: string, key: string) => dataStore[key] ?? null,
+        setSettings: vi.fn()
+      }
+    }
+    const saved = await saveAISettings(PLUGIN, {
+      apiKey: "k",
+      apiUrl: "https://x.test/v1/chat/completions",
+      model: "m",
+      // @ts-expect-error intentional invalid
+      reasoningEffort: "ultra",
+      enableNativeWebSearch: true
+    })
+    expect(saved.reasoningEffort).toBe("default")
+    expect(saved.enableNativeWebSearch).toBe(true)
   })
 
   it("saveWebImportSettings uses setData only", async () => {

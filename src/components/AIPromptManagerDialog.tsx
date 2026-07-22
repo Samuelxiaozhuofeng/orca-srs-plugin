@@ -17,6 +17,14 @@ export interface AIPromptManagerDialogProps {
   initialPrompt: string
   initialIncludeBlockContext: boolean
   initialInsertBelowOnComplete: boolean
+  /** 覆盖全局 model；空 = 用服务设置 */
+  initialModel: string
+  /** 服务设置中的默认 model（展示用） */
+  defaultServiceModel: string
+  /** 来自 /models 缓存或拉取的可选模型 id */
+  modelOptions: readonly string[]
+  isFetchingModels: boolean
+  modelsError: string | null
   errorMessage: string | null
   isSaving: boolean
   isLoadingItems?: boolean
@@ -27,6 +35,7 @@ export interface AIPromptManagerDialogProps {
   onResetDefaults: () => void
   onSaveDraft: (entry: ToolbarAIPromptItem) => void
   onCancelDraft: () => void
+  onRefreshModels: () => void
 }
 
 function stopEditorKeyCapture(
@@ -48,9 +57,15 @@ function PromptDraftForm(props: {
   initialPrompt: string
   initialIncludeBlockContext: boolean
   initialInsertBelowOnComplete: boolean
+  initialModel: string
+  defaultServiceModel: string
+  modelOptions: readonly string[]
+  isFetchingModels: boolean
+  modelsError: string | null
   busy: boolean
   onSave: (entry: ToolbarAIPromptItem) => void
   onCancel: () => void
+  onRefreshModels: () => void
 }) {
   const { useState } = window.React
   const [label, setLabel] = useState(props.initialLabel)
@@ -61,10 +76,23 @@ function PromptDraftForm(props: {
   const [insertBelowOnComplete, setInsertBelowOnComplete] = useState(
     props.initialInsertBelowOnComplete
   )
+  const [model, setModel] = useState(props.initialModel)
 
   const busy = props.busy
   const canSave =
     !busy && label.trim().length > 0 && prompt.trim().length > 0
+
+  const defaultLabel = props.defaultServiceModel.trim()
+    ? `默认（服务设置：${props.defaultServiceModel.trim()}）`
+    : "默认（使用 AI 服务设置中的模型）"
+
+  // 合并：服务列表 + 当前已保存但不在列表中的 model（编辑兼容）
+  const selectOptions = (() => {
+    const set = new Set(props.modelOptions.map((m) => m.trim()).filter(Boolean))
+    const current = model.trim()
+    if (current) set.add(current)
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  })()
 
   return (
     <>
@@ -106,6 +134,46 @@ function PromptDraftForm(props: {
           rows={6}
           disabled={busy}
         />
+      </section>
+      <section className="ai-prompt-manager__field">
+        <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-model">
+          模型
+        </label>
+        <div className="ai-prompt-manager__model-row">
+          <select
+            id="ai-pm-model"
+            className="ai-prompt-manager__input ai-prompt-manager__select"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            onKeyDown={stopEditorKeyCapture}
+            onMouseDown={stopBubble}
+            disabled={busy || props.isFetchingModels}
+          >
+            <option value="">{defaultLabel}</option>
+            {selectOptions.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="ai-prompt-manager__btn ai-prompt-manager__btn--secondary"
+            onClick={props.onRefreshModels}
+            disabled={busy || props.isFetchingModels}
+            title="按 AI 服务设置中的 Key/URL 拉取 /models"
+          >
+            {props.isFetchingModels ? "拉取中…" : "刷新模型"}
+          </button>
+        </div>
+        {props.modelsError ? (
+          <p className="ai-prompt-manager__field-error" role="alert">
+            {props.modelsError}
+          </p>
+        ) : null}
+        <p className="ai-prompt-manager__field-hint">
+          选项来自「AI / Firecrawl 服务设置」同一连接下的模型列表。选「默认」则使用服务设置中的当前模型。
+        </p>
       </section>
       <section className="ai-prompt-manager__field">
         <label className="ai-prompt-manager__checkbox">
@@ -158,7 +226,8 @@ function PromptDraftForm(props: {
               label: label.trim(),
               prompt: prompt.trim(),
               includeBlockContext,
-              insertBelowOnComplete
+              insertBelowOnComplete,
+              model: model.trim()
             })
           }
           disabled={!canSave}
@@ -180,6 +249,11 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
     initialPrompt,
     initialIncludeBlockContext,
     initialInsertBelowOnComplete,
+    initialModel,
+    defaultServiceModel,
+    modelOptions,
+    isFetchingModels,
+    modelsError,
     errorMessage,
     isSaving,
     isLoadingItems = false,
@@ -189,7 +263,8 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
     onDelete,
     onResetDefaults,
     onSaveDraft,
-    onCancelDraft
+    onCancelDraft,
+    onRefreshModels
   } = props
 
   const { ModalOverlay } = orca.components
@@ -222,7 +297,7 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
               </p>
             ) : (
               <p id="ai-prompt-manager-desc" className="ai-prompt-manager__subtitle">
-                名称会出现在选中文本后的工具栏菜单中。可配置块上下文与后台插入方式。
+                名称会出现在选中文本后的工具栏菜单中。可配置模型、块上下文与后台插入。
               </p>
             )}
           </div>
@@ -254,9 +329,15 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
             initialPrompt={initialPrompt}
             initialIncludeBlockContext={initialIncludeBlockContext}
             initialInsertBelowOnComplete={initialInsertBelowOnComplete}
+            initialModel={initialModel}
+            defaultServiceModel={defaultServiceModel}
+            modelOptions={modelOptions}
+            isFetchingModels={isFetchingModels}
+            modelsError={modelsError}
             busy={busy}
             onSave={onSaveDraft}
             onCancel={onCancelDraft}
+            onRefreshModels={onRefreshModels}
           />
         ) : (
           <>
@@ -293,6 +374,21 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
                     <div className="ai-prompt-manager__item-main">
                       <div className="ai-prompt-manager__item-label-row">
                         <div className="ai-prompt-manager__item-label">{item.label}</div>
+                        {item.model?.trim() ? (
+                          <span
+                            className="ai-prompt-manager__badge"
+                            title={`使用专用模型：${item.model.trim()}`}
+                          >
+                            {item.model.trim()}
+                          </span>
+                        ) : (
+                          <span
+                            className="ai-prompt-manager__badge ai-prompt-manager__badge--muted"
+                            title="使用 AI 服务设置中的默认模型"
+                          >
+                            默认模型
+                          </span>
+                        )}
                         {item.includeBlockContext ? (
                           <span
                             className="ai-prompt-manager__badge"

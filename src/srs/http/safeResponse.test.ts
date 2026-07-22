@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   assertContentLengthWithin,
+  parseJsonResponseText,
+  readResponseJsonLimited,
   readResponseTextLimited,
   ResponseBodyUnreadableError,
   ResponseTooLargeError
@@ -73,6 +75,48 @@ describe("safeResponse", () => {
       ResponseBodyUnreadableError
     )
     expect(readArrayBuffer).not.toHaveBeenCalled()
+  })
+})
+
+describe("parseJsonResponseText", () => {
+  it("parses plain JSON", () => {
+    expect(parseJsonResponseText('{"ok":true}')).toEqual({ ok: true })
+  })
+
+  it("accepts trailing junk after a complete JSON value", () => {
+    const body = '{"choices":[{"message":{"content":"hi"}}]}extra-bytes'
+    expect(parseJsonResponseText(body)).toEqual({
+      choices: [{ message: { content: "hi" } }]
+    })
+  })
+
+  it("parses first SSE data frame", () => {
+    const body = [
+      "data: {\"choices\":[{\"message\":{\"content\":\"a\"}}]}",
+      "",
+      "data: [DONE]",
+      ""
+    ].join("\n")
+    expect(parseJsonResponseText(body)).toEqual({
+      choices: [{ message: { content: "a" } }]
+    })
+  })
+
+  it("parses first NDJSON line", () => {
+    const body =
+      '{"id":"1","choices":[{"message":{"content":"x"}}]}\n{"id":"2"}\n'
+    expect(parseJsonResponseText(body)).toEqual({
+      id: "1",
+      choices: [{ message: { content: "x" } }]
+    })
+  })
+
+  it("readResponseJsonLimited uses lenient parse", async () => {
+    const payload = '{"model":"m1"}trailing'
+    const res = streamedResponse(payload)
+    await expect(readResponseJsonLimited(res, 1000)).resolves.toEqual({
+      model: "m1"
+    })
   })
 })
 

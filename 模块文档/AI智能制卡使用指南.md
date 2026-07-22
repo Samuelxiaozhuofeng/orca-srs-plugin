@@ -16,8 +16,10 @@
 | API Key | 必填 |
 | API URL | 完整 chat/completions URL（勿用 Ollama `/api/chat`） |
 | AI Model | 模型名 |
+| 模型原生联网 | 可选；开启后请求附带 `tools: [{ type: "web_search" }]`（需模型/网关支持） |
+| 思考强度 | 可选；`default` / `low` / `medium` / `high`（后三者写入 `reasoning_effort`） |
 
-命令面板 **「SRS: 测试 AI 连接」** 可探活（有超时）。
+入口：**AI / Firecrawl 服务设置**（Headbar 插头图标或斜杠）。命令面板 **「SRS: 测试 AI 连接」** 可探活（有超时；测连不触发联网 tool）。
 
 ## 使用
 

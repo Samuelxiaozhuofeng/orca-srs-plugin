@@ -24,6 +24,11 @@ export type ToolbarAIPromptItem = {
    * 缺省（旧数据无此字段）按 false：保持弹窗确认流程。
    */
   insertBelowOnComplete: boolean
+  /**
+   * 本提示词专用模型 id。空字符串 = 使用「AI 服务设置」中的全局 model。
+   * 旧数据无此字段时按 "" 兼容。
+   */
+  model: string
 }
 
 export type ToolbarAIPrompt = {
@@ -32,6 +37,7 @@ export type ToolbarAIPrompt = {
   prompt: string
   includeBlockContext: boolean
   insertBelowOnComplete: boolean
+  model: string
 }
 
 /** plugin data 键（与历史 settings 键名相同，存储介质不同） */
@@ -48,19 +54,22 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     label: "举例说明",
     prompt: "请针对选中文本给出 1～3 个具体、易懂的例子。",
     includeBlockContext: true,
-    insertBelowOnComplete: true
+    insertBelowOnComplete: true,
+    model: ""
   },
   {
     label: "翻译",
     prompt: "若选中文本主要是中文则译为英文；否则译为简体中文。保持原意与语气。",
     includeBlockContext: false,
-    insertBelowOnComplete: true
+    insertBelowOnComplete: true,
+    model: ""
   },
   {
     label: "进一步解释",
     prompt: "请进一步解释选中文本：讲清含义、难点与必要背景，简洁分点。",
     includeBlockContext: true,
-    insertBelowOnComplete: true
+    insertBelowOnComplete: true,
+    model: ""
   }
 ]
 
@@ -87,6 +96,7 @@ function isPromptItemShape(value: unknown): value is {
   prompt: string
   includeBlockContext?: unknown
   insertBelowOnComplete?: unknown
+  model?: unknown
 } {
   if (!value || typeof value !== "object") return false
   const rec = value as Record<string, unknown>
@@ -98,10 +108,16 @@ function parseBooleanField(value: unknown, fallback: boolean): boolean {
   return fallback
 }
 
+function parseOptionalModelField(value: unknown): string {
+  if (typeof value !== "string") return ""
+  return value.trim()
+}
+
 /**
  * 清洗任意输入为合法提示词项（trim + 过滤空 label/prompt）。
  * 非数组 → 空数组；允许结果为空。
- * 旧项无 includeBlockContext 时默认 true；无 insertBelowOnComplete 时默认 false。
+ * 旧项无 includeBlockContext 时默认 true；无 insertBelowOnComplete 时默认 false；
+ * 无 model 时默认 ""（用全局服务设置模型）。
  */
 export function normalizeToolbarAIPromptItems(raw: unknown): ToolbarAIPromptItem[] {
   if (!Array.isArray(raw)) return []
@@ -111,7 +127,8 @@ export function normalizeToolbarAIPromptItems(raw: unknown): ToolbarAIPromptItem
       label: item.label.trim(),
       prompt: item.prompt.trim(),
       includeBlockContext: parseBooleanField(item.includeBlockContext, true),
-      insertBelowOnComplete: parseBooleanField(item.insertBelowOnComplete, false)
+      insertBelowOnComplete: parseBooleanField(item.insertBelowOnComplete, false),
+      model: parseOptionalModelField(item.model)
     }))
     .filter((item) => item.label.length > 0 && item.prompt.length > 0)
 }
@@ -122,7 +139,8 @@ function toToolbarAIPrompts(items: ToolbarAIPromptItem[]): ToolbarAIPrompt[] {
     label: item.label,
     prompt: item.prompt,
     includeBlockContext: item.includeBlockContext,
-    insertBelowOnComplete: item.insertBelowOnComplete
+    insertBelowOnComplete: item.insertBelowOnComplete,
+    model: item.model
   }))
 }
 
@@ -132,7 +150,8 @@ function defaultPrompts(): ToolbarAIPrompt[] {
       label: item.label.trim(),
       prompt: item.prompt.trim(),
       includeBlockContext: item.includeBlockContext,
-      insertBelowOnComplete: item.insertBelowOnComplete
+      insertBelowOnComplete: item.insertBelowOnComplete,
+      model: item.model
     }))
   )
 }

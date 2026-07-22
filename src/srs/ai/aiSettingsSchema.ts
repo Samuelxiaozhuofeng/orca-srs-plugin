@@ -9,6 +9,17 @@ export const DEFAULT_AI_API_URL =
   "https://api.openai.com/v1/chat/completions"
 export const DEFAULT_AI_MODEL = "gpt-3.5-turbo"
 
+/** 思考强度：default = 请求体不传 reasoning_effort */
+export const AI_REASONING_EFFORTS = [
+  "default",
+  "low",
+  "medium",
+  "high"
+] as const
+export type AIReasoningEffort = (typeof AI_REASONING_EFFORTS)[number]
+export const DEFAULT_AI_REASONING_EFFORT: AIReasoningEffort = "default"
+export const DEFAULT_AI_ENABLE_NATIVE_WEB_SEARCH = false
+
 /** plugin data 键 */
 export const AI_CONNECTION_DATA_KEY = "ai.connection" as const
 
@@ -29,6 +40,17 @@ export interface AISettings {
   apiKey: string
   apiUrl: string
   model: string
+  /**
+   * 是否在 Chat Completions 中附带 model 原生联网 tool：
+   * `tools: [{ type: "web_search" }]`（xAI Grok 等 server-side 工具）。
+   * 默认 false；不支持的上游会返回可见错误。
+   */
+  enableNativeWebSearch: boolean
+  /**
+   * 思考强度。`default` 不传字段；`low`/`medium`/`high` 写入 `reasoning_effort`。
+   * 仅部分推理模型/网关支持。
+   */
+  reasoningEffort: AIReasoningEffort
 }
 
 type CacheEntry = { value: AISettings }
@@ -43,14 +65,30 @@ export function clearAISettingsCache(pluginName?: string): void {
   aiSettingsCache.clear()
 }
 
+function normalizeReasoningEffort(value: unknown): AIReasoningEffort {
+  if (
+    typeof value === "string" &&
+    (AI_REASONING_EFFORTS as readonly string[]).includes(value)
+  ) {
+    return value as AIReasoningEffort
+  }
+  return DEFAULT_AI_REASONING_EFFORT
+}
+
 export function normalizeAISettings(input: Partial<AISettings> | null | undefined): AISettings {
   const apiKey = typeof input?.apiKey === "string" ? input.apiKey.trim() : ""
   const apiUrlRaw = typeof input?.apiUrl === "string" ? input.apiUrl.trim() : ""
   const modelRaw = typeof input?.model === "string" ? input.model.trim() : ""
+  const enableNativeWebSearch =
+    typeof input?.enableNativeWebSearch === "boolean"
+      ? input.enableNativeWebSearch
+      : DEFAULT_AI_ENABLE_NATIVE_WEB_SEARCH
   return {
     apiKey,
     apiUrl: apiUrlRaw || DEFAULT_AI_API_URL,
-    model: modelRaw || DEFAULT_AI_MODEL
+    model: modelRaw || DEFAULT_AI_MODEL,
+    enableNativeWebSearch,
+    reasoningEffort: normalizeReasoningEffort(input?.reasoningEffort)
   }
 }
 
