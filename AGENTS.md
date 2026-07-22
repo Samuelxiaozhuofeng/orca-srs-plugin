@@ -16,15 +16,6 @@ This file is the canonical coding contract for agents working in this repository
 - Child-card collection must ignore a legal self back-reference (`from === to === parentBlockId`) while preserving real child refs.
 - Errors must remain visible. Do not use empty `catch`, silent fallbacks, or `return null/[]` to hide a failed read/write. Report the error and preserve retryable state where the module requires it.
 
-## Console Debugging
-
-For Orca-dependent bugs and behavior changes that can be inspected in the user's running instance:
-
-1. When runtime evidence would materially reduce uncertainty, provide the smallest useful read-only Console script. First identify the real runtime target and source—such as the current repo/panel, blockId, scroll owner, DOM node, cache, or backend value. Do not assume that the first matching selector or apparent container is the real owner.
-2. For state/data issues, compare the relevant `orca.state` value with an independent `orca.invokeBackend` read. Consult `plugin-docs/` for the exact backend message and arguments. Use top-level `await`, return compact copyable JSON, and include `orca.state.repo`.
-3. Do not provide a mutating Console script until its impact is stated and the user agrees. `insertTag`, `removeTag`, `setProperties`, and similar command success responses are not final evidence; re-read the backend and report the post-write state.
-4. Until runtime evidence is returned, describe explanations only as **candidate causes**. After the fix, distinguish **automated tests passed** from **Orca instance verification passed**, and convert the observed runtime shape into a regression test when practical.
-
 ## Layout
 
 - `src/main.ts`: plugin lifecycle, public commands, and entry wiring.
