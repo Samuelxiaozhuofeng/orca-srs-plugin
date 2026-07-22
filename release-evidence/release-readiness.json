@@ -1,9 +1,9 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "go": false,
   "orcaRuntimeVerified": false,
   "maintainerRuntimeAccepted": false,
-  "updatedAt": "2026-07-20",
+  "updatedAt": "2026-07-22",
   "verifiedDistSha256": "",
   "approvedBy": "",
   "verifiedAt": "",
@@ -26,7 +26,7 @@
     "githubRelease": "pending",
     "awesomeOrcanotePr": "pending",
     "owner": "Grok",
-    "note": "Version metadata bumped to 1.0.2. Runtime evidence, verifiedDistSha256 freeze, tag/zip/GitHub Release, and awesome-orcanote PR remain open."
+    "note": "Version metadata bumped to 1.0.3. Runtime evidence, verifiedDistSha256 freeze, tag/zip/GitHub Release, and awesome-orcanote PR remain open."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-1.0.2-pending"
+    "WP-13": "release-1.0.3-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
@@ -57,20 +57,20 @@
       "id": "epub-zip-central-directory-budget",
       "workPackages": ["WP-07"],
       "summary": "EPUB ZIP 中央目录声明预算未独立预检",
-      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.2 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.2"
+      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.3 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.3"
     },
     {
       "id": "write-path-cancellation-not-unified",
       "workPackages": ["WP-07", "WP-11"],
       "summary": "EPUB/Web/AI 写入阶段取消未形成统一可中断事务",
-      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.2 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.2"
+      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.3 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.3"
     }
   ],
   "decision": {
     "type": "version-bump-pending-runtime",
-    "statement": "Metadata version is 1.0.2. Formal Go requires maintainer runtime acceptance, frozen verifiedDistSha256, empty blockers, and tag/zip pipeline.",
+    "statement": "Metadata version is 1.0.3. Formal Go requires maintainer runtime acceptance, frozen verifiedDistSha256, empty blockers, and tag/zip pipeline.",
     "verifiedDistSha256": "",
     "approvedBy": "",
     "verifiedAt": ""
