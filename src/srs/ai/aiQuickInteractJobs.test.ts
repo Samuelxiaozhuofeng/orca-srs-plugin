@@ -791,4 +791,219 @@ describe("startBackgroundQuickInsertJob", () => {
       (aiQuickJobsState.jobs as Array<{ id: string }>).map((item) => item.id)
     ).toEqual([jobId])
   })
+
+  it("archives paid model text when cancel happens during generation, then the model succeeds", async () => {
+    const { runToolbarAIPrompt, insertQuickResultAsChild } = await import(
+      "./aiQuickInteract"
+    )
+    const ai = deferred<{ success: true; text: string }>()
+    vi.mocked(runToolbarAIPrompt).mockReturnValueOnce(ai.promise)
+
+    const startPromise = startBackgroundQuickInsertJob(quickJobOptions())
+    await flushMicrotasks()
+    const jobId = (aiQuickJobsState.jobs as Array<{ id: string }>)[0]?.id
+    expect(jobId).toBeTruthy()
+
+    cancelBackgroundQuickJob(jobId!)
+    expect(aiQuickJobsState.jobs).toEqual([])
+    expect(aiQuickJobsState.recent).toEqual([])
+
+    ai.resolve({ success: true, text: "付费模型输出-取消后到达" })
+    await startPromise
+
+    expect(insertQuickResultAsChild).not.toHaveBeenCalled()
+    expect(aiQuickJobsState.jobs).toEqual([])
+    expect(aiQuickJobsState.recent).toHaveLength(1)
+    expect(aiQuickJobsState.recent[0]).toMatchObject({
+      resultText: "付费模型输出-取消后到达",
+      sourceBlockId: 10,
+      promptLabel: "举例说明"
+    })
+  })
+
+  it("archives paid model text when leaving a journal panel during generation, then the model succeeds", async () => {
+    installOrcaPanel({
+      view: "journal",
+      date: "2026-07-22T00:00:00.000Z"
+    })
+    const { runToolbarAIPrompt, insertQuickResultAsChild } = await import(
+      "./aiQuickInteract"
+    )
+    const ai = deferred<{ success: true; text: string }>()
+    vi.mocked(runToolbarAIPrompt).mockReturnValueOnce(ai.promise)
+
+    const startPromise = startBackgroundQuickInsertJob(quickJobOptions())
+    await flushMicrotasks()
+    expect(aiQuickJobsState.jobs).toHaveLength(1)
+
+    // 真机 journal 视图无 blockId；仅 date 变化即视为离开。
+    ;(globalThis as any).orca.nav.findViewPanel = vi.fn(() => ({
+      id: "panel-1",
+      view: "journal",
+      viewArgs: { date: "2026-07-23T00:00:00.000Z" },
+      viewState: {}
+    }))
+    await dismissJobsLeftBehindOnPanelLeave()
+    expect(aiQuickJobsState.jobs).toEqual([])
+
+    ai.resolve({ success: true, text: "付费模型输出-离开后到达" })
+    await startPromise
+
+    expect(insertQuickResultAsChild).not.toHaveBeenCalled()
+    expect(aiQuickJobsState.jobs).toEqual([])
+    expect(aiQuickJobsState.recent).toHaveLength(1)
+    expect(aiQuickJobsState.recent[0]).toMatchObject({
+      resultText: "付费模型输出-离开后到达",
+      sourceBlockId: 10
+    })
+  })
+
+  it("does not invent recent entries for failed or cancelled model responses after discard", async () => {
+    const { runToolbarAIPrompt, insertQuickResultAsChild } = await import(
+      "./aiQuickInteract"
+    )
+    const ai = deferred<{
+      success: false
+      error: { code: string; message: string }
+    }>()
+    vi.mocked(runToolbarAIPrompt).mockReturnValueOnce(ai.promise)
+
+    const startPromise = startBackgroundQuickInsertJob(quickJobOptions())
+    await flushMicrotasks()
+    const jobId = (aiQuickJobsState.jobs as Array<{ id: string }>)[0]?.id
+    cancelBackgroundQuickJob(jobId!)
+
+    ai.resolve({
+      success: false,
+      error: { code: "HTTP_ERROR", message: "upstream 500" }
+    })
+    await startPromise
+
+    expect(insertQuickResultAsChild).not.toHaveBeenCalled()
+    expect(aiQuickJobsState.jobs).toEqual([])
+    expect(aiQuickJobsState.recent).toEqual([])
+  })
+
+  it("retracks a late insert when compensation dismiss fails during unload, then delete/keep cleans it", async () => {
+    const { insertQuickResultAsChild, dismissQuickResult, keepQuickResult } =
+      await import("./aiQuickInteract")
+    const insertResult = deferred<{ success: true; blockId: number }>()
+    vi.mocked(insertQuickResultAsChild).mockReturnValueOnce(insertResult.promise)
+    // 1) 任务内补偿 dismiss 失败 → retrack ready job
+    // 2) cancelAll snapshot 再次 dismiss 成功
+    vi.mocked(dismissQuickResult)
+      .mockResolvedValueOnce({ success: false, error: "补偿删除失败" })
+      .mockResolvedValueOnce({ success: true })
+
+    const startPromise = startBackgroundQuickInsertJob(quickJobOptions())
+    await flushMicrotasks()
+    const cleanupPromise = cancelAllBackgroundQuickJobs()
+    insertResult.resolve({ success: true, blockId: 7777 })
+    await Promise.all([startPromise, cleanupPromise])
+
+    expect(dismissQuickResult).toHaveBeenCalledWith(7777)
+    expect(vi.mocked(dismissQuickResult).mock.calls.length).toBeGreaterThanOrEqual(
+      2
+    )
+    expect(keepQuickResult).not.toHaveBeenCalledWith(7777)
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("keeps a retryable ready job with root id when unload late-insert delete and keep both fail", async () => {
+    const { insertQuickResultAsChild, dismissQuickResult, keepQuickResult } =
+      await import("./aiQuickInteract")
+    const insertResult = deferred<{ success: true; blockId: number }>()
+    vi.mocked(insertQuickResultAsChild).mockReturnValueOnce(insertResult.promise)
+    // 补偿 dismiss 一次 + cancelAll dismiss 一次 + keep 一次；之后恢复默认成功，避免污染 afterEach
+    vi.mocked(dismissQuickResult)
+      .mockResolvedValueOnce({ success: false, error: "始终删除失败" })
+      .mockResolvedValueOnce({ success: false, error: "始终删除失败" })
+    vi.mocked(keepQuickResult).mockResolvedValueOnce({
+      success: false,
+      error: "始终保留失败"
+    })
+
+    const startPromise = startBackgroundQuickInsertJob(quickJobOptions())
+    await flushMicrotasks()
+    const cleanupPromise = cancelAllBackgroundQuickJobs()
+    insertResult.resolve({ success: true, blockId: 8888 })
+
+    await expect(cleanupPromise).rejects.toThrow(/1 个/)
+    await startPromise
+
+    const remaining = aiQuickJobsState.jobs as Array<{
+      status: string
+      resultRootBlockId: number | null
+      resultText: string
+    }>
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0]).toMatchObject({
+      status: "ready",
+      resultRootBlockId: 8888,
+      resultText: "AI 解释正文"
+    })
+    // 交给 afterEach 的 cancelAll：默认 mock 可删掉 retrack 的预览
+  })
+
+  it("retracks a late restore insert when dismiss fails during unload", async () => {
+    const { insertQuickResultAsChild, dismissQuickResult, keepQuickResult } =
+      await import("./aiQuickInteract")
+    const jobId = await startBackgroundQuickInsertJob(quickJobOptions())
+    await dismissBackgroundQuickJob(jobId)
+    const recentId = aiQuickJobsState.recent[0]?.id
+    expect(recentId).toBeTruthy()
+
+    const insertResult = deferred<{ success: true; blockId: number }>()
+    vi.mocked(insertQuickResultAsChild).mockReturnValueOnce(insertResult.promise)
+    // 迟到恢复补偿 dismiss 失败 → retrack；cancelAll snapshot 再删成功
+    vi.mocked(dismissQuickResult)
+      .mockResolvedValueOnce({ success: false, error: "恢复补偿删除失败" })
+      .mockResolvedValueOnce({ success: true })
+
+    const restorePromise = restoreRecentQuickResult(recentId!)
+    const cleanupPromise = cancelAllBackgroundQuickJobs()
+    insertResult.resolve({ success: true, blockId: 4002 })
+    await Promise.all([restorePromise, cleanupPromise])
+
+    expect(dismissQuickResult).toHaveBeenCalledWith(4002)
+    expect(keepQuickResult).not.toHaveBeenCalledWith(4002)
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("retracks a late insert-retry when dismiss fails after cancel during unload", async () => {
+    const { runToolbarAIPrompt, insertQuickResultAsChild, dismissQuickResult } =
+      await import("./aiQuickInteract")
+    vi.mocked(insertQuickResultAsChild).mockResolvedValueOnce({
+      success: false,
+      error: "首次写入失败"
+    })
+    const jobId = await startBackgroundQuickInsertJob(quickJobOptions())
+    expect(
+      (
+        aiQuickJobsState.jobs as Array<{
+          id: string
+          errorStage: string | null
+        }>
+      ).find((item) => item.id === jobId)?.errorStage
+    ).toBe("insert")
+
+    const insertResult = deferred<{ success: true; blockId: number }>()
+    vi.mocked(insertQuickResultAsChild).mockReturnValueOnce(insertResult.promise)
+    // 重试写入中途任务被移除（cancel），补偿 dismiss 失败 → retrack；
+    // unload snapshot 再删成功。
+    vi.mocked(dismissQuickResult)
+      .mockResolvedValueOnce({ success: false, error: "重试补偿删除失败" })
+      .mockResolvedValueOnce({ success: true })
+
+    const retryPromise = retryBackgroundQuickJob(jobId)
+    await flushMicrotasks()
+    cancelBackgroundQuickJob(jobId)
+    const cleanupPromise = cancelAllBackgroundQuickJobs()
+    insertResult.resolve({ success: true, blockId: 5001 })
+    await Promise.all([retryPromise, cleanupPromise])
+
+    expect(runToolbarAIPrompt).toHaveBeenCalledTimes(1)
+    expect(dismissQuickResult).toHaveBeenCalledWith(5001)
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
 })

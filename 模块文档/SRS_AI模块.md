@@ -1,8 +1,8 @@
 # SRS AI 模块
 
 > 文档同步日期：2026-07-22
-> 变更说明：Quick AI 1.1 增加非模态任务反馈、失败重试、追问/再生成、临时结果会话内恢复、移为同级块、Prompt 排序与调用范围提示；修复写入期间取消可能残留无主预览块的竞态。
-> **未宣称**：本轮 Quick AI 1.1 的 Orca 真机端到端验收。
+> 变更说明：Quick AI 1.1 增加非模态任务反馈、失败重试、追问/再生成、临时结果会话内恢复、移为同级块、Prompt 排序与调用范围提示；修复写入期间取消可能残留无主预览块的竞态；修复生成中取消/离开后付费正文未进 recent，以及 unload 迟到 insert 补偿删除失败时的无跟踪孤儿块。
+> **未宣称**：本轮 Quick AI 1.1 的 Orca 真机端到端验收（含 journal 面板入口与多面板 leave 指纹）。
 
 ## 概述
 
@@ -91,9 +91,9 @@ src/components/
      - **复制 / 移为同级**：任务面板可复制纯结果，或用 `moveBlocks(..., sourceBlockId, "after")` 移到查询块后并结束预览态
      - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务
   6. **可见任务状态**：`AIQuickJobsPanel` 非模态显示 generating / ready / error；普通请求失败不再静默，只保留脱敏错误并提供重试。生成失败重新请求模型；写入失败复用已有 `resultText` 仅重试插入，避免重复调用。内联根操作栏明确显示「临时预览 · 离开后删除」
-  7. **离开面板默认取消 + 会话内恢复**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树），已完成模型调用的结果正文最多保留 10 条在内存 `recent`，可「恢复并保留」到原查询块；插件重载后清空。恢复写入失败时 recent 放回；状态标记失败时重建 ready 任务避免孤儿 preview
-  8. **写入与操作竞态防护**：请求已完成、`insertQuickResultAsChild` 尚未返回时若任务被取消/离开，写入完成后立即 `dismissQuickResult`；保留、保留此块、删除、移动使用 per-job action claim，离开清理不会与用户提交动作互删
-  9. **卸载清理**：`cancelAllBackgroundQuickJobs` 先关闭 admission gate，拒绝新的生成/重试/恢复/结果动作，再中止请求并等待后台任务、已 claim 的动作和恢复补偿；`unregisterUIComponents` 会 await 清理。ready 预览删除失败时降级标记为 `kept`，避免 UI 注销后留下孤儿 preview；删除与保留都失败才保留失败 job 并向 unload sequence 抛错
+  7. **离开面板默认取消 + 会话内恢复**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。指纹字段为 `view` + `viewArgs.date` + `viewArgs.blockId`（**journal 日记面板通常无 `blockId`**，真机以 `date` 区分视图；当前编辑块身份来自命令 cursor/`sourceBlockId`，不依赖 `viewArgs.blockId`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树）。**模型已成功返回的正文**在生成中取消、任务卡已被移除、AbortSignal aborted、或 in-job 面板离开早退时，只要不是插件 unload（`isShuttingDown`），都会归档进内存 `recent`（最多 10 条），不 insert；失败/CANCELLED 响应不写 recent。可「恢复并保留」到原查询块；插件重载后清空。恢复写入失败时 recent 放回；状态标记失败时重建 ready 任务避免孤儿 preview
+  8. **写入与操作竞态防护**：请求已完成、`insertQuickResultAsChild` 尚未返回时若任务被取消/离开，写入完成后立即 `dismissQuickResult`；补偿删除失败时用 `ensureTrackedReadyPreview` 把 `resultRootBlockId` 留在 jobs（初次后台 insert / insert 失败重试 / recent 恢复迟到路径共用）。保留、保留此块、删除、移动使用 per-job action claim，离开清理不会与用户提交动作互删
+  9. **卸载清理**：`cancelAllBackgroundQuickJobs` 先关闭 admission gate，拒绝新的生成/重试/恢复/结果动作，再中止请求并 **await** 后台任务 completion 与已 claim 动作（含迟到 insert/恢复补偿）。此后 snapshot 中 `ready` 且有 root 的预览再走 delete → keep 降级；删除与保留都失败才把带 `resultRootBlockId` 的 job 留在 state 并向 unload sequence 抛错。`unregisterUIComponents` 会 await 清理
 - **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
   1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
   2. 无 URL 的 `[[n]]` → `〔n〕`（防块引用）
@@ -204,4 +204,4 @@ makeAICard / interactiveAICard（别名）
 
 ## 相关测试
 
-`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段 + `insertQuickResult` 位置 + `keepSingleQuickResultBlock` / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 keep / 单块 keep / 失败重试 / 再生成 / recent 恢复 / 写入期间取消补偿 / 离开面板取消）
+`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段 + `insertQuickResult` 位置 + `keepSingleQuickResultBlock` / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 keep / 单块 keep / 失败重试 / 再生成 / recent 恢复 / 写入期间取消补偿 / 离开面板取消 / **生成中取消或 journal 离开后付费正文进 recent** / **unload 迟到 insert·retry·restore 补偿删除失败 retrack 与 delete+keep 双失败保留 root**）

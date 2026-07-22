@@ -145,7 +145,6 @@ const actionCompletionByJobId = new Map<string, Promise<void>>()
 const backgroundJobCompletions = new Set<Promise<string>>()
 let lifecycleGeneration = 0
 let recentClearGeneration = 0
-let deferredLifecycleCleanupErrors: string[] = []
 let isShuttingDown = false
 
 let jobSeq = 0
@@ -187,7 +186,6 @@ function claimJobAction(jobId: string): (() => void) | null {
 /** 插件 load/register 时重新开放任务入口；失败清理债务仍保留在 state 供用户处理。 */
 export function beginQuickBackgroundJobsSession(): void {
   isShuttingDown = false
-  deferredLifecycleCleanupErrors = []
 }
 
 function jobToStartOptions(job: QuickBackgroundJob): StartBackgroundQuickInsertOptions {
@@ -228,6 +226,45 @@ function archiveJobResult(job: QuickBackgroundJob): void {
   ].slice(0, MAX_RECENT_RESULTS)
 }
 
+/**
+ * 模型已成功返回正文时归档到会话 recent。
+ * 卸载清理中不写 recent（cancelAll 会清空）；失败/CANCELLED 不得调用。
+ */
+function archiveSuccessfulModelText(
+  jobLike: QuickBackgroundJob,
+  text: string
+): void {
+  if (isShuttingDown) return
+  const trimmed = text.trim()
+  if (!trimmed) return
+  archiveJobResult({ ...jobLike, resultText: trimmed })
+}
+
+/**
+ * insert 已成功但补偿删除失败：把 root 留在 jobs 里供用户重试或 unload 的
+ * delete → keep 降级再次处理。三处迟到路径共用，避免行为漂移。
+ */
+function ensureTrackedReadyPreview(
+  job: QuickBackgroundJob,
+  blockId: number,
+  resultText: string,
+  errorMessage: string
+): void {
+  const jobs = aiQuickJobsState.jobs as QuickBackgroundJob[]
+  const tracked = jobs.find((item) => item.id === job.id)
+  const readyJob: QuickBackgroundJob = {
+    ...(tracked ?? job),
+    status: "ready",
+    resultText,
+    resultRootBlockId: blockId,
+    errorMessage,
+    errorStage: null
+  }
+  aiQuickJobsState.jobs = tracked
+    ? jobs.map((item) => (item.id === job.id ? readyJob : item))
+    : [...jobs, readyJob]
+}
+
 export function hasActiveQuickBackgroundJobs(): boolean {
   return (aiQuickJobsState.jobs as QuickBackgroundJob[]).some(
     (j: QuickBackgroundJob) =>
@@ -257,7 +294,6 @@ async function startBackgroundQuickInsertJobImpl(
   }
 
   const id = nextJobId()
-  const startLifecycle = lifecycleGeneration
   const controller = new AbortController()
   abortByJobId.set(id, controller)
 
@@ -298,46 +334,56 @@ async function startBackgroundQuickInsertJobImpl(
       signal: controller.signal
     })
 
-    const current = findJob(id)
-    if (!current) return id
-
-    if (controller.signal.aborted) {
-      removeJob(id)
-      return id
-    }
-
-    // 生成期间用户已离开面板：默认取消，不写入预览块
-    if (!isJobPanelViewStillActive(current)) {
-      removeJob(id)
-      return id
-    }
-
     if (!result.success) {
+      const failed = findJob(id)
+      if (!failed) return id
+      if (controller.signal.aborted || !isJobPanelViewStillActive(failed)) {
+        removeJob(id)
+        return id
+      }
       if (result.error.code === "CANCELLED") {
         removeJob(id)
         return id
       }
       const safe = sanitizePublicError(result.error.message)
-      current.status = "error"
-      current.errorMessage = safe
-      current.errorStage = "generate"
-      current.resultText = ""
+      failed.status = "error"
+      failed.errorMessage = safe
+      failed.errorStage = "generate"
+      failed.resultText = ""
       return id
     }
 
     // 模型调用已经付费完成；即使后续写入失败/取消，也允许会话内恢复正文。
-    current.resultText = result.text
+    // 生成中取消 / 任务已被移除 / AbortSignal / 面板离开：先归档再丢弃，不 insert。
+    const paidText = result.text
+    const current = findJob(id)
+    if (!current) {
+      archiveSuccessfulModelText(job, paidText)
+      return id
+    }
+    if (controller.signal.aborted) {
+      archiveSuccessfulModelText(current, paidText)
+      removeJob(id)
+      return id
+    }
+    if (!isJobPanelViewStillActive(current)) {
+      archiveSuccessfulModelText(current, paidText)
+      removeJob(id)
+      return id
+    }
+
+    current.resultText = paidText
 
     const insert = await insertQuickResultAsChild(
       opts.sourceBlockId,
-      result.text,
+      paidText,
       opts.promptLabel,
       opts.selectedText
     )
 
     const afterInsert = findJob(id)
     if (!afterInsert || controller.signal.aborted) {
-      // 请求结束后、块写入期间用户可能取消或离开面板。此时任务记录已被移除，
+      // 请求结束后、块写入期间用户可能取消或离开面板。此时任务记录可能已被移除，
       // 必须补偿删除刚写入的预览，避免出现无主 AI 块。
       if (insert.success) {
         const cleanup = await dismissQuickResult(insert.blockId)
@@ -347,20 +393,17 @@ async function startBackgroundQuickInsertJobImpl(
             "[AI QuickInteract] 取消后的预览补偿清理失败:",
             cleanup.error
           )
-          orca.notify("error", `已取消，但${message}`, {
-            title
-          })
-          // 非卸载场景保留一个可操作任务，避免遗留块无人管理。
-          if (startLifecycle === lifecycleGeneration && findJob(id) == null) {
-            job.status = "ready"
-            job.resultRootBlockId = insert.blockId
-            job.errorMessage = message
-            job.errorStage = null
-            aiQuickJobsState.jobs = [...aiQuickJobsState.jobs, job]
-          } else if (startLifecycle !== lifecycleGeneration) {
-            deferredLifecycleCleanupErrors.push(message)
+          if (!isShuttingDown) {
+            orca.notify("error", `已取消，但${message}`, { title })
           }
+          // 无论会话内还是 unload 等待 completion：把 root 留在 jobs，
+          // 供用户重试或 cancelAll 的 delete→keep 降级再次处理。
+          ensureTrackedReadyPreview(job, insert.blockId, paidText, message)
+        } else if (findJob(id) != null) {
+          removeJob(id)
         }
+      } else if (findJob(id) != null && controller.signal.aborted) {
+        removeJob(id)
       }
       return id
     }
@@ -369,14 +412,14 @@ async function startBackgroundQuickInsertJobImpl(
       afterInsert.status = "error"
       afterInsert.errorMessage = insert.error
       afterInsert.errorStage = "insert"
-      afterInsert.resultText = result.text
+      afterInsert.resultText = paidText
       return id
     }
 
     // 插入后再次检查：若已离开面板，默认取消（删掉刚写入的预览树）
     if (!isJobPanelViewStillActive(afterInsert)) {
       afterInsert.status = "ready"
-      afterInsert.resultText = result.text
+      afterInsert.resultText = paidText
       afterInsert.resultRootBlockId = insert.blockId
       afterInsert.errorMessage = null
       await dismissBackgroundQuickJob(id)
@@ -384,7 +427,7 @@ async function startBackgroundQuickInsertJobImpl(
     }
 
     afterInsert.status = "ready"
-    afterInsert.resultText = result.text
+    afterInsert.resultText = paidText
     afterInsert.resultRootBlockId = insert.blockId
     afterInsert.errorMessage = null
     afterInsert.errorStage = null
@@ -431,7 +474,6 @@ export async function retryBackgroundQuickJob(
   if (job.errorStage === "insert" && job.resultText.trim()) {
     const release = claimJobAction(jobId)
     if (!release) return null
-    const retryLifecycle = lifecycleGeneration
     try {
       job.status = "generating"
       job.errorMessage = null
@@ -449,15 +491,15 @@ export async function retryBackgroundQuickJob(
           if (!cleanup.success) {
             const message = `重试取消后的预览清理失败：${cleanup.error}`
             console.error(`[AI QuickInteract] ${message}`)
-            if (retryLifecycle === lifecycleGeneration) {
-              job.status = "ready"
-              job.resultRootBlockId = insert.blockId
-              job.errorMessage = message
-              job.errorStage = null
-              aiQuickJobsState.jobs = [...aiQuickJobsState.jobs, job]
-            } else {
-              deferredLifecycleCleanupErrors.push(message)
+            if (!isShuttingDown) {
+              orca.notify("error", message, { title: "AI 快捷交互" })
             }
+            ensureTrackedReadyPreview(
+              job,
+              insert.blockId,
+              job.resultText,
+              message
+            )
           }
         }
         return jobId
@@ -740,8 +782,34 @@ async function restoreRecentQuickResultClaimed(recentId: string): Promise<void> 
       const cleanup = await dismissQuickResult(inserted.blockId)
       if (!cleanup.success) {
         const message = `卸载时清理迟到恢复块失败：${cleanup.error}`
-        deferredLifecycleCleanupErrors.push(message)
         console.error(`[AI QuickInteract] ${message}`)
+        const panel = captureActivePanelViewSnapshot()
+        const recoveryJob: QuickBackgroundJob = {
+          id: nextJobId(),
+          pluginName: recent.pluginName,
+          sourceBlockId: recent.sourceBlockId,
+          selectedText: recent.selectedText,
+          blockText: recent.blockText,
+          promptLabel: recent.promptLabel,
+          promptText: recent.promptText,
+          includeBlockContext: recent.includeBlockContext,
+          model: recent.model,
+          status: "ready",
+          resultText: recent.resultText,
+          errorMessage: message,
+          errorStage: null,
+          resultRootBlockId: inserted.blockId,
+          createdAt: recent.createdAt,
+          panelId: panel.panelId,
+          panelViewKey: panel.panelViewKey
+        }
+        // 留给 cancelAll 的 snapshot 再走 delete→keep，避免无跟踪孤儿块。
+        ensureTrackedReadyPreview(
+          recoveryJob,
+          inserted.blockId,
+          recent.resultText,
+          message
+        )
       }
     }
     return
@@ -853,7 +921,6 @@ export async function cancelAllBackgroundQuickJobs(): Promise<void> {
   isShuttingDown = true
   lifecycleGeneration += 1
   recentClearGeneration += 1
-  deferredLifecycleCleanupErrors = []
   regeneratingJobIds.clear()
   for (const [id, controller] of abortByJobId) {
     controller.abort()
@@ -904,9 +971,9 @@ export async function cancelAllBackgroundQuickJobs(): Promise<void> {
     }
   }
   aiQuickJobsState.jobs = cleanupFailed
-  if (cleanupFailed.length > 0 || deferredLifecycleCleanupErrors.length > 0) {
+  if (cleanupFailed.length > 0) {
     throw new Error(
-      `卸载时有 ${cleanupFailed.length + deferredLifecycleCleanupErrors.length} 个 Quick AI 预览未能删除`
+      `卸载时有 ${cleanupFailed.length} 个 Quick AI 预览未能删除`
     )
   }
 }
