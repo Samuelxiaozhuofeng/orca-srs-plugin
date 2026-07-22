@@ -1,8 +1,8 @@
 # SRS AI 模块
 
 > 文档同步日期：2026-07-22
-> 变更说明：QuickAI 预览支持「保留此块」——子块悬停仅保留该子树并去掉 AI 外壳；根「保留/取消」不变。此前：提示词库项可选 `model`。
-> **未宣称**：真机「保留此块」与多 model 路由的端到端验收。
+> 变更说明：Quick AI 1.1 增加非模态任务反馈、失败重试、追问/再生成、临时结果会话内恢复、移为同级块、Prompt 排序与调用范围提示；修复写入期间取消可能残留无主预览块的竞态。
+> **未宣称**：本轮 Quick AI 1.1 的 Orca 真机端到端验收。
 
 ## 概述
 
@@ -58,7 +58,7 @@ src/components/
 ├── AICardDraftCard.tsx
 ├── AIQuickInteractMount.tsx # 弹窗 + 后台任务面板挂载
 ├── AIQuickInteractDialog.tsx
-├── AIQuickJobsPanel.tsx     # 非模态面板（当前可空挂；主操作已内联到结果块）
+├── AIQuickJobsPanel.tsx     # 非模态任务/错误/最近删除面板；结果继续加工入口
 ├── AIBlockLoadingMount.tsx  # 源块行尾 loading + 结果根块罩层/保留取消
 ├── AIPromptManagerMount.tsx
 ├── AIPromptManagerDialog.tsx
@@ -72,22 +72,28 @@ src/components/
 
 - **提示词项字段**（持久化：`orca.plugins.setData` 键 `ai.promptLibrary`，**不**走 `setSettings`，以免冲掉 apiKey/apiUrl）：
   - `includeBlockContext`：是否附带整块正文作 context（旧数据缺省 `true`）
-  - `insertBelowOnComplete`：是否后台生成并默认插入到**查询块下方**（同级 `after`；旧数据缺省 `false` 保持弹窗）
+  - `insertBelowOnComplete`：历史字段名保留兼容；为 true 时后台生成并插入为**查询块的临时子块预览**（`lastChild`；旧数据缺省 `false` 保持弹窗）
   - `model`：可选专用模型 id；空字符串 = 用「AI 服务设置」全局 `model`（旧数据缺省 `""`）
   - 兼容：hydrate 时若 data 无数据，只读迁移 settings 中的 `ai.promptLibrary` / `ai.toolbarPrompts` → setData
 - **默认三项**（库从未写入时）：举例说明 / 翻译 / 进一步解释；默认均 `insertBelowOnComplete: true`、`model: ""`
 - **按提示词选模型**：新增/编辑表单用**下拉**选择 model（选项 = 服务设置同一 Key/URL 的 `/models` 列表 +「默认」项）；与服务设置共享内存缓存 `aiModelsCache`；可「刷新模型」。后台/弹窗路径传入 `runToolbarAIPrompt({ model })`，仅覆盖请求体 `model`
-- **提示词库编辑 UI**：表单用组件本地 state + 键盘事件 stopPropagation，避免宿主编辑器抢键导致无法输入
+- **工具栏菜单信息**：每项展示「点击即生成 / 弹窗后生成」、发送范围（仅选区 / 选区 + 当前块）、实际 model 与联网开关状态；未配置服务时直接打开「AI / Firecrawl 服务设置」
+- **提示词库编辑 UI**：表单用组件本地 state + 键盘事件 stopPropagation，避免宿主编辑器抢键导致无法输入；列表支持上移/下移并立即持久化顺序
 - **后台路径**（`insertBelowOnComplete`）：
   1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）
   2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
-  3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
+  3. 成功：以 `lastChild` 写入当前查询块的 `AI · 提示名` 临时子块预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
   4. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
   5. 用户操作：
      - **保留（全部）** `keepBackgroundQuickJob`：把 `srs.ai.status` 写成 `kept` 并结束预览态（卸罩层/按钮；整棵内容保留）。属性写入失败时仍卸预览 UI，并 `warn` 提示
      - **保留此块** `keepSingleBlockBackgroundQuickJob`：预览树每个**子孙块**悬停显示按钮（`AIBlockLoadingMount` + `MutationObserver` 补挂）。`keepSingleQuickResultBlock`：校验块属于预览树 → `moveBlocks` 到结果根 `after`（整棵子树一起）→ `deleteBlocks` 剩余预览树（含「AI · 提示名」外壳与其它兄弟）。成功后卸预览任务并 toast「已保留该块」；失败保留任务与预览树可重试。点根自身时退化为整棵 `keepQuickResult`
+     - **追问 / 再生成**：追问复用自定义提示词弹窗，把上一轮结果作为选区、原块与上一轮结果作为上下文；再生成保留现有预览并创建独立候选，便于比较
+     - **复制 / 移为同级**：任务面板可复制纯结果，或用 `moveBlocks(..., sourceBlockId, "after")` 移到查询块后并结束预览态
      - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务
-  6. **离开面板默认取消**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览
+  6. **可见任务状态**：`AIQuickJobsPanel` 非模态显示 generating / ready / error；普通请求失败不再静默，只保留脱敏错误并提供重试。生成失败重新请求模型；写入失败复用已有 `resultText` 仅重试插入，避免重复调用。内联根操作栏明确显示「临时预览 · 离开后删除」
+  7. **离开面板默认取消 + 会话内恢复**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树），已完成模型调用的结果正文最多保留 10 条在内存 `recent`，可「恢复并保留」到原查询块；插件重载后清空。恢复写入失败时 recent 放回；状态标记失败时重建 ready 任务避免孤儿 preview
+  8. **写入与操作竞态防护**：请求已完成、`insertQuickResultAsChild` 尚未返回时若任务被取消/离开，写入完成后立即 `dismissQuickResult`；保留、保留此块、删除、移动使用 per-job action claim，离开清理不会与用户提交动作互删
+  9. **卸载清理**：`cancelAllBackgroundQuickJobs` 先关闭 admission gate，拒绝新的生成/重试/恢复/结果动作，再中止请求并等待后台任务、已 claim 的动作和恢复补偿；`unregisterUIComponents` 会 await 清理。ready 预览删除失败时降级标记为 `kept`，避免 UI 注销后留下孤儿 preview；删除与保留都失败才保留失败 job 并向 unload sequence 抛错
 - **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
   1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
   2. 无 URL 的 `[[n]]` → `〔n〕`（防块引用）
@@ -198,4 +204,4 @@ makeAICard / interactiveAICard（别名）
 
 ## 相关测试
 
-`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段 + `insertQuickResult` 位置 + `keepSingleQuickResultBlock` / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 keep / 单块 keep / 离开面板取消）
+`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段 + `insertQuickResult` 位置 + `keepSingleQuickResultBlock` / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 keep / 单块 keep / 失败重试 / 再生成 / recent 恢复 / 写入期间取消补偿 / 离开面板取消）

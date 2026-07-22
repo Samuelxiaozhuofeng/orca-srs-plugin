@@ -20,7 +20,7 @@ export type ToolbarAIPromptItem = {
   includeBlockContext: boolean
   /**
    * 为 true 时：选中菜单项后立即后台请求，不弹窗；
-   * 完成后把结果作为兄弟块插入到查询块下方，用户可再选「插入为子块」或关闭。
+   * 完成后把结果作为查询块的临时子块预览，用户可保留、继续加工或取消。
    * 缺省（旧数据无此字段）按 false：保持弹窗确认流程。
    */
   insertBelowOnComplete: boolean

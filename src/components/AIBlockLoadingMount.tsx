@@ -145,7 +145,8 @@ function mountChildKeepActions(
       keepBtn.type = "button"
       keepBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep-child"
       keepBtn.title = "仅保留此块（含下级），去掉 AI 外壳与其它内容"
-      keepBtn.innerHTML = '<i class="ti ti-check"></i>保留此块'
+      keepBtn.setAttribute("aria-label", "仅保留此块及其下级")
+      keepBtn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i>保留此块'
       keepBtn.onclick = (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -336,17 +337,23 @@ export function AIBlockLoadingMount() {
       }
 
       if (!actionBar) {
-        actionBar = document.createElement("span")
+        actionBar = document.createElement("div")
         actionBar.className = PREVIEW_ACTIONS_CLASS
         actionBar.setAttribute("data-job-id", job.id)
         actionBar.setAttribute("role", "group")
         actionBar.setAttribute("aria-label", "AI 预览操作")
 
+        const notice = document.createElement("span")
+        notice.className = "srs-ai-preview-notice"
+        notice.textContent = "临时预览 · 离开后删除"
+        notice.title = "离开当前页面会删除；删除后可在本次会话的 Quick AI 最近结果中恢复"
+
         const keepBtn = document.createElement("button")
         keepBtn.type = "button"
         keepBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep"
         keepBtn.title = "保留并沉淀为笔记子块"
-        keepBtn.innerHTML = '<i class="ti ti-check"></i>保留'
+        keepBtn.setAttribute("aria-label", "保留全部 AI 预览内容")
+        keepBtn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i>保留'
         keepBtn.onclick = (e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -357,13 +364,15 @@ export function AIBlockLoadingMount() {
         cancelBtn.type = "button"
         cancelBtn.className = "srs-ai-action-btn srs-ai-action-btn--cancel"
         cancelBtn.title = "取消并删除此 AI 预览块"
-        cancelBtn.innerHTML = '<i class="ti ti-x"></i>取消'
+        cancelBtn.setAttribute("aria-label", "取消并删除 AI 预览")
+        cancelBtn.innerHTML = '<i class="ti ti-x" aria-hidden="true"></i>取消'
         cancelBtn.onclick = (e) => {
           e.preventDefault()
           e.stopPropagation()
           void dismissBackgroundQuickJob(job.id)
         }
 
+        actionBar.appendChild(notice)
         actionBar.appendChild(keepBtn)
         actionBar.appendChild(cancelBtn)
 

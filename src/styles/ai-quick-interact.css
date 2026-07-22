@@ -38,6 +38,7 @@
 .srs-ai-result-block,
 .orca-block[data-srs-ai-result="true"] {
   position: relative !important;
+  container-type: inline-size;
   background-color: var(--orca-bg-tertiary, rgba(99, 102, 241, 0.05)) !important;
   box-shadow: inset 3px 0 0 0 var(--orca-accent-color, #6366f1) !important;
   border-radius: 6px !important;
@@ -58,7 +59,7 @@
 .orca-block[data-srs-ai-result="true"] > .orca-repr > .orca-repr-main.srs-ai-result-main,
 .srs-ai-result-block > .orca-repr-main.srs-ai-result-main,
 .orca-block[data-srs-ai-result="true"] > .orca-repr-main.srs-ai-result-main {
-  padding-right: 7.25rem;
+  padding-right: 13rem;
   box-sizing: border-box;
 }
 
@@ -86,6 +87,12 @@
   );
   border-radius: 5px;
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08);
+}
+
+.srs-ai-preview-notice {
+  color: var(--orca-text-secondary, #6b7280);
+  font-size: 10px;
+  padding: 0 3px;
 }
 
 .srs-ai-action-btn {
@@ -186,4 +193,178 @@
 .orca-block[data-srs-ai-result-child="true"] > .orca-repr-main {
   padding-right: 5.5rem;
   box-sizing: border-box;
+}
+
+/* 非模态全局任务卡：即使源块滚出视口，失败和恢复入口仍可见。 */
+.ai-quick-jobs {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  overflow: auto;
+  color: var(--orca-text-primary, #111827);
+  background: color-mix(
+    in srgb,
+    var(--orca-bg-primary, #ffffff) 96%,
+    transparent
+  );
+  border: 1px solid var(--orca-border-color, rgba(107, 114, 128, 0.2));
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.ai-quick-jobs__header,
+.ai-quick-jobs__recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-quick-jobs__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 11px;
+  background: var(--orca-bg-primary, #ffffff);
+  border-bottom: 1px solid var(--orca-border-color, rgba(107, 114, 128, 0.16));
+}
+
+.ai-quick-jobs__header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 650;
+}
+
+.ai-quick-jobs__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-quick-jobs .ai-quick-jobs__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+}
+
+.ai-quick-jobs__header small,
+.ai-quick-jobs__temporary-note,
+.ai-quick-jobs__job-main > span:not(.ai-quick-jobs__error) {
+  color: var(--orca-text-secondary, #6b7280);
+}
+
+.ai-quick-jobs ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-quick-jobs__job,
+.ai-quick-jobs__recent-item {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--orca-border-color, rgba(107, 114, 128, 0.12));
+}
+
+.ai-quick-jobs__job--error {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.ai-quick-jobs__job-main {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  font-size: 12px;
+}
+
+.ai-quick-jobs__job-main > span:last-child {
+  grid-column: 1 / -1;
+}
+
+.ai-quick-jobs__status {
+  font-size: 11px;
+}
+
+.ai-quick-jobs__error {
+  color: #dc2626;
+}
+
+.ai-quick-jobs__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.ai-quick-jobs button {
+  border: 1px solid var(--orca-border-color, rgba(107, 114, 128, 0.22));
+  border-radius: 5px;
+  padding: 2px 7px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.ai-quick-jobs button:hover,
+.ai-quick-jobs button.is-primary {
+  color: var(--orca-accent-color, #6366f1);
+  background: rgba(99, 102, 241, 0.09);
+  border-color: rgba(99, 102, 241, 0.28);
+}
+
+.ai-quick-jobs__temporary-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+.ai-quick-jobs__recent {
+  background: var(--orca-bg-secondary, rgba(107, 114, 128, 0.04));
+}
+
+.ai-quick-jobs__recent-header {
+  padding: 7px 11px 3px;
+  color: var(--orca-text-secondary, #6b7280);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .srs-ai-preview-notice {
+    display: none;
+  }
+
+  .srs-ai-result-block > .orca-repr > .orca-repr-main.srs-ai-result-main,
+  .orca-block[data-srs-ai-result="true"] > .orca-repr > .orca-repr-main.srs-ai-result-main,
+  .srs-ai-result-block > .orca-repr-main.srs-ai-result-main,
+  .orca-block[data-srs-ai-result="true"] > .orca-repr-main.srs-ai-result-main {
+    padding-right: 6rem;
+  }
+}
+
+/* 宽屏里的窄侧栏不触发 viewport media query，按结果块自身宽度降级。 */
+@container (max-width: 26rem) {
+  .srs-ai-preview-notice {
+    display: none;
+  }
+
+  .srs-ai-result-block > .orca-repr > .orca-repr-main.srs-ai-result-main,
+  .orca-block[data-srs-ai-result="true"] > .orca-repr > .orca-repr-main.srs-ai-result-main,
+  .srs-ai-result-block > .orca-repr-main.srs-ai-result-main,
+  .orca-block[data-srs-ai-result="true"] > .orca-repr-main.srs-ai-result-main {
+    padding-right: 6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .srs-ai-target-block-loading .srs-ai-spin {
+    animation: none;
+  }
 }

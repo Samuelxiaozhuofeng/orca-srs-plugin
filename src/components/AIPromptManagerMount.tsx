@@ -210,6 +210,18 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
     await persist(next)
   }
 
+  const handleMove = async (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction
+    const next = itemsToPayload(aiPromptManagerState.items)
+    if (index < 0 || index >= next.length) return
+    if (nextIndex < 0 || nextIndex >= next.length) return
+
+    const [moved] = next.splice(index, 1)
+    if (!moved) return
+    next.splice(nextIndex, 0, moved)
+    await persist(next)
+  }
+
   const handleResetDefaults = async () => {
     const ok = window.confirm(
       "确定恢复为默认三项提示词？当前列表将被覆盖。"
@@ -257,6 +269,9 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
       }}
       onCreate={enterCreateMode}
       onEdit={enterEditMode}
+      onMove={(index, direction) => {
+        void handleMove(index, direction)
+      }}
       onDelete={(index) => {
         void handleDelete(index)
       }}

@@ -7,6 +7,7 @@ import {
   insertQuickResult,
   isStrictDescendantOf,
   keepSingleQuickResultBlock,
+  moveQuickResultAfter,
   QUICK_SELECTION_MAX
 } from "./aiQuickInteract"
 import {
@@ -111,7 +112,7 @@ describe("extractSelectedTextFromCursor", () => {
     expect(extractSelectedTextFromCursor(cursor)).toBeNull()
   })
 
-  it("returns null when selection spans fragments", () => {
+  it("normalizes a same-block selection spanning styled fragments", () => {
     ;(globalThis as any).orca.state.blocks[1] = {
       id: 1,
       text: "ab",
@@ -127,7 +128,26 @@ describe("extractSelectedTextFromCursor", () => {
       anchorIndex: 0,
       focusIndex: 1
     })
-    expect(extractSelectedTextFromCursor(cursor)).toBeNull()
+    expect(extractSelectedTextFromCursor(cursor)?.selectedText).toBe("aab")
+  })
+
+  it("normalizes a backward same-block selection spanning fragments", () => {
+    ;(globalThis as any).orca.state.blocks[1] = {
+      id: 1,
+      text: "aabb",
+      content: [
+        { t: "t", v: "aa" },
+        { t: "t", v: "bb" }
+      ]
+    }
+    const cursor = makeCursor({
+      blockId: 1,
+      anchorOffset: 1,
+      focusOffset: 1,
+      anchorIndex: 1,
+      focusIndex: 0
+    })
+    expect(extractSelectedTextFromCursor(cursor)?.selectedText).toBe("ab")
   })
 
   it("returns null for whitespace-only selection", () => {
@@ -939,6 +959,21 @@ describe("keepSingleQuickResultBlock", () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.error).toMatch(/不属于当前 AI 预览/)
+  })
+
+  it("moves a preview root after its source as a sibling", async () => {
+    const { blocks, invokeEditorCommand } = setupPreviewTree()
+    const result = await moveQuickResultAfter(10, 100)
+
+    expect(result.success).toBe(true)
+    expect(blocks[100]?.parent).toBeUndefined()
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.moveBlocks",
+      null,
+      [100],
+      10,
+      "after"
+    )
   })
 
   it("delegates to keep all when keep id equals root", async () => {

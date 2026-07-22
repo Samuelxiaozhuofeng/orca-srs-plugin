@@ -16,10 +16,13 @@ import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDi
 import { WebImportDialogMount } from "../../components/web-import/WebImportDialogMount"
 import SrsErrorBoundary from "../../components/SrsErrorBoundary"
 import { getToolbarAIPrompts } from "../ai/aiToolbarPromptStore"
+import { getAISettings } from "../ai/aiSettingsSchema"
+import { beginQuickBackgroundJobsSession } from "../ai/aiQuickInteractJobs"
 
 const React = window.React
 
 export function registerUIComponents(pluginName: string): void {
+  beginQuickBackgroundJobsSession()
   orca.headbar.registerHeadbarButton(`${pluginName}.aiDialogMount`, () => (
     <SrsErrorBoundary componentName="AI 生成闪卡">
       <AIDialogMount pluginName={pluginName} />
@@ -138,12 +141,23 @@ export function registerUIComponents(pluginName: string): void {
     menu: (close) => {
       const MenuText = orca.components.MenuText
       const prompts = getToolbarAIPrompts(pluginName)
+      const aiSettings = getAISettings(pluginName)
       return (
         <>
           {prompts.map((p) => (
             <MenuText
               key={p.id}
               title={p.label}
+              preIcon={
+                p.insertBelowOnComplete ? "ti ti-bolt" : "ti ti-window"
+              }
+              subtitle={`${
+                p.insertBelowOnComplete
+                  ? "点击即生成 · 临时子块预览"
+                  : "打开弹窗后生成"
+              } · ${p.includeBlockContext ? "选区 + 当前块" : "仅选区"} · ${
+                p.model.trim() || "默认模型"
+              } · ${aiSettings.enableNativeWebSearch ? "联网已开" : "不联网"}`}
               onClick={() => {
                 close()
                 void orca.commands.invokeEditorCommand(
@@ -156,6 +170,7 @@ export function registerUIComponents(pluginName: string): void {
           ))}
           <MenuText
             title="提示词库…"
+            preIcon="ti ti-books"
             onClick={() => {
               close()
               void orca.commands.invokeCommand(
@@ -165,6 +180,8 @@ export function registerUIComponents(pluginName: string): void {
           />
           <MenuText
             title="自定义提示词…"
+            subtitle="打开弹窗，编辑指令后生成"
+            preIcon="ti ti-pencil"
             onClick={() => {
               close()
               void orca.commands.invokeEditorCommand(
@@ -270,13 +287,18 @@ export function registerUIComponents(pluginName: string): void {
   })
 }
 
-export function unregisterUIComponents(pluginName: string): void {
+export async function unregisterUIComponents(pluginName: string): Promise<void> {
   // 中止后台 AI 快捷任务；未「保留」的 ready 预览默认删除（离开/卸载不保存）
-  void import("../ai/aiQuickInteractJobs")
-    .then((m) => m.cancelAllBackgroundQuickJobs())
-    .catch((error) => {
-      console.warn(`[${pluginName}] 清理 AI 后台任务失败:`, error)
-    })
+  let quickCleanupError: unknown = null
+  try {
+    const { cancelAllBackgroundQuickJobs } = await import(
+      "../ai/aiQuickInteractJobs"
+    )
+    await cancelAllBackgroundQuickJobs()
+  } catch (error) {
+    console.error(`[${pluginName}] 清理 AI 后台任务失败:`, error)
+    quickCleanupError = error
+  }
 
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
   orca.headbar.unregisterHeadbarButton(`${pluginName}.aiQuickInteractMount`)
@@ -315,4 +337,5 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importEpub`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importWeb`)
+  if (quickCleanupError) throw quickCleanupError
 }

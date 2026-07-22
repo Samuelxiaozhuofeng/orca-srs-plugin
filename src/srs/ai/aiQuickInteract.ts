@@ -88,10 +88,6 @@ export function extractSelectedTextFromCursor(
     return null
   }
 
-  if (cursor.anchor.index !== cursor.focus.index) {
-    return null
-  }
-
   const blockId = Number(cursor.anchor.blockId)
   if (!Number.isFinite(blockId)) return null
 
@@ -102,15 +98,21 @@ export function extractSelectedTextFromCursor(
     return null
   }
 
-  const fragmentIndex = cursor.anchor.index
-  const fragment = block.content[fragmentIndex]
-  if (!fragment || typeof fragment.v !== "string") {
-    return null
+  const anchorBeforeFocus =
+    cursor.anchor.index < cursor.focus.index ||
+    (cursor.anchor.index === cursor.focus.index &&
+      cursor.anchor.offset <= cursor.focus.offset)
+  const start = anchorBeforeFocus ? cursor.anchor : cursor.focus
+  const end = anchorBeforeFocus ? cursor.focus : cursor.anchor
+  const pieces: string[] = []
+  for (let index = start.index; index <= end.index; index += 1) {
+    const fragment = block.content[index]
+    if (!fragment || typeof fragment.v !== "string") return null
+    const from = index === start.index ? start.offset : 0
+    const to = index === end.index ? end.offset : fragment.v.length
+    pieces.push(fragment.v.substring(from, to))
   }
-
-  const startOffset = Math.min(cursor.anchor.offset, cursor.focus.offset)
-  const endOffset = Math.max(cursor.anchor.offset, cursor.focus.offset)
-  const selectedText = fragment.v.substring(startOffset, endOffset)
+  const selectedText = pieces.join("")
   if (!selectedText || selectedText.trim() === "") {
     return null
   }
@@ -569,6 +571,44 @@ export async function promoteQuickResultToChild(
   }
 }
 
+/** 把临时结果树移到查询块之后，成为同级块。 */
+export async function moveQuickResultAfter(
+  sourceBlockId: number,
+  resultRootBlockId: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  if (sourceBlockId === resultRootBlockId) {
+    return { success: false, error: "源块与结果块相同，无法移动" }
+  }
+  try {
+    const source = await resolveBlockById(sourceBlockId)
+    if (!source) return { success: false, error: "找不到查询块，无法移动" }
+    const result = await resolveBlockById(resultRootBlockId)
+    if (!result) {
+      return { success: false, error: "找不到结果块，可能已被删除" }
+    }
+
+    await orca.commands.invokeGroup(
+      async () => {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.moveBlocks",
+          null,
+          [resultRootBlockId],
+          sourceBlockId,
+          "after"
+        )
+      },
+      { undoable: true, topGroup: true }
+    )
+    return { success: true }
+  } catch (error) {
+    console.error("[AI QuickInteract] 移为同级块失败:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "移为同级块失败"
+    }
+  }
+}
+
 /**
  * 关闭/丢弃结果：删除结果标题块（含其子树 ID，避免残留）。
  */
@@ -786,7 +826,9 @@ export async function startAIQuickInteractFlow(
   }
 
   if (!isAIConfigured(pluginName)) {
-    orca.notify("warn", "请先在插件设置中配置 API Key", { title })
+    orca.notify("warn", "尚未配置 AI 服务，已打开服务设置", { title })
+    const { openAIServiceSettings } = await import("./aiServiceSettingsState")
+    await openAIServiceSettings(pluginName)
     return
   }
 
@@ -794,7 +836,7 @@ export async function startAIQuickInteractFlow(
   if (!extract) {
     orca.notify(
       "warn",
-      "请先在同一段文本内选中非空内容（不支持跨块/跨样式选区）",
+      "请先在同一块内选中非空内容（支持跨样式，不支持跨块）",
       { title }
     )
     return

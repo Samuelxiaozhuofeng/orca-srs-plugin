@@ -31,6 +31,7 @@ export interface AIPromptManagerDialogProps {
   onClose: () => void
   onCreate: () => void
   onEdit: (index: number) => void
+  onMove: (index: number, direction: -1 | 1) => void
   onDelete: (index: number) => void
   onResetDefaults: () => void
   onSaveDraft: (entry: ToolbarAIPromptItem) => void
@@ -202,9 +203,9 @@ function PromptDraftForm(props: {
             disabled={busy}
           />
           <span>
-            后台生成并插入到块下方
+            点击菜单即后台生成
             <span className="ai-prompt-manager__checkbox-hint">
-              点菜单即发送，不弹窗；结果写入查询块下方，可再选插入为子块或关闭
+              不弹窗；结果作为当前块的临时子块预览，可选择保留或取消
             </span>
           </span>
         </label>
@@ -260,6 +261,7 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
     onClose,
     onCreate,
     onEdit,
+    onMove,
     onDelete,
     onResetDefaults,
     onSaveDraft,
@@ -407,9 +409,9 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
                         {item.insertBelowOnComplete ? (
                           <span
                             className="ai-prompt-manager__badge"
-                            title="后台生成，结果插入到查询块下方"
+                            title="点击工具栏菜单项后立即生成，结果作为当前块的临时子块预览"
                           >
-                            块下方
+                            即点即生成
                           </span>
                         ) : (
                           <span
@@ -423,6 +425,26 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
                       <div className="ai-prompt-manager__item-preview">{item.prompt}</div>
                     </div>
                     <div className="ai-prompt-manager__item-actions">
+                      <button
+                        type="button"
+                        className="ai-prompt-manager__btn ai-prompt-manager__btn--ghost"
+                        onClick={() => onMove(index, -1)}
+                        disabled={busy || index === 0}
+                        aria-label={`上移「${item.label}」`}
+                        title="上移"
+                      >
+                        <i className="ti ti-arrow-up" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="ai-prompt-manager__btn ai-prompt-manager__btn--ghost"
+                        onClick={() => onMove(index, 1)}
+                        disabled={busy || index === items.length - 1}
+                        aria-label={`下移「${item.label}」`}
+                        title="下移"
+                      >
+                        <i className="ti ti-arrow-down" aria-hidden="true" />
+                      </button>
                       <button
                         type="button"
                         className="ai-prompt-manager__btn ai-prompt-manager__btn--ghost"
