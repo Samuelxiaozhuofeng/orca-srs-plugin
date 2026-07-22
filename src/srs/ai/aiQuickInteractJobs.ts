@@ -32,6 +32,65 @@ export interface QuickBackgroundJob {
   /** 已插入到块下方的结果标题块 ID */
   resultRootBlockId: number | null
   createdAt: number
+  /**
+   * 启动时的面板 id + 视图指纹。
+   * 用户离开该面板视图且未点「保留」时，默认按取消处理（删除预览块）。
+   */
+  panelId: string | null
+  panelViewKey: string | null
+}
+
+/** 读取面板当前视图指纹（view + 稳定 viewArgs） */
+export function computePanelViewKey(panelId: string): string | null {
+  try {
+    if (!panelId || typeof orca?.nav?.findViewPanel !== "function") {
+      return null
+    }
+    const panel = orca.nav.findViewPanel(panelId, orca.state.panels)
+    if (!panel) return null
+    const args = panel.viewArgs ?? {}
+    const dateRaw = args.date
+    const date =
+      dateRaw instanceof Date
+        ? dateRaw.toISOString()
+        : typeof dateRaw === "string" || typeof dateRaw === "number"
+          ? String(dateRaw)
+          : null
+    return JSON.stringify({
+      view: panel.view,
+      blockId: args.blockId ?? null,
+      date
+    })
+  } catch (error) {
+    console.warn("[AI QuickInteract] 读取面板视图指纹失败:", error)
+    return null
+  }
+}
+
+/** 启动任务时捕获当前 activePanel 视图，供离开时默认取消 */
+export function captureActivePanelViewSnapshot(): {
+  panelId: string | null
+  panelViewKey: string | null
+} {
+  try {
+    const panelId =
+      typeof orca?.state?.activePanel === "string" ? orca.state.activePanel : null
+    if (!panelId) {
+      return { panelId: null, panelViewKey: null }
+    }
+    return { panelId, panelViewKey: computePanelViewKey(panelId) }
+  } catch (error) {
+    console.warn("[AI QuickInteract] 捕获面板快照失败:", error)
+    return { panelId: null, panelViewKey: null }
+  }
+}
+
+/** 任务所属面板视图是否仍在（无指纹时视为仍有效，避免误删） */
+export function isJobPanelViewStillActive(job: QuickBackgroundJob): boolean {
+  if (!job.panelId || !job.panelViewKey) return true
+  const current = computePanelViewKey(job.panelId)
+  // 面板已关闭 → null，视为离开
+  return current === job.panelViewKey
 }
 
 export type StartBackgroundQuickInsertOptions = {
@@ -110,6 +169,8 @@ export async function startBackgroundQuickInsertJob(
   const model =
     typeof opts.model === "string" ? opts.model.trim() : ""
 
+  const panelSnap = captureActivePanelViewSnapshot()
+
   const job: QuickBackgroundJob = {
     id,
     pluginName: opts.pluginName,
@@ -124,7 +185,9 @@ export async function startBackgroundQuickInsertJob(
     resultText: "",
     errorMessage: null,
     resultRootBlockId: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    panelId: panelSnap.panelId,
+    panelViewKey: panelSnap.panelViewKey
   }
   aiQuickJobsState.jobs = [...aiQuickJobsState.jobs, job]
 
@@ -143,6 +206,12 @@ export async function startBackgroundQuickInsertJob(
     if (!current) return id
 
     if (controller.signal.aborted) {
+      removeJob(id)
+      return id
+    }
+
+    // 生成期间用户已离开面板：默认取消，不写入预览块
+    if (!isJobPanelViewStillActive(current)) {
       removeJob(id)
       return id
     }
@@ -176,6 +245,16 @@ export async function startBackgroundQuickInsertJob(
       return id
     }
 
+    // 插入后再次检查：若已离开面板，默认取消（删掉刚写入的预览树）
+    if (!isJobPanelViewStillActive(afterInsert)) {
+      afterInsert.status = "ready"
+      afterInsert.resultText = result.text
+      afterInsert.resultRootBlockId = insert.blockId
+      afterInsert.errorMessage = null
+      await dismissBackgroundQuickJob(id)
+      return id
+    }
+
     afterInsert.status = "ready"
     afterInsert.resultText = result.text
     afterInsert.resultRootBlockId = insert.blockId
@@ -202,18 +281,25 @@ export async function startBackgroundQuickInsertJob(
 }
 
 /** 取消进行中的生成；ready/error 请用 dismiss/acknowledge */
-export function cancelBackgroundQuickJob(jobId: string): void {
+export function cancelBackgroundQuickJob(
+  jobId: string,
+  opts?: { silent?: boolean }
+): void {
   const job = findJob(jobId)
   if (!job) return
   if (job.status !== "generating") return
   abortByJobId.get(jobId)?.abort()
   abortByJobId.delete(jobId)
   removeJob(jobId)
-  orca.notify("info", "已取消生成", { title: "AI 快捷交互" })
+  if (!opts?.silent) {
+    orca.notify("info", "已取消生成", { title: "AI 快捷交互" })
+  }
 }
 
 /**
- * 保留预览结果：更新结果块属性为 kept（沉淀为笔记），并从任务列表中移除。
+ * 保留预览结果：更新结果块属性为 kept（沉淀为笔记），并结束预览态（卸罩层/按钮）。
+ *
+ * 内容已在笔记中：即使状态属性写入失败，也卸掉预览 UI，避免「点了保留没反应」。
  */
 export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
   const job = findJob(jobId)
@@ -222,9 +308,12 @@ export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
     const result = await keepQuickResult(job.resultRootBlockId)
     if (!result.success) {
       console.error("[AI QuickInteract] 保留结果块失败:", result.error)
-      return
+      orca.notify("warn", `内容已保留，状态标记失败：${result.error}`, {
+        title: "AI 快捷交互"
+      })
     }
   }
+  // 无论属性是否写成功，都结束预览任务（块内容保留）
   removeJob(jobId)
 }
 
@@ -283,11 +372,56 @@ export function acknowledgeBackgroundQuickJobError(jobId: string): void {
   removeJob(jobId)
 }
 
-/** 插件卸载：中止请求并清空队列（不自动删已写入的结果块，避免丢用户数据） */
-export function cancelAllBackgroundQuickJobs(): void {
+/**
+ * 离开所属面板视图时：默认取消未保留的预览。
+ * - generating：静默中止
+ * - ready：删除预览树
+ * - error：仅移除任务卡
+ */
+export async function dismissJobsLeftBehindOnPanelLeave(): Promise<void> {
+  const snapshot = [
+    ...(aiQuickJobsState.jobs as QuickBackgroundJob[])
+  ]
+  for (const job of snapshot) {
+    if (isJobPanelViewStillActive(job)) continue
+    if (job.status === "generating") {
+      cancelBackgroundQuickJob(job.id, { silent: true })
+      continue
+    }
+    if (job.status === "error") {
+      acknowledgeBackgroundQuickJobError(job.id)
+      continue
+    }
+    // ready：等同用户点「取消」
+    await dismissBackgroundQuickJob(job.id)
+  }
+}
+
+/**
+ * 插件卸载 / 全局清理：中止请求；未「保留」的 ready 预览默认删除（不保存）。
+ */
+export async function cancelAllBackgroundQuickJobs(): Promise<void> {
   for (const [id, controller] of abortByJobId) {
     controller.abort()
     abortByJobId.delete(id)
   }
+  const snapshot = [
+    ...(aiQuickJobsState.jobs as QuickBackgroundJob[])
+  ]
   aiQuickJobsState.jobs = []
+  for (const job of snapshot) {
+    if (job.status === "ready" && job.resultRootBlockId != null) {
+      try {
+        const result = await dismissQuickResult(job.resultRootBlockId)
+        if (!result.success) {
+          console.error(
+            "[AI QuickInteract] 卸载时删除预览块失败:",
+            result.error
+          )
+        }
+      } catch (error) {
+        console.error("[AI QuickInteract] 卸载时删除预览块异常:", error)
+      }
+    }
+  }
 }

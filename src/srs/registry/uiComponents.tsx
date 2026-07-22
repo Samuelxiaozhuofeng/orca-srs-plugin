@@ -271,7 +271,7 @@ export function registerUIComponents(pluginName: string): void {
 }
 
 export function unregisterUIComponents(pluginName: string): void {
-  // 中止后台 AI 快捷任务（不删除已写入的结果块）
+  // 中止后台 AI 快捷任务；未「保留」的 ready 预览默认删除（离开/卸载不保存）
   void import("../ai/aiQuickInteractJobs")
     .then((m) => m.cancelAllBackgroundQuickJobs())
     .catch((error) => {

@@ -424,18 +424,25 @@ export async function insertQuickResult(
         }
         titleId = id
 
-        // 写入 AI 内联块标识属性与预览状态，并失效缓存
+        // 写入 AI 内联块标识属性与预览状态（BlockProperty[]，与 core.editor.setProperties 一致）
         try {
+          const props: Array<{ name: string; value: unknown; type: number }> = [
+            { name: "srs.ai.quickResult", value: true, type: 4 }, // Boolean
+            { name: "srs.ai.status", value: "preview", type: 1 }, // Text
+            { name: "srs.ai.promptLabel", value: promptLabel, type: 1 }
+          ]
+          if (selectedText) {
+            props.push({
+              name: "srs.ai.selectedText",
+              value: selectedText,
+              type: 1
+            })
+          }
           await orca.commands.invokeEditorCommand(
             "core.editor.setProperties",
             null,
             [id],
-            {
-              "srs.ai.quickResult": true,
-              "srs.ai.status": "preview",
-              "srs.ai.promptLabel": promptLabel,
-              ...(selectedText ? { "srs.ai.selectedText": selectedText } : {})
-            }
+            props
           )
           const { invalidateBlockCache } = await import("../storage")
           invalidateBlockCache(id)
@@ -600,6 +607,7 @@ export async function dismissQuickResult(
 
 /**
  * 保留预览结果：更新块属性状态为 kept 并失效缓存。
+ * 使用 BlockProperty[]（name/value/type），与 core.editor.setProperties 文档一致。
  */
 export async function keepQuickResult(
   resultRootBlockId: number
@@ -616,7 +624,7 @@ export async function keepQuickResult(
           "core.editor.setProperties",
           null,
           [resultRootBlockId],
-          { "srs.ai.status": "kept" }
+          [{ name: "srs.ai.status", value: "kept", type: 1 }] // Text
         )
       },
       { undoable: true, topGroup: true }

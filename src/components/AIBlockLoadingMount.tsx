@@ -5,13 +5,14 @@
 import {
   aiQuickJobsState,
   dismissBackgroundQuickJob,
+  dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
   type QuickBackgroundJob
 } from "../srs/ai/aiQuickInteractJobs"
 
 const { Valtio, React } = window
 const { useSnapshot } = Valtio
-const { useEffect } = React
+const { useEffect, useRef } = React
 
 const LOADING_CLASS = "srs-ai-target-block-loading"
 const RESULT_BLOCK_CLASS = "srs-ai-result-block"
@@ -67,6 +68,52 @@ function clearResultChrome(blockEl: HTMLElement): void {
 export function AIBlockLoadingMount() {
   const snap = useSnapshot(aiQuickJobsState)
   const jobs = snap.jobs as readonly QuickBackgroundJob[]
+  const panelLeaveInflightRef = useRef(false)
+
+  // 离开所属面板视图：未点保留/取消的预览默认取消（不保存）
+  useEffect(() => {
+    let disposed = false
+
+    const runCheck = () => {
+      if (disposed || panelLeaveInflightRef.current) return
+      const hasTracked = (aiQuickJobsState.jobs as QuickBackgroundJob[]).some(
+        (j) => j.panelId && j.panelViewKey
+      )
+      if (!hasTracked) return
+
+      panelLeaveInflightRef.current = true
+      void dismissJobsLeftBehindOnPanelLeave()
+        .catch((error) => {
+          console.error("[AI QuickInteract] 面板离开默认取消失败:", error)
+        })
+        .finally(() => {
+          panelLeaveInflightRef.current = false
+        })
+    }
+
+    let unsub: (() => void) | undefined
+    try {
+      if (typeof Valtio?.subscribe === "function" && orca?.state) {
+        unsub = Valtio.subscribe(orca.state, runCheck)
+      }
+    } catch (error) {
+      console.warn("[AI QuickInteract] 订阅面板状态失败:", error)
+    }
+
+    // 兜底：焦点/可见性变化时再检查一次（导航未必总能触发 subscribe）
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") runCheck()
+    }
+    window.addEventListener("pagehide", runCheck)
+    document.addEventListener("visibilitychange", onVisibility)
+
+    return () => {
+      disposed = true
+      unsub?.()
+      window.removeEventListener("pagehide", runCheck)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     // 1. 统计处于 generating 状态的目标块及任务数量

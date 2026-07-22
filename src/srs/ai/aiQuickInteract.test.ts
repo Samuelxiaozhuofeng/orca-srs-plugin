@@ -629,7 +629,16 @@ describe("insertQuickResult positions", () => {
         const targetIds = args[0] as number[]
         const props = args[1]
         for (const tid of targetIds) {
-          if (blocks[tid]) {
+          if (!blocks[tid]) continue
+          if (Array.isArray(props)) {
+            const asObj: Record<string, unknown> = {
+              ...(blocks[tid].properties ?? {})
+            }
+            for (const p of props) {
+              asObj[p.name] = p.value
+            }
+            blocks[tid].properties = asObj
+          } else {
             blocks[tid].properties = { ...blocks[tid].properties, ...props }
           }
         }
@@ -658,25 +667,47 @@ describe("insertQuickResult positions", () => {
       "core.editor.setProperties",
       null,
       [100],
-      expect.objectContaining({
-        "srs.ai.quickResult": true,
-        "srs.ai.status": "preview",
-        "srs.ai.promptLabel": "举例说明",
-        "srs.ai.selectedText": "工作记忆"
-      })
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "srs.ai.quickResult",
+          value: true,
+          type: 4
+        }),
+        expect.objectContaining({
+          name: "srs.ai.status",
+          value: "preview",
+          type: 1
+        }),
+        expect.objectContaining({
+          name: "srs.ai.promptLabel",
+          value: "举例说明",
+          type: 1
+        }),
+        expect.objectContaining({
+          name: "srs.ai.selectedText",
+          value: "工作记忆",
+          type: 1
+        })
+      ])
     )
     expect(blocks[100].properties["srs.ai.quickResult"]).toBe(true)
     expect(blocks[100].properties["srs.ai.status"]).toBe("preview")
   })
 
   it("updates property to kept when keepQuickResult is called", async () => {
-    const { blocks } = setupInsertMock()
+    const { invokeEditorCommand, blocks } = setupInsertMock()
     const { keepQuickResult } = await import("./aiQuickInteract")
     const result = await insertQuickResult(10, "hello", "翻译", "lastChild")
     if (!result.success) return
     const keptRes = await keepQuickResult(result.blockId)
     expect(keptRes.success).toBe(true)
     expect(blocks[result.blockId].properties["srs.ai.status"]).toBe("kept")
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.setProperties",
+      null,
+      [result.blockId],
+      [{ name: "srs.ai.status", value: "kept", type: 1 }]
+    )
   })
 
   it("inserts title after query block when position is after", async () => {

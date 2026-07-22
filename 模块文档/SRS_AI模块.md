@@ -81,16 +81,19 @@ src/components/
 - **后台路径**（`insertBelowOnComplete`）：
   1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）
   2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
-  3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`）
+  3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
   4. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
-  5. 用户操作：`keepBackgroundQuickJob`（确认沉淀）或 `dismissBackgroundQuickJob`（删预览树）；任务结束后卸掉罩层与操作栏
+  5. 用户操作：
+     - **保留** `keepBackgroundQuickJob`：把 `srs.ai.status` 写成 `kept` 并结束预览态（卸罩层/按钮；内容保留）。属性写入失败时仍卸预览 UI，并 `warn` 提示
+     - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务
+  6. **离开面板默认取消**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览
 - **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
   1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
   2. 无 URL 的 `[[n]]` → `〔n〕`（防块引用）
   3. `n(url)` → `[源n](url)`
   - 勿先做步骤 2：否则 `[[3]](url)` 会变成不可点的 `〔3〕(url)`
 - **弹窗路径**（选项关闭或「自定义提示词」）：仍走 `aiQuickInteractState` + `AIQuickInteractDialog`，结果可「插入为子块」
-- **卸载**：`cancelAllBackgroundQuickJobs` 中止进行中请求并清空队列；**不**自动删除已写入的结果块
+- **卸载**：`cancelAllBackgroundQuickJobs` 中止进行中请求；对仍为 `ready` 的未保留预览**默认删除**（与「离开不保存」一致），再清空队列
 - **样式**：`src/styles/ai-quick-interact.css`；结果根块不用 padding/margin 改布局（以免挤歪句柄/子块缩进），仅用背景 + inset box-shadow 做左侧 accent
 
 ### 块解释（`aiBlockExplain.ts` + `aiBlockExplainWrite.ts`）
