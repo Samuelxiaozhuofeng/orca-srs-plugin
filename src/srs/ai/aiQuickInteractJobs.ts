@@ -147,7 +147,8 @@ export function hasActiveQuickBackgroundJobs(): boolean {
 }
 
 /**
- * 启动后台任务：静默请求 AI，成功后直接插入到目标块下方作为子块，过程无右下角 Toast 弹窗打扰。
+ * 启动后台任务：静默请求 AI，成功后直接插入到目标块下方作为子块（成功路径不 toast）。
+ * 失败路径必须 `orca.notify("error", …)`，因 Jobs 面板目前为空挂、用户否则看不到错误。
  */
 export async function startBackgroundQuickInsertJob(
   opts: StartBackgroundQuickInsertOptions
@@ -226,6 +227,7 @@ export async function startBackgroundQuickInsertJob(
       current.status = "error"
       current.errorMessage = safe
       current.resultText = ""
+      orca.notify("error", safe, { title })
       return id
     }
 
@@ -240,9 +242,11 @@ export async function startBackgroundQuickInsertJob(
     if (!afterInsert) return id
 
     if (!insert.success) {
+      const safe = sanitizePublicError(insert.error)
       afterInsert.status = "error"
-      afterInsert.errorMessage = insert.error
+      afterInsert.errorMessage = safe
       afterInsert.resultText = result.text
+      orca.notify("error", safe, { title })
       return id
     }
 

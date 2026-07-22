@@ -26,16 +26,35 @@ export type BuildChatCompletionsBodyOptions = {
 }
 
 /**
- * xAI 等内置 server-side tool：tools: [{ type: "web_search" }]
- * OpenAI 兼容网关若识别该 type，会走模型原生联网；不支持时由上游返回错误（可见）。
+ * xAI Grok 原生 server-side tool。
+ * 本插件仅在 model 为 grok-4.5 时附带；其它模型即使开关打开也不发 tools。
  */
 export const NATIVE_WEB_SEARCH_TOOL = { type: "web_search" } as const
 
+/**
+ * 是否为支持原生 web_search 的模型。
+ * 仅匹配 id 中含 `grok-4.5`（大小写不敏感；可含网关前缀）。
+ */
+export function isNativeWebSearchSupportedModel(
+  model: string | undefined | null
+): boolean {
+  const id = typeof model === "string" ? model.trim().toLowerCase() : ""
+  return id.includes("grok-4.5")
+}
+
+/**
+ * 是否应在请求体中附带 web_search tool。
+ * 条件：开关开 + allowWebSearch + model 为 grok-4.5；否则普通请求、不带 tools。
+ */
 export function shouldAttachNativeWebSearch(
-  settings: Pick<AISettings, "enableNativeWebSearch">,
+  settings: Pick<AISettings, "enableNativeWebSearch" | "model">,
   allowWebSearch = true
 ): boolean {
-  return allowWebSearch && settings.enableNativeWebSearch === true
+  return (
+    allowWebSearch === true &&
+    settings.enableNativeWebSearch === true &&
+    isNativeWebSearchSupportedModel(settings.model)
+  )
 }
 
 /**

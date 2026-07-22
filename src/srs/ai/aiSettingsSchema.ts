@@ -41,9 +41,9 @@ export interface AISettings {
   apiUrl: string
   model: string
   /**
-   * 是否在 Chat Completions 中附带 model 原生联网 tool：
-   * `tools: [{ type: "web_search" }]`（xAI Grok 等 server-side 工具）。
-   * 默认 false；不支持的上游会返回可见错误。
+   * 是否在 Chat Completions 中附带原生联网 tool（`web_search`）。
+   * 仅当当前 model 为 grok-4.5 时生效；其它模型忽略该开关，不发 tools。
+   * 默认 false。
    */
   enableNativeWebSearch: boolean
   /**

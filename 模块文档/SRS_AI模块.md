@@ -1,7 +1,7 @@
 # SRS AI 模块
 
 > 文档同步日期：2026-07-22
-> 变更说明：QuickAI 预览支持「保留此块」——子块悬停仅保留该子树并去掉 AI 外壳；根「保留/取消」不变。此前：提示词库项可选 `model`。
+> 变更说明：原生联网仅 grok-4.5 附带 `web_search`；其它 model 开关不生效。QuickAI 后台失败 toast。此前：预览「保留此块」；提示词库项可选 `model`。
 > **未宣称**：真机「保留此块」与多 model 路由的端到端验收。
 
 ## 概述
@@ -79,15 +79,16 @@ src/components/
 - **按提示词选模型**：新增/编辑表单用**下拉**选择 model（选项 = 服务设置同一 Key/URL 的 `/models` 列表 +「默认」项）；与服务设置共享内存缓存 `aiModelsCache`；可「刷新模型」。后台/弹窗路径传入 `runToolbarAIPrompt({ model })`，仅覆盖请求体 `model`
 - **提示词库编辑 UI**：表单用组件本地 state + 键盘事件 stopPropagation，避免宿主编辑器抢键导致无法输入
 - **后台路径**（`insertBelowOnComplete`）：
-  1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）
+  1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）；成功路径不 toast
   2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
   3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
-  4. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
-  5. 用户操作：
+  4. **失败**：生成失败（非 `CANCELLED`）或预览插入失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。Jobs 面板当前空挂（`AIQuickJobsPanel` return null），故 toast 为用户可见主通道；未预期异常路径同
+  5. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
+  6. 用户操作：
      - **保留（全部）** `keepBackgroundQuickJob`：把 `srs.ai.status` 写成 `kept` 并结束预览态（卸罩层/按钮；整棵内容保留）。属性写入失败时仍卸预览 UI，并 `warn` 提示
      - **保留此块** `keepSingleBlockBackgroundQuickJob`：预览树每个**子孙块**悬停显示按钮（`AIBlockLoadingMount` + `MutationObserver` 补挂）。`keepSingleQuickResultBlock`：校验块属于预览树 → `moveBlocks` 到结果根 `after`（整棵子树一起）→ `deleteBlocks` 剩余预览树（含「AI · 提示名」外壳与其它兄弟）。成功后卸预览任务并 toast「已保留该块」；失败保留任务与预览树可重试。点根自身时退化为整棵 `keepQuickResult`
      - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务
-  6. **离开面板默认取消**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览
+  7. **离开面板默认取消**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树；error 仅清任务）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览
 - **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
   1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
   2. 无 URL 的 `[[n]]` → `〔n〕`（防块引用）
@@ -128,7 +129,7 @@ makeAICard / interactiveAICard（别名）
 | plugin **data** `ai.connection` | `apiKey` | `""` | Bearer |
 | 同上 | `apiUrl` | OpenAI chat/completions | 须 OpenAI 兼容；**拒绝** Ollama 原生 `/api/chat` |
 | 同上 | `model` | `gpt-3.5-turbo` | 可「拉取模型」自 `/models` 列表选择 |
-| 同上 | `enableNativeWebSearch` | `false` | 为 true 时请求附带 `tools: [{ type: "web_search" }]`（xAI 等内置 server tool） |
+| 同上 | `enableNativeWebSearch` | `false` | 为 true 且 model 含 `grok-4.5` 时附带 `tools: [{ type: "web_search" }]`；其它 model 忽略开关 |
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
 
@@ -136,6 +137,7 @@ makeAICard / interactiveAICard（别名）
 - hydrate：插件 load + 打开面板；旧 settings 键自动迁移到 setData；缺省字段归一为默认（旧数据无联网/强度键时安全）
 - 面板：`AIServiceSettingsDialog`（本地表单 state + 测连 + 拉模型 + 联网开关 + 思考强度）
 - 请求：`buildChatCompletionsBody` 用于制卡 / 块解释 / 快捷交互 / 连接测试
+  - 原生联网：仅 `isNativeWebSearchSupportedModel`（model id 含 `grok-4.5`）时附带 `web_search`；Gemini/GPT/其它 Grok 版本不写 tools，走普通请求
   - 连接测试：`allowWebSearch: false`（不触发搜索计费/延迟），仍会带上用户设定的 `reasoning_effort`
   - 不支持该 tool 或 `reasoning_effort` 的上游会返回可见 HTTP 错误，不静默降级
   - 制卡仍做源文本接地校验：开启联网后若答案依赖源外内容，校验可能失败

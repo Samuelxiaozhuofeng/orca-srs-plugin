@@ -215,15 +215,17 @@ function ServiceSettingsForm(props: {
               disabled={busy}
             />
             <span>
-              请求时附带{" "}
+              仅{" "}
+              <code className="ai-service-settings__code">grok-4.5</code>{" "}
+              支持：请求附带{" "}
               <code className="ai-service-settings__code">
                 {'tools: [{ type: "web_search" }]'}
               </code>
             </span>
           </label>
           <p className="ai-service-settings__hint">
-            适用于 xAI Grok 等内置 web_search 的模型。不支持该 tool
-            的服务会返回错误。制卡仍做源文本接地校验，联网结果若无法落在源文中会被拒。
+            目前只支持 grok-4.5。其它模型（如 Gemini、GPT、其它 Grok
+            版本）即使开启此开关，也不会附带 web_search，按普通对话请求处理。制卡仍做源文本接地校验。
           </p>
         </label>
 

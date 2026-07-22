@@ -271,4 +271,97 @@ describe("startBackgroundQuickInsertJob", () => {
       })
     ).rejects.toThrow("选中文本为空")
   })
+
+  it("notifies error when AI generation fails", async () => {
+    const { runToolbarAIPrompt } = await import("./aiQuickInteract")
+    vi.mocked(runToolbarAIPrompt).mockResolvedValueOnce({
+      success: false,
+      error: { code: "HTTP_401", message: "Invalid API key" }
+    })
+
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    const job = (
+      aiQuickJobsState.jobs as Array<{
+        id: string
+        status: string
+        errorMessage: string | null
+      }>
+    ).find((j) => j.id === jobId)
+    expect(job?.status).toBe("error")
+    expect(job?.errorMessage).toBe("Invalid API key")
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "error",
+      "Invalid API key",
+      expect.objectContaining({ title: "AI 快捷交互" })
+    )
+  })
+
+  it("notifies error when insert fails after successful generation", async () => {
+    const { insertQuickResultAsChild } = await import("./aiQuickInteract")
+    vi.mocked(insertQuickResultAsChild).mockResolvedValueOnce({
+      success: false,
+      error: "找不到目标块，无法插入"
+    })
+
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    const job = (
+      aiQuickJobsState.jobs as Array<{
+        id: string
+        status: string
+        errorMessage: string | null
+      }>
+    ).find((j) => j.id === jobId)
+    expect(job?.status).toBe("error")
+    expect(job?.errorMessage).toBe("找不到目标块，无法插入")
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "error",
+      "找不到目标块，无法插入",
+      expect.objectContaining({ title: "AI 快捷交互" })
+    )
+  })
+
+  it("does not notify error when generation is cancelled", async () => {
+    const { runToolbarAIPrompt } = await import("./aiQuickInteract")
+    vi.mocked(runToolbarAIPrompt).mockResolvedValueOnce({
+      success: false,
+      error: { code: "CANCELLED", message: "已取消生成" }
+    })
+
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
+    ).toBeUndefined()
+    expect((globalThis as any).orca.notify).not.toHaveBeenCalledWith(
+      "error",
+      expect.anything(),
+      expect.anything()
+    )
+  })
 })

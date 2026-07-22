@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   buildChatCompletionsBody,
+  isNativeWebSearchSupportedModel,
   NATIVE_WEB_SEARCH_TOOL,
   resolveReasoningEffort,
   shouldAttachNativeWebSearch
@@ -35,7 +36,7 @@ describe("aiChatRequest", () => {
     expect(body).not.toHaveProperty("reasoning_effort")
   })
 
-  it("attaches web_search tool when enableNativeWebSearch is true", () => {
+  it("attaches web_search only for grok-4.5 when enableNativeWebSearch is true", () => {
     const body = buildChatCompletionsBody({
       settings: { ...baseSettings, enableNativeWebSearch: true },
       messages: [{ role: "user", content: "news?" }]
@@ -43,9 +44,53 @@ describe("aiChatRequest", () => {
     expect(body.tools).toEqual([{ ...NATIVE_WEB_SEARCH_TOOL }])
   })
 
+  it("does not attach web_search for non-grok-4.5 even when setting is on", () => {
+    for (const model of [
+      "gemini-3.6-flash",
+      "gpt-4.1",
+      "grok-3",
+      "grok-4",
+      "openai-compatible-chat-xxx/gemini-3.6-flash"
+    ]) {
+      const body = buildChatCompletionsBody({
+        settings: {
+          model,
+          enableNativeWebSearch: true,
+          reasoningEffort: "default"
+        },
+        messages: [{ role: "user", content: "Hi" }]
+      })
+      expect(body).not.toHaveProperty("tools")
+      expect(
+        shouldAttachNativeWebSearch({
+          model,
+          enableNativeWebSearch: true
+        })
+      ).toBe(false)
+    }
+  })
+
+  it("matches grok-4.5 behind gateway prefixes", () => {
+    const routed =
+      "openai-compatible-chat-c1581bce-f417-4b7e-9461-0ad88093f26b/grok-4.5"
+    expect(isNativeWebSearchSupportedModel(routed)).toBe(true)
+    const body = buildChatCompletionsBody({
+      settings: {
+        model: routed,
+        enableNativeWebSearch: true,
+        reasoningEffort: "default"
+      },
+      messages: [{ role: "user", content: "Hi" }]
+    })
+    expect(body.tools).toEqual([{ type: "web_search" }])
+  })
+
   it("allowWebSearch=false skips tools even when setting is on", () => {
     expect(
-      shouldAttachNativeWebSearch({ enableNativeWebSearch: true }, false)
+      shouldAttachNativeWebSearch(
+        { enableNativeWebSearch: true, model: "grok-4.5" },
+        false
+      )
     ).toBe(false)
     const body = buildChatCompletionsBody({
       settings: { ...baseSettings, enableNativeWebSearch: true },
@@ -68,7 +113,7 @@ describe("aiChatRequest", () => {
     expect(body.reasoning_effort).toBe("medium")
   })
 
-  it("combines web search and reasoning effort", () => {
+  it("combines web search and reasoning effort for grok-4.5", () => {
     const body = buildChatCompletionsBody({
       settings: {
         model: "grok-4.5",
