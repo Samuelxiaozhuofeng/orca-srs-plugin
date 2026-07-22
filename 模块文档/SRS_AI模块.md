@@ -1,8 +1,8 @@
 # SRS AI 模块
 
 > 文档同步日期：2026-07-22
-> 变更说明：原生联网仅 grok-4.5 附带 `web_search`；其它 model 开关不生效。QuickAI 后台失败 toast。此前：预览「保留此块」；提示词库项可选 `model`。
-> **未宣称**：真机「保留此块」与多 model 路由的端到端验收。
+> 变更说明：Quick AI 子块改为「先选择、后保留所选」的无写入多选暂存；原生联网仅 grok-4.5 附带 `web_search`；其它 model 开关不生效；后台失败 toast；提示词库项可选 `model`。
+> **未宣称**：真机多选预览操作栏、跨层级批量移动顺序与多 model 路由的端到端验收。
 
 ## 概述
 
@@ -83,11 +83,12 @@ src/components/
   2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
   3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
   4. **失败**：生成失败（非 `CANCELLED`）或预览插入失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。Jobs 面板当前空挂（`AIQuickJobsPanel` return null），故 toast 为用户可见主通道；未预期异常路径同
-  5. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
+  5. 预览 UI：结果根 `.orca-block` 加罩层 class；根操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）。无选择时显示「保留全部 / 取消」；有选择时增加「已选 N 项 / 保留所选」
   6. 用户操作：
-     - **保留（全部）** `keepBackgroundQuickJob`：把 `srs.ai.status` 写成 `kept` 并结束预览态（卸罩层/按钮；整棵内容保留）。属性写入失败时仍卸预览 UI，并 `warn` 提示
-     - **保留此块** `keepSingleBlockBackgroundQuickJob`：预览树每个**子孙块**悬停显示按钮（`AIBlockLoadingMount` + `MutationObserver` 补挂）。`keepSingleQuickResultBlock`：校验块属于预览树 → `moveBlocks` 到结果根 `after`（整棵子树一起）→ `deleteBlocks` 剩余预览树（含「AI · 提示名」外壳与其它兄弟）。成功后卸预览任务并 toast「已保留该块」；失败保留任务与预览树可重试。点根自身时退化为整棵 `keepQuickResult`
-     - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务
+     - **选择候选** `toggleBackgroundQuickJobBlockSelection`：预览树每个**子孙块**悬停显示「选择」（`AIBlockLoadingMount` + `MutationObserver` 补挂）。选择只更新 job 的 `selectedResultBlockIds`，**不调用移动/删除命令**；选中后按钮与浅绿色状态常显，可再次点击取消。父块选择代表整棵子树：已选后代自动合并；祖先已选时后代显示「随上级选择」且不重复计数。每个 job 的异步选择更新串行化，避免快速连续点击丢选择
+     - **保留所选** `keepSelectedBackgroundQuickJob` → `keepSelectedQuickResultBlocks`：确认时有界读取预览树（最多 500 块、100 层），重新校验并按树前序归一化所选子树根；一次 `moveBlocks(orderedRoots, root, "after")` 保持原文档顺序，再 `deleteBlocks` 清理「AI · 提示名」外壳与未选分支。成功后结束 job 并 toast「已保留 N 项」；失败保留 job、选择和可见预览以便重试。若 move 已成功而 delete 失败，重试可识别已移到结果根同级的候选并继续清理
+     - **保留全部** `keepBackgroundQuickJob`：把 `srs.ai.status` 写成 `kept` 并结束预览态（卸罩层/按钮；整棵内容保留）。属性写入失败时仍卸预览 UI，并 `warn` 提示
+     - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务；仅选择尚未确认时仍按未保存预览处理
   7. **离开面板默认取消**：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树；error 仅清任务）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览
 - **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
   1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
@@ -200,4 +201,4 @@ makeAICard / interactiveAICard（别名）
 
 ## 相关测试
 
-`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段 + `insertQuickResult` 位置 + `keepSingleQuickResultBlock` / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 keep / 单块 keep / 离开面板取消）
+`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段 + `insertQuickResult` 位置 + 候选选择归一化 / 多子树顺序保留 / 部分失败重试 / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 keep / 多选暂存与确认 / 失败保留选择 / 离开面板取消）

@@ -1,6 +1,6 @@
 /**
- * AI 后台生成：目标块行尾微轻加载图标、内联块“罩层”与“预览/保留/取消”操作栏
- * 预览子块悬停显示「保留此块」（仅保留该子树，去掉 AI 外壳）。
+ * AI 后台生成：目标块行尾微轻加载图标、内联块“罩层”与预览操作栏。
+ * 预览子块支持无写入的多选暂存，用户点「保留所选」后才批量提交。
  */
 
 import {
@@ -8,7 +8,8 @@ import {
   dismissBackgroundQuickJob,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
-  keepSingleBlockBackgroundQuickJob,
+  keepSelectedBackgroundQuickJob,
+  toggleBackgroundQuickJobBlockSelection,
   type QuickBackgroundJob
 } from "../srs/ai/aiQuickInteractJobs"
 
@@ -60,8 +61,14 @@ function clearChildKeepChrome(rootEl: HTMLElement): void {
   rootEl
     .querySelectorAll<HTMLElement>(`.${CHILD_KEEP_CLASS}`)
     .forEach((el) => {
-      el.classList.remove(CHILD_KEEP_CLASS)
+      el.classList.remove(
+        CHILD_KEEP_CLASS,
+        "srs-ai-result-child--selected",
+        "srs-ai-result-child--covered"
+      )
       el.removeAttribute("data-srs-ai-result-child")
+      el.removeAttribute("data-srs-ai-result-selected")
+      el.removeAttribute("data-srs-ai-result-covered")
       if (el.style.position === "relative") {
         el.style.position = ""
       }
@@ -72,6 +79,7 @@ function clearResultChrome(blockEl: HTMLElement): void {
   clearChildKeepChrome(blockEl)
   blockEl.classList.remove(RESULT_BLOCK_CLASS)
   blockEl.removeAttribute("data-srs-ai-result")
+  blockEl.removeAttribute("data-srs-ai-has-selection")
   if (blockEl.style.position === "relative") {
     blockEl.style.position = ""
   }
@@ -85,13 +93,12 @@ function clearResultChrome(blockEl: HTMLElement): void {
     })
 }
 
-/**
- * 在预览根下每个子孙块挂「保留此块」按钮（不含根本身）。
- */
-function mountChildKeepActions(
+/** 在预览根下每个子孙块挂候选选择按钮（不含根本身）。 */
+function mountChildSelectionActions(
   rootEl: HTMLElement,
   jobId: string,
-  rootBlockId: number
+  rootBlockId: number,
+  selectedBlockIds: readonly number[]
 ): void {
   const descendants = Array.from(
     rootEl.querySelectorAll<HTMLElement>(".orca-block[data-id]")
@@ -115,12 +122,34 @@ function mountChildKeepActions(
       }
     })
 
+  const selected = new Set(selectedBlockIds)
+
   for (const childEl of descendants) {
     const childId = Number(childEl.getAttribute("data-id"))
     if (!Number.isFinite(childId)) continue
 
+    let ancestor = childEl.parentElement?.closest<HTMLElement>(
+      `.orca-block[data-id]`
+    )
+    let covered = false
+    while (ancestor && ancestor !== rootEl) {
+      const ancestorId = Number(ancestor.getAttribute("data-id"))
+      if (selected.has(ancestorId)) {
+        covered = true
+        break
+      }
+      ancestor = ancestor.parentElement?.closest<HTMLElement>(
+        `.orca-block[data-id]`
+      )
+    }
+    const explicitlySelected = selected.has(childId)
+
     childEl.classList.add(CHILD_KEEP_CLASS)
+    childEl.classList.toggle("srs-ai-result-child--selected", explicitlySelected)
+    childEl.classList.toggle("srs-ai-result-child--covered", covered)
     childEl.setAttribute("data-srs-ai-result-child", "true")
+    childEl.toggleAttribute("data-srs-ai-result-selected", explicitlySelected)
+    childEl.toggleAttribute("data-srs-ai-result-covered", covered)
     if (getComputedStyle(childEl).position === "static") {
       childEl.style.position = "relative"
     }
@@ -133,28 +162,38 @@ function mountChildKeepActions(
         `.${CHILD_ACTIONS_CLASS}[data-job-id="${jobId}"]`
       )
       misplaced?.remove()
-
       actionBar = document.createElement("span")
       actionBar.className = CHILD_ACTIONS_CLASS
       actionBar.setAttribute("data-job-id", jobId)
-      actionBar.setAttribute("data-keep-block-id", String(childId))
       actionBar.setAttribute("role", "group")
-      actionBar.setAttribute("aria-label", "仅保留此块")
-
-      const keepBtn = document.createElement("button")
-      keepBtn.type = "button"
-      keepBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep-child"
-      keepBtn.title = "仅保留此块（含下级），去掉 AI 外壳与其它内容"
-      keepBtn.innerHTML = '<i class="ti ti-check"></i>保留此块'
-      keepBtn.onclick = (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        void keepSingleBlockBackgroundQuickJob(jobId, childId)
-      }
-
-      actionBar.appendChild(keepBtn)
       childEl.appendChild(actionBar)
     }
+
+    actionBar.setAttribute("data-select-block-id", String(childId))
+    actionBar.setAttribute("aria-label", covered ? "已随上级选择" : "选择此项")
+    actionBar.replaceChildren()
+
+    const selectBtn = document.createElement("button")
+    selectBtn.type = "button"
+    selectBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep-child"
+    selectBtn.disabled = covered
+    selectBtn.setAttribute("aria-pressed", explicitlySelected ? "true" : "false")
+    if (covered) {
+      selectBtn.title = "该项已包含在所选上级中"
+      selectBtn.innerHTML = '<i class="ti ti-check"></i>随上级选择'
+    } else if (explicitlySelected) {
+      selectBtn.title = "点击取消选择"
+      selectBtn.innerHTML = '<i class="ti ti-check"></i>已选择'
+    } else {
+      selectBtn.title = "选择此项及其下级；稍后统一保留"
+      selectBtn.innerHTML = '<i class="ti ti-plus"></i>选择'
+    }
+    selectBtn.onclick = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      void toggleBackgroundQuickJobBlockSelection(jobId, childId)
+    }
+    actionBar.appendChild(selectBtn)
   }
 }
 
@@ -302,7 +341,7 @@ export function AIBlockLoadingMount() {
         }
       })
 
-    // 挂载罩层 class 与预览操作栏 [ 保留 ] [ 取消 ]
+    // 挂载罩层 class 与预览操作栏 [ 保留所选 ] [ 保留全部 ] [ 取消 ]
     // 操作栏挂在结果根 .orca-block 上，绝对定位到首行右侧末端（不塞进 contenteditable）
     for (const job of activePreviewJobs) {
       const rootId = job.resultRootBlockId
@@ -315,6 +354,10 @@ export function AIBlockLoadingMount() {
 
       rootEl.classList.add(RESULT_BLOCK_CLASS)
       rootEl.setAttribute("data-srs-ai-result", "true")
+      rootEl.toggleAttribute(
+        "data-srs-ai-has-selection",
+        job.selectedResultBlockIds.length > 0
+      )
 
       // 确保定位上下文在块自身（避免挂到 repr-main 后参与文档流错位）
       if (getComputedStyle(rootEl).position === "static") {
@@ -341,35 +384,56 @@ export function AIBlockLoadingMount() {
         actionBar.setAttribute("data-job-id", job.id)
         actionBar.setAttribute("role", "group")
         actionBar.setAttribute("aria-label", "AI 预览操作")
-
-        const keepBtn = document.createElement("button")
-        keepBtn.type = "button"
-        keepBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep"
-        keepBtn.title = "保留并沉淀为笔记子块"
-        keepBtn.innerHTML = '<i class="ti ti-check"></i>保留'
-        keepBtn.onclick = (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          void keepBackgroundQuickJob(job.id)
-        }
-
-        const cancelBtn = document.createElement("button")
-        cancelBtn.type = "button"
-        cancelBtn.className = "srs-ai-action-btn srs-ai-action-btn--cancel"
-        cancelBtn.title = "取消并删除此 AI 预览块"
-        cancelBtn.innerHTML = '<i class="ti ti-x"></i>取消'
-        cancelBtn.onclick = (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          void dismissBackgroundQuickJob(job.id)
-        }
-
-        actionBar.appendChild(keepBtn)
-        actionBar.appendChild(cancelBtn)
-
         // 直接挂到结果根块：absolute 相对 aiblock 末端定位
         rootEl.appendChild(actionBar)
       }
+
+      actionBar.replaceChildren()
+      const selectedCount = job.selectedResultBlockIds.length
+      if (selectedCount > 0) {
+        const count = document.createElement("span")
+        count.className = "srs-ai-preview-actions__count"
+        count.textContent = `已选 ${selectedCount} 项`
+        actionBar.appendChild(count)
+
+        const keepSelectedBtn = document.createElement("button")
+        keepSelectedBtn.type = "button"
+        keepSelectedBtn.className =
+          "srs-ai-action-btn srs-ai-action-btn--keep-selected"
+        keepSelectedBtn.title = "保留已选择的内容，丢弃其余预览"
+        keepSelectedBtn.innerHTML = '<i class="ti ti-checks"></i>保留所选'
+        keepSelectedBtn.onclick = (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          void keepSelectedBackgroundQuickJob(job.id)
+        }
+        actionBar.appendChild(keepSelectedBtn)
+      }
+
+      const keepAllBtn = document.createElement("button")
+      keepAllBtn.type = "button"
+      keepAllBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep"
+      keepAllBtn.title = "保留完整 AI 结果"
+      keepAllBtn.innerHTML = '<i class="ti ti-check"></i>保留全部'
+      keepAllBtn.onclick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        void keepBackgroundQuickJob(job.id)
+      }
+
+      const cancelBtn = document.createElement("button")
+      cancelBtn.type = "button"
+      cancelBtn.className = "srs-ai-action-btn srs-ai-action-btn--cancel"
+      cancelBtn.title = "取消并删除此 AI 预览块"
+      cancelBtn.innerHTML = '<i class="ti ti-x"></i>取消'
+      cancelBtn.onclick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        void dismissBackgroundQuickJob(job.id)
+      }
+
+      actionBar.appendChild(keepAllBtn)
+      actionBar.appendChild(cancelBtn)
 
       // 为标题行预留右侧空间，避免正文与按钮重叠
       const shell = findRootBlockShell(rootEl)
@@ -381,8 +445,13 @@ export function AIBlockLoadingMount() {
         shell.classList.add("srs-ai-result-shell")
       }
 
-      // 子块「保留此块」：不含根；含整棵子树
-      mountChildKeepActions(rootEl, job.id, rootId)
+      // 子块候选选择：不含根；选择父块即包含整棵子树
+      mountChildSelectionActions(
+        rootEl,
+        job.id,
+        rootId,
+        job.selectedResultBlockIds
+      )
     }
   }, [jobs])
 
@@ -402,13 +471,33 @@ export function AIBlockLoadingMount() {
       )
       if (!rootEl || typeof MutationObserver === "undefined") continue
 
-      const observer = new MutationObserver(() => {
-        mountChildKeepActions(rootEl, job.id, rootId)
+      const observer = new MutationObserver((records) => {
+        const onlyOwnChromeChanged = records.every((record) =>
+          (record.target as Element).closest?.(
+            `.${CHILD_ACTIONS_CLASS}, .${PREVIEW_ACTIONS_CLASS}`
+          )
+        )
+        if (onlyOwnChromeChanged) return
+        const currentJob = (aiQuickJobsState.jobs as QuickBackgroundJob[]).find(
+          (candidate) => candidate.id === job.id
+        )
+        if (!currentJob) return
+        mountChildSelectionActions(
+          rootEl,
+          job.id,
+          rootId,
+          currentJob.selectedResultBlockIds
+        )
       })
       observer.observe(rootEl, { childList: true, subtree: true })
       observers.push(observer)
       // 立即补一次（与 jobs effect 竞态时）
-      mountChildKeepActions(rootEl, job.id, rootId)
+      mountChildSelectionActions(
+        rootEl,
+        job.id,
+        rootId,
+        job.selectedResultBlockIds
+      )
     }
 
     return () => {

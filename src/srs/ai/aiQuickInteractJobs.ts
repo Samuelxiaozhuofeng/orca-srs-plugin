@@ -8,9 +8,10 @@ import {
   dismissQuickResult,
   insertQuickResultAsChild,
   keepQuickResult,
-  keepSingleQuickResultBlock,
+  keepSelectedQuickResultBlocks,
   promoteQuickResultToChild,
-  runToolbarAIPrompt
+  runToolbarAIPrompt,
+  toggleQuickResultBlockSelection
 } from "./aiQuickInteract"
 import { sanitizePublicError } from "../http/redactSecrets"
 
@@ -32,6 +33,8 @@ export interface QuickBackgroundJob {
   errorMessage: string | null
   /** 已插入到块下方的结果标题块 ID */
   resultRootBlockId: number | null
+  /** 尚未落库的候选子树根；只有「保留所选」才提交 */
+  selectedResultBlockIds: number[]
   createdAt: number
   /**
    * 启动时的面板 id + 视图指纹。
@@ -117,6 +120,7 @@ export const aiQuickJobsState = getValtioProxy({
 })
 
 const abortByJobId = new Map<string, AbortController>()
+const selectionUpdateByJobId = new Map<string, Promise<void>>()
 
 let jobSeq = 0
 
@@ -134,6 +138,7 @@ function findJob(jobId: string): QuickBackgroundJob | undefined {
 function removeJob(jobId: string): void {
   abortByJobId.get(jobId)?.abort()
   abortByJobId.delete(jobId)
+  selectionUpdateByJobId.delete(jobId)
   aiQuickJobsState.jobs = (aiQuickJobsState.jobs as QuickBackgroundJob[]).filter(
     (j: QuickBackgroundJob) => j.id !== jobId
   )
@@ -187,6 +192,7 @@ export async function startBackgroundQuickInsertJob(
     resultText: "",
     errorMessage: null,
     resultRootBlockId: null,
+    selectedResultBlockIds: [],
     createdAt: Date.now(),
     panelId: panelSnap.panelId,
     panelViewKey: panelSnap.panelViewKey
@@ -322,36 +328,74 @@ export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
   removeJob(jobId)
 }
 
-/**
- * 仅保留预览树中的某一块（含其子树）：去掉 AI 外壳与其它兄弟，并结束预览任务。
- * 失败时保留任务与预览树，便于重试。
- */
-export async function keepSingleBlockBackgroundQuickJob(
+/** 切换候选子树；只更新任务内临时状态，不移动或删除 Orca 块。 */
+export async function toggleBackgroundQuickJobBlockSelection(
   jobId: string,
-  keepBlockId: number
+  blockId: number
 ): Promise<void> {
+  const previous = selectionUpdateByJobId.get(jobId) ?? Promise.resolve()
+  const update = previous.then(async () => {
+    const job = findJob(jobId)
+    if (!job) return
+    if (job.status !== "ready" || job.resultRootBlockId == null) {
+      orca.notify("warn", "当前任务没有可选择的预览内容", {
+        title: "AI 快捷交互"
+      })
+      return
+    }
+
+    const rootId = job.resultRootBlockId
+    const result = await toggleQuickResultBlockSelection(
+      rootId,
+      job.selectedResultBlockIds,
+      blockId
+    )
+    if (!result.success) {
+      console.error("[AI QuickInteract] 更新候选选择失败:", result.error)
+      orca.notify("error", result.error, { title: "AI 快捷交互" })
+      return
+    }
+
+    const current = findJob(jobId)
+    if (!current || current.resultRootBlockId !== rootId) return
+    current.selectedResultBlockIds = result.selectedBlockIds
+  })
+  selectionUpdateByJobId.set(jobId, update)
+  try {
+    await update
+  } finally {
+    if (selectionUpdateByJobId.get(jobId) === update) {
+      selectionUpdateByJobId.delete(jobId)
+    }
+  }
+}
+
+/** 用户确认后批量保留所选子树；失败时保留预览与选择以便重试。 */
+export async function keepSelectedBackgroundQuickJob(jobId: string): Promise<void> {
   const job = findJob(jobId)
   if (!job) return
   if (job.status !== "ready" || job.resultRootBlockId == null) {
-    orca.notify("warn", "当前任务没有可保留的预览块", { title: "AI 快捷交互" })
+    orca.notify("warn", "当前任务没有可保留的预览内容", { title: "AI 快捷交互" })
     return
   }
-  if (!Number.isFinite(keepBlockId)) {
-    orca.notify("error", "无效的块 ID", { title: "AI 快捷交互" })
+  if (job.selectedResultBlockIds.length === 0) {
+    orca.notify("info", "请先选择要保留的内容", { title: "AI 快捷交互" })
     return
   }
 
-  const result = await keepSingleQuickResultBlock(
+  const result = await keepSelectedQuickResultBlocks(
     job.resultRootBlockId,
-    keepBlockId
+    job.selectedResultBlockIds
   )
   if (!result.success) {
-    console.error("[AI QuickInteract] 仅保留单块失败:", result.error)
+    console.error("[AI QuickInteract] 保留所选内容失败:", result.error)
     orca.notify("error", result.error, { title: "AI 快捷交互" })
     return
   }
   removeJob(jobId)
-  orca.notify("success", "已保留该块", { title: "AI 快捷交互" })
+  orca.notify("success", `已保留 ${result.keptCount} 项`, {
+    title: "AI 快捷交互"
+  })
 }
 
 /**
@@ -445,6 +489,7 @@ export async function cancelAllBackgroundQuickJobs(): Promise<void> {
   const snapshot = [
     ...(aiQuickJobsState.jobs as QuickBackgroundJob[])
   ]
+  selectionUpdateByJobId.clear()
   aiQuickJobsState.jobs = []
   for (const job of snapshot) {
     if (job.status === "ready" && job.resultRootBlockId != null) {

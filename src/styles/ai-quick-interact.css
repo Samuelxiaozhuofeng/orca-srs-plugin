@@ -53,13 +53,20 @@
   box-shadow: inset 3px 0 0 0 var(--orca-accent-color, #818cf8) !important;
 }
 
-/* 标题行预留右侧空间，避免长标题顶到保留/取消按钮 */
+/* 标题行预留右侧空间，避免长标题顶到预览操作栏 */
 .srs-ai-result-block > .orca-repr > .orca-repr-main.srs-ai-result-main,
 .orca-block[data-srs-ai-result="true"] > .orca-repr > .orca-repr-main.srs-ai-result-main,
 .srs-ai-result-block > .orca-repr-main.srs-ai-result-main,
 .orca-block[data-srs-ai-result="true"] > .orca-repr-main.srs-ai-result-main {
-  padding-right: 7.25rem;
+  padding-right: 8.75rem;
   box-sizing: border-box;
+}
+
+.srs-ai-result-block[data-srs-ai-has-selection] > .orca-repr > .orca-repr-main.srs-ai-result-main,
+.orca-block[data-srs-ai-result="true"][data-srs-ai-has-selection] > .orca-repr > .orca-repr-main.srs-ai-result-main,
+.srs-ai-result-block[data-srs-ai-has-selection] > .orca-repr-main.srs-ai-result-main,
+.orca-block[data-srs-ai-result="true"][data-srs-ai-has-selection] > .orca-repr-main.srs-ai-result-main {
+  padding-right: 17.25rem;
 }
 
 /*
@@ -104,14 +111,23 @@
   user-select: none;
 }
 
-/* [ 保留 ] 按钮：微弱绿色/Accent 提示 */
-.srs-ai-action-btn--keep {
+.srs-ai-preview-actions__count {
+  color: var(--orca-text-secondary, #6b7280);
+  font-size: 11px;
+  line-height: 1.3;
+  padding: 1px 3px;
+}
+
+/* [ 保留全部 ] / [ 保留所选 ]：微弱绿色/Accent 提示 */
+.srs-ai-action-btn--keep,
+.srs-ai-action-btn--keep-selected {
   color: var(--orca-color-success, #16a34a);
   background-color: rgba(34, 197, 94, 0.08);
   border-color: rgba(34, 197, 94, 0.25);
 }
 
-.srs-ai-action-btn--keep:hover {
+.srs-ai-action-btn--keep:hover,
+.srs-ai-action-btn--keep-selected:hover {
   background-color: rgba(34, 197, 94, 0.18);
   border-color: rgba(34, 197, 94, 0.4);
 }
@@ -130,8 +146,8 @@
 }
 
 /*
- * 预览子块「保留此块」：默认隐藏，悬停该块时显示在行尾右侧
- * （与根栏同风格；嵌套悬停时父子按钮可能同时可见，可分别点）
+ * 预览子块选择：未选时悬停显示；选中后按钮与浅绿色状态持续可见。
+ * 父块已选时，后代显示为被包含但不重复计数。
  */
 .srs-ai-result-child,
 .orca-block[data-srs-ai-result-child="true"] {
@@ -163,6 +179,8 @@
 
 .srs-ai-result-child:hover > .srs-ai-result-child-actions,
 .orca-block[data-srs-ai-result-child="true"]:hover > .srs-ai-result-child-actions,
+.srs-ai-result-child--selected > .srs-ai-result-child-actions,
+.srs-ai-result-child--covered > .srs-ai-result-child-actions,
 .srs-ai-result-child-actions:focus-within {
   opacity: 1;
   pointer-events: auto;
@@ -174,9 +192,25 @@
   border-color: rgba(34, 197, 94, 0.25);
 }
 
-.srs-ai-action-btn--keep-child:hover {
+.srs-ai-action-btn--keep-child:hover:not(:disabled),
+.srs-ai-action-btn--keep-child[aria-pressed="true"] {
   background-color: rgba(34, 197, 94, 0.18);
   border-color: rgba(34, 197, 94, 0.4);
+}
+
+.srs-ai-action-btn--keep-child:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.srs-ai-result-child--selected {
+  background-color: rgba(34, 197, 94, 0.08) !important;
+  box-shadow: inset 2px 0 0 rgba(34, 197, 94, 0.55);
+  border-radius: 4px;
+}
+
+.srs-ai-result-child--covered {
+  background-color: rgba(34, 197, 94, 0.035) !important;
 }
 
 /* 子块正文预留右侧空间，避免悬停时按钮盖住末尾字 */

@@ -6,8 +6,9 @@ import {
   extractSelectedTextFromCursor,
   insertQuickResult,
   isStrictDescendantOf,
-  keepSingleQuickResultBlock,
-  QUICK_SELECTION_MAX
+  keepSelectedQuickResultBlocks,
+  QUICK_SELECTION_MAX,
+  toggleQuickResultBlockSelection
 } from "./aiQuickInteract"
 import {
   clearToolbarAIPromptCache,
@@ -743,7 +744,7 @@ describe("insertQuickResult positions", () => {
   })
 })
 
-describe("keepSingleQuickResultBlock", () => {
+describe("quick result candidate selection", () => {
   afterEach(() => {
     delete (globalThis as any).orca
     vi.restoreAllMocks()
@@ -804,35 +805,36 @@ describe("keepSingleQuickResultBlock", () => {
           number,
           string
         ]
-        const moveId = blockIds[0]
-        const moveBlock = blocks[moveId]
         const ref = blocks[refBlockId]
-        if (!moveBlock || !ref) throw new Error("move missing block")
+        const moveBlocks = blockIds.map((id) => blocks[id])
+        if (!ref || moveBlocks.some((block) => !block)) {
+          throw new Error("move missing block")
+        }
 
-        // detach from old parent
-        const oldParent = moveBlock.parent != null ? blocks[moveBlock.parent] : null
-        if (oldParent && Array.isArray(oldParent.children)) {
-          oldParent.children = oldParent.children.filter(
-            (id: number) => id !== moveId
-          )
+        // detach all selected subtree roots from their old parents
+        for (const [index, moveBlock] of moveBlocks.entries()) {
+          const moveId = blockIds[index]
+          const oldParent =
+            moveBlock.parent != null ? blocks[moveBlock.parent] : null
+          if (oldParent && Array.isArray(oldParent.children)) {
+            oldParent.children = oldParent.children.filter(
+              (id: number) => id !== moveId
+            )
+          }
         }
 
         if (position === "after") {
           const newParentId = ref.parent
-          moveBlock.parent = newParentId
+          for (const moveBlock of moveBlocks) moveBlock.parent = newParentId
           if (newParentId != null && blocks[newParentId]) {
             const siblings = blocks[newParentId].children as number[]
             const idx = siblings.indexOf(refBlockId)
-            if (idx >= 0) {
-              siblings.splice(idx + 1, 0, moveId)
-            } else {
-              siblings.push(moveId)
-            }
+            siblings.splice(idx >= 0 ? idx + 1 : siblings.length, 0, ...blockIds)
           }
         } else if (position === "lastChild") {
-          moveBlock.parent = refBlockId
+          for (const moveBlock of moveBlocks) moveBlock.parent = refBlockId
           if (!Array.isArray(ref.children)) ref.children = []
-          ref.children.push(moveId)
+          ref.children.push(...blockIds)
         }
         return undefined
       }
@@ -893,22 +895,80 @@ describe("keepSingleQuickResultBlock", () => {
     expect(await isStrictDescendantOf(102, 101)).toBe(false)
   })
 
-  it("moves kept subtree after root then deletes remaining preview tree", async () => {
+  it("toggles candidates without moving or deleting preview blocks", async () => {
     const { blocks, invokeEditorCommand } = setupPreviewTree()
 
-    const result = await keepSingleQuickResultBlock(100, 101)
-    expect(result.success).toBe(true)
+    const first = await toggleQuickResultBlockSelection(100, [], 101)
+    expect(first).toEqual({ success: true, selectedBlockIds: [101] })
+    const second = await toggleQuickResultBlockSelection(
+      100,
+      first.success ? first.selectedBlockIds : [],
+      102
+    )
+    expect(second).toEqual({ success: true, selectedBlockIds: [101, 102] })
+    expect(blocks[100]).toBeDefined()
+    expect(blocks[101]?.parent).toBe(100)
+    expect(blocks[102]?.parent).toBe(100)
+    expect(invokeEditorCommand).not.toHaveBeenCalled()
+  })
 
-    // moved after root under source 10, then root+siblings deleted
-    expect(blocks[101]).toBeDefined()
-    expect(blocks[101].parent).toBe(10)
-    expect(blocks[103]).toBeDefined()
-    expect(blocks[103].parent).toBe(101)
+  it("selecting a parent merges selected descendants and preserves one item", async () => {
+    setupPreviewTree()
+    const child = await toggleQuickResultBlockSelection(100, [], 103)
+    const parent = await toggleQuickResultBlockSelection(
+      100,
+      child.success ? child.selectedBlockIds : [],
+      101
+    )
+    expect(parent).toEqual({ success: true, selectedBlockIds: [101] })
+
+    const coveredChild = await toggleQuickResultBlockSelection(100, [101], 103)
+    expect(coveredChild).toEqual({ success: true, selectedBlockIds: [101] })
+    const deselected = await toggleQuickResultBlockSelection(100, [101], 101)
+    expect(deselected).toEqual({ success: true, selectedBlockIds: [] })
+  })
+
+  it("moves multiple selected subtrees once in document order then deletes the wrapper", async () => {
+    const { blocks, invokeEditorCommand } = setupPreviewTree()
+
+    const result = await keepSelectedQuickResultBlocks(100, [102, 101])
+    expect(result).toEqual({ success: true, keptCount: 2 })
+    expect(blocks[101]?.parent).toBe(10)
+    expect(blocks[103]?.parent).toBe(101)
+    expect(blocks[102]?.parent).toBe(10)
     expect(blocks[100]).toBeUndefined()
-    expect(blocks[102]).toBeUndefined()
-    expect(blocks[10].children).toContain(101)
-    expect(blocks[10].children).not.toContain(100)
+    expect(blocks[10].children).toEqual([101, 102])
 
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.moveBlocks",
+      null,
+      [101, 102],
+      100,
+      "after"
+    )
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.deleteBlocks",
+      null,
+      [100]
+    )
+  })
+
+  it("keeps a leaf block only after explicit confirmation", async () => {
+    const { blocks } = setupPreviewTree()
+    const result = await keepSelectedQuickResultBlocks(100, [102])
+    expect(result).toEqual({ success: true, keptCount: 1 })
+    expect(blocks[102]?.parent).toBe(10)
+    expect(blocks[100]).toBeUndefined()
+    expect(blocks[101]).toBeUndefined()
+    expect(blocks[103]).toBeUndefined()
+  })
+
+  it("deduplicates a selected descendant covered by its parent", async () => {
+    const { blocks, invokeEditorCommand } = setupPreviewTree()
+    const result = await keepSelectedQuickResultBlocks(100, [103, 101])
+    expect(result).toEqual({ success: true, keptCount: 1 })
+    expect(blocks[101]?.parent).toBe(10)
+    expect(blocks[103]?.parent).toBe(101)
     expect(invokeEditorCommand).toHaveBeenCalledWith(
       "core.editor.moveBlocks",
       null,
@@ -916,44 +976,42 @@ describe("keepSingleQuickResultBlock", () => {
       100,
       "after"
     )
-    expect(invokeEditorCommand).toHaveBeenCalledWith(
-      "core.editor.deleteBlocks",
-      null,
-      expect.arrayContaining([100, 102])
-    )
   })
 
-  it("keeps a leaf block and drops the AI wrapper", async () => {
-    const { blocks } = setupPreviewTree()
-    const result = await keepSingleQuickResultBlock(100, 102)
-    expect(result.success).toBe(true)
-    expect(blocks[102]?.parent).toBe(10)
-    expect(blocks[100]).toBeUndefined()
-    expect(blocks[101]).toBeUndefined()
-    expect(blocks[103]).toBeUndefined()
-  })
-
-  it("rejects blocks outside the preview tree", async () => {
-    setupPreviewTree()
-    const result = await keepSingleQuickResultBlock(100, 10)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toMatch(/不属于当前 AI 预览/)
-  })
-
-  it("delegates to keep all when keep id equals root", async () => {
+  it("retries cleanup when move succeeded but deleting the wrapper failed", async () => {
     const { blocks, invokeEditorCommand } = setupPreviewTree()
-    const result = await keepSingleQuickResultBlock(100, 100)
-    expect(result.success).toBe(true)
-    expect(blocks[100].properties["srs.ai.status"]).toBe("kept")
-    // 整棵保留不应 delete / move
-    expect(invokeEditorCommand).not.toHaveBeenCalledWith(
-      "core.editor.moveBlocks",
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything()
-    )
+    const original = invokeEditorCommand.getMockImplementation()
+    let failDelete = true
+    invokeEditorCommand.mockImplementation(async (...args: any[]) => {
+      if (args[0] === "core.editor.deleteBlocks" && failDelete) {
+        failDelete = false
+        throw new Error("delete failed")
+      }
+      return (original as any)?.(...args)
+    })
+
+    const first = await keepSelectedQuickResultBlocks(100, [101])
+    expect(first).toEqual({ success: false, error: "delete failed" })
+    expect(blocks[101]?.parent).toBe(10)
+    expect(blocks[100]).toBeDefined()
+
+    const retry = await keepSelectedQuickResultBlocks(100, [101])
+    expect(retry).toEqual({ success: true, keptCount: 1 })
+    expect(blocks[101]?.parent).toBe(10)
+    expect(blocks[100]).toBeUndefined()
+    expect(blocks[102]).toBeUndefined()
+  })
+
+  it("rejects empty or outside selections without changing blocks", async () => {
+    const { blocks, invokeEditorCommand } = setupPreviewTree()
+    expect(await keepSelectedQuickResultBlocks(100, [])).toEqual({
+      success: false,
+      error: "请先选择要保留的内容"
+    })
+    const outside = await keepSelectedQuickResultBlocks(100, [10])
+    expect(outside.success).toBe(false)
+    expect(blocks[100]).toBeDefined()
+    expect(invokeEditorCommand).not.toHaveBeenCalled()
   })
 })
 

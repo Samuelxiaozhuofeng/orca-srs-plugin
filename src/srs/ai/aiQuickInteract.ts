@@ -639,69 +639,235 @@ export async function keepQuickResult(
   }
 }
 
+const QUICK_RESULT_TREE_MAX_BLOCKS = 500
+const QUICK_RESULT_TREE_MAX_DEPTH = 100
+
+type QuickResultTreeSnapshot = {
+  preorder: number[]
+  postorder: number[]
+  parentById: Map<number, number | null>
+  rootParentId: number | null
+}
+
+/** 有界读取预览树，供临时选择归一化和最终批量保留共用。 */
+async function loadQuickResultTree(
+  resultRootBlockId: number
+): Promise<QuickResultTreeSnapshot> {
+  const preorder: number[] = []
+  const postorder: number[] = []
+  const parentById = new Map<number, number | null>()
+  const visiting = new Set<number>()
+  let rootParentId: number | null = null
+
+  const walk = async (
+    id: number,
+    parentId: number | null,
+    depth: number
+  ): Promise<void> => {
+    if (depth > QUICK_RESULT_TREE_MAX_DEPTH) {
+      throw new Error("AI 预览层级过深，无法安全处理")
+    }
+    if (visiting.has(id) || parentById.has(id)) {
+      throw new Error("AI 预览块树存在循环或重复节点")
+    }
+    if (preorder.length >= QUICK_RESULT_TREE_MAX_BLOCKS) {
+      throw new Error("AI 预览块数量过多，无法安全处理")
+    }
+
+    const block = await resolveBlockById(id)
+    if (!block) {
+      throw new Error(
+        id === resultRootBlockId
+          ? "找不到预览结果根块，可能已被删除"
+          : `找不到 AI 预览块 #${id}，可能已被删除`
+      )
+    }
+
+    if (id === resultRootBlockId) {
+      rootParentId =
+        typeof block.parent === "number" && Number.isFinite(block.parent)
+          ? block.parent
+          : null
+    }
+    visiting.add(id)
+    parentById.set(id, parentId)
+    preorder.push(id)
+    const children = Array.isArray(block.children) ? block.children : []
+    for (const childId of children) {
+      if (typeof childId === "number" && Number.isFinite(childId)) {
+        await walk(childId, id, depth + 1)
+      }
+    }
+    visiting.delete(id)
+    postorder.push(id)
+  }
+
+  await walk(resultRootBlockId, null, 0)
+  return { preorder, postorder, parentById, rootParentId }
+}
+
+function hasSelectedAncestor(
+  blockId: number,
+  selected: ReadonlySet<number>,
+  parentById: ReadonlyMap<number, number | null>
+): boolean {
+  let parentId = parentById.get(blockId)
+  let guard = 0
+  while (parentId != null && guard++ < QUICK_RESULT_TREE_MAX_DEPTH) {
+    if (selected.has(parentId)) return true
+    parentId = parentById.get(parentId)
+  }
+  return false
+}
+
 /**
- * 仅保留预览树中的某一块（含其整棵子树），去掉「AI · 提示名」外壳与其它兄弟分支。
- *
- * 流程：校验 keep 块属于预览树 → 移到结果根同级 after → 删除剩余预览树。
- * 若 keepBlockId === resultRootBlockId，等价于整棵保留（keepQuickResult）。
+ * 切换一个候选子树的临时选择。
+ * 选择父块时自动合并其已选后代；已随祖先选中的块不重复计数。
+ * 此函数只读取块树，不写入 Orca。
  */
-export async function keepSingleQuickResultBlock(
+export async function toggleQuickResultBlockSelection(
   resultRootBlockId: number,
-  keepBlockId: number
-): Promise<{ success: true } | { success: false; error: string }> {
-  if (keepBlockId === resultRootBlockId) {
-    return keepQuickResult(resultRootBlockId)
-  }
-
-  const root = await resolveBlockById(resultRootBlockId)
-  if (!root) {
-    return { success: false, error: "找不到预览结果根块，可能已被删除" }
-  }
-
-  const keepBlock = await resolveBlockById(keepBlockId)
-  if (!keepBlock) {
-    return { success: false, error: "找不到要保留的块，可能已被删除" }
-  }
-
-  const inTree = await isStrictDescendantOf(keepBlockId, resultRootBlockId)
-  if (!inTree) {
-    return { success: false, error: "该块不属于当前 AI 预览结果" }
+  selectedBlockIds: readonly number[],
+  toggleBlockId: number
+): Promise<
+  | { success: true; selectedBlockIds: number[] }
+  | { success: false; error: string }
+> {
+  if (!Number.isFinite(toggleBlockId) || toggleBlockId === resultRootBlockId) {
+    return { success: false, error: "无效的 AI 预览候选块" }
   }
 
   try {
+    const tree = await loadQuickResultTree(resultRootBlockId)
+    const treeIds = new Set(tree.preorder)
+    if (!treeIds.has(toggleBlockId)) {
+      return { success: false, error: "该块不属于当前 AI 预览结果" }
+    }
+
+    const selected = new Set(
+      selectedBlockIds.filter(
+        (id) => id !== resultRootBlockId && treeIds.has(id)
+      )
+    )
+
+    if (selected.has(toggleBlockId)) {
+      selected.delete(toggleBlockId)
+    } else if (!hasSelectedAncestor(toggleBlockId, selected, tree.parentById)) {
+      const selectedParent = new Set([toggleBlockId])
+      for (const id of selected) {
+        if (hasSelectedAncestor(id, selectedParent, tree.parentById)) {
+          selected.delete(id)
+        }
+      }
+      selected.add(toggleBlockId)
+    }
+
+    return {
+      success: true,
+      selectedBlockIds: tree.preorder.filter((id) => selected.has(id))
+    }
+  } catch (error) {
+    console.error("[AI QuickInteract] 更新候选选择失败:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "更新候选选择失败"
+    }
+  }
+}
+
+/**
+ * 保留用户最终确认的多个候选子树，并删除 AI 外壳与未选内容。
+ * 选择阶段不写库；只有调用本函数时才在一个 undo group 中批量移动和清理。
+ */
+export async function keepSelectedQuickResultBlocks(
+  resultRootBlockId: number,
+  keepBlockIds: readonly number[]
+): Promise<
+  | { success: true; keptCount: number }
+  | { success: false; error: string }
+> {
+  if (keepBlockIds.length === 0) {
+    return { success: false, error: "请先选择要保留的内容" }
+  }
+
+  try {
+    const tree = await loadQuickResultTree(resultRootBlockId)
+    const treeIds = new Set(tree.preorder)
+    const requested = new Set<number>()
+    const alreadyMoved = new Set<number>()
+    for (const id of keepBlockIds) {
+      if (!Number.isFinite(id) || id === resultRootBlockId) {
+        return { success: false, error: "所选块不属于当前 AI 预览结果" }
+      }
+      if (treeIds.has(id)) {
+        requested.add(id)
+        continue
+      }
+
+      // 上次若已 move 但清理外壳失败，允许同一 job 再次确认完成清理。
+      const movedBlock = await resolveBlockById(id)
+      const movedParentId =
+        typeof movedBlock?.parent === "number" &&
+        Number.isFinite(movedBlock.parent)
+          ? movedBlock.parent
+          : null
+      if (!movedBlock || movedParentId !== tree.rootParentId) {
+        return { success: false, error: "所选块不属于当前 AI 预览结果" }
+      }
+      alreadyMoved.add(id)
+    }
+
+    // 防御性归一化：父子同时出现时只移动父子树根，并保持原文档顺序。
+    const orderedRoots = tree.preorder.filter(
+      (id) =>
+        requested.has(id) &&
+        !hasSelectedAncestor(id, requested, tree.parentById)
+    )
+    if (orderedRoots.length === 0 && alreadyMoved.size === 0) {
+      return { success: false, error: "请先选择要保留的内容" }
+    }
+
+    const selectedRoots = new Set(orderedRoots)
+    const keptTreeIds = new Set(
+      tree.preorder.filter(
+        (id) =>
+          selectedRoots.has(id) ||
+          hasSelectedAncestor(id, selectedRoots, tree.parentById)
+      )
+    )
+    const deleteIds = tree.postorder.filter((id) => !keptTreeIds.has(id))
+
     await orca.commands.invokeGroup(
       async () => {
-        // 1) 整棵子树移出：挂到结果根同级 after（去掉 AI 外壳，位置仍贴近原预览）
-        await orca.commands.invokeEditorCommand(
-          "core.editor.moveBlocks",
-          null,
-          [keepBlockId],
-          resultRootBlockId,
-          "after"
-        )
-
-        // 2) 删除剩余预览树（根标题 + 其它分支）；move 后 keep 子树应已不在其下
-        // 防御：宿主 children 若仍短暂包含已移出子树，按 keep 整棵子树 ID 排除，避免误删
-        const keepTreeIds = new Set(await collectBlockTreeIds(keepBlockId))
-        const ids = await collectBlockTreeIds(resultRootBlockId)
-        const safeIds = ids.filter((id) => !keepTreeIds.has(id))
-        if (safeIds.length === 0) {
-          return
+        if (orderedRoots.length > 0) {
+          await orca.commands.invokeEditorCommand(
+            "core.editor.moveBlocks",
+            null,
+            orderedRoots,
+            resultRootBlockId,
+            "after"
+          )
         }
-        await orca.commands.invokeEditorCommand(
-          "core.editor.deleteBlocks",
-          null,
-          safeIds
-        )
+        if (deleteIds.length > 0) {
+          await orca.commands.invokeEditorCommand(
+            "core.editor.deleteBlocks",
+            null,
+            deleteIds
+          )
+        }
       },
       { undoable: true, topGroup: true }
     )
-    return { success: true }
+    return {
+      success: true,
+      keptCount: orderedRoots.length + alreadyMoved.size
+    }
   } catch (error) {
-    console.error("[AI QuickInteract] 仅保留单块失败:", error)
-    const message =
-      error instanceof Error ? error.message : "仅保留该块失败"
-    return { success: false, error: message }
+    console.error("[AI QuickInteract] 保留所选内容失败:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "保留所选内容失败"
+    }
   }
 }
 

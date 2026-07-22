@@ -4,8 +4,9 @@ import {
   cancelAllBackgroundQuickJobs,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
-  keepSingleBlockBackgroundQuickJob,
-  startBackgroundQuickInsertJob
+  keepSelectedBackgroundQuickJob,
+  startBackgroundQuickInsertJob,
+  toggleBackgroundQuickJobBlockSelection
 } from "./aiQuickInteractJobs"
 
 vi.mock("./aiQuickInteract", () => {
@@ -19,7 +20,20 @@ vi.mock("./aiQuickInteract", () => {
       blockId: 999
     })),
     keepQuickResult: vi.fn(async () => ({ success: true })),
-    keepSingleQuickResultBlock: vi.fn(async () => ({ success: true })),
+    toggleQuickResultBlockSelection: vi.fn(async (
+      _rootId: number,
+      selectedIds: number[],
+      blockId: number
+    ) => ({
+      success: true,
+      selectedBlockIds: selectedIds.includes(blockId)
+        ? selectedIds.filter((id) => id !== blockId)
+        : [...selectedIds, blockId]
+    })),
+    keepSelectedQuickResultBlocks: vi.fn(async (
+      _rootId: number,
+      selectedIds: number[]
+    ) => ({ success: true, keptCount: selectedIds.length })),
     dismissQuickResult: vi.fn(async () => ({ success: true })),
     promoteQuickResultToChild: vi.fn(async () => ({ success: true }))
   }
@@ -157,7 +171,7 @@ describe("startBackgroundQuickInsertJob", () => {
     )
   })
 
-  it("keepSingleBlockBackgroundQuickJob keeps one block then removes job", async () => {
+  it("serializes rapid candidate clicks without ending or writing the preview job", async () => {
     const jobId = await startBackgroundQuickInsertJob({
       pluginName: "orca-srs",
       sourceBlockId: 10,
@@ -168,24 +182,66 @@ describe("startBackgroundQuickInsertJob", () => {
       includeBlockContext: true
     })
 
-    await keepSingleBlockBackgroundQuickJob(jobId, 555)
-    const { keepSingleQuickResultBlock } = await import("./aiQuickInteract")
-    expect(keepSingleQuickResultBlock).toHaveBeenCalledWith(999, 555)
+    await Promise.all([
+      toggleBackgroundQuickJobBlockSelection(jobId, 555),
+      toggleBackgroundQuickJobBlockSelection(jobId, 556)
+    ])
+    const { toggleQuickResultBlockSelection, keepSelectedQuickResultBlocks } =
+      await import("./aiQuickInteract")
+    expect(toggleQuickResultBlockSelection).toHaveBeenNthCalledWith(
+      1,
+      999,
+      [],
+      555
+    )
+    expect(toggleQuickResultBlockSelection).toHaveBeenNthCalledWith(
+      2,
+      999,
+      [555],
+      556
+    )
+    expect(keepSelectedQuickResultBlocks).not.toHaveBeenCalled()
+
+    const job = (
+      aiQuickJobsState.jobs as Array<{
+        id: string
+        selectedResultBlockIds: number[]
+      }>
+    ).find((candidate) => candidate.id === jobId)
+    expect(job?.selectedResultBlockIds).toEqual([555, 556])
+  })
+
+  it("keeps all selected candidates only after confirmation", async () => {
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+    await toggleBackgroundQuickJobBlockSelection(jobId, 555)
+    await toggleBackgroundQuickJobBlockSelection(jobId, 556)
+    await keepSelectedBackgroundQuickJob(jobId)
+
+    const { keepSelectedQuickResultBlocks } = await import("./aiQuickInteract")
+    expect(keepSelectedQuickResultBlocks).toHaveBeenCalledWith(999, [555, 556])
     expect(
       (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
     ).toBeUndefined()
     expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
       "success",
-      "已保留该块",
+      "已保留 2 项",
       expect.objectContaining({ title: "AI 快捷交互" })
     )
   })
 
-  it("keepSingleBlockBackgroundQuickJob keeps job when single-keep fails", async () => {
-    const { keepSingleQuickResultBlock } = await import("./aiQuickInteract")
-    vi.mocked(keepSingleQuickResultBlock).mockResolvedValueOnce({
+  it("keeps selection and job available when batch confirmation fails", async () => {
+    const { keepSelectedQuickResultBlocks } = await import("./aiQuickInteract")
+    vi.mocked(keepSelectedQuickResultBlocks).mockResolvedValueOnce({
       success: false,
-      error: "该块不属于当前 AI 预览结果"
+      error: "批量移动失败"
     })
 
     const jobId = await startBackgroundQuickInsertJob({
@@ -197,14 +253,19 @@ describe("startBackgroundQuickInsertJob", () => {
       promptText: "请举例说明",
       includeBlockContext: true
     })
+    await toggleBackgroundQuickJobBlockSelection(jobId, 555)
+    await keepSelectedBackgroundQuickJob(jobId)
 
-    await keepSingleBlockBackgroundQuickJob(jobId, 1)
-    expect(
-      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
-    ).toBeDefined()
+    const job = (
+      aiQuickJobsState.jobs as Array<{
+        id: string
+        selectedResultBlockIds: number[]
+      }>
+    ).find((candidate) => candidate.id === jobId)
+    expect(job?.selectedResultBlockIds).toEqual([555])
     expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
       "error",
-      "该块不属于当前 AI 预览结果",
+      "批量移动失败",
       expect.objectContaining({ title: "AI 快捷交互" })
     )
   })
