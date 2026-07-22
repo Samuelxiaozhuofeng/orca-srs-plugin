@@ -20,24 +20,32 @@ import type { ContentFragment } from "../../orca.d.ts"
  *
  * 真机证据（repo 6emicuv1sv76k / block 4457）：
  * `…872.00）1(https://www.jinjia.com.cn/…)` → links:[1]（Reminder 标签页）
+ *
+ * 顺序关键：必须先处理「数字 + (http…)」超链接，再把无 URL 的 `[[n]]`
+ * 改成全角。否则 `[[3]](https://…)` 会先变成无法渲染的 `〔3〕(https://…)`。
  */
 export function sanitizeAiTextForOrcaInsert(text: string): string {
   if (!text) return text
   let s = text
 
-  // [[123]] 纯数字 wiki → 全角括号，避免块引用
-  s = s.replace(/\[\[(\d+)\]\]/g, "〔$1〕")
-
-  // [1](https://…) → [源1](https://…)  （链接文案不能是纯数字块 id）
+  // 1) [[3]](url) / [3](url) / [[[3]]](url) 等 → 合法 Markdown [源3](url)
   s = s.replace(
-    /\[(\d+)\]\((https?:\/\/[^)\s]+)\)/gi,
+    /\[{1,3}(\d+)\]{1,3}\((https?:\/\/[^)\s]+)\)/gi,
     "[源$1]($2)"
   )
 
-  // 1(https://…) → [源1](https://…)
-  // 不匹配已是 markdown 链接目标里的内容；要求数字前不是 ] 或单词字符
+  // 2) 已变成全角脚注但仍带 URL：〔3〕(url) → [源3](url)（兼容历史/二次净化）
   s = s.replace(
-    /(^|[^\]A-Za-z0-9_])(\d+)\((https?:\/\/[^)\s]+)\)/gi,
+    /〔(\d+)〕\((https?:\/\/[^)\s]+)\)/gi,
+    "[源$1]($2)"
+  )
+
+  // 3) 无 URL 的独立 [[123]] 纯数字 wiki → 全角，避免块引用
+  s = s.replace(/\[\[(\d+)\]\]/g, "〔$1〕")
+
+  // 4) 无中括号脚注：1(https://…) → [源1](https://…)
+  s = s.replace(
+    /(^|[^\]A-Za-z0-9_〕])(\d+)\((https?:\/\/[^)\s]+)\)/gi,
     "$1[源$2]($3)"
   )
 

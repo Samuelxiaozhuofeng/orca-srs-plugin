@@ -111,4 +111,30 @@ describe("structuralBlockToFragments + buildQuickResultInsertPlan", () => {
     const plan = buildQuickResultInsertPlan("今日金价", raw)
     expect(plan.bodyMarkdown).toContain("[源1](https://www.jinjia.com.cn/au9999/)")
   })
+
+  it("converts [[n]](url) to clickable [源n](url) before bare-wiki fullwidth pass", () => {
+    // 模型常见 web_search 角标；旧逻辑先把 [[3]] 改成 〔3〕 → 无法点击
+    const raw =
+      "Kimi K3〔见文〕[[3]](https://www.interconnects.ai/p/kimi-k3-the-open-weights-escalation)"
+    const cleaned = sanitizeAiTextForOrcaInsert(raw)
+    expect(cleaned).toBe(
+      "Kimi K3〔见文〕[源3](https://www.interconnects.ai/p/kimi-k3-the-open-weights-escalation)"
+    )
+    expect(cleaned).not.toContain("〔3〕(")
+    expect(cleaned).not.toContain("[[3]]")
+  })
+
+  it("repairs already-broken fullwidth footnote links 〔n〕(url)", () => {
+    const raw =
+      "引用〔3〕(https://www.interconnects.ai/p/kimi-k3-the-open-weights-escalation)"
+    expect(sanitizeAiTextForOrcaInsert(raw)).toBe(
+      "引用[源3](https://www.interconnects.ai/p/kimi-k3-the-open-weights-escalation)"
+    )
+  })
+
+  it("still fullwidths bare [[n]] without URL (block-ref safety)", () => {
+    expect(sanitizeAiTextForOrcaInsert("见 [[1]] 与 [[42]]")).toBe(
+      "见 〔1〕 与 〔42〕"
+    )
+  })
 })

@@ -84,10 +84,11 @@ src/components/
   3. 成功：以 `lastChild` 写入 `AI · 提示名` 预览树（`srs.ai.status=preview`）
   4. 预览 UI：结果根 `.orca-block` 加罩层 class；**保留/取消**操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）
   5. 用户操作：`keepBackgroundQuickJob`（确认沉淀）或 `dismissBackgroundQuickJob`（删预览树）；任务结束后卸掉罩层与操作栏
-- **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内）：
-  - `1(https://…)` / `[1](https://…)` → `[源1](https://…)`
-  - `[[123]]` → `〔123〕`
-  - 原因：Orca 把数字脚注/纯数字 wiki 当成块 id 引用（真机：4457→links[1]=Reminder）
+- **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
+  1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
+  2. 无 URL 的 `[[n]]` → `〔n〕`（防块引用）
+  3. `n(url)` → `[源n](url)`
+  - 勿先做步骤 2：否则 `[[3]](url)` 会变成不可点的 `〔3〕(url)`
 - **弹窗路径**（选项关闭或「自定义提示词」）：仍走 `aiQuickInteractState` + `AIQuickInteractDialog`，结果可「插入为子块」
 - **卸载**：`cancelAllBackgroundQuickJobs` 中止进行中请求并清空队列；**不**自动删除已写入的结果块
 - **样式**：`src/styles/ai-quick-interact.css`；结果根块不用 padding/margin 改布局（以免挤歪句柄/子块缩进），仅用背景 + inset box-shadow 做左侧 accent
