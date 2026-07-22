@@ -8,6 +8,7 @@ import {
   dismissQuickResult,
   insertQuickResultAsChild,
   keepQuickResult,
+  keepSingleQuickResultBlock,
   promoteQuickResultToChild,
   runToolbarAIPrompt
 } from "./aiQuickInteract"
@@ -315,6 +316,38 @@ export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
   }
   // 无论属性是否写成功，都结束预览任务（块内容保留）
   removeJob(jobId)
+}
+
+/**
+ * 仅保留预览树中的某一块（含其子树）：去掉 AI 外壳与其它兄弟，并结束预览任务。
+ * 失败时保留任务与预览树，便于重试。
+ */
+export async function keepSingleBlockBackgroundQuickJob(
+  jobId: string,
+  keepBlockId: number
+): Promise<void> {
+  const job = findJob(jobId)
+  if (!job) return
+  if (job.status !== "ready" || job.resultRootBlockId == null) {
+    orca.notify("warn", "当前任务没有可保留的预览块", { title: "AI 快捷交互" })
+    return
+  }
+  if (!Number.isFinite(keepBlockId)) {
+    orca.notify("error", "无效的块 ID", { title: "AI 快捷交互" })
+    return
+  }
+
+  const result = await keepSingleQuickResultBlock(
+    job.resultRootBlockId,
+    keepBlockId
+  )
+  if (!result.success) {
+    console.error("[AI QuickInteract] 仅保留单块失败:", result.error)
+    orca.notify("error", result.error, { title: "AI 快捷交互" })
+    return
+  }
+  removeJob(jobId)
+  orca.notify("success", "已保留该块", { title: "AI 快捷交互" })
 }
 
 /**

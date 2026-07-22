@@ -4,6 +4,7 @@ import {
   cancelAllBackgroundQuickJobs,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
+  keepSingleBlockBackgroundQuickJob,
   startBackgroundQuickInsertJob
 } from "./aiQuickInteractJobs"
 
@@ -18,6 +19,7 @@ vi.mock("./aiQuickInteract", () => {
       blockId: 999
     })),
     keepQuickResult: vi.fn(async () => ({ success: true })),
+    keepSingleQuickResultBlock: vi.fn(async () => ({ success: true })),
     dismissQuickResult: vi.fn(async () => ({ success: true })),
     promoteQuickResultToChild: vi.fn(async () => ({ success: true }))
   }
@@ -151,6 +153,58 @@ describe("startBackgroundQuickInsertJob", () => {
     expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
       "warn",
       expect.stringContaining("setProperties failed"),
+      expect.objectContaining({ title: "AI 快捷交互" })
+    )
+  })
+
+  it("keepSingleBlockBackgroundQuickJob keeps one block then removes job", async () => {
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    await keepSingleBlockBackgroundQuickJob(jobId, 555)
+    const { keepSingleQuickResultBlock } = await import("./aiQuickInteract")
+    expect(keepSingleQuickResultBlock).toHaveBeenCalledWith(999, 555)
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
+    ).toBeUndefined()
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "success",
+      "已保留该块",
+      expect.objectContaining({ title: "AI 快捷交互" })
+    )
+  })
+
+  it("keepSingleBlockBackgroundQuickJob keeps job when single-keep fails", async () => {
+    const { keepSingleQuickResultBlock } = await import("./aiQuickInteract")
+    vi.mocked(keepSingleQuickResultBlock).mockResolvedValueOnce({
+      success: false,
+      error: "该块不属于当前 AI 预览结果"
+    })
+
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    await keepSingleBlockBackgroundQuickJob(jobId, 1)
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
+    ).toBeDefined()
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "error",
+      "该块不属于当前 AI 预览结果",
       expect.objectContaining({ title: "AI 快捷交互" })
     )
   })

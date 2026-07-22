@@ -639,6 +639,102 @@ export async function keepQuickResult(
   }
 }
 
+/**
+ * 仅保留预览树中的某一块（含其整棵子树），去掉「AI · 提示名」外壳与其它兄弟分支。
+ *
+ * 流程：校验 keep 块属于预览树 → 移到结果根同级 after → 删除剩余预览树。
+ * 若 keepBlockId === resultRootBlockId，等价于整棵保留（keepQuickResult）。
+ */
+export async function keepSingleQuickResultBlock(
+  resultRootBlockId: number,
+  keepBlockId: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  if (keepBlockId === resultRootBlockId) {
+    return keepQuickResult(resultRootBlockId)
+  }
+
+  const root = await resolveBlockById(resultRootBlockId)
+  if (!root) {
+    return { success: false, error: "找不到预览结果根块，可能已被删除" }
+  }
+
+  const keepBlock = await resolveBlockById(keepBlockId)
+  if (!keepBlock) {
+    return { success: false, error: "找不到要保留的块，可能已被删除" }
+  }
+
+  const inTree = await isStrictDescendantOf(keepBlockId, resultRootBlockId)
+  if (!inTree) {
+    return { success: false, error: "该块不属于当前 AI 预览结果" }
+  }
+
+  try {
+    await orca.commands.invokeGroup(
+      async () => {
+        // 1) 整棵子树移出：挂到结果根同级 after（去掉 AI 外壳，位置仍贴近原预览）
+        await orca.commands.invokeEditorCommand(
+          "core.editor.moveBlocks",
+          null,
+          [keepBlockId],
+          resultRootBlockId,
+          "after"
+        )
+
+        // 2) 删除剩余预览树（根标题 + 其它分支）；move 后 keep 子树应已不在其下
+        // 防御：宿主 children 若仍短暂包含已移出子树，按 keep 整棵子树 ID 排除，避免误删
+        const keepTreeIds = new Set(await collectBlockTreeIds(keepBlockId))
+        const ids = await collectBlockTreeIds(resultRootBlockId)
+        const safeIds = ids.filter((id) => !keepTreeIds.has(id))
+        if (safeIds.length === 0) {
+          return
+        }
+        await orca.commands.invokeEditorCommand(
+          "core.editor.deleteBlocks",
+          null,
+          safeIds
+        )
+      },
+      { undoable: true, topGroup: true }
+    )
+    return { success: true }
+  } catch (error) {
+    console.error("[AI QuickInteract] 仅保留单块失败:", error)
+    const message =
+      error instanceof Error ? error.message : "仅保留该块失败"
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * keepBlockId 是否为 ancestorId 的严格子孙（不含自身）。
+ * 沿 parent 链上溯，带环检测与深度上限。
+ */
+export async function isStrictDescendantOf(
+  blockId: number,
+  ancestorId: number
+): Promise<boolean> {
+  if (blockId === ancestorId) return false
+  if (!Number.isFinite(blockId) || !Number.isFinite(ancestorId)) return false
+
+  let currentId: number | null | undefined = blockId
+  const seen = new Set<number>()
+  let guard = 0
+  while (
+    currentId != null &&
+    Number.isFinite(currentId) &&
+    guard++ < 200
+  ) {
+    if (seen.has(currentId)) return false
+    seen.add(currentId)
+    const block = await resolveBlockById(currentId)
+    const parentId = block?.parent
+    if (parentId == null || !Number.isFinite(parentId)) return false
+    if (parentId === ancestorId) return true
+    currentId = parentId
+  }
+  return false
+}
+
 /** 深度优先收集子树 ID（先子后父，便于宿主删除） */
 async function collectBlockTreeIds(rootId: number): Promise<number[]> {
   const ordered: number[] = []

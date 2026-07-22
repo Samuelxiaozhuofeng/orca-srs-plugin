@@ -1,5 +1,6 @@
 /**
  * AI 后台生成：目标块行尾微轻加载图标、内联块“罩层”与“预览/保留/取消”操作栏
+ * 预览子块悬停显示「保留此块」（仅保留该子树，去掉 AI 外壳）。
  */
 
 import {
@@ -7,6 +8,7 @@ import {
   dismissBackgroundQuickJob,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
+  keepSingleBlockBackgroundQuickJob,
   type QuickBackgroundJob
 } from "../srs/ai/aiQuickInteractJobs"
 
@@ -17,6 +19,8 @@ const { useEffect, useRef } = React
 const LOADING_CLASS = "srs-ai-target-block-loading"
 const RESULT_BLOCK_CLASS = "srs-ai-result-block"
 const PREVIEW_ACTIONS_CLASS = "srs-ai-preview-actions"
+const CHILD_KEEP_CLASS = "srs-ai-result-child"
+const CHILD_ACTIONS_CLASS = "srs-ai-result-child-actions"
 
 /**
  * 定位当前块自身的标题行宿主（不误入子块）。
@@ -49,7 +53,23 @@ function findRootTextHost(blockEl: HTMLElement): HTMLElement {
   return content ?? main
 }
 
+function clearChildKeepChrome(rootEl: HTMLElement): void {
+  rootEl
+    .querySelectorAll<HTMLElement>(`.${CHILD_ACTIONS_CLASS}`)
+    .forEach((el) => el.remove())
+  rootEl
+    .querySelectorAll<HTMLElement>(`.${CHILD_KEEP_CLASS}`)
+    .forEach((el) => {
+      el.classList.remove(CHILD_KEEP_CLASS)
+      el.removeAttribute("data-srs-ai-result-child")
+      if (el.style.position === "relative") {
+        el.style.position = ""
+      }
+    })
+}
+
 function clearResultChrome(blockEl: HTMLElement): void {
+  clearChildKeepChrome(blockEl)
   blockEl.classList.remove(RESULT_BLOCK_CLASS)
   blockEl.removeAttribute("data-srs-ai-result")
   if (blockEl.style.position === "relative") {
@@ -63,6 +83,79 @@ function clearResultChrome(blockEl: HTMLElement): void {
     .forEach((el) => {
       el.classList.remove("srs-ai-result-main", "srs-ai-result-shell")
     })
+}
+
+/**
+ * 在预览根下每个子孙块挂「保留此块」按钮（不含根本身）。
+ */
+function mountChildKeepActions(
+  rootEl: HTMLElement,
+  jobId: string,
+  rootBlockId: number
+): void {
+  const descendants = Array.from(
+    rootEl.querySelectorAll<HTMLElement>(".orca-block[data-id]")
+  ).filter((el) => {
+    if (el === rootEl) return false
+    const id = Number(el.getAttribute("data-id"))
+    return Number.isFinite(id) && id !== rootBlockId
+  })
+
+  // 先清掉已不在树上的旧按钮
+  rootEl
+    .querySelectorAll<HTMLElement>(`.${CHILD_ACTIONS_CLASS}[data-job-id="${jobId}"]`)
+    .forEach((bar) => {
+      const host = bar.closest<HTMLElement>(".orca-block[data-id]")
+      if (!host || !descendants.includes(host)) {
+        bar.remove()
+        if (host) {
+          host.classList.remove(CHILD_KEEP_CLASS)
+          host.removeAttribute("data-srs-ai-result-child")
+        }
+      }
+    })
+
+  for (const childEl of descendants) {
+    const childId = Number(childEl.getAttribute("data-id"))
+    if (!Number.isFinite(childId)) continue
+
+    childEl.classList.add(CHILD_KEEP_CLASS)
+    childEl.setAttribute("data-srs-ai-result-child", "true")
+    if (getComputedStyle(childEl).position === "static") {
+      childEl.style.position = "relative"
+    }
+
+    let actionBar = childEl.querySelector<HTMLElement>(
+      `:scope > .${CHILD_ACTIONS_CLASS}[data-job-id="${jobId}"]`
+    )
+    if (!actionBar) {
+      const misplaced = childEl.querySelector<HTMLElement>(
+        `.${CHILD_ACTIONS_CLASS}[data-job-id="${jobId}"]`
+      )
+      misplaced?.remove()
+
+      actionBar = document.createElement("span")
+      actionBar.className = CHILD_ACTIONS_CLASS
+      actionBar.setAttribute("data-job-id", jobId)
+      actionBar.setAttribute("data-keep-block-id", String(childId))
+      actionBar.setAttribute("role", "group")
+      actionBar.setAttribute("aria-label", "仅保留此块")
+
+      const keepBtn = document.createElement("button")
+      keepBtn.type = "button"
+      keepBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep-child"
+      keepBtn.title = "仅保留此块（含下级），去掉 AI 外壳与其它内容"
+      keepBtn.innerHTML = '<i class="ti ti-check"></i>保留此块'
+      keepBtn.onclick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        void keepSingleBlockBackgroundQuickJob(jobId, childId)
+      }
+
+      actionBar.appendChild(keepBtn)
+      childEl.appendChild(actionBar)
+    }
+  }
 }
 
 export function AIBlockLoadingMount() {
@@ -287,6 +380,39 @@ export function AIBlockLoadingMount() {
       if (shell !== rootEl) {
         shell.classList.add("srs-ai-result-shell")
       }
+
+      // 子块「保留此块」：不含根；含整棵子树
+      mountChildKeepActions(rootEl, job.id, rootId)
+    }
+  }, [jobs])
+
+  // 预览树子块可能晚于根块进入 DOM（宿主异步渲染）：监听 ready 根节点变更并补挂按钮
+  useEffect(() => {
+    const readyJobs = jobs.filter(
+      (j) => j.status === "ready" && j.resultRootBlockId != null
+    )
+    if (readyJobs.length === 0) return
+
+    const observers: MutationObserver[] = []
+    for (const job of readyJobs) {
+      const rootId = job.resultRootBlockId
+      if (rootId == null) continue
+      const rootEl = document.querySelector<HTMLElement>(
+        `.orca-block[data-id="${rootId}"]`
+      )
+      if (!rootEl || typeof MutationObserver === "undefined") continue
+
+      const observer = new MutationObserver(() => {
+        mountChildKeepActions(rootEl, job.id, rootId)
+      })
+      observer.observe(rootEl, { childList: true, subtree: true })
+      observers.push(observer)
+      // 立即补一次（与 jobs effect 竞态时）
+      mountChildKeepActions(rootEl, job.id, rootId)
+    }
+
+    return () => {
+      for (const o of observers) o.disconnect()
     }
   }, [jobs])
 

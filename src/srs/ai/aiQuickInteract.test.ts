@@ -5,6 +5,8 @@ import {
   clipText,
   extractSelectedTextFromCursor,
   insertQuickResult,
+  isStrictDescendantOf,
+  keepSingleQuickResultBlock,
   QUICK_SELECTION_MAX
 } from "./aiQuickInteract"
 import {
@@ -738,6 +740,220 @@ describe("insertQuickResult positions", () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.error).toMatch(/找不到目标块/)
+  })
+})
+
+describe("keepSingleQuickResultBlock", () => {
+  afterEach(() => {
+    delete (globalThis as any).orca
+    vi.restoreAllMocks()
+  })
+
+  /**
+   * 预览树：
+   *   10 source
+   *     └── 100 AI root
+   *           ├── 101 childA
+   *           │     └── 103 grand
+   *           └── 102 childB
+   */
+  function setupPreviewTree() {
+    const blocks: Record<number, any> = {
+      10: {
+        id: 10,
+        text: "query",
+        content: [{ t: "t", v: "query" }],
+        children: [100],
+        parent: undefined
+      },
+      100: {
+        id: 100,
+        text: "AI · 举例",
+        content: [{ t: "t", v: "AI · 举例" }],
+        children: [101, 102],
+        parent: 10,
+        properties: { "srs.ai.status": "preview", "srs.ai.quickResult": true }
+      },
+      101: {
+        id: 101,
+        text: "childA",
+        content: [{ t: "t", v: "childA" }],
+        children: [103],
+        parent: 100
+      },
+      102: {
+        id: 102,
+        text: "childB",
+        content: [{ t: "t", v: "childB" }],
+        children: [],
+        parent: 100
+      },
+      103: {
+        id: 103,
+        text: "grand",
+        content: [{ t: "t", v: "grand" }],
+        children: [],
+        parent: 101
+      }
+    }
+
+    const invokeEditorCommand = vi.fn(async (cmd: string, _c: unknown, ...args: any[]) => {
+      if (cmd === "core.editor.moveBlocks") {
+        const [blockIds, refBlockId, position] = args as [
+          number[],
+          number,
+          string
+        ]
+        const moveId = blockIds[0]
+        const moveBlock = blocks[moveId]
+        const ref = blocks[refBlockId]
+        if (!moveBlock || !ref) throw new Error("move missing block")
+
+        // detach from old parent
+        const oldParent = moveBlock.parent != null ? blocks[moveBlock.parent] : null
+        if (oldParent && Array.isArray(oldParent.children)) {
+          oldParent.children = oldParent.children.filter(
+            (id: number) => id !== moveId
+          )
+        }
+
+        if (position === "after") {
+          const newParentId = ref.parent
+          moveBlock.parent = newParentId
+          if (newParentId != null && blocks[newParentId]) {
+            const siblings = blocks[newParentId].children as number[]
+            const idx = siblings.indexOf(refBlockId)
+            if (idx >= 0) {
+              siblings.splice(idx + 1, 0, moveId)
+            } else {
+              siblings.push(moveId)
+            }
+          }
+        } else if (position === "lastChild") {
+          moveBlock.parent = refBlockId
+          if (!Array.isArray(ref.children)) ref.children = []
+          ref.children.push(moveId)
+        }
+        return undefined
+      }
+      if (cmd === "core.editor.deleteBlocks") {
+        const ids = args[0] as number[]
+        for (const id of ids) {
+          const b = blocks[id]
+          if (!b) continue
+          if (b.parent != null && blocks[b.parent]) {
+            blocks[b.parent].children = (
+              blocks[b.parent].children as number[]
+            ).filter((c: number) => c !== id)
+          }
+          delete blocks[id]
+        }
+        return undefined
+      }
+      if (cmd === "core.editor.setProperties") {
+        const targetIds = args[0] as number[]
+        const props = args[1]
+        for (const tid of targetIds) {
+          if (!blocks[tid]) continue
+          const asObj: Record<string, unknown> = {
+            ...(blocks[tid].properties ?? {})
+          }
+          if (Array.isArray(props)) {
+            for (const p of props) {
+              asObj[p.name] = p.value
+            }
+          } else if (props && typeof props === "object") {
+            Object.assign(asObj, props)
+          }
+          blocks[tid].properties = asObj
+        }
+        return undefined
+      }
+      throw new Error(`unexpected command ${cmd}`)
+    })
+
+    const invokeGroup = vi.fn(async (fn: () => Promise<void>) => {
+      await fn()
+    })
+
+    ;(globalThis as any).orca = {
+      state: { blocks },
+      commands: { invokeEditorCommand, invokeGroup },
+      invokeBackend: vi.fn(async () => null)
+    }
+    return { blocks, invokeEditorCommand }
+  }
+
+  it("isStrictDescendantOf walks parent chain", async () => {
+    setupPreviewTree()
+    expect(await isStrictDescendantOf(103, 100)).toBe(true)
+    expect(await isStrictDescendantOf(101, 100)).toBe(true)
+    expect(await isStrictDescendantOf(100, 100)).toBe(false)
+    expect(await isStrictDescendantOf(10, 100)).toBe(false)
+    expect(await isStrictDescendantOf(102, 101)).toBe(false)
+  })
+
+  it("moves kept subtree after root then deletes remaining preview tree", async () => {
+    const { blocks, invokeEditorCommand } = setupPreviewTree()
+
+    const result = await keepSingleQuickResultBlock(100, 101)
+    expect(result.success).toBe(true)
+
+    // moved after root under source 10, then root+siblings deleted
+    expect(blocks[101]).toBeDefined()
+    expect(blocks[101].parent).toBe(10)
+    expect(blocks[103]).toBeDefined()
+    expect(blocks[103].parent).toBe(101)
+    expect(blocks[100]).toBeUndefined()
+    expect(blocks[102]).toBeUndefined()
+    expect(blocks[10].children).toContain(101)
+    expect(blocks[10].children).not.toContain(100)
+
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.moveBlocks",
+      null,
+      [101],
+      100,
+      "after"
+    )
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.deleteBlocks",
+      null,
+      expect.arrayContaining([100, 102])
+    )
+  })
+
+  it("keeps a leaf block and drops the AI wrapper", async () => {
+    const { blocks } = setupPreviewTree()
+    const result = await keepSingleQuickResultBlock(100, 102)
+    expect(result.success).toBe(true)
+    expect(blocks[102]?.parent).toBe(10)
+    expect(blocks[100]).toBeUndefined()
+    expect(blocks[101]).toBeUndefined()
+    expect(blocks[103]).toBeUndefined()
+  })
+
+  it("rejects blocks outside the preview tree", async () => {
+    setupPreviewTree()
+    const result = await keepSingleQuickResultBlock(100, 10)
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toMatch(/不属于当前 AI 预览/)
+  })
+
+  it("delegates to keep all when keep id equals root", async () => {
+    const { blocks, invokeEditorCommand } = setupPreviewTree()
+    const result = await keepSingleQuickResultBlock(100, 100)
+    expect(result.success).toBe(true)
+    expect(blocks[100].properties["srs.ai.status"]).toBe("kept")
+    // 整棵保留不应 delete / move
+    expect(invokeEditorCommand).not.toHaveBeenCalledWith(
+      "core.editor.moveBlocks",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
+    )
   })
 })
 
