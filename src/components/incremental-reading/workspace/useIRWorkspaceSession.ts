@@ -28,6 +28,12 @@ import { estimateCardCostSecondsCalibrated } from "../../../srs/incremental-read
 import { buildCollectError, buildCollectOk } from "../../../srs/incremental-reading/irCollectResult"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
+import {
+  effectiveDailyLimitForQueue,
+  loadIRDailyStats,
+  resolveEffectiveIRDailyLimit,
+  resolveOrcaRepo
+} from "../../../srs/incremental-reading/irDailyStatsStorage"
 import { assembleSessionReadingQueue } from "./assembleSessionReadingQueue"
 import {
   buildMixedDegradedNotice,
@@ -113,6 +119,22 @@ export function useIRWorkspaceSession(
       // 同一时刻派生 seed 与会话时间，避免相邻 new Date() 跨午夜漂移；seed 用本地日而非 UTC ISO
       const sessionStartedAt = new Date()
       const seed = formatLocalDateKey(sessionStartedAt)
+
+      // 跨会话日额度：用今日累计 completedCount 扣减配置 dailyLimit（0=不限制）
+      const dailyStats = loadIRDailyStats({
+        repo: resolveOrcaRepo(),
+        pluginName: name,
+        dateKey: seed
+      })
+      if (!dailyStats.ok) {
+        console.error("[IR Workspace] 读取今日 IR 日统计失败，按 0 已用额度装配:", dailyStats.error)
+      }
+      const effectiveLimit = resolveEffectiveIRDailyLimit(
+        settings.dailyLimit,
+        dailyStats.record.totals.completedCount
+      )
+      const sessionDailyLimit = effectiveDailyLimitForQueue(effectiveLimit)
+
       let reviewCards: import("../../../srs/types").ReviewCard[] = []
       if (mixedEnabledForSession) {
         const { collectReviewCards } = await import("../../../srs/cardCollector")
@@ -122,14 +144,19 @@ export function useIRWorkspaceSession(
       const readingBudgetMinutes = eligibleReviewCards.length > 0
         ? options.timeBudgetMinutes * (1 - settings.mixedLearningReviewRatio / 100)
         : options.timeBudgetMinutes
-      const policyQueue = selectQueueWithPolicy(result.cards, {
-        ...DEFAULT_QUEUE_POLICY,
-        timeBudgetMinutes: readingBudgetMinutes,
-        dailyLimit: settings.dailyLimit,
-        // Source Topic 在纯 IR reading queue 中的最低比例（0..1）；非 mixed SRS 比例
-        topicMinRatio: topicQuotaPercentToMinRatio(settings.topicQuotaPercent),
-        seed
-      })
+
+      // limited + remaining=0：policy 空队列（dailyLimit=0 在 policy 里表示不限制，不能直接传入）
+      const policyQueue =
+        effectiveLimit.kind === "limited" && effectiveLimit.remaining === 0
+          ? { queue: [] as IRCard[], diagnostics: [] }
+          : selectQueueWithPolicy(result.cards, {
+            ...DEFAULT_QUEUE_POLICY,
+            timeBudgetMinutes: readingBudgetMinutes,
+            dailyLimit: sessionDailyLimit,
+            // Source Topic 在纯 IR reading queue 中的最低比例（0..1）；非 mixed SRS 比例
+            topicMinRatio: topicQuotaPercentToMinRatio(settings.topicQuotaPercent),
+            seed
+          })
 
       // 会话创建/打开/刷新/重试：只装配队列，不隐式写 block 属性（Batch B1）。
       // enableAutoDefer 仅控制资料库「一键溢出推后」按钮，不是自动写入许可。
@@ -161,10 +188,18 @@ export function useIRWorkspaceSession(
         }
       }
 
+      // 额度用尽时仍允许显式 focus 单卡（资料库点开阅读）；无 focus 则空队列
+      const assembleLimit =
+        effectiveLimit.kind === "limited" && effectiveLimit.remaining === 0
+          ? focusCard
+            ? 1
+            : 0
+          : sessionDailyLimit
+
       const focusedQueue = assembleSessionReadingQueue({
         policyQueue: policyQueue.queue,
         focusCard,
-        dailyLimit: settings.dailyLimit
+        dailyLimit: assembleLimit
       })
 
       const readingCostSeconds = focusedQueue.reduce(

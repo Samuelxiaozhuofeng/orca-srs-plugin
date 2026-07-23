@@ -40,7 +40,17 @@ import { loadIRState, saveIRState } from "./irStatePersistence"
  * - 顺序 Book IR 当前 active 章：Sequential Active Cadence（短节奏，无 1.25 增长）
  * - 不在「打开卡片」时改写 due；仅本动作与 postpone/priority 等显式写路径改排期
  */
-export async function markAsRead(blockId: DbId): Promise<IRState> {
+export type MarkAsReadOptions = {
+  /**
+   * 本张卡在会话中的停留毫秒。顺序激活章 SAC 用其避免「认真读了但断点未变」被误判停滞。
+   */
+  dwellMs?: number | null
+}
+
+export async function markAsRead(
+  blockId: DbId,
+  options?: MarkAsReadOptions
+): Promise<IRState> {
   try {
     const prev = await loadIRState(blockId)
     const now = new Date()
@@ -57,7 +67,8 @@ export async function markAsRead(blockId: DbId): Promise<IRState> {
       const stagnation = nextSacStagnation(
         prev.sacProgressKey,
         currentKey,
-        prev.sacStagnantCount
+        prev.sacStagnantCount,
+        { dwellMs: options?.dwellMs }
       )
       sacProgressKey = stagnation.progressKey
       sacStagnantCount = stagnation.stagnantCount

@@ -109,7 +109,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     try {
       await breakpoint.flush()
       const dwellMs = recordDwell(currentCard)
-      await performNext(currentCard.id)
+      await performNext(currentCard.id, { dwellMs })
       metricsRef.current.record("action.next", dwellMs, { cardType: currentCard.cardType })
       removeCurrent()
       orca.notify("success", "已进入下一篇", { title: "渐进阅读" })
@@ -154,7 +154,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
       }
       await breakpoint.flush()
       metricsRef.current.record("action.extract")
-      orca.notify("success", "已创建摘录", { title: "渐进阅读" })
+      // 成功文案由 createExtract 按真实 due 推送（约 N 天后回来）；此处不再覆盖
     } catch (error) {
       metricsRef.current.record("action.failure", undefined, { kind: "extract" })
       console.error("[IR Session] 摘录失败:", error)

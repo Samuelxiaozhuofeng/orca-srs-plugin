@@ -82,16 +82,21 @@ describe("initializeExtractScheduleAfterCreate order", () => {
       }
     })
 
+    // invalidate(extract) → setSource → invalidate(extract) → invalidate(source)
+    // → ensure → invalidate(source) → updatePriority
     expect(order).toEqual([
       "invalidate",
       "setSource",
       "invalidate",
+      "invalidate",
       "ensure",
+      "invalidate",
       "updatePriority"
     ])
     expect(setSourceTopicId).toHaveBeenCalledWith(1646, 231)
-    expect(invalidateIrBlockCache).toHaveBeenCalledTimes(2)
+    expect(invalidateIrBlockCache).toHaveBeenCalledTimes(4)
     expect(invalidateIrBlockCache).toHaveBeenCalledWith(1646)
+    expect(invalidateIrBlockCache).toHaveBeenCalledWith(231)
     expect(ensureIRState).toHaveBeenCalledWith(1646)
     expect(updatePriority).toHaveBeenCalledWith(1646, 50)
     // ensure 必须在第一次 invalidate 之后（标签对 ensure 可见）
@@ -175,10 +180,13 @@ describe("initializeExtractScheduleAfterCreate order", () => {
         }
       })
 
+      // extract → (setSource) → extract → source → ensure → source → updatePriority
       expect(order).toEqual([
         "invalidate",
         "invalidate",
+        "invalidate",
         "ensure",
+        "invalidate",
         "updatePriority"
       ])
 

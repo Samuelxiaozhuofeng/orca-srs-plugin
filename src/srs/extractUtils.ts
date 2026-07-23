@@ -161,13 +161,18 @@ export async function initializeExtractScheduleAfterCreate(args: {
 
   // 1) 标签刚写入：先失效 cache，确保 ensure 读到 #card/type=extracts
   invalidate(args.extractBlockId)
-  // 2) 有来源时写 sourceTopicId（+ 可选 book 出处），写后再失效
+  // 2) 有来源时写 sourceTopicId（+ 可选 book 出处），写后再失效 extract 与 source Topic
+  //    （连摘时 sibling BFS 依赖 source Topic 子树最新；必须丢弃 Topic 缓存）
   if (args.sourceTopicId != null) {
     await setSource(args.extractBlockId, args.sourceTopicId)
     invalidate(args.extractBlockId)
+    invalidate(args.sourceTopicId)
   }
-  // 3) ensure 使用最新卡种；4) updatePriority 读 sourceTopicId 算 sibling delay
+  // 3) ensure 使用最新卡种；4) updatePriority 前再丢 source Topic 缓存，然后算 sibling delay
   await ensure(args.extractBlockId)
+  if (args.sourceTopicId != null) {
+    invalidate(args.sourceTopicId)
+  }
   await updatePrio(args.extractBlockId, args.priority)
 }
 
@@ -414,6 +419,17 @@ async function createExtractFromText(args: {
     return null
   }
 
-  orca.notify("success", "已创建摘录（Extract）", { title: "渐进阅读" })
+  // 信任反馈：用真实 due 提示大约几天后回来（失败则保守文案，不吞主流程成功）
+  try {
+    const { loadIRState } = await import("./incrementalReadingStorage")
+    const { formatExtractCreatedScheduleMessage } = await import(
+      "./incremental-reading/irSessionCompleteCopy"
+    )
+    const ir = await loadIRState(extractBlockId)
+    orca.notify("success", formatExtractCreatedScheduleMessage(ir.due), { title: "渐进阅读" })
+  } catch (error) {
+    console.error(`[${pluginName}] 摘录成功但读取排期反馈失败:`, error)
+    orca.notify("success", "已创建摘录，将按阅读节奏安排再次出现", { title: "渐进阅读" })
+  }
   return { blockId, extractBlockId }
 }

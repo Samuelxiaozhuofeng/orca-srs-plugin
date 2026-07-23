@@ -160,9 +160,10 @@ baseIntervalDays = 1 + 2 * (1 - priority / 100)
 
 - 进度指纹来自现有字段：`ir.resumeBlockId` + `ir.breakpoint`（`readingBreakpoint` 的 preview/selection；**不含** `updatedAt`）
 - 可选持久化：`ir.sacProgressKey`、`ir.sacStagnantCount`（缺失视为无历史，**不**批量迁移旧数据）
-- 连续「下一篇」且指纹不变 → `stagnantCount` 递增，间隔 `base + stagnantCount * 1` 天，**上限约 6 天**
+- 连续「下一篇」且指纹不变 **且** 会话停留 `< SAC_MEANINGFUL_DWELL_MS`（默认 20s）→ `stagnantCount` 递增，间隔 `base + stagnantCount * 1` 天，**上限约 6 天**
 - 指纹变化（resume/断点实质前进）→ 停滞计数清零
-- **局限说明**：若用户阅读却从未写回断点/resume，指纹会一直为空，连续 next 会被判停滞并逐渐拉长间隔——保守策略，与断点写入路径一致
+- **有意义停留**（2026-07-23）：指纹不变但本张卡停留 ≥ 20s → **不**增加停滞（计 0），避免认真阅读但未改断点被误伤；`performNext`/`markAsRead` 传入 `dwellMs`
+- **仍属空转**：几乎没读就连点下一篇（停留短且指纹不变）仍会逐渐拉长
 
 **手动意图优先**：
 

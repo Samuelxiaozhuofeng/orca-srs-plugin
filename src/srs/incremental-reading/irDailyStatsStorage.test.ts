@@ -9,8 +9,10 @@ import {
   commitIRSessionToDailyStats,
   createEmptyIRDailyStatsRecord,
   dailyTotalsToMetricsSnapshot,
+  effectiveDailyLimitForQueue,
   loadIRDailyStats,
   parseIRDailyStatsRecord,
+  resolveEffectiveIRDailyLimit,
   snapshotToDailyTotals
 } from "./irDailyStatsStorage"
 
@@ -70,6 +72,37 @@ function memoryStorage(seed: Record<string, string> = {}): Storage {
     }
   }
 }
+
+describe("resolveEffectiveIRDailyLimit", () => {
+  it("treats configured 0 or negative as unlimited", () => {
+    expect(resolveEffectiveIRDailyLimit(0, 10)).toEqual({
+      kind: "unlimited",
+      used: 10,
+      configured: 0
+    })
+    expect(resolveEffectiveIRDailyLimit(-1, 3).kind).toBe("unlimited")
+    expect(effectiveDailyLimitForQueue(resolveEffectiveIRDailyLimit(0, 5))).toBe(0)
+  })
+
+  it("subtracts today's completedCount from configured limit", () => {
+    const mid = resolveEffectiveIRDailyLimit(30, 12)
+    expect(mid).toEqual({ kind: "limited", remaining: 18, used: 12, configured: 30 })
+    expect(effectiveDailyLimitForQueue(mid)).toBe(18)
+
+    const exhausted = resolveEffectiveIRDailyLimit(30, 30)
+    expect(exhausted).toEqual({ kind: "limited", remaining: 0, used: 30, configured: 30 })
+    expect(effectiveDailyLimitForQueue(exhausted)).toBe(0)
+
+    const over = resolveEffectiveIRDailyLimit(10, 99)
+    expect(over.kind).toBe("limited")
+    if (over.kind === "limited") expect(over.remaining).toBe(0)
+  })
+
+  it("floors non-integer inputs and clamps used to ≥0", () => {
+    const r = resolveEffectiveIRDailyLimit(10.9, -3)
+    expect(r).toEqual({ kind: "limited", remaining: 10, used: 0, configured: 10 })
+  })
+})
 
 describe("irDailyStatsStorage", () => {
   it("isolates storage keys by repo, plugin, and date", () => {

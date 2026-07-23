@@ -191,15 +191,29 @@ export type SacStagnationUpdate = {
 }
 
 /**
+ * 会话内在当前卡上停留达到该毫秒数，视为「有实质阅读」，
+ * 即使断点/resume 指纹未变，也不因「下一篇」增加 SAC 停滞计数。
+ * 产品启发式（约 20s），不是学习科学最优值。
+ */
+export const SAC_MEANINGFUL_DWELL_MS = 20_000
+
+export type SacStagnationOptions = {
+  /** 本张卡在会话中的停留毫秒；≥ SAC_MEANINGFUL_DWELL_MS 时指纹不变也不惩罚 */
+  dwellMs?: number | null
+}
+
+/**
  * 根据上次进度指纹与当前进度，更新停滞计数。
  * - 无历史指纹（旧数据/首次 SAC next）：不惩罚，写入当前指纹
- * - 指纹相同：stagnantCount + 1
  * - 指纹变化：重置为 0
+ * - 指纹相同 + 有意义停留：不惩罚（重置为 0），避免认真阅读但未改断点被误伤
+ * - 指纹相同 + 停留不足：stagnantCount + 1
  */
 export function nextSacStagnation(
   previousProgressKey: string | null | undefined,
   currentProgressKey: string,
-  previousStagnantCount: number | null | undefined
+  previousStagnantCount: number | null | undefined,
+  options?: SacStagnationOptions
 ): SacStagnationUpdate {
   const prevCount = Number.isFinite(previousStagnantCount as number)
     ? Math.max(0, Math.floor(previousStagnantCount as number))
@@ -212,6 +226,14 @@ export function nextSacStagnation(
   }
 
   if (currentProgressKey === previousProgressKey) {
+    const dwellMs = options?.dwellMs
+    const meaningfulDwell =
+      typeof dwellMs === "number"
+      && Number.isFinite(dwellMs)
+      && dwellMs >= SAC_MEANINGFUL_DWELL_MS
+    if (meaningfulDwell) {
+      return { stagnantCount: 0, progressKey: currentProgressKey }
+    }
     return { stagnantCount: prevCount + 1, progressKey: currentProgressKey }
   }
   return { stagnantCount: 0, progressKey: currentProgressKey }
@@ -371,85 +393,85 @@ export async function countEarlierSameDayExtractSiblings(params: {
 
   dropIrBlockCacheEntry(params.sourceTopicId)
   const root = await getBlockCached(params.sourceTopicId)
-  if (!root) return 0
-
-  const rootChildren = Array.isArray(root.children) ? root.children : []
-  if (rootChildren.length === 0) return 0
-
-  type QueueItem = { id: DbId; depth: number }
-  // 初始 queue最多 maxBlocks，避免 children 超大时先占满内存/超限
-  const queue: QueueItem[] = []
+  // backend children 可能暂未包含刚 insert 的兄弟；BFS 结果与 state 扫描取 max
+  let bfsIndex = 0
   let truncated = false
-  for (let i = 0; i < rootChildren.length; i++) {
-    if (queue.length >= maxBlocks) {
-      truncated = true
-      break
-    }
-    queue.push({ id: rootChildren[i] as DbId, depth: 1 })
-  }
-
   let visited = 0
-  let index = 0
 
-  while (queue.length > 0 && visited < maxBlocks) {
-    const batchSize = Math.min(concurrency, queue.length, maxBlocks - visited)
-    const batch = queue.splice(0, batchSize)
-    visited += batch.length
+  if (root) {
+    const rootChildren = Array.isArray(root.children) ? root.children : []
 
-    const loaded = await Promise.all(
-      batch.map(async item => {
-        // 快速连续创建时 children 列表时效敏感：读前丢弃该节点缓存
-        dropIrBlockCacheEntry(item.id)
-        const b = (await getBlockCached(item.id)) ?? null
-        return { ...item, block: b }
-      })
-    )
-
-    for (const { id, depth, block } of loaded) {
-      if (!block) continue
-
-      const cardType = extractCardType(block)
-
-      // 嵌套另一 Topic：不计入其子 Extract，也不深入其子树
-      if (id !== params.sourceTopicId && cardType === "topic") {
-        continue
+    type QueueItem = { id: DbId; depth: number }
+    // 初始 queue最多 maxBlocks，避免 children 超大时先占满内存/超限
+    const queue: QueueItem[] = []
+    for (let i = 0; i < rootChildren.length; i++) {
+      if (queue.length >= maxBlocks) {
+        truncated = true
+        break
       }
+      queue.push({ id: rootChildren[i] as DbId, depth: 1 })
+    }
 
-      if (
-        id !== params.selfId
-        && cardType === "extracts"
-        && isSameSourceExtractSibling(block, params.sourceTopicId)
-      ) {
-        const siblingCreated = getBlockCreatedDate(block)
-        if (siblingCreated && getLocalDayStartMs(siblingCreated) === dayStartMs) {
-          const siblingMs = siblingCreated.getTime()
-          if (
-            siblingMs < createdMs
-            || (siblingMs === createdMs && id < params.selfId)
-          ) {
-            index++
+    while (queue.length > 0 && visited < maxBlocks) {
+      const batchSize = Math.min(concurrency, queue.length, maxBlocks - visited)
+      const batch = queue.splice(0, batchSize)
+      visited += batch.length
+
+      const loaded = await Promise.all(
+        batch.map(async item => {
+          // 快速连续创建时 children 列表时效敏感：读前丢弃该节点缓存
+          dropIrBlockCacheEntry(item.id)
+          const b = (await getBlockCached(item.id)) ?? null
+          return { ...item, block: b }
+        })
+      )
+
+      for (const { id, depth, block } of loaded) {
+        if (!block) continue
+
+        const cardType = extractCardType(block)
+
+        // 嵌套另一 Topic：不计入其子 Extract，也不深入其子树
+        if (id !== params.sourceTopicId && cardType === "topic") {
+          continue
+        }
+
+        if (
+          id !== params.selfId
+          && cardType === "extracts"
+          && isSameSourceExtractSibling(block, params.sourceTopicId)
+        ) {
+          const siblingCreated = getBlockCreatedDate(block)
+          if (siblingCreated && getLocalDayStartMs(siblingCreated) === dayStartMs) {
+            const siblingMs = siblingCreated.getTime()
+            if (
+              siblingMs < createdMs
+              || (siblingMs === createdMs && id < params.selfId)
+            ) {
+              bfsIndex++
+            }
           }
         }
-      }
 
-      const kids = Array.isArray(block.children) ? block.children : []
-      if (depth >= maxDepth) {
-        if (kids.length > 0) truncated = true
-        continue
-      }
-      for (const kid of kids) {
-        if (visited + queue.length >= maxBlocks) {
-          truncated = true
-          break
+        const kids = Array.isArray(block.children) ? block.children : []
+        if (depth >= maxDepth) {
+          if (kids.length > 0) truncated = true
+          continue
         }
-        queue.push({ id: kid as DbId, depth: depth + 1 })
+        for (const kid of kids) {
+          if (visited + queue.length >= maxBlocks) {
+            truncated = true
+            break
+          }
+          queue.push({ id: kid as DbId, depth: depth + 1 })
+        }
       }
     }
-  }
 
-  // 仍有未访问队列节点 → cap 截断
-  if (queue.length > 0) {
-    truncated = true
+    // 仍有未访问队列节点 → cap 截断
+    if (queue.length > 0) {
+      truncated = true
+    }
   }
 
   if (truncated) {
@@ -462,6 +484,60 @@ export async function countEarlierSameDayExtractSiblings(params: {
     })
   }
 
+  // 补充：orca.state.blocks 上同源同日 Extract（连摘时 backend children 常滞后）
+  const stateIndex = countEarlierSameDayExtractSiblingsFromState({
+    sourceTopicId: params.sourceTopicId,
+    selfId: params.selfId,
+    selfCreated: params.selfCreated
+  })
+
+  return Math.max(bfsIndex, stateIndex)
+}
+
+/**
+ * 从 orca.state.blocks 线性扫描同源同日更早 Extract（有界：只扫 state 中已有条目）。
+ * 不替代 BFS 子树遍历；用于连摘时 backend children 未及时包含新兄弟的兜底。
+ */
+export function countEarlierSameDayExtractSiblingsFromState(params: {
+  sourceTopicId: DbId
+  selfId: DbId
+  selfCreated: Date
+}): number {
+  const blocks = (
+    globalThis as unknown as { orca?: { state?: { blocks?: Record<string | number, Block> } } }
+  ).orca?.state?.blocks
+  if (!blocks || typeof blocks !== "object") return 0
+
+  const dayStartMs = getLocalDayStartMs(params.selfCreated)
+  const createdMs = params.selfCreated.getTime()
+  let index = 0
+  let scanned = 0
+  const hardCap = EXTRACT_SIBLING_SCAN_MAX_BLOCKS
+
+  for (const key of Object.keys(blocks)) {
+    if (scanned >= hardCap) {
+      console.warn("[IR] sibling extract state scan truncated", {
+        sourceTopicId: params.sourceTopicId,
+        selfId: params.selfId,
+        hardCap
+      })
+      break
+    }
+    scanned++
+    const block = blocks[key as keyof typeof blocks] as Block | undefined
+    if (!block || block.id === params.selfId) continue
+    if (extractCardType(block) !== "extracts") continue
+    if (!isSameSourceExtractSibling(block, params.sourceTopicId)) continue
+    const siblingCreated = getBlockCreatedDate(block)
+    if (!siblingCreated || getLocalDayStartMs(siblingCreated) !== dayStartMs) continue
+    const siblingMs = siblingCreated.getTime()
+    if (
+      siblingMs < createdMs
+      || (siblingMs === createdMs && block.id < params.selfId)
+    ) {
+      index++
+    }
+  }
   return index
 }
 

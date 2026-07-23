@@ -103,6 +103,46 @@ export function buildIRDailyStatsStorageKey(
   return `${IR_DAILY_STATS_STORAGE_PREFIX}${repoKey}:${pluginKey}:${dateKey}`
 }
 
+/**
+ * 跨会话「今日 IR 额度」：配置 dailyLimit 减去今日已完成（completedCount）。
+ * - configured ≤ 0：不限制（与设置「0=不限制」一致）
+ * - remaining=0 且 limited：今日额度用尽，会话应装配空阅读队列（focus 仍可单独插入）
+ */
+export type EffectiveIRDailyLimit =
+  | { kind: "unlimited"; used: number; configured: number }
+  | { kind: "limited"; remaining: number; used: number; configured: number }
+
+export function resolveEffectiveIRDailyLimit(
+  configuredDailyLimit: number,
+  usedCompletedCount: number
+): EffectiveIRDailyLimit {
+  const used = Number.isFinite(usedCompletedCount)
+    ? Math.max(0, Math.floor(usedCompletedCount))
+    : 0
+  if (!Number.isFinite(configuredDailyLimit) || configuredDailyLimit <= 0) {
+    return { kind: "unlimited", used, configured: 0 }
+  }
+  const configured = Math.floor(configuredDailyLimit)
+  return {
+    kind: "limited",
+    remaining: Math.max(0, configured - used),
+    used,
+    configured
+  }
+}
+
+/**
+ * 交给 selectQueueWithPolicy / assembleSessionReadingQueue 的 dailyLimit 数值：
+ * - unlimited → 0（既有语义：0=不截断）
+ * - limited remaining → remaining（含 0：硬上限 0 张，由调用方对 policy 使用 empty queue）
+ */
+export function effectiveDailyLimitForQueue(
+  effective: EffectiveIRDailyLimit
+): number {
+  if (effective.kind === "unlimited") return 0
+  return effective.remaining
+}
+
 export function snapshotToDailyTotals(
   snapshot: Pick<
     IRSessionMetricsSnapshot,

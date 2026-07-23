@@ -11,7 +11,8 @@ import {
   getSequentialActiveBaseIntervalDays,
   growIntervalDays,
   nextSacStagnation,
-  SAC_MAX_INTERVAL_DAYS
+  SAC_MAX_INTERVAL_DAYS,
+  SAC_MEANINGFUL_DWELL_MS
 } from "./irSchedulingHelpers"
 
 describe("SAC pure interval helpers", () => {
@@ -80,6 +81,16 @@ describe("SAC stagnation / progress key", () => {
 
     const third = nextSacStagnation(second.progressKey, key, second.stagnantCount)
     expect(third.stagnantCount).toBe(2)
+  })
+
+  it("same key with meaningful dwell does not increase stagnant count", () => {
+    const key = computeReadingProgressKey({ resumeBlockId: null, readingBreakpoint: null })
+    const afterSkip = nextSacStagnation(key, key, 2, { dwellMs: 1_000 })
+    expect(afterSkip.stagnantCount).toBe(3)
+    const afterRead = nextSacStagnation(key, key, 2, { dwellMs: SAC_MEANINGFUL_DWELL_MS })
+    expect(afterRead.stagnantCount).toBe(0)
+    const afterLonger = nextSacStagnation(key, key, 5, { dwellMs: SAC_MEANINGFUL_DWELL_MS + 1 })
+    expect(afterLonger.stagnantCount).toBe(0)
   })
 
   it("resets stagnant count when resume advances", () => {

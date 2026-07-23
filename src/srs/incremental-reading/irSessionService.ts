@@ -41,10 +41,18 @@ export type ArchiveOptions = {
   nextChapterSchedule?: NextChapterSchedule
 }
 
-export async function performNext(blockId: DbId): Promise<SessionActionOutcome> {
+export type PerformNextOptions = {
+  /** 会话停留毫秒，转发给 markAsRead / SAC 停滞判定 */
+  dwellMs?: number | null
+}
+
+export async function performNext(
+  blockId: DbId,
+  options?: PerformNextOptions
+): Promise<SessionActionOutcome> {
   const prev = await loadIRState(blockId)
   const transition = advanceIRStage(prev.stage, "next")
-  const nextState = await markAsRead(blockId)
+  const nextState = await markAsRead(blockId, { dwellMs: options?.dwellMs })
   if (transition.nextStage && transition.nextStage !== nextState.stage) {
     const withStage: IRState = {
       ...nextState,
