@@ -18,7 +18,10 @@ import {
   measurePlainText,
   type ContentExtractionMethod
 } from "./webContentExtract"
-import { normalizeWebArticleHtml } from "./webHtmlNormalize"
+import {
+  collapseVisualWidgetsHtml,
+  normalizeWebArticleHtml
+} from "./webHtmlNormalize"
 import {
   removeMatchingTopHeadingWeb,
   type TitleDedupeContext
@@ -103,7 +106,12 @@ export function prepareWebArticleHtml(
     codeOnly: true
   })
 
-  const extracted = extractMainContent(preNormalized, baseUrl)
+  // Collapse class-tagged visual widgets BEFORE main-content extraction.
+  // Mozilla Readability strips class/id attributes; post-extract selectors would miss
+  // trace-flow ribbons and mermaid hosts (Stencil-like pages).
+  const preCollapsed = collapseVisualWidgetsHtml(preNormalized)
+
+  const extracted = extractMainContent(preCollapsed, baseUrl)
   for (const note of extracted.warnings) {
     if (/不确定|回退|丢失/.test(note)) {
       warnings.push({ code: "extraction_uncertain", message: note })

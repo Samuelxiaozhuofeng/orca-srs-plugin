@@ -168,6 +168,193 @@ KEEP_P3 Don't worry about people stealing your ideas if they work they copy the 
 })
 
 // ---------------------------------------------------------------------------
+// Visual widgets: trace ribbons / mermaid / post-stats (Stencil-like)
+// ---------------------------------------------------------------------------
+
+describe("collapse visual widgets for outline import", () => {
+  it("collapses trace-flow ribbons to labels and fixes post-stat spacing", () => {
+    const html = `
+<article>
+  <h1>Prewalk demo article title long enough for extraction quality</h1>
+  <p>Monkey see, monkey do! KEEP_INTRO with enough surrounding prose for the extractor.</p>
+  <div class="post-stats">
+    <div class="post-stat">
+      <span class="post-stat-value">97%</span><span class="post-stat-label">of frontier performance</span>
+    </div>
+    <div class="post-stat">
+      <span class="post-stat-value">41%</span><span class="post-stat-label">cheaper in $$</span>
+    </div>
+  </div>
+  <p>KEEP_BEFORE diagram discussion with substantial wording for coherent extraction.</p>
+  <figure id="django-13279-ribbons">
+    <div class="trace-flow">
+      <div class="trace-flow-label">OPUS 4.8 + /PLAN† · $3.18</div>
+      <div class="trace-flow-row" role="list">
+        <div class="trace-phase">
+          <div class="trace-phase-steps">
+            <div class="trace-step" role="listitem">
+              <span class="trace-step-tool">bash</span><span class="trace-step-model">opus</span>
+            </div>
+            <div class="trace-step" role="listitem">
+              <span class="trace-step-tool">read</span><span class="trace-step-model">opus</span>
+            </div>
+            <div class="trace-step" role="listitem">
+              <span class="trace-step-tool">glob</span><span class="trace-step-model">opus</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="trace-flow">
+      <div class="trace-flow-label">OPUS 4.8 · SAME TASK · $2.78</div>
+      <div class="trace-phase-steps">
+        <div class="trace-step"><span class="trace-step-tool">write</span><span class="trace-step-model">opus</span></div>
+        <div class="trace-step"><span class="trace-step-tool">grep</span><span class="trace-step-model">opus</span></div>
+      </div>
+    </div>
+  </figure>
+  <p>KEEP_AFTER Look at the top ribbon. The plan postcard is not a file you can edit.</p>
+  <p>Second paragraph keeps coherent article thresholds for readability extraction path.</p>
+</article>`
+    const result = prepare(
+      html,
+      "https://stencil.so/blog/prewalk",
+      "Prewalk demo article title long enough for extraction quality — Stencil",
+      { siteName: "Stencil", hostname: "stencil.so" }
+    )
+    const out = result.html
+    expect(out).toContain("KEEP_INTRO")
+    expect(out).toContain("KEEP_AFTER")
+    expect(out).toContain("OPUS 4.8 + /PLAN")
+    expect(out).toContain("OPUS 4.8 · SAME TASK")
+    // Step soup must not survive as importable structure
+    expect(out).not.toMatch(/trace-step/)
+    expect(out).not.toMatch(/trace-phase-steps/)
+    expect(out).not.toMatch(/>\s*bash\s*</i)
+    expect(out).not.toMatch(/>\s*glob\s*</i)
+    // Value + label must not concatenate without space (check plain text;
+    // markup may place the space between tags).
+    const plain = out.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
+    expect(plain).toMatch(/97%\s+of frontier performance/)
+    expect(plain).toMatch(/41%\s+cheaper/)
+
+    // Outline should not produce micro tool tokens
+    const tokens = parseHtmlOutlineTokens(out)
+    const plains = tokens
+      .filter((t) => t.kind === "content")
+      .map((t) => t.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    const toolish = plains.filter((p) =>
+      /^(bash|glob|read|grep|write)\s*(opus|flash|sol|luna)?$/i.test(p)
+    )
+    expect(toolish).toEqual([])
+  })
+
+  it("collapses mermaid plan diagrams and keeps ordinary tables/figures", () => {
+    const html = `
+<article>
+  <h1>Diagram collapse guide title for extraction</h1>
+  <p>KEEP_INTRO Prose before diagrams needs enough length for stable extraction quality checks.</p>
+  <figure>
+    <div class="st-mermaid plan-diagram">
+      <svg><text>KILL_MERMAID_NOISE nodeA nodeB edge path geometry</text></svg>
+    </div>
+    <figcaption>KEEP_MERMAID_CAP plan handoff diagram</figcaption>
+  </figure>
+  <div class="misalign">
+    <div class="misalign-title">Claude Opus 4.8</div>
+    <div class="misalign-row">
+      <span class="misalign-label">oneshot</span>
+      <span class="misalign-value">44%</span>
+      <span class="misalign-delta">163t</span>
+    </div>
+    <div class="misalign-row">
+      <span class="misalign-label">/prewalk†</span>
+      <span class="misalign-value">13%</span>
+      <span class="misalign-delta">−31pts · 65t</span>
+    </div>
+  </div>
+  <table>
+    <tr><th>arm</th><th>pass</th></tr>
+    <tr><td>KEEP_TABLE</td><td>85%</td></tr>
+  </table>
+  <figure>
+    <img src="https://cdn.example.net/chart.png" alt="scatter" />
+    <figcaption>KEEP_REAL_FIG real image figure</figcaption>
+  </figure>
+  <p>KEEP_AFTER more prose after widgets so the article remains coherent overall.</p>
+  <p>Trailing paragraph for extraction coherence thresholds and paragraph count.</p>
+</article>`
+    const result = prepare(html, "https://example.com/diagrams", "Diagram collapse guide title for extraction")
+    expect(result.html).toContain("KEEP_INTRO")
+    expect(result.html).toContain("KEEP_AFTER")
+    expect(result.html).toContain("KEEP_TABLE")
+    expect(result.html).toContain("KEEP_REAL_FIG")
+    expect(result.html).toContain("KEEP_MERMAID_CAP")
+    expect(result.html).not.toContain("KILL_MERMAID_NOISE")
+    expect(result.html).not.toMatch(/st-mermaid|plan-diagram/i)
+    // misalign becomes readable lines, not glued "oneshot44%"
+    const plain = result.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
+    expect(plain).toMatch(/oneshot\s+44%/)
+    expect(plain).toMatch(/\/prewalk†\s+13%/)
+    expect(result.html).toContain("<table")
+  })
+
+  it("does not mis-collapse semantic figures, prose class names, or wipe captions", () => {
+    const html = `
+<article>
+  <h1>Safety negative cases for visual collapse extraction</h1>
+  <p>KEEP_INTRO Enough surrounding prose so readiness extraction keeps the article body intact.</p>
+  <div class="trace-flow-explanation">
+    <h2 class="title">KEEP_TRACE_PROSE Heading about traces</h2>
+    <p class="trace-step-description">KEEP_TRACE_BODY This paragraph explains traces without being a ribbon UI of tool steps.</p>
+  </div>
+  <figure class="plan-diagram">
+    <img src="https://cdn.example.net/plan.png" alt="plan" />
+    <figcaption>KEEP_PLAN_IMG_FIG real image under plan-diagram class</figcaption>
+  </figure>
+  <figure class="st-chart">
+    <canvas class="st-chart" aria-hidden="true"></canvas>
+    <figcaption>KEEP_ST_CHART_CAP canvas chart caption must survive</figcaption>
+  </figure>
+  <div class="post-stat">
+    <span class="post-stat-value">10</span>/<span class="post-stat-label">tasks</span>
+  </div>
+  <div class="misalign">
+    <p>KEEP_MISALIGN_DEMO CSS misalign demo without label/value rows stays.</p>
+  </div>
+  <div class="misalign">
+    <div class="misalign-row">
+      <span class="misalign-label">oneshot</span>
+      <span class="misalign-value">44%<span class="misalign-delta">163t</span></span>
+    </div>
+  </div>
+  <p>KEEP_AFTER trailing prose for coherence after the safety fixtures above.</p>
+  <p>Another trailing paragraph to stabilize extraction thresholds for the pipeline.</p>
+</article>`
+    const result = prepare(
+      html,
+      "https://example.com/safety",
+      "Safety negative cases for visual collapse extraction"
+    )
+    const out = result.html
+    const plain = out.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
+    expect(out).toContain("KEEP_INTRO")
+    expect(out).toContain("KEEP_TRACE_PROSE")
+    expect(out).toContain("KEEP_TRACE_BODY")
+    expect(out).toContain("KEEP_PLAN_IMG_FIG")
+    expect(out).toMatch(/<img[^>]+src="https:\/\/cdn\.example\.net\/plan\.png"/i)
+    expect(out).toContain("KEEP_ST_CHART_CAP")
+    expect(out.toLowerCase()).not.toContain("<canvas")
+    expect(out).toContain("KEEP_MISALIGN_DEMO")
+    // Nested delta → "44% 163t" not "44%163t" and not duplicated
+    expect(plain).toMatch(/oneshot\s+44%\s+163t/)
+    expect(plain).not.toMatch(/44%\s+163t\s+163t/)
+    // Real separator `/` between value and label must survive
+    expect(plain).toMatch(/10\s*\/\s*tasks/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Structure preservation
 // ---------------------------------------------------------------------------
 
