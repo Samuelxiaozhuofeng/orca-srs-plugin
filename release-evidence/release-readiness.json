@@ -13,20 +13,20 @@
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
     "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": false,
-    "tagGate": false,
+    "formalZipAccepted": true,
+    "tagGate": true,
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
-    "githubReleasePublished": false,
-    "awesomeOrcanotePr": false
+    "githubReleasePublished": true,
+    "awesomeOrcanotePr": true
   },
   "externalOps": {
-    "tag": "pending",
-    "formalZip": "pending",
-    "githubRelease": "pending",
-    "awesomeOrcanotePr": "pending",
+    "tag": "completed: v1.0.5",
+    "formalZip": "completed: orca-srs-1.0.5.zip",
+    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.5",
+    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/100",
     "owner": "Grok",
-    "note": "Maintainer requested v1.0.5 publish from post-1.0.4 main. verifiedDistSha256 frozen from production stage (Node 25 local / CI Node 20.19); tag/zip/GitHub Release/awesome-orcanote PR remain external steps."
+    "note": "GitHub Release is published. awesome-orcanote PR #100 is submitted and awaits upstream review/merge."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-1.0.5-pending"
+    "WP-13": "release-published-upstream-pr-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
@@ -52,14 +52,19 @@
   "acceptedRisks": [
     {
       "id": "epub-zip-central-directory-budget",
-      "workPackages": ["WP-07"],
+      "workPackages": [
+        "WP-07"
+      ],
       "summary": "EPUB ZIP 中央目录声明预算未独立预检",
       "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.5 release decision; it is not claimed fixed.",
       "status": "accepted-for-1.0.5"
     },
     {
       "id": "write-path-cancellation-not-unified",
-      "workPackages": ["WP-07", "WP-11"],
+      "workPackages": [
+        "WP-07",
+        "WP-11"
+      ],
       "summary": "EPUB/Web/AI 写入阶段取消未形成统一可中断事务",
       "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.5 release decision; it is not claimed fixed.",
       "status": "accepted-for-1.0.5"
@@ -67,7 +72,7 @@
   ],
   "decision": {
     "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.5 and accepts release readiness. Residual static-audit risks live in acceptedRisks. Tag, formal zip, GitHub Release, and awesome-orcanote PR are external ops.",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.5 and accepts release readiness. The v1.0.5 GitHub Release is published and awesome-orcanote PR #100 is submitted. Residual static-audit risks live in acceptedRisks.",
     "verifiedDistSha256": "54b1c1a2741a09a21deb2d93722653500bfece4954db1d8d0f0e9baaae7a10b8",
     "approvedBy": "Samuelxiaozhuofeng",
     "verifiedAt": "2026-07-24T16:00:00.000Z"
