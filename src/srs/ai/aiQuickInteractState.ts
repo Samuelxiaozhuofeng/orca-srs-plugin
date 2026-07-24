@@ -22,6 +22,10 @@ export interface AIQuickInteractState {
   includeBlockContext: boolean
   /** 本条提示词覆盖模型；空 = 全局默认 */
   model: string
+  /** 插入结果时自动打标 */
+  resultTags: string[]
+  /** 插入时合并到同一结果根 */
+  reuseSameResultBlock: boolean
   phase: AIQuickInteractPhase
   resultText: string
   errorMessage: string | null
@@ -40,6 +44,8 @@ export const aiQuickInteractState = proxy({
   promptText: "",
   includeBlockContext: false,
   model: "",
+  resultTags: [] as string[],
+  reuseSameResultBlock: false,
   phase: "edit-prompt" as AIQuickInteractPhase,
   resultText: "",
   errorMessage: null as string | null,
@@ -61,6 +67,8 @@ export type OpenAIQuickInteractOptions = {
   includeBlockContext?: boolean
   /** 覆盖全局 model；空 / 未传 = 用服务设置 */
   model?: string
+  resultTags?: string[]
+  reuseSameResultBlock?: boolean
   /** custom：先编辑提示词；preset：可立刻生成 */
   mode: "preset" | "custom"
 }
@@ -75,6 +83,10 @@ export function openAIQuickInteract(opts: OpenAIQuickInteractOptions): void {
   aiQuickInteractState.includeBlockContext = opts.includeBlockContext === true
   aiQuickInteractState.model =
     typeof opts.model === "string" ? opts.model.trim() : ""
+  aiQuickInteractState.resultTags = Array.isArray(opts.resultTags)
+    ? opts.resultTags.map((t) => t.trim()).filter(Boolean)
+    : []
+  aiQuickInteractState.reuseSameResultBlock = opts.reuseSameResultBlock === true
   aiQuickInteractState.promptEditable = true
   aiQuickInteractState.resultText = ""
   aiQuickInteractState.errorMessage = null
@@ -97,6 +109,8 @@ export function closeAIQuickInteract(): void {
     aiQuickInteractState.promptText = ""
     aiQuickInteractState.includeBlockContext = false
     aiQuickInteractState.model = ""
+    aiQuickInteractState.resultTags = []
+    aiQuickInteractState.reuseSameResultBlock = false
     aiQuickInteractState.phase = "edit-prompt"
     aiQuickInteractState.resultText = ""
     aiQuickInteractState.errorMessage = null

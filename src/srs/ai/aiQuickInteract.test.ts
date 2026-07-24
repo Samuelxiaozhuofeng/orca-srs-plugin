@@ -16,6 +16,7 @@ import {
   getToolbarAIPrompts,
   hydrateToolbarAIPromptLibrary,
   normalizeToolbarAIPromptItems,
+  parseResultTagsInput,
   PROMPT_LIBRARY_DATA_KEY,
   PROMPT_LIBRARY_LEGACY_KEY,
   PROMPT_LIBRARY_STORAGE_KEY,
@@ -196,6 +197,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
       includeBlockContext: false,
       insertBelowOnComplete: false,
       directWriteBelow: false,
+      resultTags: [],
+      reuseSameResultBlock: false,
       model: ""
     })
     // 旧项无 includeBlockContext → true；无 insertBelowOnComplete / directWriteBelow → false；无 model → ""
@@ -206,6 +209,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
       includeBlockContext: true,
       insertBelowOnComplete: false,
       directWriteBelow: false,
+      resultTags: [],
+      reuseSameResultBlock: false,
       model: ""
     })
   })
@@ -232,6 +237,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         includeBlockContext: true,
         insertBelowOnComplete: false,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -265,6 +272,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         includeBlockContext: false,
         insertBelowOnComplete: true,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -298,6 +307,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         includeBlockContext: false,
         insertBelowOnComplete: true,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: "grok-4.5"
       }
     ])
@@ -315,7 +326,9 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
                   prompt: "解释词义",
                   includeBlockContext: true,
                   insertBelowOnComplete: true,
-                  directWriteBelow: true
+                  directWriteBelow: true,
+                  resultTags: [],
+                  reuseSameResultBlock: false,
                 }
               ]
             }
@@ -331,6 +344,8 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         includeBlockContext: true,
         insertBelowOnComplete: false,
         directWriteBelow: true,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -371,6 +386,18 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
   })
 })
 
+describe("parseResultTagsInput", () => {
+  it("parses comma/space, strips #, dedupes case-insensitively", () => {
+    expect(parseResultTagsInput("英语, #词汇  英语")).toEqual(["英语", "词汇"])
+    expect(parseResultTagsInput(["#Foo", "foo", "Bar"])).toEqual(["Foo", "Bar"])
+    expect(parseResultTagsInput("")).toEqual([])
+    expect(parseResultTagsInput(null)).toEqual([])
+    expect(parseResultTagsInput("tagA\ntagB")).toEqual(["tagA", "tagB"])
+    expect(parseResultTagsInput("###")).toEqual([])
+    expect(parseResultTagsInput([1, "ok", null] as unknown[])).toEqual(["ok"])
+  })
+})
+
 describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () => {
   afterEach(() => {
     clearToolbarAIPromptCache()
@@ -395,7 +422,9 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           label: "C",
           prompt: "direct",
           insertBelowOnComplete: true,
-          directWriteBelow: true
+          directWriteBelow: true,
+          resultTags: [],
+          reuseSameResultBlock: false,
         }
       ])
     ).toEqual([
@@ -405,6 +434,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: false,
         insertBelowOnComplete: true,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       },
       {
@@ -413,6 +444,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: true,
         insertBelowOnComplete: false,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       },
       {
@@ -421,6 +454,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: true,
         insertBelowOnComplete: false,
         directWriteBelow: true,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -458,6 +493,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: false,
         insertBelowOnComplete: true,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       },
       {
@@ -466,6 +503,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: true,
         insertBelowOnComplete: false,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -480,6 +519,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           includeBlockContext: false,
           insertBelowOnComplete: true,
           directWriteBelow: false,
+          resultTags: [],
+          reuseSameResultBlock: false,
           model: ""
         }
       ])
@@ -492,6 +533,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: false,
         insertBelowOnComplete: true,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -546,6 +589,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           includeBlockContext: p.includeBlockContext,
           insertBelowOnComplete: p.insertBelowOnComplete,
           directWriteBelow: p.directWriteBelow,
+          resultTags: p.resultTags,
+          reuseSameResultBlock: p.reuseSameResultBlock,
           model: p.model
         }))
       )
@@ -573,6 +618,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           includeBlockContext: true,
           insertBelowOnComplete: false,
           directWriteBelow: false,
+          resultTags: [],
+          reuseSameResultBlock: false,
           model: ""
         }
       ])
@@ -611,6 +658,8 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         includeBlockContext: true,
         insertBelowOnComplete: false,
         directWriteBelow: false,
+        resultTags: [],
+        reuseSameResultBlock: false,
         model: ""
       }
     ])
@@ -665,7 +714,9 @@ describe("insertQuickResult positions", () => {
         id: 10,
         text: "query",
         content: [{ t: "t", v: "query" }],
-        children: []
+        children: [] as number[],
+        refs: [] as any[],
+        properties: [] as any[]
       }
     }
     const invokeEditorCommand = vi.fn(async (cmd: string, _c: unknown, ...args: any[]) => {
@@ -680,10 +731,17 @@ describe("insertQuickResult positions", () => {
             ? content.map((f: any) => f.v).join("")
             : "",
           content,
-          children: [],
+          children: [] as number[],
+          refs: [] as any[],
+          properties: [] as any[],
           parent: position === "lastChild" ? ref?.id : ref?.parent,
           left: ref?.id
         }
+        if (position === "lastChild" && ref?.id != null && blocks[ref.id]) {
+          blocks[ref.id].children = [...(blocks[ref.id].children ?? []), id]
+        }
+        // keep orca.state.blocks in sync for resolveBlockById
+        ;(globalThis as any).orca.state.blocks = blocks
         return id
       }
       if (cmd === "core.editor.batchInsertText") {
@@ -696,19 +754,39 @@ describe("insertQuickResult positions", () => {
         const props = args[1]
         for (const tid of targetIds) {
           if (!blocks[tid]) continue
+          // 测试侧用 object 字典存属性，便于断言；读取侧 getBlockPropertyValue 同时支持 array/object
+          const asObj: Record<string, unknown> = {
+            ...(blocks[tid].properties &&
+            !Array.isArray(blocks[tid].properties)
+              ? blocks[tid].properties
+              : Array.isArray(blocks[tid].properties)
+                ? Object.fromEntries(
+                    blocks[tid].properties.map((p: any) => [p.name, p.value])
+                  )
+                : {})
+          }
           if (Array.isArray(props)) {
-            const asObj: Record<string, unknown> = {
-              ...(blocks[tid].properties ?? {})
-            }
             for (const p of props) {
               asObj[p.name] = p.value
             }
-            blocks[tid].properties = asObj
-          } else {
-            blocks[tid].properties = { ...blocks[tid].properties, ...props }
+          } else if (props && typeof props === "object") {
+            Object.assign(asObj, props)
           }
+          blocks[tid].properties = asObj
         }
+        ;(globalThis as any).orca.state.blocks = blocks
         return undefined
+      }
+      if (cmd === "core.editor.insertTag") {
+        const blockId = args[0] as number
+        const alias = args[1] as string
+        if (!blocks[blockId]) throw new Error("insertTag missing block")
+        blocks[blockId].refs = [
+          ...(blocks[blockId].refs ?? []),
+          { id: nextId++, from: blockId, to: 1, type: 2, alias }
+        ]
+        ;(globalThis as any).orca.state.blocks = blocks
+        return 1
       }
       throw new Error(`unexpected command ${cmd}`)
     })
@@ -789,6 +867,217 @@ describe("insertQuickResult positions", () => {
     if (result.success) return
     expect(result.error).toContain("设置 AI 结果属性失败")
     expect(result.error).toContain("setProperties denied")
+  })
+
+  it("applies result tags via insertTag on the result root", async () => {
+    const { invokeEditorCommand, blocks } = setupInsertMock()
+    const result = await insertQuickResult(
+      10,
+      "释义正文",
+      "英语闪卡",
+      "lastChild",
+      "trade-offs",
+      { status: "kept", tags: ["英语", "词汇"] }
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.insertTag",
+      null,
+      result.blockId,
+      "英语"
+    )
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.insertTag",
+      null,
+      result.blockId,
+      "词汇"
+    )
+    const aliases = (blocks[result.blockId].refs ?? []).map((r: any) => r.alias)
+    expect(aliases).toEqual(expect.arrayContaining(["英语", "词汇"]))
+  })
+
+  it("returns failure when insertTag throws", async () => {
+    const { invokeEditorCommand } = setupInsertMock()
+    invokeEditorCommand.mockImplementation(async (cmd: string, ...args: any[]) => {
+      if (cmd === "core.editor.insertTag") {
+        throw new Error("tag denied")
+      }
+      // fall through to original mock behavior by re-calling default path is hard;
+      // reinstall minimal handling:
+      if (cmd === "core.editor.insertBlock") {
+        const ref = args[1]
+        const position = args[2]
+        const content = args[3]
+        const id = 200
+        const blocks = (globalThis as any).orca.state.blocks
+        blocks[id] = {
+          id,
+          text: Array.isArray(content) ? content.map((f: any) => f.v).join("") : "",
+          content,
+          children: [],
+          refs: [],
+          properties: {},
+          parent: position === "lastChild" ? ref?.id : ref?.parent
+        }
+        if (position === "lastChild" && ref?.id != null && blocks[ref.id]) {
+          blocks[ref.id].children = [...(blocks[ref.id].children ?? []), id]
+        }
+        return id
+      }
+      if (cmd === "core.editor.setProperties") {
+        const targetIds = args[1] as number[]
+        const props = args[2]
+        const blocks = (globalThis as any).orca.state.blocks
+        for (const tid of targetIds) {
+          if (!blocks[tid]) continue
+          const asObj: Record<string, unknown> = {
+            ...(blocks[tid].properties && !Array.isArray(blocks[tid].properties)
+              ? blocks[tid].properties
+              : {})
+          }
+          if (Array.isArray(props)) {
+            for (const p of props) asObj[p.name] = p.value
+          }
+          blocks[tid].properties = asObj
+        }
+        return undefined
+      }
+      if (cmd === "core.editor.batchInsertText") return undefined
+      throw new Error(`unexpected ${cmd}`)
+    })
+    const result = await insertQuickResult(
+      10,
+      "释义",
+      "英语闪卡",
+      "lastChild",
+      "x",
+      { status: "kept", tags: ["英语"] }
+    )
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toContain("打标签")
+    expect(result.error).toContain("tag denied")
+  })
+
+  it("reuses same result root under source for the same prompt label", async () => {
+    const { blocks, invokeEditorCommand } = setupInsertMock()
+    const first = await insertQuickResult(
+      10,
+      "第一词释义",
+      "英语闪卡",
+      "lastChild",
+      "trade-offs",
+      { status: "kept", reuseSameResultBlock: true, tags: ["英语"] }
+    )
+    expect(first.success).toBe(true)
+    if (!first.success) return
+    expect(first.reused).toBe(false)
+
+    const second = await insertQuickResult(
+      10,
+      "第二词释义",
+      "英语闪卡",
+      "lastChild",
+      "apple",
+      { status: "kept", reuseSameResultBlock: true, tags: ["英语"] }
+    )
+    expect(second.success).toBe(true)
+    if (!second.success) return
+    expect(second.reused).toBe(true)
+    expect(second.blockId).toBe(first.blockId)
+
+    // 根只创建一次；后续为条目标题等 insertBlock
+    const rootInserts = invokeEditorCommand.mock.calls.filter(
+      (c) =>
+        c[0] === "core.editor.insertBlock" &&
+        c[2]?.id === 10 &&
+        c[3] === "lastChild"
+    )
+    expect(rootInserts.length).toBe(1)
+    // 源块下仍只有一个结果根
+    expect(blocks[10].children).toContain(first.blockId)
+    expect(
+      blocks[10].children.filter((id: number) => {
+        const b = blocks[id]
+        const props = b?.properties
+        const label =
+          Array.isArray(props)
+            ? props.find((p: any) => p.name === "srs.ai.promptLabel")?.value
+            : props?.["srs.ai.promptLabel"]
+        return label === "英语闪卡"
+      })
+    ).toHaveLength(1)
+  })
+
+  it("promotes preview root to kept when a later merge reuses it", async () => {
+    const { blocks } = setupInsertMock()
+    const first = await insertQuickResult(
+      10,
+      "第一词",
+      "英语闪卡",
+      "lastChild",
+      "a",
+      { status: "preview", reuseSameResultBlock: true }
+    )
+    expect(first.success).toBe(true)
+    if (!first.success) return
+    expect(blocks[first.blockId].properties["srs.ai.status"]).toBe("preview")
+
+    const second = await insertQuickResult(
+      10,
+      "第二词",
+      "英语闪卡",
+      "lastChild",
+      "b",
+      { status: "preview", reuseSameResultBlock: true }
+    )
+    expect(second.success).toBe(true)
+    if (!second.success) return
+    expect(second.reused).toBe(true)
+    expect(second.blockId).toBe(first.blockId)
+    expect(blocks[first.blockId].properties["srs.ai.status"]).toBe("kept")
+  })
+
+  it("reuses same result root when position is after (sibling)", async () => {
+    const { blocks } = setupInsertMock()
+    // parent 持有兄弟：source 10 与后续结果根
+    blocks[1] = {
+      id: 1,
+      text: "parent",
+      children: [10],
+      refs: [],
+      properties: {}
+    }
+    blocks[10].parent = 1
+
+    const first = await insertQuickResult(
+      10,
+      "body1",
+      "英语闪卡",
+      "after",
+      "w1",
+      { status: "kept", reuseSameResultBlock: true }
+    )
+    expect(first.success).toBe(true)
+    if (!first.success) return
+    // after 插入不会自动挂到 parent.children，补上以便查找
+    blocks[1].children = [10, first.blockId]
+    blocks[first.blockId].parent = 1
+    ;(globalThis as any).orca.state.blocks = blocks
+
+    const second = await insertQuickResult(
+      10,
+      "body2",
+      "英语闪卡",
+      "after",
+      "w2",
+      { status: "kept", reuseSameResultBlock: true }
+    )
+    expect(second.success).toBe(true)
+    if (!second.success) return
+    expect(second.reused).toBe(true)
+    expect(second.blockId).toBe(first.blockId)
   })
 
   it("updates property to kept when keepQuickResult is called", async () => {
@@ -1167,6 +1456,8 @@ describe("startAIQuickInteractFlow commitMode routing", () => {
     includeBlockContext: boolean
     insertBelowOnComplete: boolean
     directWriteBelow: boolean
+    resultTags?: string[]
+    reuseSameResultBlock?: boolean
     model: string
   }) {
     const startJob = vi.fn(async () => "job-route")
@@ -1225,6 +1516,8 @@ describe("startAIQuickInteractFlow commitMode routing", () => {
       includeBlockContext: true,
       insertBelowOnComplete: false,
       directWriteBelow: true,
+      resultTags: [],
+      reuseSameResultBlock: false,
       model: ""
     })
     expect(openDialog).not.toHaveBeenCalled()
@@ -1245,6 +1538,8 @@ describe("startAIQuickInteractFlow commitMode routing", () => {
       includeBlockContext: true,
       insertBelowOnComplete: true,
       directWriteBelow: false,
+      resultTags: [],
+      reuseSameResultBlock: false,
       model: ""
     })
     expect(openDialog).not.toHaveBeenCalled()

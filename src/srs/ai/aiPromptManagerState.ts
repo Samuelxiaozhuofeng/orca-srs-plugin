@@ -26,6 +26,9 @@ export interface AIPromptManagerState {
   draftIncludeBlockContext: boolean
   draftInsertBelowOnComplete: boolean
   draftDirectWriteBelow: boolean
+  /** 结果标签，表单用逗号分隔字符串 */
+  draftResultTags: string
+  draftReuseSameResultBlock: boolean
   /** 覆盖全局 model；空 = 用服务设置 */
   draftModel: string
   errorMessage: string | null
@@ -44,6 +47,8 @@ export const aiPromptManagerState = proxy({
   draftIncludeBlockContext: true,
   draftInsertBelowOnComplete: true,
   draftDirectWriteBelow: false,
+  draftResultTags: "",
+  draftReuseSameResultBlock: false,
   draftModel: "",
   errorMessage: null as string | null,
   isSaving: false,
@@ -84,6 +89,8 @@ export async function openAIPromptManager(pluginName: string): Promise<void> {
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.draftDirectWriteBelow = false
+  aiPromptManagerState.draftResultTags = ""
+  aiPromptManagerState.draftReuseSameResultBlock = false
   aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
   aiPromptManagerState.isSaving = false
@@ -131,6 +138,8 @@ export function closeAIPromptManager(): void {
     aiPromptManagerState.draftIncludeBlockContext = true
     aiPromptManagerState.draftInsertBelowOnComplete = true
     aiPromptManagerState.draftDirectWriteBelow = false
+    aiPromptManagerState.draftResultTags = ""
+    aiPromptManagerState.draftReuseSameResultBlock = false
     aiPromptManagerState.draftModel = ""
     aiPromptManagerState.errorMessage = null
     aiPromptManagerState.isSaving = false
@@ -150,6 +159,8 @@ export function enterCreateMode(): void {
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.draftDirectWriteBelow = false
+  aiPromptManagerState.draftResultTags = ""
+  aiPromptManagerState.draftReuseSameResultBlock = false
   aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
 }
@@ -164,6 +175,9 @@ export function enterEditMode(index: number): void {
   aiPromptManagerState.draftIncludeBlockContext = item.includeBlockContext
   aiPromptManagerState.draftInsertBelowOnComplete = item.insertBelowOnComplete
   aiPromptManagerState.draftDirectWriteBelow = item.directWriteBelow === true
+  aiPromptManagerState.draftResultTags = (item.resultTags ?? []).join(", ")
+  aiPromptManagerState.draftReuseSameResultBlock =
+    item.reuseSameResultBlock === true
   aiPromptManagerState.draftModel = item.model ?? ""
   aiPromptManagerState.errorMessage = null
 }
@@ -177,6 +191,8 @@ export function backToListMode(): void {
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.draftDirectWriteBelow = false
+  aiPromptManagerState.draftResultTags = ""
+  aiPromptManagerState.draftReuseSameResultBlock = false
   aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
 }
@@ -198,6 +214,8 @@ export function applyManagerItems(items: ToolbarAIPrompt[]): void {
   aiPromptManagerState.draftIncludeBlockContext = true
   aiPromptManagerState.draftInsertBelowOnComplete = true
   aiPromptManagerState.draftDirectWriteBelow = false
+  aiPromptManagerState.draftResultTags = ""
+  aiPromptManagerState.draftReuseSameResultBlock = false
   aiPromptManagerState.draftModel = ""
   aiPromptManagerState.errorMessage = null
 }

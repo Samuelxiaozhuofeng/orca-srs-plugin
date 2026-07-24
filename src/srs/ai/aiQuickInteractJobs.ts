@@ -111,6 +111,10 @@ export type StartBackgroundQuickInsertOptions = {
   model?: string
   /** 缺省 preview，兼容旧调用 */
   commitMode?: QuickInsertCommitMode
+  /** 结果根自动打标；空 = 不打 */
+  tags?: string[]
+  /** 同一源块合并到同一结果根 */
+  reuseSameResultBlock?: boolean
 }
 
 function getValtioProxy<T extends object>(target: T): T {
@@ -147,6 +151,25 @@ function removeJob(jobId: string): void {
   aiQuickJobsState.jobs = (aiQuickJobsState.jobs as QuickBackgroundJob[]).filter(
     (j: QuickBackgroundJob) => j.id !== jobId
   )
+}
+
+/**
+ * 卸掉仍指向某结果根的 job（不 deleteBlocks）。
+ * 合并写入复用 preview 根后，旧 ready job 若仍挂着，取消/离场会误删整棵含历史条目。
+ */
+export function detachJobsForResultRoot(resultRootBlockId: number): void {
+  const snapshot = [...(aiQuickJobsState.jobs as QuickBackgroundJob[])]
+  const toDetach = snapshot.filter(
+    (j) => j.resultRootBlockId === resultRootBlockId
+  )
+  if (toDetach.length === 0) return
+  for (const job of toDetach) {
+    abortByJobId.get(job.id)?.abort()
+    abortByJobId.delete(job.id)
+    selectionUpdateByJobId.delete(job.id)
+  }
+  const detachIds = new Set(toDetach.map((j) => j.id))
+  aiQuickJobsState.jobs = snapshot.filter((j) => !detachIds.has(j.id))
 }
 
 export function hasActiveQuickBackgroundJobs(): boolean {
@@ -247,12 +270,19 @@ export async function startBackgroundQuickInsertJob(
       return id
     }
 
+    const tags = Array.isArray(opts.tags)
+      ? opts.tags.map((t) => t.trim()).filter(Boolean)
+      : []
     const insert = await insertQuickResultAsChild(
       opts.sourceBlockId,
       result.text,
       opts.promptLabel,
       opts.selectedText,
-      { status: commitMode === "direct" ? "kept" : "preview" }
+      {
+        status: commitMode === "direct" ? "kept" : "preview",
+        tags,
+        reuseSameResultBlock: opts.reuseSameResultBlock === true
+      }
     )
 
     const afterInsert = findJob(id)
@@ -267,8 +297,12 @@ export async function startBackgroundQuickInsertJob(
       return id
     }
 
-    // 直接写入：内容已是正式 kept，结束任务，不进入预览态
-    if (commitMode === "direct") {
+    // 直接写入，或合并到已有结果根：不进预览态（避免 dismiss 误删历史条目）
+    if (commitMode === "direct" || insert.reused) {
+      if (insert.reused) {
+        // 卸掉仍指向该根的旧 preview job（含其它任务），且不删块
+        detachJobsForResultRoot(insert.blockId)
+      }
       removeJob(id)
       return id
     }

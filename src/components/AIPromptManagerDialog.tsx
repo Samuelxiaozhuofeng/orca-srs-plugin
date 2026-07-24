@@ -5,6 +5,7 @@
  */
 
 import type { ToolbarAIPrompt, ToolbarAIPromptItem } from "../srs/ai/aiToolbarPromptStore"
+import { parseResultTagsInput } from "../srs/ai/aiToolbarPromptStore"
 import type { AIPromptManagerMode } from "../srs/ai/aiPromptManagerState"
 
 export interface AIPromptManagerDialogProps {
@@ -18,6 +19,9 @@ export interface AIPromptManagerDialogProps {
   initialIncludeBlockContext: boolean
   initialInsertBelowOnComplete: boolean
   initialDirectWriteBelow: boolean
+  /** 标签表单字符串，如 "英语, 词汇" */
+  initialResultTags: string
+  initialReuseSameResultBlock: boolean
   /** 覆盖全局 model；空 = 用服务设置 */
   initialModel: string
   /** 服务设置中的默认 model（展示用） */
@@ -59,6 +63,8 @@ function PromptDraftForm(props: {
   initialIncludeBlockContext: boolean
   initialInsertBelowOnComplete: boolean
   initialDirectWriteBelow: boolean
+  initialResultTags: string
+  initialReuseSameResultBlock: boolean
   initialModel: string
   defaultServiceModel: string
   modelOptions: readonly string[]
@@ -81,6 +87,10 @@ function PromptDraftForm(props: {
   )
   const [directWriteBelow, setDirectWriteBelow] = useState(
     props.initialDirectWriteBelow
+  )
+  const [resultTagsText, setResultTagsText] = useState(props.initialResultTags)
+  const [reuseSameResultBlock, setReuseSameResultBlock] = useState(
+    props.initialReuseSameResultBlock
   )
   const [model, setModel] = useState(props.initialModel)
 
@@ -241,6 +251,48 @@ function PromptDraftForm(props: {
             </span>
           </label>
         </section>
+        <section className="ai-prompt-manager__field">
+          <label
+            className="ai-prompt-manager__section-label"
+            htmlFor="ai-pm-result-tags"
+          >
+            结果标签（可选）
+          </label>
+          <input
+            id="ai-pm-result-tags"
+            type="text"
+            className="ai-prompt-manager__input"
+            value={resultTagsText}
+            onChange={(e) => setResultTagsText(e.target.value)}
+            onKeyDown={stopEditorKeyCapture}
+            onKeyUp={stopEditorKeyCapture}
+            onKeyPress={stopEditorKeyCapture}
+            onMouseDown={stopBubble}
+            onClick={stopBubble}
+            placeholder="例如：英语, 词汇（留空则不打标签）"
+            disabled={busy}
+          />
+          <p className="ai-prompt-manager__field-hint">
+            用逗号或空格分隔；生成后会自动给结果块打上这些 Orca 标签，便于查询。无需写 #。
+          </p>
+        </section>
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__checkbox">
+            <input
+              type="checkbox"
+              checked={reuseSameResultBlock}
+              onChange={(e) => setReuseSameResultBlock(e.target.checked)}
+              onMouseDown={stopBubble}
+              disabled={busy}
+            />
+            <span>
+              同一源块合并到同一结果块
+              <span className="ai-prompt-manager__checkbox-hint">
+                在同一笔记块内多次使用本提示词时，新结果追加到已有「AI · 提示名」下（如多个单词统一挂在英语闪卡下），不另开多棵树
+              </span>
+            </span>
+          </label>
+        </section>
       </div>
       <footer className="ai-prompt-manager__footer">
         <button
@@ -261,6 +313,8 @@ function PromptDraftForm(props: {
               includeBlockContext,
               insertBelowOnComplete,
               directWriteBelow,
+              resultTags: parseResultTagsInput(resultTagsText),
+              reuseSameResultBlock,
               model: model.trim()
             })
           }
@@ -284,6 +338,8 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
     initialIncludeBlockContext,
     initialInsertBelowOnComplete,
     initialDirectWriteBelow,
+    initialResultTags,
+    initialReuseSameResultBlock,
     initialModel,
     defaultServiceModel,
     modelOptions,
@@ -332,7 +388,7 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
               </p>
             ) : (
               <p id="ai-prompt-manager-desc" className="ai-prompt-manager__subtitle">
-                名称会出现在选中文本后的工具栏菜单中。可配置模型、块上下文，以及预览确认或直接写入。
+                名称会出现在选中文本后的工具栏菜单中。可配置模型、标签、合并写入与落盘方式。
               </p>
             )}
           </div>
@@ -365,6 +421,8 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
             initialIncludeBlockContext={initialIncludeBlockContext}
             initialInsertBelowOnComplete={initialInsertBelowOnComplete}
             initialDirectWriteBelow={initialDirectWriteBelow}
+            initialResultTags={initialResultTags}
+            initialReuseSameResultBlock={initialReuseSameResultBlock}
             initialModel={initialModel}
             defaultServiceModel={defaultServiceModel}
             modelOptions={modelOptions}
@@ -462,6 +520,25 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
                             弹窗
                           </span>
                         )}
+                        {item.reuseSameResultBlock ? (
+                          <span
+                            className="ai-prompt-manager__badge"
+                            title="同一源块内多次调用合并到同一结果根"
+                          >
+                            合并写入
+                          </span>
+                        ) : null}
+                        {(item.resultTags ?? []).length > 0 ? (
+                          <span
+                            className="ai-prompt-manager__badge"
+                            title={`结果自动打标签：${item.resultTags.join(", ")}`}
+                          >
+                            #{item.resultTags[0]}
+                            {item.resultTags.length > 1
+                              ? ` +${item.resultTags.length - 1}`
+                              : ""}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="ai-prompt-manager__item-preview">{item.prompt}</div>
                     </div>

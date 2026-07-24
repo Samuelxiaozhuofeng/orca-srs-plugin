@@ -378,6 +378,236 @@ export type QuickResultCommitStatus = "preview" | "kept"
 export type InsertQuickResultOptions = {
   /** 缺省 preview（预览路径）；direct 路径传 kept */
   status?: QuickResultCommitStatus
+  /** 写入结果根块的标签（Orca alias，无 #）；空 = 不打标签 */
+  tags?: string[]
+  /**
+   * 同一源块 + 同一提示名时，追加到已有结果根下，不新建多棵树。
+   * 合并写入时根标题不含选区，每次结果以选区作条目标题挂在根下。
+   */
+  reuseSameResultBlock?: boolean
+}
+
+export type InsertQuickResultSuccess = {
+  success: true
+  blockId: number
+  /** 是否复用了已有结果根 */
+  reused: boolean
+}
+
+function getBlockPropertyValue(block: Block, name: string): unknown {
+  const props = block.properties as unknown
+  if (Array.isArray(props)) {
+    const hit = props.find(
+      (p) => p && typeof p === "object" && (p as { name?: string }).name === name
+    ) as { value?: unknown } | undefined
+    return hit?.value
+  }
+  if (props && typeof props === "object") {
+    return (props as Record<string, unknown>)[name]
+  }
+  return undefined
+}
+
+function isQuickResultRootForPrompt(block: Block, promptLabel: string): boolean {
+  const isQr = getBlockPropertyValue(block, "srs.ai.quickResult")
+  if (isQr !== true && isQr !== "true") return false
+  const label = getBlockPropertyValue(block, "srs.ai.promptLabel")
+  return typeof label === "string" && label === promptLabel
+}
+
+/**
+ * 合并写入串行锁：同一源块 + 提示名的 insert 排队，避免连点并发各建一个根。
+ * key = `${sourceBlockId}\0${promptLabel}`
+ */
+const reuseInsertSerialByKey = new Map<string, Promise<unknown>>()
+
+function runSerializedReuseInsert<T>(
+  sourceBlockId: number,
+  promptLabel: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const key = `${sourceBlockId}\0${promptLabel.trim()}`
+  const prev = reuseInsertSerialByKey.get(key) ?? Promise.resolve()
+  const run = prev.catch(() => undefined).then(fn)
+  reuseInsertSerialByKey.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  )
+  return run
+}
+
+/** 测试用：清空合并写入串行锁 */
+export function clearReuseInsertSerialLocksForTests(): void {
+  reuseInsertSerialByKey.clear()
+}
+
+/**
+ * 在源块的子块（lastChild）或同级后方（after）中查找可复用的结果根。
+ * 多个匹配时取**最后一个**（最近一次创建）。
+ */
+export async function findReusableQuickResultRoot(
+  sourceBlockId: number,
+  promptLabel: string,
+  position: QuickResultInsertPosition
+): Promise<number | null> {
+  const label = promptLabel.trim()
+  if (!label) return null
+
+  const source = await resolveBlockById(sourceBlockId)
+  if (!source) return null
+
+  let candidateIds: number[] = []
+  if (position === "lastChild") {
+    candidateIds = (Array.isArray(source.children) ? source.children : []).filter(
+      (id): id is number => typeof id === "number" && Number.isFinite(id)
+    )
+  } else {
+    if (source.parent == null) return null
+    const parent = await resolveBlockById(source.parent)
+    if (!parent) return null
+    const siblings = Array.isArray(parent.children) ? parent.children : []
+    const idx = siblings.indexOf(sourceBlockId)
+    if (idx < 0) return null
+    candidateIds = siblings
+      .slice(idx + 1)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+  }
+
+  let found: number | null = null
+  for (const id of candidateIds) {
+    const block = await resolveBlockById(id)
+    if (block && isQuickResultRootForPrompt(block, label)) {
+      found = id
+    }
+  }
+  return found
+}
+
+async function applyTagsToBlock(
+  blockId: number,
+  tags: readonly string[]
+): Promise<void> {
+  if (tags.length === 0) return
+  const { invalidateBlockCache } = await import("../storage")
+
+  for (const raw of tags) {
+    const alias = raw.trim()
+    if (!alias) continue
+
+    const block = await resolveBlockById(blockId)
+    if (!block) {
+      throw new Error(`打标签失败：找不到块 ${blockId}`)
+    }
+    const has = (block.refs ?? []).some(
+      (ref) =>
+        ref.type === 2 &&
+        typeof ref.alias === "string" &&
+        ref.alias.toLowerCase() === alias.toLowerCase()
+    )
+    if (has) continue
+
+    try {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.insertTag",
+        null,
+        blockId,
+        alias
+      )
+    } catch (error) {
+      console.error("[AI QuickInteract] insertTag 失败:", alias, error)
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`打标签「${alias}」失败: ${detail}`)
+    }
+    invalidateBlockCache(blockId)
+  }
+}
+
+type BodyPlan = {
+  bodyMarkdown: string
+  children: Array<Array<{ t: string; v: unknown; f?: string }>>
+}
+
+/** 在 attach 下写入正文（batchInsertText 优先，失败回退 insertBlock） */
+async function writeResultBodyUnder(
+  attachBlockId: number,
+  plan: BodyPlan
+): Promise<void> {
+  if (!plan.bodyMarkdown) return
+  const attach = await resolveBlockById(attachBlockId)
+  if (!attach) {
+    throw new Error("写入正文失败：找不到挂载块")
+  }
+
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.batchInsertText",
+      null,
+      attach,
+      "lastChild",
+      plan.bodyMarkdown,
+      false,
+      false
+    )
+    return
+  } catch (batchError) {
+    console.warn(
+      "[AI QuickInteract] batchInsertText 失败，回退逐块插入:",
+      batchError
+    )
+  }
+
+  for (const content of plan.children) {
+    const ref = (await resolveBlockById(attachBlockId)) ?? attach
+    const fragments =
+      content.length > 0 ? content : ([{ t: "t", v: "" }] as const)
+    const childId = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      ref,
+      "lastChild",
+      fragments
+    )) as number | null
+    if (childId == null || !Number.isFinite(childId)) {
+      throw new Error("insertBlock 未返回有效子块 ID")
+    }
+  }
+}
+
+/**
+ * 合并写入：在结果根下新增一条「选区标题 + 正文」。
+ * 无选区时正文直接挂在根下。
+ */
+async function appendEntryUnderResultRoot(
+  rootId: number,
+  plan: BodyPlan,
+  selectedText?: string
+): Promise<void> {
+  const root = await resolveBlockById(rootId)
+  if (!root) {
+    throw new Error("找不到可复用的结果根块")
+  }
+
+  let attachId = rootId
+  const sel = selectedText?.trim() ?? ""
+  if (sel) {
+    const clipped = sel.length > 40 ? `${sel.slice(0, 40)}…` : sel
+    const entryId = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      root,
+      "lastChild",
+      [{ t: "t", v: clipped, f: "b" }]
+    )) as number | null
+    if (entryId == null || !Number.isFinite(entryId)) {
+      throw new Error("创建结果条目标题失败")
+    }
+    attachId = entryId
+  }
+
+  await writeResultBodyUnder(attachId, plan)
 }
 
 /**
@@ -390,6 +620,7 @@ export type InsertQuickResultOptions = {
  *     parent（查询块）
  *     AI · **提示名**
  *       └── 正文…
+ * - reuseSameResultBlock：同一源块 + 提示名复用结果根；新条目挂在根下
  *
  * 正文优先用 batchInsertText(skipMarkdown=false) 让宿主解析 ** / 列表；
  * 失败则回退为逐条 insertBlock（无手写 "• "，避免与大纲圆点重叠）。
@@ -401,7 +632,7 @@ export async function insertQuickResult(
   position: QuickResultInsertPosition,
   selectedText?: string,
   options?: InsertQuickResultOptions
-): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
+): Promise<InsertQuickResultSuccess | { success: false; error: string }> {
   const body = resultText.trim()
   if (!body) {
     return { success: false, error: "结果为空，无法插入" }
@@ -410,122 +641,151 @@ export async function insertQuickResult(
   const positionLabel = position === "after" ? "块下方" : "子块"
   const status: QuickResultCommitStatus =
     options?.status === "kept" ? "kept" : "preview"
+  const tags = Array.isArray(options?.tags)
+    ? options!.tags.map((t) => t.trim()).filter(Boolean)
+    : []
+  const reuse = options?.reuseSameResultBlock === true
+  const label = promptLabel.trim() || "快捷交互"
 
-  try {
-    const refBlock = await resolveBlockById(refBlockId)
-    if (!refBlock) {
-      return { success: false, error: "找不到目标块，无法插入" }
-    }
+  const doInsert = async (): Promise<
+    InsertQuickResultSuccess | { success: false; error: string }
+  > => {
+    try {
+      const refBlock = await resolveBlockById(refBlockId)
+      if (!refBlock) {
+        return { success: false, error: "找不到目标块，无法插入" }
+      }
 
-    const { buildQuickResultInsertPlan } = await import("./aiQuickInteractMd")
-    const plan = buildQuickResultInsertPlan(promptLabel, body, selectedText)
+      const { buildQuickResultInsertPlan } = await import("./aiQuickInteractMd")
+      // 合并模式：根标题不含选区；选区作为条目标题
+      const plan = buildQuickResultInsertPlan(
+        label,
+        body,
+        reuse ? undefined : selectedText
+      )
 
-    let titleId: number | null = null
-    await orca.commands.invokeGroup(
-      async () => {
-        const id = (await orca.commands.invokeEditorCommand(
-          "core.editor.insertBlock",
-          null,
-          refBlock,
-          position,
-          plan.title
-        )) as number | null
-        if (id == null || !Number.isFinite(id)) {
-          throw new Error("insertBlock 未返回有效标题块 ID")
-        }
-        titleId = id
+      let titleId: number | null = null
+      let reused = false
 
-        // 写入 AI 内联块标识属性与状态（BlockProperty[]，与 core.editor.setProperties 一致）
-        // 失败必须抛出：勿静默 success，否则 direct 路径会误以为已 kept 落盘
-        const props: Array<{ name: string; value: unknown; type: number }> = [
-          { name: "srs.ai.quickResult", value: true, type: 4 }, // Boolean
-          { name: "srs.ai.status", value: status, type: 1 }, // Text: preview | kept
-          { name: "srs.ai.promptLabel", value: promptLabel, type: 1 }
-        ]
-        if (selectedText) {
-          props.push({
-            name: "srs.ai.selectedText",
-            value: selectedText,
-            type: 1
-          })
-        }
-        try {
-          await orca.commands.invokeEditorCommand(
-            "core.editor.setProperties",
-            null,
-            [id],
-            props
-          )
-        } catch (propErr) {
-          console.error(
-            "[AI QuickInteract] 设置 srs.ai.quickResult 属性失败:",
-            propErr
-          )
-          const detail =
-            propErr instanceof Error ? propErr.message : String(propErr)
-          throw new Error(`设置 AI 结果属性失败: ${detail}`)
-        }
-        const { invalidateBlockCache } = await import("../storage")
-        invalidateBlockCache(id)
+      await orca.commands.invokeGroup(
+        async () => {
+          if (reuse) {
+            const existing = await findReusableQuickResultRoot(
+              refBlockId,
+              label,
+              position
+            )
+            if (existing != null) {
+              titleId = existing
+              reused = true
+              await appendEntryUnderResultRoot(existing, plan, selectedText)
+              // 合并后根必须 kept：否则旧 preview job 取消/离场会 delete 整棵含历史条目
+              await promoteQuickResultRootToKept(existing)
+              await applyTagsToBlock(existing, tags)
+              return
+            }
+          }
 
-        const titleBlock = await resolveBlockById(id)
-        if (!titleBlock) {
-          throw new Error("标题块创建后无法读取")
-        }
-
-        if (!plan.bodyMarkdown) {
-          return
-        }
-
-        // 首选：宿主 Markdown 解析（** 粗体、列表分行）
-        try {
-          await orca.commands.invokeEditorCommand(
-            "core.editor.batchInsertText",
-            null,
-            titleBlock,
-            "lastChild",
-            plan.bodyMarkdown,
-            false, // skipMarkdown = false → 解析 Markdown
-            false
-          )
-          return
-        } catch (batchError) {
-          console.warn(
-            "[AI QuickInteract] batchInsertText 失败，回退逐块插入:",
-            batchError
-          )
-        }
-
-        // 回退：把每个结构块作为标题的 lastChild（顺序插入，挂在标题下缩进）
-        for (const content of plan.children) {
-          const ref = (await resolveBlockById(id)) ?? titleBlock
-          const fragments =
-            content.length > 0 ? content : ([{ t: "t", v: "" }] as const)
-          const childId = (await orca.commands.invokeEditorCommand(
+          const id = (await orca.commands.invokeEditorCommand(
             "core.editor.insertBlock",
             null,
-            ref,
-            "lastChild",
-            fragments
+            refBlock,
+            position,
+            plan.title
           )) as number | null
-          if (childId == null || !Number.isFinite(childId)) {
-            throw new Error("insertBlock 未返回有效子块 ID")
+          if (id == null || !Number.isFinite(id)) {
+            throw new Error("insertBlock 未返回有效标题块 ID")
           }
-        }
-      },
-      { undoable: true, topGroup: true }
-    )
+          titleId = id
 
-    if (titleId == null) {
-      return { success: false, error: `创建${positionLabel}失败` }
+          // 写入 AI 内联块标识属性与状态（BlockProperty[]，与 core.editor.setProperties 一致）
+          // 失败必须抛出：勿静默 success，否则 direct 路径会误以为已 kept 落盘
+          const props: Array<{ name: string; value: unknown; type: number }> = [
+            { name: "srs.ai.quickResult", value: true, type: 4 }, // Boolean
+            { name: "srs.ai.status", value: status, type: 1 }, // Text: preview | kept
+            { name: "srs.ai.promptLabel", value: label, type: 1 }
+          ]
+          if (!reuse && selectedText) {
+            props.push({
+              name: "srs.ai.selectedText",
+              value: selectedText,
+              type: 1
+            })
+          }
+          try {
+            await orca.commands.invokeEditorCommand(
+              "core.editor.setProperties",
+              null,
+              [id],
+              props
+            )
+          } catch (propErr) {
+            console.error(
+              "[AI QuickInteract] 设置 srs.ai.quickResult 属性失败:",
+              propErr
+            )
+            const detail =
+              propErr instanceof Error ? propErr.message : String(propErr)
+            throw new Error(`设置 AI 结果属性失败: ${detail}`)
+          }
+          const { invalidateBlockCache } = await import("../storage")
+          invalidateBlockCache(id)
+
+          if (reuse) {
+            // 新建合并根：选区作第一条目标题，正文挂其下
+            await appendEntryUnderResultRoot(id, plan, selectedText)
+          } else {
+            await writeResultBodyUnder(id, plan)
+          }
+
+          await applyTagsToBlock(id, tags)
+        },
+        { undoable: true, topGroup: true }
+      )
+
+      if (titleId == null) {
+        return { success: false, error: `创建${positionLabel}失败` }
+      }
+      return { success: true, blockId: titleId, reused }
+    } catch (error) {
+      console.error(`[AI QuickInteract] 插入${positionLabel}失败:`, error)
+      const message =
+        error instanceof Error ? error.message : `插入${positionLabel}失败`
+      return { success: false, error: message }
     }
-    return { success: true, blockId: titleId }
-  } catch (error) {
-    console.error(`[AI QuickInteract] 插入${positionLabel}失败:`, error)
-    const message =
-      error instanceof Error ? error.message : `插入${positionLabel}失败`
-    return { success: false, error: message }
   }
+
+  // 仅合并路径需要串行；普通插入互不影响
+  if (reuse) {
+    return runSerializedReuseInsert(refBlockId, label, doInsert)
+  }
+  return doInsert()
+}
+
+/**
+ * 将结果根标为 kept 并失效缓存。
+ * 合并写入复用 preview 根时必须调用，防止旧预览 job dismiss 删树。
+ */
+async function promoteQuickResultRootToKept(rootId: number): Promise<void> {
+  const block = await resolveBlockById(rootId)
+  if (!block) return
+  const current = getBlockPropertyValue(block, "srs.ai.status")
+  if (current === "kept") return
+
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.setProperties",
+      null,
+      [rootId],
+      [{ name: "srs.ai.status", value: "kept", type: 1 }]
+    )
+  } catch (error) {
+    console.error("[AI QuickInteract] 合并写入后标记 kept 失败:", error)
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`合并写入后标记结果为正式内容失败: ${detail}`)
+  }
+  const { invalidateBlockCache } = await import("../storage")
+  invalidateBlockCache(rootId)
 }
 
 export async function insertQuickResultAsChild(
@@ -534,7 +794,7 @@ export async function insertQuickResultAsChild(
   promptLabel: string,
   selectedText?: string,
   options?: InsertQuickResultOptions
-): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
+): Promise<InsertQuickResultSuccess | { success: false; error: string }> {
   return insertQuickResult(
     parentBlockId,
     resultText,
@@ -552,7 +812,7 @@ export async function insertQuickResultAfter(
   promptLabel: string,
   selectedText?: string,
   options?: InsertQuickResultOptions
-): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
+): Promise<InsertQuickResultSuccess | { success: false; error: string }> {
   return insertQuickResult(
     sourceBlockId,
     resultText,
@@ -1034,7 +1294,9 @@ export async function startAIQuickInteractFlow(
       promptText: prompt.prompt,
       includeBlockContext: prompt.includeBlockContext,
       model: prompt.model,
-      commitMode: prompt.directWriteBelow ? "direct" : "preview"
+      commitMode: prompt.directWriteBelow ? "direct" : "preview",
+      tags: prompt.resultTags,
+      reuseSameResultBlock: prompt.reuseSameResultBlock
     })
     return
   }
@@ -1047,6 +1309,8 @@ export async function startAIQuickInteractFlow(
     promptLabel: prompt.label,
     promptText: prompt.prompt,
     includeBlockContext: prompt.includeBlockContext,
+    resultTags: prompt.resultTags,
+    reuseSameResultBlock: prompt.reuseSameResultBlock,
     model: prompt.model,
     mode: "preset"
   })

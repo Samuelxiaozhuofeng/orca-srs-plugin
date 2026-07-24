@@ -43,6 +43,8 @@ function itemsToPayload(
     includeBlockContext: boolean
     insertBelowOnComplete: boolean
     directWriteBelow?: boolean
+    resultTags?: string[]
+    reuseSameResultBlock?: boolean
     model?: string
   }[]
 ): ToolbarAIPromptItem[] {
@@ -52,6 +54,8 @@ function itemsToPayload(
     includeBlockContext: i.includeBlockContext,
     insertBelowOnComplete: i.insertBelowOnComplete,
     directWriteBelow: i.directWriteBelow === true,
+    resultTags: Array.isArray(i.resultTags) ? [...i.resultTags] : [],
+    reuseSameResultBlock: i.reuseSameResultBlock === true,
     model: typeof i.model === "string" ? i.model.trim() : ""
   }))
 }
@@ -246,6 +250,8 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
       initialIncludeBlockContext={snap.draftIncludeBlockContext}
       initialInsertBelowOnComplete={snap.draftInsertBelowOnComplete}
       initialDirectWriteBelow={snap.draftDirectWriteBelow}
+      initialResultTags={snap.draftResultTags}
+      initialReuseSameResultBlock={snap.draftReuseSameResultBlock}
       initialModel={snap.draftModel}
       defaultServiceModel={defaultServiceModel}
       modelOptions={modelOptions}

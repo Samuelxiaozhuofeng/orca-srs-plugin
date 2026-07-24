@@ -1,8 +1,8 @@
 # SRS AI 模块
 
 > 文档同步日期：2026-07-24
-> 变更说明：Quick AI 提示词新增 `directWriteBelow`；`insertQuickResult` 属性写入失败不再静默成功；提示词编辑表单字段区可滚动、底栏固定可见。
-> **未宣称**：真机多选预览操作栏、跨层级批量移动顺序与多 model 路由的端到端验收。
+> 变更说明：Quick AI 提示词新增 `resultTags`（结果自动打标）与 `reuseSameResultBlock`（同源块合并到同一结果根）；`directWriteBelow` 与属性写失败可见。
+> **未宣称**：真机多选预览操作栏、跨层级批量移动顺序与多 model 路由的端到端验收；`insertTag` 在宿主对未知标签名的创建行为以 Orca 真机为准。
 
 ## 概述
 
@@ -74,28 +74,43 @@ src/components/
   - `includeBlockContext`：是否附带整块正文作 context（旧数据缺省 `true`）
   - `insertBelowOnComplete`：后台生成 · **预览后确认**（旧数据缺省 `false` 保持弹窗）
   - `directWriteBelow`：后台生成 · **直接写入块下方**为正式内容，无需预览确认（旧数据缺省 `false`）。与 `insertBelowOnComplete` **互斥**；normalize 时二者皆 true 以直接写入为准（关掉预览）
+  - `resultTags`：`string[]`，结果根自动打的 Orca 标签 alias（无 `#`）；空数组 = 不打标。表单逗号/空格分隔；`parseResultTagsInput` 去 `#`、去空、大小写不敏感去重。旧数据缺省 `[]`
+  - `reuseSameResultBlock`：同一**源块**内多次使用本提示词时，结果追加到已有 `srs.ai.quickResult` + 匹配 `srs.ai.promptLabel` 的结果根下（取最后一个匹配）。旧数据缺省 `false`
   - `model`：可选专用模型 id；空字符串 = 用「AI 服务设置」全局 `model`（旧数据缺省 `""`）
   - 兼容：hydrate 时若 data 无数据，只读迁移 settings 中的 `ai.promptLibrary` / `ai.toolbarPrompts` → setData
-- **默认三项**（库从未写入时）：举例说明 / 翻译 / 进一步解释；默认均 `insertBelowOnComplete: true`、`directWriteBelow: false`、`model: ""`
+- **默认三项**（库从未写入时）：举例说明 / 翻译 / 进一步解释；默认 `insertBelowOnComplete: true`、`directWriteBelow: false`、`resultTags: []`、`reuseSameResultBlock: false`、`model: ""`
 - **按提示词选模型**：新增/编辑表单用**下拉**选择 model（选项 = 服务设置同一 Key/URL 的 `/models` 列表 +「默认」项）；与服务设置共享内存缓存 `aiModelsCache`；可「刷新模型」。后台/弹窗路径传入 `runToolbarAIPrompt({ model })`，仅覆盖请求体 `model`
 - **提示词库编辑 UI**：表单用组件本地 state + 键盘事件 stopPropagation，避免宿主编辑器抢键导致无法输入。后台落盘两项文案区分：
   - 「后台生成 · 预览后确认」：预览写入，需再选保留/关闭
   - 「后台生成 · 直接写入块下方」：直接 `kept` 落盘，适合查词释义等无需确认场景
-  - 列表徽章：`预览插入` / `直接写入` / `弹窗`
+  - 「结果标签（可选）」：留空不打标
+  - 「同一源块合并到同一结果块」：多次查词挂到同一 `AI · 提示名` 下
+  - 列表徽章：`预览插入` / `直接写入` / `弹窗`；可选 `合并写入`、`#标签`
   - 表单布局：`.ai-prompt-manager__form` + `__form-scroll` 字段区滚动、底栏 `footer` 固定，避免选项增多后「取消/保存」被 `max-height:80vh; overflow:hidden` 裁掉
-- **后台路径**（`directWriteBelow` 或 `insertBelowOnComplete`；`startBackgroundQuickInsertJob({ commitMode })`）：
+- **合并写入结构**（`reuseSameResultBlock`）：
+  - 根标题：`AI · **提示名**`（不含选区）
+  - 每次结果：根下新增粗体条目标题（选区文本，超长截断）→ 正文挂在该条目下
+  - 查找：`findReusableQuickResultRoot` 扫源块 `lastChild` 子树（或 `after` 同级后方）中带 `srs.ai.quickResult` 且 `srs.ai.promptLabel` 相等的块
+  - **复用成功时**：
+    1. 将结果根 `srs.ai.status` 提升为 `kept`（若仍是 preview）
+    2. `detachJobsForResultRoot` 卸掉仍指向该根的旧 preview job（**不** `deleteBlocks`）
+    3. 当前 job 立即结束、不进预览态  
+    防止「第一次 preview 未点保留 → 第二次合并追加 → 取消/离场旧 job 把整棵含历史删掉」
+  - **串行**：同一 `sourceBlockId + promptLabel` 的合并插入经 `runSerializedReuseInsert` 排队，降低连点并发各建一棵根的概率
+- **标签写入**：`core.editor.insertTag(null, rootId, alias)`；已有同名 tag ref（type=2）则跳过；失败抛错、插入失败可见（不静默）
+- **后台路径**（`directWriteBelow` 或 `insertBelowOnComplete`；`startBackgroundQuickInsertJob({ commitMode, tags, reuseSameResultBlock })`）：
   1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）；成功路径不 toast
   2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
-  3. **直接写入**（`commitMode: "direct"`）：以 `lastChild` 写入 `AI · 提示名` 树，`srs.ai.status=kept`；成功后**立即结束 job**（无预览罩层、离开面板不删内容）
-  4. **预览写入**（`commitMode: "preview"`，默认）：以 `lastChild` 写入预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
-  5. **失败**：生成失败（非 `CANCELLED`）或插入失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。Jobs 面板当前空挂（`AIQuickJobsPanel` return null），故 toast 为用户可见主通道；未预期异常路径同
-  6. 预览 UI（仅 preview）：结果根 `.orca-block` 加罩层 class；根操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）。无选择时显示「保留全部 / 取消」；有选择时增加「已选 N 项 / 保留所选」
+  3. **直接写入**（`commitMode: "direct"`）或 **合并复用成功**（`insert.reused`）：写入后**立即结束 job**（无预览罩层）
+  4. **预览写入**（`commitMode: "preview"` 且新建根）：以 `lastChild` 写入预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
+  5. **失败**：生成失败（非 `CANCELLED`）或插入/打标失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。Jobs 面板当前空挂（`AIQuickJobsPanel` return null），故 toast 为用户可见主通道；未预期异常路径同
+  6. 预览 UI（仅 preview 且新建根）：结果根 `.orca-block` 加罩层 class；根操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）。无选择时显示「保留全部 / 取消」；有选择时增加「已选 N 项 / 保留所选」
   7. 用户操作（仅 preview）：
      - **选择候选** `toggleBackgroundQuickJobBlockSelection`：预览树每个**子孙块**悬停显示「选择」（`AIBlockLoadingMount` + `MutationObserver` 补挂）。选择只更新 job 的 `selectedResultBlockIds`，**不调用移动/删除命令**；选中后按钮与浅绿色状态常显，可再次点击取消。父块选择代表整棵子树：已选后代自动合并；祖先已选时后代显示「随上级选择」且不重复计数。每个 job 的异步选择更新串行化，避免快速连续点击丢选择
      - **保留所选** `keepSelectedBackgroundQuickJob` → `keepSelectedQuickResultBlocks`：确认时有界读取预览树（最多 500 块、100 层），重新校验并按树前序归一化所选子树根；一次 `moveBlocks(orderedRoots, root, "after")` 保持原文档顺序，再 `deleteBlocks` 清理「AI · 提示名」外壳与未选分支。成功后结束 job 并 toast「已保留 N 项」；失败保留 job、选择和可见预览以便重试。若 move 已成功而 delete 失败，重试可识别已移到结果根同级的候选并继续清理
      - **保留全部** `keepBackgroundQuickJob`：把 `srs.ai.status` 写成 `kept` 并结束预览态（卸罩层/按钮；整棵内容保留）。属性写入失败时仍卸预览 UI，并 `warn` 提示
      - **取消** `dismissBackgroundQuickJob`：删除预览树并结束任务；仅选择尚未确认时仍按未保存预览处理
-  8. **离开面板默认取消**（仅仍挂着的 preview job）：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树；error 仅清任务）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览。**直接写入**成功后无 job，不受此影响
+  8. **离开面板默认取消**（仅仍挂着的 preview job）：任务记录启动时 `activePanel` + 视图指纹（`panelId`/`panelViewKey`）。用户切换/关闭该面板视图且未点保留时，`dismissJobsLeftBehindOnPanelLeave` 按取消处理（generating 静默中止；ready 删预览树；error 仅清任务）。生成结束/插入后也会再校验，避免写完立刻离开留下脏预览。**直接写入 / 合并复用**成功后无 job，不受此影响
 - **插入净化**（`sanitizeAiTextForOrcaInsert`，在 `buildQuickResultInsertPlan` 内；顺序关键）：
   1. `[[n]](url)` / `[n](url)` / `〔n〕(url)` → `[源n](url)`（合法半角 Markdown，宿主可点）
   2. 无 URL 的 `[[n]]` → `〔n〕`（防块引用）
@@ -207,4 +222,4 @@ makeAICard / interactiveAICard（别名）
 
 ## 相关测试
 
-`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow` + `insertQuickResult` 位置/kept 状态 + 候选选择归一化 / 多子树顺序保留 / 部分失败重试 / `isStrictDescendantOf`）、`aiQuickInteractJobs.test.ts`（后台 preview keep / direct 直接 kept 落盘 / 多选暂存与确认 / 失败保留选择 / 离开面板取消）
+`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow`/`resultTags`/`reuseSameResultBlock` + `insertQuickResult` 打标/合并写入 + 候选选择归一化）、`aiQuickInteractJobs.test.ts`（后台 preview/direct/tags/reuse 跳过预览 / 多选与离开面板取消）

@@ -206,7 +206,13 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
       const result = await insertQuickResultAsChild(
         blockId,
         text,
-        aiQuickInteractState.promptLabel
+        aiQuickInteractState.promptLabel,
+        aiQuickInteractState.selectedText,
+        {
+          status: "kept",
+          tags: [...aiQuickInteractState.resultTags],
+          reuseSameResultBlock: aiQuickInteractState.reuseSameResultBlock
+        }
       )
       if (!result.success) {
         orca.notify("error", result.error, { title: "AI 快捷交互" })

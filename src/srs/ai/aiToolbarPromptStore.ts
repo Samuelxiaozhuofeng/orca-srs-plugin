@@ -32,6 +32,16 @@ export type ToolbarAIPromptItem = {
    */
   directWriteBelow: boolean
   /**
+   * 结果块自动打上的标签（Orca alias，无 # 前缀）。空数组 = 不打标签。
+   * 旧数据无此字段时按 [] 兼容。
+   */
+  resultTags: string[]
+  /**
+   * 为 true 时：同一源块内多次使用本提示词，结果追加到已有「AI · 提示名」结果根下，
+   * 不每次新建一棵结果树。缺省 false。
+   */
+  reuseSameResultBlock: boolean
+  /**
    * 本提示词专用模型 id。空字符串 = 使用「AI 服务设置」中的全局 model。
    * 旧数据无此字段时按 "" 兼容。
    */
@@ -45,6 +55,8 @@ export type ToolbarAIPrompt = {
   includeBlockContext: boolean
   insertBelowOnComplete: boolean
   directWriteBelow: boolean
+  resultTags: string[]
+  reuseSameResultBlock: boolean
   model: string
 }
 
@@ -64,6 +76,8 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     includeBlockContext: true,
     insertBelowOnComplete: true,
     directWriteBelow: false,
+    resultTags: [],
+    reuseSameResultBlock: false,
     model: ""
   },
   {
@@ -72,6 +86,8 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     includeBlockContext: false,
     insertBelowOnComplete: true,
     directWriteBelow: false,
+    resultTags: [],
+    reuseSameResultBlock: false,
     model: ""
   },
   {
@@ -80,9 +96,44 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     includeBlockContext: true,
     insertBelowOnComplete: true,
     directWriteBelow: false,
+    resultTags: [],
+    reuseSameResultBlock: false,
     model: ""
   }
 ]
+
+/**
+ * 解析标签输入：支持 string / string[] / 逗号·空格·换行分隔；去掉 # 前缀；去空；大小写不敏感去重。
+ */
+export function parseResultTagsInput(raw: unknown): string[] {
+  const parts: string[] = []
+  const pushOne = (s: string) => {
+    const cleaned = s.replace(/^#+/, "").trim()
+    if (cleaned) parts.push(cleaned)
+  }
+  if (typeof raw === "string") {
+    for (const chunk of raw.split(/[,，;；\n\r\t]+|\s+/)) {
+      pushOne(chunk)
+    }
+  } else if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === "string") {
+        for (const chunk of item.split(/[,，;；\n\r\t]+|\s+/)) {
+          pushOne(chunk)
+        }
+      }
+    }
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const tag of parts) {
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(tag)
+  }
+  return out
+}
 
 /**
  * 内存缓存：hydrate/save 后命中。
@@ -108,6 +159,9 @@ function isPromptItemShape(value: unknown): value is {
   includeBlockContext?: unknown
   insertBelowOnComplete?: unknown
   directWriteBelow?: unknown
+  resultTags?: unknown
+  tags?: unknown
+  reuseSameResultBlock?: unknown
   model?: unknown
 } {
   if (!value || typeof value !== "object") return false
@@ -129,6 +183,7 @@ function parseOptionalModelField(value: unknown): string {
  * 清洗任意输入为合法提示词项（trim + 过滤空 label/prompt）。
  * 非数组 → 空数组；允许结果为空。
  * 旧项无 includeBlockContext 时默认 true；无 insertBelowOnComplete / directWriteBelow 时默认 false；
+ * 无 resultTags / reuseSameResultBlock 时默认 [] / false；
  * 无 model 时默认 ""（用全局服务设置模型）。
  * 若 directWriteBelow 与 insertBelowOnComplete 皆 true，保留直接写入、关掉预览插入。
  */
@@ -146,12 +201,20 @@ export function normalizeToolbarAIPromptItems(raw: unknown): ToolbarAIPromptItem
       if (directWriteBelow && insertBelowOnComplete) {
         insertBelowOnComplete = false
       }
+      // resultTags 优先；兼容误写的 tags 字段
+      const tagsRaw =
+        item.resultTags !== undefined ? item.resultTags : item.tags
       return {
         label: item.label.trim(),
         prompt: item.prompt.trim(),
         includeBlockContext: parseBooleanField(item.includeBlockContext, true),
         insertBelowOnComplete,
         directWriteBelow,
+        resultTags: parseResultTagsInput(tagsRaw),
+        reuseSameResultBlock: parseBooleanField(
+          item.reuseSameResultBlock,
+          false
+        ),
         model: parseOptionalModelField(item.model)
       }
     })
@@ -166,6 +229,8 @@ function toToolbarAIPrompts(items: ToolbarAIPromptItem[]): ToolbarAIPrompt[] {
     includeBlockContext: item.includeBlockContext,
     insertBelowOnComplete: item.insertBelowOnComplete,
     directWriteBelow: item.directWriteBelow,
+    resultTags: [...item.resultTags],
+    reuseSameResultBlock: item.reuseSameResultBlock,
     model: item.model
   }))
 }
@@ -178,6 +243,8 @@ function defaultPrompts(): ToolbarAIPrompt[] {
       includeBlockContext: item.includeBlockContext,
       insertBelowOnComplete: item.insertBelowOnComplete,
       directWriteBelow: item.directWriteBelow,
+      resultTags: [...item.resultTags],
+      reuseSameResultBlock: item.reuseSameResultBlock,
       model: item.model
     }))
   )

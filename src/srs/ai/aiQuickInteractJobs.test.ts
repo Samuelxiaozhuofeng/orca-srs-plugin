@@ -105,7 +105,11 @@ describe("startBackgroundQuickInsertJob", () => {
       "AI 解释正文",
       "举例说明",
       "工作记忆",
-      { status: "preview" }
+      {
+        status: "preview",
+        tags: [],
+        reuseSameResultBlock: false
+      }
     )
 
     // Verify silent execution: no info/success notifications spammed
@@ -141,6 +145,115 @@ describe("startBackgroundQuickInsertJob", () => {
     expect(keepQuickResult).toHaveBeenCalledWith(999)
   })
 
+  it("passes tags and reuseSameResultBlock to insert", async () => {
+    await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "trade-offs",
+      blockText: "context",
+      promptLabel: "英语闪卡",
+      promptText: "解释词义",
+      includeBlockContext: true,
+      commitMode: "direct",
+      tags: ["英语", "词汇"],
+      reuseSameResultBlock: true
+    })
+    const { insertQuickResultAsChild } = await import("./aiQuickInteract")
+    expect(insertQuickResultAsChild).toHaveBeenCalledWith(
+      10,
+      "AI 解释正文",
+      "英语闪卡",
+      "trade-offs",
+      {
+        status: "kept",
+        tags: ["英语", "词汇"],
+        reuseSameResultBlock: true
+      }
+    )
+  })
+
+  it("skips preview job when insert reuses an existing result root", async () => {
+    const { insertQuickResultAsChild } = await import("./aiQuickInteract")
+    vi.mocked(insertQuickResultAsChild).mockResolvedValueOnce({
+      success: true,
+      blockId: 888,
+      reused: true
+    })
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "word",
+      blockText: "ctx",
+      promptLabel: "英语闪卡",
+      promptText: "解释",
+      includeBlockContext: true,
+      commitMode: "preview",
+      reuseSameResultBlock: true
+    })
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
+    ).toBeUndefined()
+  })
+
+  it("detaches prior ready jobs on the same root when a later insert reuses it", async () => {
+    const { insertQuickResultAsChild, dismissQuickResult } = await import(
+      "./aiQuickInteract"
+    )
+    // 模拟第一次预览：真实走 job 队列留下 ready 根 888
+    vi.mocked(insertQuickResultAsChild).mockResolvedValueOnce({
+      success: true,
+      blockId: 888,
+      reused: false
+    })
+    const firstId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "a",
+      blockText: "ctx",
+      promptLabel: "英语闪卡",
+      promptText: "解释",
+      includeBlockContext: true,
+      commitMode: "preview",
+      reuseSameResultBlock: true
+    })
+    const first = (
+      aiQuickJobsState.jobs as Array<{
+        id: string
+        status: string
+        resultRootBlockId: number | null
+      }>
+    ).find((j) => j.id === firstId)
+    expect(first?.status).toBe("ready")
+    expect(first?.resultRootBlockId).toBe(888)
+
+    // 第二次合并复用同一根
+    vi.mocked(insertQuickResultAsChild).mockResolvedValueOnce({
+      success: true,
+      blockId: 888,
+      reused: true
+    })
+    const secondId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "b",
+      blockText: "ctx",
+      promptLabel: "英语闪卡",
+      promptText: "解释",
+      includeBlockContext: true,
+      commitMode: "preview",
+      reuseSameResultBlock: true
+    })
+
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === firstId)
+    ).toBeUndefined()
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === secondId)
+    ).toBeUndefined()
+    // 不得 delete 结果树
+    expect(dismissQuickResult).not.toHaveBeenCalled()
+  })
+
   it("direct commit inserts as kept and removes job without preview UI", async () => {
     const jobId = await startBackgroundQuickInsertJob({
       pluginName: "orca-srs",
@@ -162,7 +275,11 @@ describe("startBackgroundQuickInsertJob", () => {
       "AI 解释正文",
       "查词",
       "apple",
-      { status: "kept" }
+      {
+        status: "kept",
+        tags: [],
+        reuseSameResultBlock: false
+      }
     )
     expect(keepQuickResult).not.toHaveBeenCalled()
     // 直接写入不保留 ready 任务
