@@ -782,6 +782,26 @@
   justify-content: flex-end;
 }
 
+/* 表单：字段区可滚动，底栏固定可见（新增选项后总高易超过 80vh） */
+.ai-prompt-manager__form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.ai-prompt-manager__form-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .ai-prompt-manager__field {
   display: flex;
   flex-direction: column;

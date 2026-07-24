@@ -68,6 +68,7 @@ describe("startBackgroundQuickInsertJob", () => {
   beforeEach(() => {
     aiQuickJobsState.jobs = []
     installOrcaPanel({ view: "block", blockId: 10 })
+    vi.clearAllMocks()
   })
 
   afterEach(async () => {
@@ -103,7 +104,8 @@ describe("startBackgroundQuickInsertJob", () => {
       10,
       "AI 解释正文",
       "举例说明",
-      "工作记忆"
+      "工作记忆",
+      { status: "preview" }
     )
 
     // Verify silent execution: no info/success notifications spammed
@@ -137,10 +139,41 @@ describe("startBackgroundQuickInsertJob", () => {
     await keepBackgroundQuickJob(jobId)
     const { keepQuickResult } = await import("./aiQuickInteract")
     expect(keepQuickResult).toHaveBeenCalledWith(999)
-    const remaining = (aiQuickJobsState.jobs as Array<{ id: string }>).find(
-      (j) => j.id === jobId
+  })
+
+  it("direct commit inserts as kept and removes job without preview UI", async () => {
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "apple",
+      blockText: "I like apple pie",
+      promptLabel: "查词",
+      promptText: "解释词义",
+      includeBlockContext: true,
+      commitMode: "direct"
+    })
+
+    expect(jobId).toMatch(/^qi-job-/)
+    const { insertQuickResultAsChild, keepQuickResult } = await import(
+      "./aiQuickInteract"
     )
-    expect(remaining).toBeUndefined()
+    expect(insertQuickResultAsChild).toHaveBeenCalledWith(
+      10,
+      "AI 解释正文",
+      "查词",
+      "apple",
+      { status: "kept" }
+    )
+    expect(keepQuickResult).not.toHaveBeenCalled()
+    // 直接写入不保留 ready 任务
+    expect(
+      (aiQuickJobsState.jobs as Array<{ id: string }>).find((j) => j.id === jobId)
+    ).toBeUndefined()
+    expect((globalThis as any).orca.notify).not.toHaveBeenCalledWith(
+      "success",
+      expect.anything(),
+      expect.anything()
+    )
   })
 
   it("still ends preview when keep property write fails", async () => {

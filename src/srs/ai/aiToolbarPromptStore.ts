@@ -20,10 +20,17 @@ export type ToolbarAIPromptItem = {
   includeBlockContext: boolean
   /**
    * 为 true 时：选中菜单项后立即后台请求，不弹窗；
-   * 完成后把结果作为兄弟块插入到查询块下方，用户可再选「插入为子块」或关闭。
+   * 完成后以**预览态**写入查询块下方，用户可再选保留 / 插入为子块或关闭。
+   * 与 `directWriteBelow` 互斥；保存时若二者皆 true，以直接写入为准。
    * 缺省（旧数据无此字段）按 false：保持弹窗确认流程。
    */
   insertBelowOnComplete: boolean
+  /**
+   * 为 true 时：选中菜单项后立即后台请求，不弹窗；
+   * 生成完成后**直接落盘为正式内容**（`srs.ai.status=kept`），无需预览确认。
+   * 与 `insertBelowOnComplete` 互斥；缺省（旧数据无此字段）按 false。
+   */
+  directWriteBelow: boolean
   /**
    * 本提示词专用模型 id。空字符串 = 使用「AI 服务设置」中的全局 model。
    * 旧数据无此字段时按 "" 兼容。
@@ -37,6 +44,7 @@ export type ToolbarAIPrompt = {
   prompt: string
   includeBlockContext: boolean
   insertBelowOnComplete: boolean
+  directWriteBelow: boolean
   model: string
 }
 
@@ -55,6 +63,7 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     prompt: "请针对选中文本给出 1～3 个具体、易懂的例子。",
     includeBlockContext: true,
     insertBelowOnComplete: true,
+    directWriteBelow: false,
     model: ""
   },
   {
@@ -62,6 +71,7 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     prompt: "若选中文本主要是中文则译为英文；否则译为简体中文。保持原意与语气。",
     includeBlockContext: false,
     insertBelowOnComplete: true,
+    directWriteBelow: false,
     model: ""
   },
   {
@@ -69,6 +79,7 @@ export const DEFAULT_TOOLBAR_AI_PROMPTS: ToolbarAIPromptItem[] = [
     prompt: "请进一步解释选中文本：讲清含义、难点与必要背景，简洁分点。",
     includeBlockContext: true,
     insertBelowOnComplete: true,
+    directWriteBelow: false,
     model: ""
   }
 ]
@@ -96,6 +107,7 @@ function isPromptItemShape(value: unknown): value is {
   prompt: string
   includeBlockContext?: unknown
   insertBelowOnComplete?: unknown
+  directWriteBelow?: unknown
   model?: unknown
 } {
   if (!value || typeof value !== "object") return false
@@ -116,20 +128,33 @@ function parseOptionalModelField(value: unknown): string {
 /**
  * 清洗任意输入为合法提示词项（trim + 过滤空 label/prompt）。
  * 非数组 → 空数组；允许结果为空。
- * 旧项无 includeBlockContext 时默认 true；无 insertBelowOnComplete 时默认 false；
+ * 旧项无 includeBlockContext 时默认 true；无 insertBelowOnComplete / directWriteBelow 时默认 false；
  * 无 model 时默认 ""（用全局服务设置模型）。
+ * 若 directWriteBelow 与 insertBelowOnComplete 皆 true，保留直接写入、关掉预览插入。
  */
 export function normalizeToolbarAIPromptItems(raw: unknown): ToolbarAIPromptItem[] {
   if (!Array.isArray(raw)) return []
   return raw
     .filter(isPromptItemShape)
-    .map((item) => ({
-      label: item.label.trim(),
-      prompt: item.prompt.trim(),
-      includeBlockContext: parseBooleanField(item.includeBlockContext, true),
-      insertBelowOnComplete: parseBooleanField(item.insertBelowOnComplete, false),
-      model: parseOptionalModelField(item.model)
-    }))
+    .map((item) => {
+      let insertBelowOnComplete = parseBooleanField(
+        item.insertBelowOnComplete,
+        false
+      )
+      let directWriteBelow = parseBooleanField(item.directWriteBelow, false)
+      // 互斥：直接写入优先
+      if (directWriteBelow && insertBelowOnComplete) {
+        insertBelowOnComplete = false
+      }
+      return {
+        label: item.label.trim(),
+        prompt: item.prompt.trim(),
+        includeBlockContext: parseBooleanField(item.includeBlockContext, true),
+        insertBelowOnComplete,
+        directWriteBelow,
+        model: parseOptionalModelField(item.model)
+      }
+    })
     .filter((item) => item.label.length > 0 && item.prompt.length > 0)
 }
 
@@ -140,6 +165,7 @@ function toToolbarAIPrompts(items: ToolbarAIPromptItem[]): ToolbarAIPrompt[] {
     prompt: item.prompt,
     includeBlockContext: item.includeBlockContext,
     insertBelowOnComplete: item.insertBelowOnComplete,
+    directWriteBelow: item.directWriteBelow,
     model: item.model
   }))
 }
@@ -151,6 +177,7 @@ function defaultPrompts(): ToolbarAIPrompt[] {
       prompt: item.prompt.trim(),
       includeBlockContext: item.includeBlockContext,
       insertBelowOnComplete: item.insertBelowOnComplete,
+      directWriteBelow: item.directWriteBelow,
       model: item.model
     }))
   )

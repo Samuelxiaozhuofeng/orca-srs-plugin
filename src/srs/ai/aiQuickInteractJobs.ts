@@ -97,6 +97,9 @@ export function isJobPanelViewStillActive(job: QuickBackgroundJob): boolean {
   return current === job.panelViewKey
 }
 
+/** preview：写入后等用户确认；direct：直接 kept 落盘并结束任务 */
+export type QuickInsertCommitMode = "preview" | "direct"
+
 export type StartBackgroundQuickInsertOptions = {
   pluginName: string
   sourceBlockId: number
@@ -106,6 +109,8 @@ export type StartBackgroundQuickInsertOptions = {
   promptText: string
   includeBlockContext: boolean
   model?: string
+  /** 缺省 preview，兼容旧调用 */
+  commitMode?: QuickInsertCommitMode
 }
 
 function getValtioProxy<T extends object>(target: T): T {
@@ -152,7 +157,9 @@ export function hasActiveQuickBackgroundJobs(): boolean {
 }
 
 /**
- * 启动后台任务：静默请求 AI，成功后直接插入到目标块下方作为子块（成功路径不 toast）。
+ * 启动后台任务：静默请求 AI，成功后插入到目标块下方作为子块（成功路径不 toast）。
+ * - preview：`srs.ai.status=preview`，保留 job 供预览操作栏确认
+ * - direct：`srs.ai.status=kept`，落盘后立即结束 job（无预览 UI）
  * 失败路径必须 `orca.notify("error", …)`，因 Jobs 面板目前为空挂、用户否则看不到错误。
  */
 export async function startBackgroundQuickInsertJob(
@@ -168,6 +175,9 @@ export async function startBackgroundQuickInsertJob(
     orca.notify("warn", "选中文本为空，无法发送", { title })
     throw new Error("选中文本为空")
   }
+
+  const commitMode: QuickInsertCommitMode =
+    opts.commitMode === "direct" ? "direct" : "preview"
 
   const id = nextJobId()
   const controller = new AbortController()
@@ -218,7 +228,7 @@ export async function startBackgroundQuickInsertJob(
       return id
     }
 
-    // 生成期间用户已离开面板：默认取消，不写入预览块
+    // 生成期间用户已离开面板：默认取消，不写入块
     if (!isJobPanelViewStillActive(current)) {
       removeJob(id)
       return id
@@ -241,7 +251,8 @@ export async function startBackgroundQuickInsertJob(
       opts.sourceBlockId,
       result.text,
       opts.promptLabel,
-      opts.selectedText
+      opts.selectedText,
+      { status: commitMode === "direct" ? "kept" : "preview" }
     )
 
     const afterInsert = findJob(id)
@@ -256,7 +267,13 @@ export async function startBackgroundQuickInsertJob(
       return id
     }
 
-    // 插入后再次检查：若已离开面板，默认取消（删掉刚写入的预览树）
+    // 直接写入：内容已是正式 kept，结束任务，不进入预览态
+    if (commitMode === "direct") {
+      removeJob(id)
+      return id
+    }
+
+    // 预览路径：插入后再次检查；若已离开面板，默认取消（删掉刚写入的预览树）
     if (!isJobPanelViewStillActive(afterInsert)) {
       afterInsert.status = "ready"
       afterInsert.resultText = result.text

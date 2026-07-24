@@ -372,6 +372,14 @@ async function resolveBlockById(blockId: number): Promise<Block | null> {
 /** 相对查询块的插入位置 */
 export type QuickResultInsertPosition = "lastChild" | "after"
 
+/** 结果根块初始状态：preview 需用户确认；kept 为直接落盘 */
+export type QuickResultCommitStatus = "preview" | "kept"
+
+export type InsertQuickResultOptions = {
+  /** 缺省 preview（预览路径）；direct 路径传 kept */
+  status?: QuickResultCommitStatus
+}
+
 /**
  * 插入形态：
  * - lastChild（插入为子块）:
@@ -391,7 +399,8 @@ export async function insertQuickResult(
   resultText: string,
   promptLabel: string,
   position: QuickResultInsertPosition,
-  selectedText?: string
+  selectedText?: string,
+  options?: InsertQuickResultOptions
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
   const body = resultText.trim()
   if (!body) {
@@ -399,6 +408,8 @@ export async function insertQuickResult(
   }
 
   const positionLabel = position === "after" ? "块下方" : "子块"
+  const status: QuickResultCommitStatus =
+    options?.status === "kept" ? "kept" : "preview"
 
   try {
     const refBlock = await resolveBlockById(refBlockId)
@@ -424,31 +435,38 @@ export async function insertQuickResult(
         }
         titleId = id
 
-        // 写入 AI 内联块标识属性与预览状态（BlockProperty[]，与 core.editor.setProperties 一致）
+        // 写入 AI 内联块标识属性与状态（BlockProperty[]，与 core.editor.setProperties 一致）
+        // 失败必须抛出：勿静默 success，否则 direct 路径会误以为已 kept 落盘
+        const props: Array<{ name: string; value: unknown; type: number }> = [
+          { name: "srs.ai.quickResult", value: true, type: 4 }, // Boolean
+          { name: "srs.ai.status", value: status, type: 1 }, // Text: preview | kept
+          { name: "srs.ai.promptLabel", value: promptLabel, type: 1 }
+        ]
+        if (selectedText) {
+          props.push({
+            name: "srs.ai.selectedText",
+            value: selectedText,
+            type: 1
+          })
+        }
         try {
-          const props: Array<{ name: string; value: unknown; type: number }> = [
-            { name: "srs.ai.quickResult", value: true, type: 4 }, // Boolean
-            { name: "srs.ai.status", value: "preview", type: 1 }, // Text
-            { name: "srs.ai.promptLabel", value: promptLabel, type: 1 }
-          ]
-          if (selectedText) {
-            props.push({
-              name: "srs.ai.selectedText",
-              value: selectedText,
-              type: 1
-            })
-          }
           await orca.commands.invokeEditorCommand(
             "core.editor.setProperties",
             null,
             [id],
             props
           )
-          const { invalidateBlockCache } = await import("../storage")
-          invalidateBlockCache(id)
         } catch (propErr) {
-          console.warn("[AI QuickInteract] 设置 srs.ai.quickResult 属性失败:", propErr)
+          console.error(
+            "[AI QuickInteract] 设置 srs.ai.quickResult 属性失败:",
+            propErr
+          )
+          const detail =
+            propErr instanceof Error ? propErr.message : String(propErr)
+          throw new Error(`设置 AI 结果属性失败: ${detail}`)
         }
+        const { invalidateBlockCache } = await import("../storage")
+        invalidateBlockCache(id)
 
         const titleBlock = await resolveBlockById(id)
         if (!titleBlock) {
@@ -514,9 +532,17 @@ export async function insertQuickResultAsChild(
   parentBlockId: number,
   resultText: string,
   promptLabel: string,
-  selectedText?: string
+  selectedText?: string,
+  options?: InsertQuickResultOptions
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
-  return insertQuickResult(parentBlockId, resultText, promptLabel, "lastChild", selectedText)
+  return insertQuickResult(
+    parentBlockId,
+    resultText,
+    promptLabel,
+    "lastChild",
+    selectedText,
+    options
+  )
 }
 
 /** 将结果树插入到查询块下方（同级兄弟） */
@@ -524,9 +550,17 @@ export async function insertQuickResultAfter(
   sourceBlockId: number,
   resultText: string,
   promptLabel: string,
-  selectedText?: string
+  selectedText?: string,
+  options?: InsertQuickResultOptions
 ): Promise<{ success: true; blockId: number } | { success: false; error: string }> {
-  return insertQuickResult(sourceBlockId, resultText, promptLabel, "after", selectedText)
+  return insertQuickResult(
+    sourceBlockId,
+    resultText,
+    promptLabel,
+    "after",
+    selectedText,
+    options
+  )
 }
 
 /**
@@ -986,8 +1020,8 @@ export async function startAIQuickInteractFlow(
     return
   }
 
-  // 后台插入模式：不弹窗，请求完成后写入查询块下方
-  if (prompt.insertBelowOnComplete) {
+  // 后台插入：预览确认 或 直接写入（均不弹窗）
+  if (prompt.directWriteBelow || prompt.insertBelowOnComplete) {
     const { startBackgroundQuickInsertJob } = await import(
       "./aiQuickInteractJobs"
     )
@@ -999,7 +1033,8 @@ export async function startAIQuickInteractFlow(
       promptLabel: prompt.label,
       promptText: prompt.prompt,
       includeBlockContext: prompt.includeBlockContext,
-      model: prompt.model
+      model: prompt.model,
+      commitMode: prompt.directWriteBelow ? "direct" : "preview"
     })
     return
   }

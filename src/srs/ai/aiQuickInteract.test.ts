@@ -22,6 +22,7 @@ import {
   resetToolbarAIPromptsToDefault,
   saveToolbarAIPrompts
 } from "./aiToolbarPromptStore"
+import { clearAISettingsCache } from "./aiSettingsSchema"
 
 const PLUGIN = "orca-srs"
 
@@ -194,15 +195,17 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
       prompt: "请摘要",
       includeBlockContext: false,
       insertBelowOnComplete: false,
+      directWriteBelow: false,
       model: ""
     })
-    // 旧项无 includeBlockContext → true；无 insertBelowOnComplete → false；无 model → ""
+    // 旧项无 includeBlockContext → true；无 insertBelowOnComplete / directWriteBelow → false；无 model → ""
     expect(list[1]).toEqual({
       id: "1",
       label: "翻译",
       prompt: "译成英文",
       includeBlockContext: true,
       insertBelowOnComplete: false,
+      directWriteBelow: false,
       model: ""
     })
   })
@@ -228,6 +231,7 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         prompt: "旧提示",
         includeBlockContext: true,
         insertBelowOnComplete: false,
+        directWriteBelow: false,
         model: ""
       }
     ])
@@ -260,6 +264,7 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         prompt: "新内容",
         includeBlockContext: false,
         insertBelowOnComplete: true,
+        directWriteBelow: false,
         model: ""
       }
     ])
@@ -292,7 +297,41 @@ describe("getToolbarAIPrompts (prompt library store)", () => {
         prompt: "查今日金价",
         includeBlockContext: false,
         insertBelowOnComplete: true,
+        directWriteBelow: false,
         model: "grok-4.5"
+      }
+    ])
+  })
+
+  it("parses directWriteBelow and prefers it over insertBelowOnComplete when both true", () => {
+    ;(globalThis as any).orca = {
+      state: {
+        plugins: {
+          [PLUGIN]: {
+            settings: {
+              [PROMPT_LIBRARY_STORAGE_KEY]: [
+                {
+                  label: "查词",
+                  prompt: "解释词义",
+                  includeBlockContext: true,
+                  insertBelowOnComplete: true,
+                  directWriteBelow: true
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+    expect(getToolbarAIPrompts(PLUGIN)).toEqual([
+      {
+        id: "0",
+        label: "查词",
+        prompt: "解释词义",
+        includeBlockContext: true,
+        insertBelowOnComplete: false,
+        directWriteBelow: true,
+        model: ""
       }
     ])
   })
@@ -351,7 +390,13 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         { label: "", prompt: "x" },
         { label: "y", prompt: "  " },
         null,
-        { label: "B", prompt: "q" }
+        { label: "B", prompt: "q" },
+        {
+          label: "C",
+          prompt: "direct",
+          insertBelowOnComplete: true,
+          directWriteBelow: true
+        }
       ])
     ).toEqual([
       {
@@ -359,6 +404,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         prompt: "p",
         includeBlockContext: false,
         insertBelowOnComplete: true,
+        directWriteBelow: false,
         model: ""
       },
       {
@@ -366,6 +412,15 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         prompt: "q",
         includeBlockContext: true,
         insertBelowOnComplete: false,
+        directWriteBelow: false,
+        model: ""
+      },
+      {
+        label: "C",
+        prompt: "direct",
+        includeBlockContext: true,
+        insertBelowOnComplete: false,
+        directWriteBelow: true,
         model: ""
       }
     ])
@@ -402,6 +457,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         prompt: "  内容  ",
         includeBlockContext: false,
         insertBelowOnComplete: true,
+        directWriteBelow: false,
         model: ""
       },
       {
@@ -409,6 +465,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         prompt: "丢弃",
         includeBlockContext: true,
         insertBelowOnComplete: false,
+        directWriteBelow: false,
         model: ""
       }
     ])
@@ -422,6 +479,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           prompt: "内容",
           includeBlockContext: false,
           insertBelowOnComplete: true,
+          directWriteBelow: false,
           model: ""
         }
       ])
@@ -433,6 +491,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         prompt: "内容",
         includeBlockContext: false,
         insertBelowOnComplete: true,
+        directWriteBelow: false,
         model: ""
       }
     ])
@@ -486,6 +545,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           prompt: p.prompt.trim(),
           includeBlockContext: p.includeBlockContext,
           insertBelowOnComplete: p.insertBelowOnComplete,
+          directWriteBelow: p.directWriteBelow,
           model: p.model
         }))
       )
@@ -512,6 +572,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
           prompt: "B",
           includeBlockContext: true,
           insertBelowOnComplete: false,
+          directWriteBelow: false,
           model: ""
         }
       ])
@@ -549,6 +610,7 @@ describe("normalizeToolbarAIPromptItems / saveToolbarAIPrompts (setData)", () =>
         prompt: "p",
         includeBlockContext: true,
         insertBelowOnComplete: false,
+        directWriteBelow: false,
         model: ""
       }
     ])
@@ -596,7 +658,7 @@ describe("insertQuickResult positions", () => {
     vi.restoreAllMocks()
   })
 
-  function setupInsertMock(opts?: { batchFail?: boolean }) {
+  function setupInsertMock(opts?: { batchFail?: boolean; propFail?: boolean }) {
     let nextId = 100
     const blocks: Record<number, any> = {
       10: {
@@ -629,6 +691,7 @@ describe("insertQuickResult positions", () => {
         return undefined
       }
       if (cmd === "core.editor.setProperties") {
+        if (opts?.propFail) throw new Error("setProperties denied")
         const targetIds = args[0] as number[]
         const props = args[1]
         for (const tid of targetIds) {
@@ -695,6 +758,37 @@ describe("insertQuickResult positions", () => {
     )
     expect(blocks[100].properties["srs.ai.quickResult"]).toBe(true)
     expect(blocks[100].properties["srs.ai.status"]).toBe("preview")
+  })
+
+  it("inserts with kept status when options.status is kept (direct write)", async () => {
+    const { blocks } = setupInsertMock()
+    const result = await insertQuickResult(
+      10,
+      "词义解释",
+      "查词",
+      "lastChild",
+      "apple",
+      { status: "kept" }
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(blocks[result.blockId].properties["srs.ai.status"]).toBe("kept")
+  })
+
+  it("returns failure when setProperties throws (no silent success)", async () => {
+    setupInsertMock({ propFail: true })
+    const result = await insertQuickResult(
+      10,
+      "词义解释",
+      "查词",
+      "lastChild",
+      "apple",
+      { status: "kept" }
+    )
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toContain("设置 AI 结果属性失败")
+    expect(result.error).toContain("setProperties denied")
   })
 
   it("updates property to kept when keepQuickResult is called", async () => {
@@ -1053,5 +1147,112 @@ describe("quick interact prompt helpers", () => {
 
   it("selection max constant is positive", () => {
     expect(QUICK_SELECTION_MAX).toBeGreaterThan(1000)
+  })
+})
+
+describe("startAIQuickInteractFlow commitMode routing", () => {
+  afterEach(() => {
+    clearToolbarAIPromptCache()
+    clearAISettingsCache()
+    vi.resetModules()
+    vi.doUnmock("./aiQuickInteractJobs")
+    vi.doUnmock("./aiDialogState")
+    vi.doUnmock("./aiQuickInteractState")
+    delete (globalThis as any).orca
+  })
+
+  async function runPreset(prompt: {
+    label: string
+    prompt: string
+    includeBlockContext: boolean
+    insertBelowOnComplete: boolean
+    directWriteBelow: boolean
+    model: string
+  }) {
+    const startJob = vi.fn(async () => "job-route")
+    const openDialog = vi.fn()
+    vi.doMock("./aiQuickInteractJobs", () => ({
+      startBackgroundQuickInsertJob: startJob
+    }))
+    vi.doMock("./aiDialogState", () => ({
+      isAIDialogBusyOrInReview: () => false
+    }))
+    vi.doMock("./aiQuickInteractState", () => ({
+      isAIQuickInteractOpen: () => false,
+      openAIQuickInteract: openDialog
+    }))
+
+    ;(globalThis as any).orca = {
+      notify: vi.fn(),
+      state: {
+        blocks: {
+          1: {
+            id: 1,
+            text: "Hello world example",
+            content: [{ t: "t", v: "Hello world example" }]
+          }
+        },
+        plugins: {
+          [PLUGIN]: {
+            settings: {
+              "ai.apiKey": "test-key",
+              [PROMPT_LIBRARY_STORAGE_KEY]: [prompt]
+            }
+          }
+        }
+      }
+    }
+
+    clearToolbarAIPromptCache()
+    clearAISettingsCache()
+    const { startAIQuickInteractFlow } = await import("./aiQuickInteract")
+    const cursor = makeCursor({
+      blockId: 1,
+      anchorOffset: 6,
+      focusOffset: 11
+    })
+    await startAIQuickInteractFlow(cursor, PLUGIN, {
+      mode: "preset",
+      promptId: "0"
+    })
+    return { startJob, openDialog }
+  }
+
+  it("routes directWriteBelow to commitMode direct", async () => {
+    const { startJob, openDialog } = await runPreset({
+      label: "查词",
+      prompt: "解释词义",
+      includeBlockContext: true,
+      insertBelowOnComplete: false,
+      directWriteBelow: true,
+      model: ""
+    })
+    expect(openDialog).not.toHaveBeenCalled()
+    expect(startJob).toHaveBeenCalledTimes(1)
+    expect(startJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptLabel: "查词",
+        selectedText: "world",
+        commitMode: "direct"
+      })
+    )
+  })
+
+  it("routes insertBelowOnComplete to commitMode preview", async () => {
+    const { startJob, openDialog } = await runPreset({
+      label: "举例说明",
+      prompt: "请举例",
+      includeBlockContext: true,
+      insertBelowOnComplete: true,
+      directWriteBelow: false,
+      model: ""
+    })
+    expect(openDialog).not.toHaveBeenCalled()
+    expect(startJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptLabel: "举例说明",
+        commitMode: "preview"
+      })
+    )
   })
 })

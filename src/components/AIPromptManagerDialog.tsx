@@ -17,6 +17,7 @@ export interface AIPromptManagerDialogProps {
   initialPrompt: string
   initialIncludeBlockContext: boolean
   initialInsertBelowOnComplete: boolean
+  initialDirectWriteBelow: boolean
   /** 覆盖全局 model；空 = 用服务设置 */
   initialModel: string
   /** 服务设置中的默认 model（展示用） */
@@ -57,6 +58,7 @@ function PromptDraftForm(props: {
   initialPrompt: string
   initialIncludeBlockContext: boolean
   initialInsertBelowOnComplete: boolean
+  initialDirectWriteBelow: boolean
   initialModel: string
   defaultServiceModel: string
   modelOptions: readonly string[]
@@ -73,8 +75,12 @@ function PromptDraftForm(props: {
   const [includeBlockContext, setIncludeBlockContext] = useState(
     props.initialIncludeBlockContext
   )
+  // 预览插入 / 直接写入互斥；二者皆关 = 弹窗路径
   const [insertBelowOnComplete, setInsertBelowOnComplete] = useState(
-    props.initialInsertBelowOnComplete
+    props.initialDirectWriteBelow ? false : props.initialInsertBelowOnComplete
+  )
+  const [directWriteBelow, setDirectWriteBelow] = useState(
+    props.initialDirectWriteBelow
   )
   const [model, setModel] = useState(props.initialModel)
 
@@ -95,120 +101,147 @@ function PromptDraftForm(props: {
   })()
 
   return (
-    <>
-      <section className="ai-prompt-manager__field">
-        <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-label">
-          名称
-        </label>
-        <input
-          id="ai-pm-label"
-          type="text"
-          className="ai-prompt-manager__input"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={stopEditorKeyCapture}
-          onKeyUp={stopEditorKeyCapture}
-          onKeyPress={stopEditorKeyCapture}
-          onMouseDown={stopBubble}
-          onClick={stopBubble}
-          placeholder="显示在工具栏菜单中的名称"
-          disabled={busy}
-          autoFocus
-        />
-      </section>
-      <section className="ai-prompt-manager__field">
-        <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-prompt">
-          提示词
-        </label>
-        <textarea
-          id="ai-pm-prompt"
-          className="ai-prompt-manager__textarea"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={stopEditorKeyCapture}
-          onKeyUp={stopEditorKeyCapture}
-          onKeyPress={stopEditorKeyCapture}
-          onMouseDown={stopBubble}
-          onClick={stopBubble}
-          placeholder="对选中文本执行的指令正文"
-          rows={6}
-          disabled={busy}
-        />
-      </section>
-      <section className="ai-prompt-manager__field">
-        <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-model">
-          模型
-        </label>
-        <div className="ai-prompt-manager__model-row">
-          <select
-            id="ai-pm-model"
-            className="ai-prompt-manager__input ai-prompt-manager__select"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
+    <div className="ai-prompt-manager__form">
+      <div className="ai-prompt-manager__form-scroll">
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-label">
+            名称
+          </label>
+          <input
+            id="ai-pm-label"
+            type="text"
+            className="ai-prompt-manager__input"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
             onKeyDown={stopEditorKeyCapture}
+            onKeyUp={stopEditorKeyCapture}
+            onKeyPress={stopEditorKeyCapture}
             onMouseDown={stopBubble}
-            disabled={busy || props.isFetchingModels}
-          >
-            <option value="">{defaultLabel}</option>
-            {selectOptions.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="ai-prompt-manager__btn ai-prompt-manager__btn--secondary"
-            onClick={props.onRefreshModels}
-            disabled={busy || props.isFetchingModels}
-            title="按 AI 服务设置中的 Key/URL 拉取 /models"
-          >
-            {props.isFetchingModels ? "拉取中…" : "刷新模型"}
-          </button>
-        </div>
-        {props.modelsError ? (
-          <p className="ai-prompt-manager__field-error" role="alert">
-            {props.modelsError}
+            onClick={stopBubble}
+            placeholder="显示在工具栏菜单中的名称"
+            disabled={busy}
+            autoFocus
+          />
+        </section>
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-prompt">
+            提示词
+          </label>
+          <textarea
+            id="ai-pm-prompt"
+            className="ai-prompt-manager__textarea"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={stopEditorKeyCapture}
+            onKeyUp={stopEditorKeyCapture}
+            onKeyPress={stopEditorKeyCapture}
+            onMouseDown={stopBubble}
+            onClick={stopBubble}
+            placeholder="对选中文本执行的指令正文"
+            rows={5}
+            disabled={busy}
+          />
+        </section>
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__section-label" htmlFor="ai-pm-model">
+            模型
+          </label>
+          <div className="ai-prompt-manager__model-row">
+            <select
+              id="ai-pm-model"
+              className="ai-prompt-manager__input ai-prompt-manager__select"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              onKeyDown={stopEditorKeyCapture}
+              onMouseDown={stopBubble}
+              disabled={busy || props.isFetchingModels}
+            >
+              <option value="">{defaultLabel}</option>
+              {selectOptions.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ai-prompt-manager__btn ai-prompt-manager__btn--secondary"
+              onClick={props.onRefreshModels}
+              disabled={busy || props.isFetchingModels}
+              title="按 AI 服务设置中的 Key/URL 拉取 /models"
+            >
+              {props.isFetchingModels ? "拉取中…" : "刷新模型"}
+            </button>
+          </div>
+          {props.modelsError ? (
+            <p className="ai-prompt-manager__field-error" role="alert">
+              {props.modelsError}
+            </p>
+          ) : null}
+          <p className="ai-prompt-manager__field-hint">
+            选项来自「AI / Firecrawl 服务设置」同一连接下的模型列表。选「默认」则使用服务设置中的当前模型。
           </p>
-        ) : null}
-        <p className="ai-prompt-manager__field-hint">
-          选项来自「AI / Firecrawl 服务设置」同一连接下的模型列表。选「默认」则使用服务设置中的当前模型。
-        </p>
-      </section>
-      <section className="ai-prompt-manager__field">
-        <label className="ai-prompt-manager__checkbox">
-          <input
-            type="checkbox"
-            checked={includeBlockContext}
-            onChange={(e) => setIncludeBlockContext(e.target.checked)}
-            onMouseDown={stopBubble}
-            disabled={busy}
-          />
-          <span>
-            包含块内容作上下文
-            <span className="ai-prompt-manager__checkbox-hint">
-              选区只是词/短语时，把整块发给 AI 作背景，避免脱离语境
+        </section>
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__checkbox">
+            <input
+              type="checkbox"
+              checked={includeBlockContext}
+              onChange={(e) => setIncludeBlockContext(e.target.checked)}
+              onMouseDown={stopBubble}
+              disabled={busy}
+            />
+            <span>
+              包含块内容作上下文
+              <span className="ai-prompt-manager__checkbox-hint">
+                选区只是词/短语时，把整块发给 AI 作背景，避免脱离语境
+              </span>
             </span>
-          </span>
-        </label>
-      </section>
-      <section className="ai-prompt-manager__field">
-        <label className="ai-prompt-manager__checkbox">
-          <input
-            type="checkbox"
-            checked={insertBelowOnComplete}
-            onChange={(e) => setInsertBelowOnComplete(e.target.checked)}
-            onMouseDown={stopBubble}
-            disabled={busy}
-          />
-          <span>
-            后台生成并插入到块下方
-            <span className="ai-prompt-manager__checkbox-hint">
-              点菜单即发送，不弹窗；结果写入查询块下方，可再选插入为子块或关闭
+          </label>
+        </section>
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__checkbox">
+            <input
+              type="checkbox"
+              checked={insertBelowOnComplete}
+              onChange={(e) => {
+                const on = e.target.checked
+                setInsertBelowOnComplete(on)
+                if (on) setDirectWriteBelow(false)
+              }}
+              onMouseDown={stopBubble}
+              disabled={busy}
+            />
+            <span>
+              后台生成 · 预览后确认
+              <span className="ai-prompt-manager__checkbox-hint">
+                点菜单即发送，不弹窗；结果以预览写入查询块下方，需再选保留 / 插入为子块或关闭
+              </span>
             </span>
-          </span>
-        </label>
-      </section>
+          </label>
+        </section>
+        <section className="ai-prompt-manager__field">
+          <label className="ai-prompt-manager__checkbox">
+            <input
+              type="checkbox"
+              checked={directWriteBelow}
+              onChange={(e) => {
+                const on = e.target.checked
+                setDirectWriteBelow(on)
+                if (on) setInsertBelowOnComplete(false)
+              }}
+              onMouseDown={stopBubble}
+              disabled={busy}
+            />
+            <span>
+              后台生成 · 直接写入块下方
+              <span className="ai-prompt-manager__checkbox-hint">
+                点菜单即发送，不弹窗；生成完成后直接落盘为正式内容，无需再确认（适合查词释义等）
+              </span>
+            </span>
+          </label>
+        </section>
+      </div>
       <footer className="ai-prompt-manager__footer">
         <button
           type="button"
@@ -227,6 +260,7 @@ function PromptDraftForm(props: {
               prompt: prompt.trim(),
               includeBlockContext,
               insertBelowOnComplete,
+              directWriteBelow,
               model: model.trim()
             })
           }
@@ -235,7 +269,7 @@ function PromptDraftForm(props: {
           {busy ? "保存中…" : "保存到提示词库"}
         </button>
       </footer>
-    </>
+    </div>
   )
 }
 
@@ -249,6 +283,7 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
     initialPrompt,
     initialIncludeBlockContext,
     initialInsertBelowOnComplete,
+    initialDirectWriteBelow,
     initialModel,
     defaultServiceModel,
     modelOptions,
@@ -297,7 +332,7 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
               </p>
             ) : (
               <p id="ai-prompt-manager-desc" className="ai-prompt-manager__subtitle">
-                名称会出现在选中文本后的工具栏菜单中。可配置模型、块上下文与后台插入。
+                名称会出现在选中文本后的工具栏菜单中。可配置模型、块上下文，以及预览确认或直接写入。
               </p>
             )}
           </div>
@@ -329,6 +364,7 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
             initialPrompt={initialPrompt}
             initialIncludeBlockContext={initialIncludeBlockContext}
             initialInsertBelowOnComplete={initialInsertBelowOnComplete}
+            initialDirectWriteBelow={initialDirectWriteBelow}
             initialModel={initialModel}
             defaultServiceModel={defaultServiceModel}
             modelOptions={modelOptions}
@@ -404,12 +440,19 @@ export function AIPromptManagerDialog(props: AIPromptManagerDialogProps) {
                             仅选区
                           </span>
                         )}
-                        {item.insertBelowOnComplete ? (
+                        {item.directWriteBelow ? (
                           <span
                             className="ai-prompt-manager__badge"
-                            title="后台生成，结果插入到查询块下方"
+                            title="后台生成，直接写入块下方为正式内容，无需确认"
                           >
-                            块下方
+                            直接写入
+                          </span>
+                        ) : item.insertBelowOnComplete ? (
+                          <span
+                            className="ai-prompt-manager__badge"
+                            title="后台生成，预览写入查询块下方，需再确认保留"
+                          >
+                            预览插入
                           </span>
                         ) : (
                           <span

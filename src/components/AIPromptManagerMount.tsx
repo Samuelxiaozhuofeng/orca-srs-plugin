@@ -42,6 +42,7 @@ function itemsToPayload(
     prompt: string
     includeBlockContext: boolean
     insertBelowOnComplete: boolean
+    directWriteBelow?: boolean
     model?: string
   }[]
 ): ToolbarAIPromptItem[] {
@@ -50,6 +51,7 @@ function itemsToPayload(
     prompt: i.prompt,
     includeBlockContext: i.includeBlockContext,
     insertBelowOnComplete: i.insertBelowOnComplete,
+    directWriteBelow: i.directWriteBelow === true,
     model: typeof i.model === "string" ? i.model.trim() : ""
   }))
 }
@@ -243,6 +245,7 @@ export function AIPromptManagerMount({ pluginName }: AIPromptManagerMountProps) 
       initialPrompt={snap.draftPrompt}
       initialIncludeBlockContext={snap.draftIncludeBlockContext}
       initialInsertBelowOnComplete={snap.draftInsertBelowOnComplete}
+      initialDirectWriteBelow={snap.draftDirectWriteBelow}
       initialModel={snap.draftModel}
       defaultServiceModel={defaultServiceModel}
       modelOptions={modelOptions}
