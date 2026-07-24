@@ -81,6 +81,13 @@ export function installDefaultEditorMocks(): void {
     async (command: string, _cursor: unknown, ...args: unknown[]) => {
       if (command === "core.editor.insertBlock") {
         const parentArg = args[0] as Block | null | undefined
+        const position = args[1] as
+          | "before"
+          | "after"
+          | "firstChild"
+          | "lastChild"
+          | null
+          | undefined
         const id = allocBlockId()
         const fragments = args[2] as Array<{ t: string; v: string }> | undefined
         const text = fragments?.[0]?.v ?? ""
@@ -91,7 +98,12 @@ export function installDefaultEditorMocks(): void {
         })
         if (parentArg?.id != null && mockBlocks[parentArg.id as number]) {
           const parent = mockBlocks[parentArg.id as number]
-          parent.children = [...(parent.children ?? []), id as DbId]
+          const kids = [...(parent.children ?? [])]
+          if (position === "firstChild") {
+            parent.children = [id as DbId, ...kids]
+          } else {
+            parent.children = [...kids, id as DbId]
+          }
         }
         return id
       }
@@ -115,6 +127,25 @@ export function installDefaultEditorMocks(): void {
         return undefined
       }
       if (command === "core.editor.batchInsertHTML") {
+        return undefined
+      }
+      if (command === "core.editor.batchInsertText") {
+        // args: refBlock, position, text, skipMarkdown?, skipTags?
+        const parentArg = args[0] as Block | null | undefined
+        const text = String(args[2] ?? "")
+        const lines = text.split("\n").filter((l) => l.trim().length > 0)
+        for (const line of lines) {
+          const id = allocBlockId()
+          mockBlocks[id] = makeBlock(id, {
+            text: line,
+            children: [],
+            parent: parentArg?.id
+          })
+          if (parentArg?.id != null && mockBlocks[parentArg.id as number]) {
+            const parent = mockBlocks[parentArg.id as number]
+            parent.children = [...(parent.children ?? []), id as DbId]
+          }
+        }
         return undefined
       }
       if (command === "core.editor.deleteBlocks") {

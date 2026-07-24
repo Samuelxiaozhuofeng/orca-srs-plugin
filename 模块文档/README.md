@@ -100,7 +100,7 @@
     - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
-27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-19 更新
+27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-24 更新（可选 AI 总结）
     - Firecrawl 抓取、本地主文提取（Readability）、标题/链接/代码清洗、预览摘要与告警、去重原子写入、可选 Topic / 今天阅读
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
 

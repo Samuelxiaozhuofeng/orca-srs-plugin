@@ -92,6 +92,8 @@ export default function WebImportDialog({
   const [article, setArticle] = useState<ScrapedArticle | null>(null)
   const [joinIR, setJoinIR] = useState(true)
   const [scheduleToday, setScheduleToday] = useState(false)
+  /** Optional AI summary via default model in AI / Firecrawl 服务设置 */
+  const [enableAiSummary, setEnableAiSummary] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -163,12 +165,18 @@ export default function WebImportDialog({
     setIsWorking(true)
     importCancelledRef.current = false
     const token = tokenGuardRef.current.next()
+    // Allow aborting the AI request if the dialog unmounts (page write is still fail-soft).
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
       const result = await importScrapedArticle({
         article,
         pluginName,
         joinIncrementalReading: joinIR,
-        scheduleToday: joinIR && scheduleToday
+        scheduleToday: joinIR && scheduleToday,
+        enableAiSummary,
+        signal: controller.signal
       })
 
       // Do not update UI / notify after cancel or a newer operation started.
@@ -188,11 +196,25 @@ export default function WebImportDialog({
             ? "，已加入渐进阅读并安排今天阅读"
             : "，已加入渐进阅读"
           : ""
-        orca.notify(
-          "success",
-          `已导入「${result.title}」${irPart}`,
-          { title: "网页导入" }
-        )
+        const aiPart =
+          result.aiSummary.status === "inserted"
+            ? "，已写入 AI 总结"
+            : result.aiSummary.status === "failed"
+              ? `（AI 总结失败：${result.aiSummary.error}）`
+              : ""
+        if (result.aiSummary.status === "failed") {
+          orca.notify(
+            "warn",
+            `已导入「${result.title}」${irPart}，但 AI 总结未写入：${result.aiSummary.error}`,
+            { title: "网页导入" }
+          )
+        } else {
+          orca.notify(
+            "success",
+            `已导入「${result.title}」${irPart}${aiPart}`,
+            { title: "网页导入" }
+          )
+        }
       }
       // Success must close even though isWorking is still true (handleClose blocks busy).
       finishAndClose()
@@ -203,11 +225,22 @@ export default function WebImportDialog({
       setError(formatError(e))
       console.error("[web-import] import failed:", e)
     } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null
+      }
       if (tokenGuardRef.current.isCurrent(token)) {
         setIsWorking(false)
       }
     }
-  }, [article, pluginName, joinIR, scheduleToday, isWorking, finishAndClose])
+  }, [
+    article,
+    pluginName,
+    joinIR,
+    scheduleToday,
+    enableAiSummary,
+    isWorking,
+    finishAndClose
+  ])
 
   return (
     <div
@@ -421,6 +454,31 @@ export default function WebImportDialog({
             「今天阅读」仅在加入渐进阅读时可用；默认不安排到今天。
           </div>
 
+          <label
+            style={{
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: isWorking ? "default" : "pointer",
+              color: "var(--orca-color-text-1)"
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={enableAiSummary}
+              disabled={isWorking}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setEnableAiSummary(e.target.checked)
+              }
+            />
+            AI 总结分析
+          </label>
+          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+            使用「AI / Firecrawl 服务设置」中的默认模型，在页面首块写入 Markdown
+            总结与要点。失败不回滚正文导入。
+          </div>
+
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button
               variant="outline"
@@ -447,7 +505,11 @@ export default function WebImportDialog({
               aria-disabled={isWorking}
               style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
             >
-              {isWorking ? "导入中…" : "导入"}
+              {isWorking
+                ? enableAiSummary
+                  ? "分析并导入中…"
+                  : "导入中…"
+                : "导入"}
             </Button>
           </div>
         </div>

@@ -98,9 +98,25 @@ export interface ImportScrapedArticleRequest {
   pluginName: string
   joinIncrementalReading?: boolean
   scheduleToday?: boolean
+  /**
+   * When true, call the default AI model (AI 服务设置) after body extract
+   * and insert an Orca-Markdown summary as the first child of the page root.
+   * Failures are non-fatal: the page still imports; see result.aiSummary.
+   */
+  enableAiSummary?: boolean
+  /** Abort AI summary request (import write itself is not cancelled mid-flight). */
+  signal?: AbortSignal
   /** Skip dedupe (tests only). */
   skipDedupe?: boolean
+  /** Test override for AI fetch. */
+  aiFetchImpl?: typeof fetch
 }
+
+/** Outcome of optional AI summary step (only present on kind=created). */
+export type WebImportAiSummaryStatus =
+  | { status: "skipped" }
+  | { status: "inserted"; model: string; summaryBlockId: DbId }
+  | { status: "failed"; error: string; code?: string }
 
 export type ImportWebArticleResult =
   | {
@@ -110,6 +126,7 @@ export type ImportWebArticleResult =
       canonicalUrl: string
       joinedIR: boolean
       scheduledToday: boolean
+      aiSummary: WebImportAiSummaryStatus
     }
   | {
       kind: "already_exists"

@@ -22,7 +22,8 @@ import {
   type ImportScrapedArticleRequest,
   type ImportWebArticleResult,
   type ScrapedArticle,
-  type ScrapeWebArticleRequest
+  type ScrapeWebArticleRequest,
+  type WebImportAiSummaryStatus
 } from "./types"
 import { validateAndNormalizeUrl } from "./webUrl"
 import {
@@ -36,6 +37,11 @@ import {
   sanitizeWebHtml,
   plainTextLength
 } from "./webHtml"
+import {
+  articleHtmlToPlainText,
+  generateWebArticleSummary,
+  insertWebArticleSummary
+} from "./webAiSummary"
 
 // ---------------------------------------------------------------------------
 // Re-exports (stable public API)
@@ -94,6 +100,13 @@ export {
   removeMatchingTopHeadingWeb,
   stripTrustedSiteSuffix
 } from "./webTitle"
+
+export {
+  generateWebArticleSummary,
+  insertWebArticleSummary,
+  articleHtmlToPlainText,
+  WEB_AI_SUMMARY_HEADING
+} from "./webAiSummary"
 
 // ---------------------------------------------------------------------------
 // Scrape orchestration (preview — no Orca write)
@@ -298,6 +311,7 @@ export async function importScrapedArticle(
   const { article, pluginName } = request
   const joinIR = request.joinIncrementalReading !== false
   const scheduleToday = Boolean(request.scheduleToday) && joinIR
+  const enableAiSummary = Boolean(request.enableAiSummary)
 
   if (!request.skipDedupe) {
     const existing = await findPageByCanonicalUrl(article.canonicalUrl)
@@ -313,6 +327,38 @@ export async function importScrapedArticle(
   }
 
   let rootBlockId: DbId | null = null
+  // Local abort for AI so core-import failure can cancel in-flight summary work.
+  const aiAbort = enableAiSummary ? new AbortController() : null
+  if (enableAiSummary && request.signal) {
+    if (request.signal.aborted) {
+      aiAbort!.abort()
+    } else {
+      request.signal.addEventListener(
+        "abort",
+        () => aiAbort!.abort(),
+        { once: true }
+      )
+    }
+  }
+  // Kick off AI as soon as we know we will create a page — overlaps with Orca writes.
+  const plainForAi = enableAiSummary
+    ? articleHtmlToPlainText(article.html) || article.excerpt || ""
+    : ""
+  const summaryPromise = enableAiSummary
+    ? generateWebArticleSummary({
+        pluginName,
+        title: article.title,
+        plainText: plainForAi,
+        signal: aiAbort!.signal,
+        fetchImpl: request.aiFetchImpl
+      })
+    : null
+  // Always observe the promise so a late rejection cannot become unhandled.
+  if (summaryPromise) {
+    void summaryPromise.catch(() => {
+      /* settled in applyAiSummaryToPage or catch below */
+    })
+  }
 
   try {
     rootBlockId = await createWebPage(article.title)
@@ -320,6 +366,12 @@ export async function importScrapedArticle(
 
     if (article.html.trim()) {
       await importHtmlAsOutline(rootBlockId, article.html)
+    }
+
+    // AI summary is optional and fail-soft: never roll back a successful page write.
+    let aiSummary: WebImportAiSummaryStatus = { status: "skipped" }
+    if (summaryPromise) {
+      aiSummary = await applyAiSummaryToPage(rootBlockId, summaryPromise)
     }
 
     if (joinIR) {
@@ -343,9 +395,19 @@ export async function importScrapedArticle(
       title: article.title,
       canonicalUrl: article.canonicalUrl,
       joinedIR: joinIR,
-      scheduledToday: scheduleToday
+      scheduledToday: scheduleToday,
+      aiSummary
     }
   } catch (error) {
+    // Cancel pending AI work when core import rolls back.
+    aiAbort?.abort()
+    if (summaryPromise) {
+      try {
+        await summaryPromise
+      } catch {
+        /* already logged / settled */
+      }
+    }
     const residualFromError =
       error instanceof WebImportError ? error.residualBlockId : undefined
     const toRollback = rootBlockId ?? residualFromError
@@ -359,6 +421,54 @@ export async function importScrapedArticle(
       "import_failed",
       { cause: error }
     )
+  }
+}
+
+/**
+ * Await AI generation + insert as first child. Errors stay visible but do not
+ * fail the import.
+ */
+async function applyAiSummaryToPage(
+  rootBlockId: DbId,
+  summaryPromise: ReturnType<typeof generateWebArticleSummary>
+): Promise<WebImportAiSummaryStatus> {
+  try {
+    const generated = await summaryPromise
+    if (!generated.ok) {
+      console.error(
+        "[web-import] AI 总结生成失败:",
+        generated.code,
+        generated.error
+      )
+      return {
+        status: "failed",
+        error: generated.error,
+        code: generated.code
+      }
+    }
+
+    const inserted = await insertWebArticleSummary(
+      rootBlockId,
+      generated.markdown
+    )
+    if (!inserted.ok) {
+      console.error("[web-import] AI 总结写入失败:", inserted.error)
+      return { status: "failed", error: inserted.error, code: "INSERT_FAILED" }
+    }
+
+    return {
+      status: "inserted",
+      model: generated.model,
+      summaryBlockId: inserted.summaryBlockId
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error("[web-import] AI 总结未预期异常:", error)
+    return {
+      status: "failed",
+      error: sanitizePublicError(message),
+      code: "UNEXPECTED"
+    }
   }
 }
 
