@@ -23,6 +23,7 @@ export type IRSessionChromeProps = {
   sequentialHasNext: boolean
   priority: number
   theme: IRReaderTheme
+  contentWidth: number
   viewMode: "reading" | "edit"
   embedded?: boolean
   postponeOpen: boolean
@@ -44,6 +45,7 @@ export type IRSessionChromeProps = {
   onImportanceClose: () => void
   onOpenPostpone: () => void
   onThemeChange: (theme: IRReaderTheme) => void
+  onContentWidthChange: (width: number) => void
   onToggleViewMode: () => void
   onBackToLibrary?: () => void
   onCompleteChapterClose: () => void
@@ -60,6 +62,7 @@ export default function IRSessionChrome({
   sequentialHasNext,
   priority,
   theme,
+  contentWidth,
   viewMode,
   embedded,
   postponeOpen,
@@ -81,6 +84,7 @@ export default function IRSessionChrome({
   onImportanceClose,
   onOpenPostpone,
   onThemeChange,
+  onContentWidthChange,
   onToggleViewMode,
   onBackToLibrary,
   onCompleteChapterClose,
@@ -110,10 +114,12 @@ export default function IRSessionChrome({
         open={moreOpen}
         isWorking={isWorking}
         theme={theme}
+        contentWidth={contentWidth}
         viewMode={viewMode}
         embedded={embedded}
         onPostpone={onOpenPostpone}
         onThemeChange={onThemeChange}
+        onContentWidthChange={onContentWidthChange}
         onToggleViewMode={onToggleViewMode}
         onBackToLibrary={onBackToLibrary}
       />

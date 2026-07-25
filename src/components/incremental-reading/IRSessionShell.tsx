@@ -39,6 +39,11 @@ import { useIRReadingContext } from "./useIRReadingContext"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
 import { readIRReaderTheme, writeIRReaderTheme } from "./irReaderThemeStorage"
 import {
+  clampIRReaderWidth,
+  readIRReaderWidth,
+  writeIRReaderWidth
+} from "./irReaderWidthStorage"
+import {
   shouldDismissIRImportancePanel,
   shouldDismissIRMorePanel
 } from "./irMorePanelDismiss"
@@ -107,6 +112,14 @@ export default function IRSessionShell({
     }
     return result.theme
   })
+  /** 阅读模式正文 max-width（px）；localStorage 全局偏好，默认 820 */
+  const [contentWidth, setContentWidth] = useState(() => {
+    const result = readIRReaderWidth()
+    if (!result.ok) {
+      console.warn("[IR] localStorage 读取正文宽度失败，使用默认 820:", result.error)
+    }
+    return result.width
+  })
   /** 顺序解锁「完成本章」：询问下一章 today / tomorrow；取消不得推进 */
   const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
   /** 非顺序 / 摘录「完成」确认 */
@@ -114,6 +127,7 @@ export default function IRSessionShell({
   const [isSequentialActive, setIsSequentialActive] = useState(false)
   const [sequentialHasNext, setSequentialHasNext] = useState(true)
   const themeStorageWarnedRef = useRef(false)
+  const widthStorageWarnedRef = useRef(false)
   /** 完成页展示的今日累计（或会话回退）指标 */
   const [summaryMetrics, setSummaryMetrics] = useState<IRSessionMetricsSnapshot | null>(null)
   const [summaryStorageWarning, setSummaryStorageWarning] = useState<string | null>(null)
@@ -136,6 +150,33 @@ export default function IRSessionShell({
       }
     }
   }, [theme])
+
+  useEffect(() => {
+    const result = writeIRReaderWidth(contentWidth)
+    if (!result.ok) {
+      console.warn("[IR] localStorage 写入正文宽度失败:", result.error)
+      if (!widthStorageWarnedRef.current) {
+        widthStorageWarnedRef.current = true
+        try {
+          orca.notify(
+            "warn",
+            "无法保存正文宽度偏好（localStorage 不可用），已使用当前宽度继续会话",
+            { title: "渐进阅读" }
+          )
+        } catch (notifyError) {
+          console.warn("[IR] 正文宽度存储失败后发送 notify 也失败:", notifyError)
+        }
+      }
+    }
+  }, [contentWidth])
+
+  const setContentWidthSafe = (width: number) => {
+    setContentWidth(clampIRReaderWidth(width))
+  }
+
+  const readerWidthStyle = {
+    ["--ir-reading-content-max-width" as string]: `${contentWidth}px`
+  } as React.CSSProperties
 
   const sessionRootRef = useRef<HTMLDivElement | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
@@ -554,7 +595,7 @@ export default function IRSessionShell({
     // effect 结算前用会话快照占位；空队列无活动时为零，结算后为今日累计
     const displayMetrics = summaryMetrics ?? metricsRef.current.getSnapshot()
     return (
-      <div className="ir-reading" data-ir-theme={theme}>
+      <div className="ir-reading" data-ir-theme={theme} style={readerWidthStyle}>
         <IRSessionSummary
           metrics={displayMetrics}
           autoPostponeCount={0}
@@ -571,7 +612,12 @@ export default function IRSessionShell({
 
   if (isReviewEntry && currentEntry.kind === "review") {
     return (
-      <div ref={sessionRootRef} className="ir-reading ir-reading--mixed-review" data-ir-theme={theme}>
+      <div
+        ref={sessionRootRef}
+        className="ir-reading ir-reading--mixed-review"
+        data-ir-theme={theme}
+        style={readerWidthStyle}
+      >
         <IRSessionHeader
           progress={progress}
           remainingTimeLabel={timer.formattedRemaining}
@@ -603,6 +649,8 @@ export default function IRSessionShell({
       className="ir-reading"
       data-ir-view-mode={viewMode}
       data-ir-theme={theme}
+      data-ir-content-width={String(contentWidth)}
+      style={readerWidthStyle}
       onMouseUp={breakpoint.scheduleCapture}
       onKeyUp={breakpoint.scheduleCapture}
     >
@@ -660,6 +708,7 @@ export default function IRSessionShell({
         sequentialHasNext={sequentialHasNext}
         priority={currentCard.priority}
         theme={theme}
+        contentWidth={contentWidth}
         viewMode={viewMode}
         embedded={embedded}
         postponeOpen={postponeOpen}
@@ -681,6 +730,7 @@ export default function IRSessionShell({
         onImportanceClose={() => setImportanceOpen(false)}
         onOpenPostpone={openPostponeMenu}
         onThemeChange={setTheme}
+        onContentWidthChange={setContentWidthSafe}
         onToggleViewMode={toggleViewMode}
         onBackToLibrary={onBackToLibrary}
         onCompleteChapterClose={() => setCompleteChapterOpen(false)}
