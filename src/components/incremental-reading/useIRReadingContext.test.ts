@@ -13,15 +13,15 @@ import {
 } from "./irReadingContextModel"
 
 describe("useIRReadingContext integration (model path)", () => {
-  it("extract card defaults to open near parent and extract body", () => {
+  it("extract card defaults to closed near parent and extract body", () => {
     const state = resetContextForCard({
       cardType: "extracts",
       cardId: 39,
       parentBlockId: 19
     })
     expect(state.mode).toBe("extract_focus")
-    expect(state.contextOpen).toBe(true)
-    expect(resolveNearContextRenderId(state, 39)).toBe(19)
+    expect(state.contextOpen).toBe(false)
+    expect(resolveNearContextRenderId(state, 39)).toBeNull()
     expect(resolveBodyBlockId(state, 39)).toBe(39)
     expect(shouldShowReturnButton(state)).toBe(false)
   })
@@ -47,18 +47,29 @@ describe("useIRReadingContext integration (model path)", () => {
       nearContextBlockId: 19
     })
     expect(back.mode).toBe("extract_focus")
+    expect(back.contextOpen).toBe(false)
     expect(resolveBodyBlockId(back, 39)).toBe(39)
-    expect(resolveNearContextRenderId(back, 39)).toBe(19)
+    expect(resolveNearContextRenderId(back, 39)).toBeNull()
   })
 
-  it("parent breadcrumb when context already open enters chapter_browse", () => {
+  it("parent breadcrumb: first opens near context, second enters chapter_browse", () => {
     const focus = resetContextForCard({
       cardType: "extracts",
       cardId: 39,
       parentBlockId: 19
     })
-    // default contextOpen true → second parent click = broader browse
-    const again = reduceBreadcrumbClick(focus, {
+    // default contextOpen false → first parent click opens near context
+    const opened = reduceBreadcrumbClick(focus, {
+      targetId: 19,
+      cardId: 39,
+      cardType: "extracts"
+    })
+    expect(opened.mode).toBe("extract_focus")
+    expect(opened.contextOpen).toBe(true)
+    expect(resolveNearContextRenderId(opened, 39)).toBe(19)
+
+    // second parent click = broader browse
+    const again = reduceBreadcrumbClick(opened, {
       targetId: 19,
       cardId: 39,
       cardType: "extracts"

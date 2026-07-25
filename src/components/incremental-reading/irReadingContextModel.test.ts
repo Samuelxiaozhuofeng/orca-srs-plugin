@@ -20,22 +20,22 @@ const ROOT = 300 as const
 const ANCESTOR = 400 as const
 
 describe("createExtractFocusState / createTopicFocusState", () => {
-  it("extract init defaults contextOpen true and no browse", () => {
+  it("extract init defaults contextOpen false and no browse", () => {
     const state = createExtractFocusState({ nearContextBlockId: PARENT })
     expect(state).toEqual({
       mode: "extract_focus",
       nearContextBlockId: PARENT,
-      contextOpen: true,
+      contextOpen: false,
       browseBlockId: null
     })
   })
 
-  it("extract allows contextOpen false override", () => {
+  it("extract allows contextOpen true override", () => {
     const state = createExtractFocusState({
       nearContextBlockId: PARENT,
-      contextOpen: false
+      contextOpen: true
     })
-    expect(state.contextOpen).toBe(false)
+    expect(state.contextOpen).toBe(true)
   })
 
   it("topic has no near context and context closed", () => {
@@ -50,7 +50,7 @@ describe("createExtractFocusState / createTopicFocusState", () => {
 })
 
 describe("resetContextForCard", () => {
-  it("extracts with parent → near parent, context open", () => {
+  it("extracts with parent → near parent, context closed by default", () => {
     const state = resetContextForCard({
       cardType: "extracts",
       cardId: CARD,
@@ -58,18 +58,18 @@ describe("resetContextForCard", () => {
     })
     expect(state.mode).toBe("extract_focus")
     expect(state.nearContextBlockId).toBe(PARENT)
-    expect(state.contextOpen).toBe(true)
+    expect(state.contextOpen).toBe(false)
     expect(state.browseBlockId).toBeNull()
   })
 
-  it("extracts without parent stays null near context", () => {
+  it("extracts without parent stays null near context and closed", () => {
     const state = resetContextForCard({
       cardType: "extracts",
       cardId: CARD,
       parentBlockId: null
     })
     expect(state.nearContextBlockId).toBeNull()
-    expect(state.contextOpen).toBe(true)
+    expect(state.contextOpen).toBe(false)
   })
 
   it("applies savedPreview only when parent-like and !== cardId (fills missing parent)", () => {
@@ -163,7 +163,7 @@ describe("reduceBreadcrumbClick", () => {
     expect(next.nearContextBlockId).toBe(PARENT)
   })
 
-  it("card breadcrumb clears browse back to extract_focus", () => {
+  it("card breadcrumb clears browse back to extract_focus with context closed", () => {
     const browsing: IRReadingContextState = {
       mode: "chapter_browse",
       nearContextBlockId: PARENT,
@@ -178,6 +178,7 @@ describe("reduceBreadcrumbClick", () => {
     expect(next.mode).toBe("extract_focus")
     expect(next.browseBlockId).toBeNull()
     expect(next.nearContextBlockId).toBe(PARENT)
+    expect(next.contextOpen).toBe(false)
   })
 
   it("topic ancestor enters chapter_browse; card clears", () => {
@@ -200,7 +201,7 @@ describe("reduceBreadcrumbClick", () => {
 })
 
 describe("reduceReturnFromBrowse", () => {
-  it("returns to extract_focus with near parent context open", () => {
+  it("returns to extract_focus with near parent context closed", () => {
     const browsing: IRReadingContextState = {
       mode: "chapter_browse",
       nearContextBlockId: PARENT,
@@ -214,7 +215,7 @@ describe("reduceReturnFromBrowse", () => {
     expect(next).toEqual({
       mode: "extract_focus",
       nearContextBlockId: PARENT,
-      contextOpen: true,
+      contextOpen: false,
       browseBlockId: null
     })
   })
@@ -231,7 +232,7 @@ describe("reduceReturnFromBrowse", () => {
       nearContextBlockId: null
     })
     expect(next.nearContextBlockId).toBe(PARENT)
-    expect(next.contextOpen).toBe(true)
+    expect(next.contextOpen).toBe(false)
   })
 
   it("topic return clears browse", () => {
@@ -251,10 +252,10 @@ describe("reduceReturnFromBrowse", () => {
 
 describe("reduceToggleNearContext", () => {
   it("toggles contextOpen in extract_focus with near id", () => {
-    const open = createExtractFocusState({ nearContextBlockId: PARENT })
-    const closed = reduceToggleNearContext(open)
-    expect(closed.contextOpen).toBe(false)
-    expect(reduceToggleNearContext(closed).contextOpen).toBe(true)
+    const closed = createExtractFocusState({ nearContextBlockId: PARENT })
+    const open = reduceToggleNearContext(closed)
+    expect(open.contextOpen).toBe(true)
+    expect(reduceToggleNearContext(open).contextOpen).toBe(false)
   })
 
   it("no-ops without near context or in chapter_browse", () => {
@@ -273,11 +274,11 @@ describe("reduceToggleNearContext", () => {
 
 describe("render / body / breakpoint resolvers", () => {
   it("near context render id only when extract_focus + open", () => {
-    const open = createExtractFocusState({ nearContextBlockId: PARENT })
-    expect(resolveNearContextRenderId(open, CARD)).toBe(PARENT)
-
-    const closed = { ...open, contextOpen: false }
+    const closed = createExtractFocusState({ nearContextBlockId: PARENT })
     expect(resolveNearContextRenderId(closed, CARD)).toBeNull()
+
+    const open = { ...closed, contextOpen: true }
+    expect(resolveNearContextRenderId(open, CARD)).toBe(PARENT)
 
     const browsing: IRReadingContextState = {
       mode: "chapter_browse",
@@ -317,11 +318,11 @@ describe("render / body / breakpoint resolvers", () => {
   })
 
   it("breakpoint preview uses near context only; ignores browseBlockId", () => {
-    const open = createExtractFocusState({ nearContextBlockId: PARENT })
-    expect(resolveBreakpointPreviewId(open)).toBe(PARENT)
-
-    const closed = { ...open, contextOpen: false }
+    const closed = createExtractFocusState({ nearContextBlockId: PARENT })
     expect(resolveBreakpointPreviewId(closed)).toBeNull()
+
+    const open = { ...closed, contextOpen: true }
+    expect(resolveBreakpointPreviewId(open)).toBe(PARENT)
 
     const browsing: IRReadingContextState = {
       mode: "chapter_browse",
@@ -334,17 +335,28 @@ describe("render / body / breakpoint resolvers", () => {
 })
 
 describe("product flow: extract → chapter → return", () => {
-  it("walks parent open, root browse, return to extract with context", () => {
+  it("walks parent open, root browse, return to extract with context closed", () => {
     let state = resetContextForCard({
       cardType: "extracts",
       cardId: CARD,
       parentBlockId: PARENT
     })
     expect(resolveBodyBlockId(state, CARD)).toBe(CARD)
-    expect(resolveNearContextRenderId(state, CARD)).toBe(PARENT)
+    expect(resolveNearContextRenderId(state, CARD)).toBeNull()
     expect(shouldShowExtractBody(state)).toBe(true)
+    expect(state.contextOpen).toBe(false)
 
-    // click parent again (context already open) → chapter_browse on parent
+    // first parent click → open near context
+    state = reduceBreadcrumbClick(state, {
+      targetId: PARENT,
+      cardId: CARD,
+      cardType: "extracts"
+    })
+    expect(state.mode).toBe("extract_focus")
+    expect(state.contextOpen).toBe(true)
+    expect(resolveNearContextRenderId(state, CARD)).toBe(PARENT)
+
+    // second parent click (context already open) → chapter_browse on parent
     state = reduceBreadcrumbClick(state, {
       targetId: PARENT,
       cardId: CARD,
@@ -367,15 +379,15 @@ describe("product flow: extract → chapter → return", () => {
     expect(resolveBreakpointPreviewId(state)).toBeNull()
     expect(shouldShowReturnButton(state)).toBe(true)
 
-    // return → extract focus + near open
+    // return → extract focus + near closed
     state = reduceReturnFromBrowse(state, {
       cardType: "extracts",
       nearContextBlockId: PARENT
     })
     expect(state.mode).toBe("extract_focus")
-    expect(state.contextOpen).toBe(true)
+    expect(state.contextOpen).toBe(false)
     expect(resolveBodyBlockId(state, CARD)).toBe(CARD)
-    expect(resolveNearContextRenderId(state, CARD)).toBe(PARENT)
-    expect(resolveBreakpointPreviewId(state)).toBe(PARENT)
+    expect(resolveNearContextRenderId(state, CARD)).toBeNull()
+    expect(resolveBreakpointPreviewId(state)).toBeNull()
   })
 })

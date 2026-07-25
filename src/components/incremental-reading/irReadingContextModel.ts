@@ -24,7 +24,7 @@ function isValidParentLikePreview(
   return typeof preview === "number" && Number.isFinite(preview) && preview !== cardId
 }
 
-/** Extract default: near parent context open, body shows extract. */
+/** Extract default: near parent known, context panel closed; body shows extract. */
 export function createExtractFocusState(args: {
   nearContextBlockId: DbId | null
   contextOpen?: boolean
@@ -32,7 +32,7 @@ export function createExtractFocusState(args: {
   return {
     mode: "extract_focus",
     nearContextBlockId: args.nearContextBlockId,
-    contextOpen: args.contextOpen ?? true,
+    contextOpen: args.contextOpen ?? false,
     browseBlockId: null
   }
 }
@@ -52,7 +52,7 @@ export function createTopicFocusState(): IRReadingContextState {
 
 /**
  * Reset when the active card changes.
- * - extracts: near context = direct parent; contextOpen true
+ * - extracts: near context = direct parent; contextOpen false（刷到摘录卡默认不展开）
  * - topic: no near context
  * - savedPreviewBlockId: only applied when parent-like and !== cardId
  *   (fills near context when parent is unknown; never overrides a known parent)
@@ -74,7 +74,7 @@ export function resetContextForCard(args: {
 
   return createExtractFocusState({
     nearContextBlockId: near,
-    contextOpen: true
+    contextOpen: false
   })
 }
 
@@ -96,12 +96,11 @@ export function reduceBreadcrumbClick(
     if (cardType === "topic") {
       return createTopicFocusState()
     }
-    return {
-      mode: "extract_focus",
+    // 回到摘录正文：不强制展开近上下文（与刷卡默认一致）
+    return createExtractFocusState({
       nearContextBlockId: state.nearContextBlockId,
-      contextOpen: state.contextOpen || state.nearContextBlockId != null,
-      browseBlockId: null
-    }
+      contextOpen: false
+    })
   }
 
   if (cardType === "topic") {
@@ -141,7 +140,7 @@ export function reduceBreadcrumbClick(
   }
 }
 
-/** Leave chapter_browse and restore extract_focus with near parent context open. */
+/** Leave chapter_browse and restore extract_focus; near context stays closed by default. */
 export function reduceReturnFromBrowse(
   state: IRReadingContextState,
   args: { cardType: "topic" | "extracts"; nearContextBlockId: DbId | null }
@@ -155,7 +154,7 @@ export function reduceReturnFromBrowse(
 
   return createExtractFocusState({
     nearContextBlockId: near,
-    contextOpen: true
+    contextOpen: false
   })
 }
 

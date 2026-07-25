@@ -50,6 +50,8 @@ When a task requires Orca APIs, types, commands, editor behavior, backend calls,
 
 Run the narrowest relevant tests first, then the broader checks appropriate to the change. Do not claim a fix without an actual check; report blocked commands and their errors plainly. Separate automated verification from manual Orca verification in the final report.
 
+**Final step after any code-changing task:** once edits, tests, and docs for that task are done, always run `npm run build` and report the result before handoff. Skip only for pure docs/config with no `src/` (or other build-input) changes; if the build fails, do not claim the task is finished.
+
 ## Style and Tests
 
 Use strict TypeScript, two-space indentation, and the surrounding file's formatting. Name React components/files in PascalCase, hooks with a `use` prefix, and utilities in camelCase. Keep modules focused and prefer immutable transformations in core logic. Mock the global `orca` API explicitly in tests and add deterministic regression coverage for changed scheduling, storage, identity, or failure paths.
