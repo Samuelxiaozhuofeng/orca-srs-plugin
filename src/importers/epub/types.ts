@@ -28,6 +28,11 @@ export interface EpubChapter {
   /** Stable identity within one EPUB: normalized href + spine index */
   key: string
   spineIndex: number
+  /**
+   * End exclusive fragment for multi-fragment logical chapters in one spine file.
+   * Runtime-only (rebuilt by re-parse); not part of the persisted manifest schema.
+   */
+  endFragment?: string
 }
 
 export interface EpubTocItem {

@@ -112,7 +112,9 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
     })
 
     try {
-      const chapterHtml = await parser.getChapterContent(chapter.href, chapter.title)
+      const chapterHtml = await parser.getChapterContent(chapter.href, chapter.title, {
+        endFragment: chapter.endFragment
+      })
       const chapterPageId = await importOneChapter({
         bookBlockId,
         chaptersHeadingId,
@@ -215,7 +217,9 @@ export async function resumeEpubImport(bookBlockId: DbId): Promise<ImportEpubRes
       const chapterHtml =
         existingBlockId != null
           ? ""
-          : await parser.getChapterContent(chapter.href, chapterTitle)
+          : await parser.getChapterContent(chapter.href, chapterTitle, {
+              endFragment: chapter.endFragment
+            })
       const chapterPageId = await importOneChapter({
         bookBlockId,
         chaptersHeadingId,

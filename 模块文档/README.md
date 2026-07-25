@@ -96,8 +96,8 @@
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression（完成主路径 / skip 兼容）、整本/章节移出、完成本章后大纲保留「已完成」结构、顺序徽标与 toast 文案
     - 关联：`src/srs/book-ir/*`、`bookIRCreator.ts`
 
-26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-19 更新
-    - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界
+26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-25 更新（multi-fragment logical chapters）
+    - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界；同 XHTML 多 fragment 逻辑章节展开与 DOM 切片
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
 27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-24 更新（可选 AI 总结）

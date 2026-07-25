@@ -304,6 +304,352 @@ export async function buildEpub3NavRelativePaths(): Promise<ArrayBuffer> {
 }
 
 /**
+ * One spine XHTML with three fragment TOC entries (plus a whole-file parent entry).
+ * Mirrors real EPUB 2 multi-anchor chapter books and EPUB 3 nav equivalents.
+ *
+ * Spine: front.xhtml + part.xhtml (3 logical chapters via #ch1/#ch2/#ch3).
+ */
+export async function buildEpubMultiFragmentChapters(
+  format: "ncx" | "nav" = "ncx"
+): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+
+  const partBody = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <p class="title2" id="ch1">一章</p>
+    <p>Body of chapter one.</p>
+    <p class="title2" id="ch2">二章</p>
+    <p>Body of chapter two.</p>
+    <p class="title2" id="ch3">三章</p>
+    <p>Body of chapter three last.</p>
+  </body>
+</html>`
+
+  const frontBody = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body><h1>前言</h1><p>Front matter.</p></body>
+</html>`
+
+  if (format === "ncx") {
+    zip.file(
+      "OEBPS/content.opf",
+      `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Multi Fragment NCX</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>zh</dc:language>
+    <dc:identifier id="uid">multi-frag-ncx</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="front" href="Text/front.xhtml" media-type="application/xhtml+xml"/>
+    <item id="part" href="Text/part.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="front"/>
+    <itemref idref="part"/>
+  </spine>
+</package>`
+    )
+    // Parent navPoint points at whole file; children are fragment chapters.
+    zip.file(
+      "OEBPS/toc.ncx",
+      `<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="n0">
+      <navLabel><text>前言</text></navLabel>
+      <content src="Text/front.xhtml"/>
+    </navPoint>
+    <navPoint id="n-part">
+      <navLabel><text>正文部分</text></navLabel>
+      <content src="Text/part.xhtml"/>
+      <navPoint id="n1">
+        <navLabel><text>一章</text></navLabel>
+        <content src="Text/part.xhtml#ch1"/>
+      </navPoint>
+      <navPoint id="n2">
+        <navLabel><text>二章</text></navLabel>
+        <content src="Text/part.xhtml#ch2"/>
+      </navPoint>
+      <navPoint id="n3">
+        <navLabel><text>三章</text></navLabel>
+        <content src="Text/part.xhtml#ch3"/>
+      </navPoint>
+    </navPoint>
+  </navMap>
+</ncx>`
+    )
+  } else {
+    zip.file(
+      "OEBPS/content.opf",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Multi Fragment Nav</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>zh</dc:language>
+    <dc:identifier id="uid">multi-frag-nav</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="Text/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="front" href="Text/front.xhtml" media-type="application/xhtml+xml"/>
+    <item id="part" href="Text/part.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="front"/>
+    <itemref idref="part"/>
+  </spine>
+</package>`
+    )
+    zip.file(
+      "OEBPS/Text/nav.xhtml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li><a href="front.xhtml">前言</a></li>
+        <li>
+          <a href="part.xhtml">正文部分</a>
+          <ol>
+            <li><a href="part.xhtml#ch1">一章</a></li>
+            <li><a href="part.xhtml#ch2">二章</a></li>
+            <li><a href="part.xhtml#ch3">三章</a></li>
+          </ol>
+        </li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+    )
+  }
+
+  zip.file("OEBPS/Text/front.xhtml", frontBody)
+  zip.file("OEBPS/Text/part.xhtml", partBody)
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
+ * Dual TOC: nav has multi-fragment entries; NCX has the same fragments with different labels.
+ * Nav must win — no duplicate logical chapters from NCX.
+ */
+export async function buildEpubMultiFragmentDualTocNavWins(): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+  zip.file(
+    "OEBPS/content.opf",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Dual TOC Multi Frag</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="uid">dual-multi-frag</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="part" href="part.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="part"/>
+  </spine>
+</package>`
+  )
+  zip.file(
+    "OEBPS/nav.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li><a href="part.xhtml#a">Nav A</a></li>
+        <li><a href="part.xhtml#b">Nav B</a></li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+  )
+  zip.file(
+    "OEBPS/toc.ncx",
+    `<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="n1">
+      <navLabel><text>NCX A</text></navLabel>
+      <content src="part.xhtml#a"/>
+    </navPoint>
+    <navPoint id="n2">
+      <navLabel><text>NCX B</text></navLabel>
+      <content src="part.xhtml#b"/>
+    </navPoint>
+  </navMap>
+</ncx>`
+  )
+  zip.file(
+    "OEBPS/part.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <p id="a">Section A</p><p>A body</p>
+    <p id="b">Section B</p><p>B body</p>
+  </body>
+</html>`
+  )
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
+ * Single fragment TOC entry must NOT expand — keep whole-file chapter + historical key.
+ */
+export async function buildEpubSingleFragmentToc(): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+  zip.file(
+    "OEBPS/content.opf",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Single Frag</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="uid">single-frag</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="c1" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="c1"/>
+  </spine>
+</package>`
+  )
+  zip.file(
+    "OEBPS/nav.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li><a href="chapter.xhtml#start">Only Chapter</a></li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+  )
+  zip.file(
+    "OEBPS/chapter.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <h1 id="start">Only Chapter</h1>
+    <p>Full file body.</p>
+  </body>
+</html>`
+  )
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
+ * Multi-fragment spine where TOC labels are numbering-only ("1","2","3") and each
+ * logical slice has its own semantic h1. Title enrichment must prefer each slice's
+ * heading via preferChapterTitle — not the first chapter's heading from the whole file.
+ */
+export async function buildEpubMultiFragmentNumberingTocWithSliceHeadings(): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+  zip.file(
+    "OEBPS/content.opf",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Slice Title Enrichment</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="uid">slice-title-1</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="part" href="part.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="part"/>
+  </spine>
+</package>`
+  )
+  zip.file(
+    "OEBPS/nav.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li><a href="part.xhtml#s1">1</a></li>
+        <li><a href="part.xhtml#s2">2</a></li>
+        <li><a href="part.xhtml#s3">3</a></li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+  )
+  zip.file(
+    "OEBPS/part.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <h1 id="s1">Alpha Reasons</h1>
+    <p>Body of alpha.</p>
+    <h1 id="s2">Beta Methods</h1>
+    <p>Body of beta.</p>
+    <h1 id="s3">Gamma Results</h1>
+    <p>Body of gamma.</p>
+  </body>
+</html>`
+  )
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
  * Nav exists but its links never match spine hrefs (wrong paths).
  * NCX has correct relative links and should fill titles.
  */

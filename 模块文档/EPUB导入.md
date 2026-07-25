@@ -1,9 +1,10 @@
 # EPUB 导入
 
-> 文档同步日期：2026-07-19
+> 文档同步日期：2026-07-25
 > 变更说明：WP-07 **纯层**已落地严格 HTML 清洗、资源预算、MIME 魔数、解析层 AbortSignal；ZIP load 与 entry 解压完成后会再次检查取消。
 > **未验收 / 证据阻塞**：`importEpub` / `resumeEpubImport` 写入链取消、超限图片「省略 vs 零写入拒绝」preflight、真机 Network 与 resume 一致性。
 > 2026-07-19：ir_setup 重要性字段——用户文案「重要性」，三档绝对档位（20/50/80，默认中），选项来自 `importanceSetupOptions`（`irImportance.ts`）；存储仍写 `priority` → 各章 `ir.priority`。
+> 2026-07-25：**logical fragment chapters** 已落地——同一 spine XHTML 在 nav/NCX 中有 ≥2 个不同 fragment 目录项时，展开为按目录顺序的逻辑章节；正文用 DOM Range 切片；无 fragment / 仅 1 个 fragment 的文件保持历史整文件章节与 key。标题补全阶段按源文件路径缓存原始 XHTML 字符串（同文件只 `getFile` 一次），逻辑章对缓存内容重新 parse + `sliceChapterByFragments` 后再提取 heading，避免重复预算计数与用第一章 heading 覆盖后续章。
 
 ## 概述
 
@@ -80,9 +81,9 @@ src/srs/book-ir/                    第二阶段 IR（计划 / 顺序推进 / �
 | 属性 | 说明 |
 | --- | --- |
 | `epub.bookId` | 所属书籍 `blockId` |
-| `epub.chapterKey` | 稳定身份：`spineIndex:normalizedHref`（碰撞时加 `#n`） |
-| `epub.spineIndex` | spine 顺序 |
-| `epub.href` | 源 href |
+| `epub.chapterKey` | 稳定身份：`spineIndex:normalizedHref`；逻辑章节为 `spineIndex:path#fragment`（碰撞时再加 `#n`） |
+| `epub.spineIndex` | spine 顺序（逻辑章节共享原 spine 序号） |
+| `epub.href` | 源 href（逻辑章节含 fragment） |
 
 读写 manifest **必须**经 `parseEpubManifest` / `serializeEpubManifest`；禁止字符串拼接或静默兜底。非法 JSON / 错误 `version` 抛 `EpubValidationError`。
 
@@ -146,11 +147,29 @@ chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|impo
 
 正文开头若为连续的「编号 heading + 章名 heading」（如 `<h1>1</h1><h1>WHY LOGIC?</h1>`），会合并为可读标题，且不把后续小节标题并入章节名。
 
-nav 与 spine 比较前统一规范化：去 fragment、处理 `.` / `..`、前导斜杠与反斜杠、尽力 URL 解码（畸形编码不抛错）。实现见 `normalizeComparableHref` / `preferChapterTitle` / `isNumberingOnlyTitle`。
+**文件路径匹配**（`normalizeComparableHref`）：去 fragment、处理 `.` / `..`、前导斜杠与反斜杠、尽力 URL 解码（畸形编码不抛错）。**逻辑章节身份**另用 `resolveHrefTarget` / `extractHrefFragment` 保留并解码 fragment；勿用去 fragment 的结果当逻辑章节 key。
+
+实现见 `normalizeComparableHref` / `resolveHrefTarget` / `preferChapterTitle` / `isNumberingOnlyTitle` / `expandLogicalFragmentChapters`。
+
+### 章节边界：logical fragment chapters（已落地）
+
+| 规则 | 说明 |
+| --- | --- |
+| 触发条件 | 同一 spine XHTML 在**优先 TOC 源**中有 **≥2 个不同非空 fragment** 目录项 |
+| TOC 优先 | EPUB 3 nav 优先；仅当 nav 对该文件不足 2 个 fragment 时才用 NCX；双目录不生成重复逻辑章节 |
+| 展开结果 | 用 TOC 顺序的逻辑章节**替换**该文件的单一 spine 章节；父级无 fragment 整文件项**不**作为章节（避免重复整文件正文） |
+| 0/1 fragment | 保持历史整文件章节：`href` 无 fragment、key 为 `spineIndex:path`（兼容已有 manifest / 续传） |
+| 身份 | `href` 含 fragment；`key` = `spineIndex:path#fragment`；同书稳定唯一 |
+| 正文切片 | 从起始锚点（`id` 或 `name`）起，到同文件下一逻辑章节 fragment 之前；末章到文件末尾；DOM Range / `cloneContents`，不做字符串硬切 |
+| 锚点失败 | 起始或已声明的结束锚点找不到 → **抛错**（消息含 href/fragment），**绝不**退回整文件 |
+| 结束边界 | `EpubChapter.endFragment` 仅运行时字段，重 parse 可重建；**不**写入 manifest schema |
+| 预算 | `assertChapterCount` 在最终展开后的章节数组上执行 |
+| 下游 | 切片后再走图片改写、安全清洗、页面标题去重、outline 导入 |
+| 标题补全 | `enrichChapterTitlesFromContent` 按 `resolvePath` 缓存**原始字符串**（不缓存 DOM）；有 fragment 时先 `sliceChapterByFragments` 再 `extractTopHeadingTitle` / fallback |
 
 ## 正文 outline 结构
 
-章节 HTML：`getChapterContent`（去页标题 heading、改写图片、sanitize）→ `htmlOutline` → `orcaOutlineImporter.importHtmlAsOutline`，形成**父子 block 层级**，而非章节页下扁平列表。
+章节 HTML：`getChapterContent`（逻辑章节先切片 → 去页标题 heading、改写图片、sanitize）→ `htmlOutline` → `orcaOutlineImporter.importHtmlAsOutline`，形成**父子 block 层级**，而非章节页下扁平列表。
 
 ### 标题归属
 
@@ -210,11 +229,13 @@ nav 与 spine 比较前统一规范化：去 fragment、处理 `.` / `..`、前�
 
 | 文件 | 覆盖方向 |
 | --- | --- |
-| `src/importers/epub/epubParser.test.ts` | 解析、标题、nav/NCX、封面过滤等 |
+| `src/importers/epub/epubParser.test.ts` | 解析、标题、nav/NCX、封面过滤、**同 XHTML 多 fragment 逻辑章节**（NCX/nav 参数化）、双目录不重复、单 fragment 不展开、锚点缺失报错、**切片级标题补全**（纯编号 TOC + 各段 heading） |
 | `src/importers/epub/epubImportService.test.ts` | 导入 / 续传 / 去重 / 上传失败不建笔记 |
 | `src/importers/epub/htmlOutline.test.ts` | 标题 token、空白清理、语义保留 |
 | `src/importers/epub/orcaOutlineImporter.test.ts` | insertBlock 父子与顺序 |
 | `src/components/epub-import/epubImportViewModel.test.ts` | 向导纯函数 |
+
+相关 fixture：`buildEpubMultiFragmentChapters` / `buildEpubMultiFragmentDualTocNavWins` / `buildEpubSingleFragmentToc` / `buildEpubMultiFragmentNumberingTocWithSliceHeadings`（`epubFixtures.ts`）。
 
 ## 相关文件
 

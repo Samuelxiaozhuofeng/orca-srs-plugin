@@ -122,7 +122,7 @@ export class EpubParser {
     })
 
     const spineRefs = doc.querySelectorAll("spine > itemref")
-    const chapters: EpubChapter[] = []
+    const spineChapters: EpubChapter[] = []
     const usedKeys = new Set<string>()
     const coverHrefs = collectCoverHrefs(doc)
 
@@ -137,7 +137,7 @@ export class EpubParser {
           manifestItem.mediaType.includes("xhtml")
         ) {
           const key = makeChapterKey(manifestItem.href, index, usedKeys)
-          chapters.push({
+          spineChapters.push({
             id: manifestItem.id,
             title: "",
             href: manifestItem.href,
@@ -148,31 +148,32 @@ export class EpubParser {
       }
     })
 
+    const toc = await this.collectTocEntries(doc, manifestItems)
+    applyFileLevelTocTitles(spineChapters, toc)
+    const chapters = expandLogicalFragmentChapters(spineChapters, toc)
     assertChapterCount(chapters.length)
 
-    await this.enrichChapterTitles(chapters, doc, manifestItems)
     await this.enrichChapterTitlesFromContent(chapters)
 
     return chapters
   }
 
-  private async enrichChapterTitles(
-    chapters: EpubChapter[],
+  /**
+   * Collect nav then NCX TOC entries in document order.
+   * Soft parse failures are warned; hard control errors rethrow.
+   */
+  private async collectTocEntries(
     opfDoc: Document,
     manifestItems: Map<string, EpubManifestItem>
-  ): Promise<void> {
-    const chapterByHref = buildChapterHrefIndex(chapters)
-
-    // EPUB 3: Navigation Document — apply matches; do not return early.
-    // Zero matches or partial matches still allow NCX to fill gaps.
-    await this.applyNavTitles(chapterByHref, opfDoc)
-
-    // EPUB 2 NCX (or dual-nav books): only fill chapters still without a title.
-    await this.applyNcxTitles(chapterByHref, opfDoc, manifestItems)
+  ): Promise<TocEntry[]> {
+    const entries: TocEntry[] = []
+    await this.collectNavTocEntries(entries, opfDoc)
+    await this.collectNcxTocEntries(entries, opfDoc, manifestItems)
+    return entries
   }
 
-  private async applyNavTitles(
-    chapterByHref: Map<string, EpubChapter>,
+  private async collectNavTocEntries(
+    entries: TocEntry[],
     opfDoc: Document
   ): Promise<void> {
     const navItem = opfDoc.querySelector('manifest > item[properties*="nav"]')
@@ -192,12 +193,14 @@ export class EpubParser {
         const href = a.getAttribute("href")
         const title = a.textContent?.trim()
         if (!href || !title) return
-
-        const key = normalizeComparableHref(href, navDir)
-        const chapter = chapterByHref.get(key)
-        if (chapter && !chapter.title) {
-          chapter.title = title
-        }
+        const target = resolveHrefTarget(href, navDir)
+        if (!target.path) return
+        entries.push({
+          path: target.path,
+          fragment: target.fragment,
+          title,
+          source: "nav"
+        })
       })
     } catch (error) {
       if (isHardEpubControlError(error)) throw error
@@ -208,8 +211,8 @@ export class EpubParser {
     }
   }
 
-  private async applyNcxTitles(
-    chapterByHref: Map<string, EpubChapter>,
+  private async collectNcxTocEntries(
+    entries: TocEntry[],
     opfDoc: Document,
     manifestItems: Map<string, EpubManifestItem>
   ): Promise<void> {
@@ -230,13 +233,14 @@ export class EpubParser {
         const content = navPoint.querySelector("content")
         const src = content?.getAttribute("src")
         if (!label || !src) return
-
-        const key = normalizeComparableHref(src, ncxDir)
-        const chapter = chapterByHref.get(key)
-        // Only fill gaps — never overwrite a title already set by nav.
-        if (chapter && !chapter.title) {
-          chapter.title = label
-        }
+        const target = resolveHrefTarget(src, ncxDir)
+        if (!target.path) return
+        entries.push({
+          path: target.path,
+          fragment: target.fragment,
+          title: label,
+          source: "ncx"
+        })
       })
     } catch (error) {
       if (isHardEpubControlError(error)) throw error
@@ -249,18 +253,50 @@ export class EpubParser {
   private async enrichChapterTitlesFromContent(
     chapters: EpubChapter[]
   ): Promise<void> {
+    const contentByPath = new Map<string, {
+      content: string
+      doc: Document
+      root: HTMLElement
+    }>()
+
     for (let index = 0; index < chapters.length; index++) {
       throwIfAborted(this.signal)
       const chapter = chapters[index]
       try {
-        const content = await this.getFile(this.resolvePath(chapter.href))
-        const doc = parseHtml(content)
-        const root = getHtmlContentRoot(doc, content)
-        const contentTitle = extractTopHeadingTitle(root)
+        const fullPath = this.resolvePath(chapter.href)
+        let source = contentByPath.get(fullPath)
+        if (!source) {
+          const content = await this.getFile(fullPath)
+          const doc = parseHtml(content)
+          source = {
+            content,
+            doc,
+            root: getHtmlContentRoot(doc, content)
+          }
+          contentByPath.set(fullPath, source)
+        }
+
+        const startFragment = extractHrefFragment(chapter.href)
+        const contentTitle = startFragment
+          ? extractFragmentHeadingTitle(
+            source.root,
+            startFragment,
+            chapter.endFragment,
+            chapter.href
+          )
+          : extractTopHeadingTitle(source.root)
         if (contentTitle) {
           chapter.title = preferChapterTitle(chapter.title, contentTitle)
         } else if (!chapter.title) {
-          chapter.title = extractDocumentFallbackTitle(doc, root, [
+          const fallbackRoot = startFragment
+            ? sliceChapterByFragments(
+              source.root,
+              startFragment,
+              chapter.endFragment,
+              chapter.href
+            )
+            : source.root
+          chapter.title = extractDocumentFallbackTitle(source.doc, fallbackRoot, [
             chapter.id,
             chapter.href
           ])
@@ -282,13 +318,28 @@ export class EpubParser {
     }
   }
 
-  async getChapterContent(href: string, pageTitle: string): Promise<string> {
+  async getChapterContent(
+    href: string,
+    pageTitle: string,
+    options?: { endFragment?: string }
+  ): Promise<string> {
     throwIfAborted(this.signal)
     const fullPath = this.resolvePath(href)
     const content = await this.getFile(fullPath)
 
     const doc = parseHtml(content)
-    const root = getHtmlContentRoot(doc, content)
+    let root = getHtmlContentRoot(doc, content)
+
+    const startFragment = extractHrefFragment(href)
+    if (startFragment) {
+      root = sliceChapterByFragments(
+        root,
+        startFragment,
+        options?.endFragment,
+        href
+      )
+    }
+
     removeMatchingTopHeading(root, pageTitle)
 
     await this.rewriteImageSourcesForChapter(root, fullPath)
@@ -343,13 +394,18 @@ export class EpubParser {
 
 /**
  * Stable chapter key: normalized href + spine index, with collision handling.
+ * Fragments are preserved when present (logical multi-anchor chapters).
+ * Fragment-free hrefs keep the historical `spineIndex:path` form.
  */
 export function makeChapterKey(
   href: string,
   spineIndex: number,
   usedKeys: Set<string>
 ): string {
-  const normalized = normalizeHref(href)
+  const target = resolveHrefTarget(href, "")
+  const normalized = target.fragment
+    ? `${target.path}#${target.fragment}`
+    : target.path
   let key = `${spineIndex}:${normalized}`
   if (!usedKeys.has(key)) {
     usedKeys.add(key)
@@ -380,19 +436,44 @@ export function normalizeHref(href: string): string {
  * - Best-effort URL decoding; malformed percent-encoding leaves the path unchanged
  */
 export function normalizeComparableHref(href: string, baseDir = ""): string {
-  let path = href.split("#")[0] ?? ""
-  path = path.replace(/\\/g, "/")
-  path = safeDecodePath(path)
+  return resolveHrefTarget(href, baseDir).path
+}
 
-  if (path.startsWith("/")) {
-    path = path.replace(/^\/+/, "")
+/**
+ * Resolve path + fragment for a nav/NCX/spine href.
+ * Path matching still uses the fragment-stripped comparable path; fragment is
+ * best-effort URL-decoded for logical chapter identity and anchor lookup.
+ */
+export function resolveHrefTarget(
+  href: string,
+  baseDir = ""
+): { path: string; fragment: string } {
+  const hashIndex = href.indexOf("#")
+  let pathPart = hashIndex >= 0 ? href.slice(0, hashIndex) : href
+  const rawFragment = hashIndex >= 0 ? href.slice(hashIndex + 1) : ""
+
+  pathPart = pathPart.replace(/\\/g, "/")
+  pathPart = safeDecodePath(pathPart)
+
+  if (pathPart.startsWith("/")) {
+    pathPart = pathPart.replace(/^\/+/, "")
   } else {
     const dir = baseDir.replace(/\\/g, "/")
     const prefix = dir && !dir.endsWith("/") ? `${dir}/` : dir
-    path = `${prefix}${path}`
+    pathPart = `${prefix}${pathPart}`
   }
 
-  return normalizePathSegments(path)
+  return {
+    path: normalizePathSegments(pathPart),
+    fragment: safeDecodeFragment(rawFragment)
+  }
+}
+
+/** Best-effort fragment extraction + decode from an href (no base resolution). */
+export function extractHrefFragment(href: string): string {
+  const hashIndex = href.indexOf("#")
+  if (hashIndex < 0) return ""
+  return safeDecodeFragment(href.slice(hashIndex + 1))
 }
 
 /** Directory portion of an OPF-relative href, including trailing `/` when non-empty. */
@@ -402,6 +483,104 @@ export function hrefDirectory(href: string): string {
   return idx >= 0 ? path.slice(0, idx + 1) : ""
 }
 
+interface TocEntry {
+  path: string
+  fragment: string
+  title: string
+  source: "nav" | "ncx"
+}
+
+/**
+ * Apply file-level TOC titles to spine chapters.
+ * Nav entries are listed before NCX; first title for a path wins (nav priority).
+ * Fragment-only parent grouping entries still contribute a title when unmatched later.
+ */
+function applyFileLevelTocTitles(
+  chapters: EpubChapter[],
+  toc: TocEntry[]
+): void {
+  const chapterByHref = buildChapterHrefIndex(chapters)
+  for (const entry of toc) {
+    const chapter = chapterByHref.get(entry.path)
+    if (chapter && !chapter.title) {
+      chapter.title = entry.title
+    }
+  }
+}
+
+/**
+ * When a spine file has ≥2 distinct non-empty TOC fragments from the preferred
+ * TOC source (nav if multi-fragment, else NCX), replace the single spine chapter
+ * with logical chapters in TOC order. Whole-file parent entries are not kept.
+ * Files with 0 or 1 fragment keep historical whole-file chapter behavior.
+ */
+export function expandLogicalFragmentChapters(
+  spineChapters: EpubChapter[],
+  toc: TocEntry[]
+): EpubChapter[] {
+  const usedKeys = new Set<string>()
+  const result: EpubChapter[] = []
+
+  for (const chapter of spineChapters) {
+    const path = normalizeComparableHref(chapter.href)
+    const fileHref = chapter.href.split("#")[0] ?? chapter.href
+    const fragmentEntries = selectFragmentEntriesForPath(toc, path)
+
+    if (fragmentEntries.length < 2) {
+      usedKeys.add(chapter.key)
+      result.push(chapter)
+      continue
+    }
+
+    for (let i = 0; i < fragmentEntries.length; i++) {
+      const entry = fragmentEntries[i]
+      const href = `${fileHref}#${entry.fragment}`
+      const key = makeChapterKey(href, chapter.spineIndex, usedKeys)
+      const next = fragmentEntries[i + 1]
+      result.push({
+        id: `${chapter.id}#${entry.fragment}`,
+        title: entry.title,
+        href,
+        key,
+        spineIndex: chapter.spineIndex,
+        endFragment: next?.fragment
+      })
+    }
+  }
+
+  return result
+}
+
+/**
+ * Prefer nav multi-fragment TOC for a path; NCX only when nav has fewer than 2.
+ */
+function selectFragmentEntriesForPath(
+  toc: TocEntry[],
+  path: string
+): Array<{ fragment: string; title: string }> {
+  const fromNav = uniqueFragmentEntries(
+    toc.filter((e) => e.source === "nav" && e.path === path)
+  )
+  if (fromNav.length >= 2) return fromNav
+  return uniqueFragmentEntries(
+    toc.filter((e) => e.source === "ncx" && e.path === path)
+  )
+}
+
+/** Distinct non-empty fragments in TOC order (first title wins per fragment). */
+function uniqueFragmentEntries(
+  entries: TocEntry[]
+): Array<{ fragment: string; title: string }> {
+  const seen = new Set<string>()
+  const out: Array<{ fragment: string; title: string }> = []
+  for (const entry of entries) {
+    if (!entry.fragment || seen.has(entry.fragment)) continue
+    seen.add(entry.fragment)
+    out.push({ fragment: entry.fragment, title: entry.title })
+  }
+  return out
+}
+
 function buildChapterHrefIndex(chapters: EpubChapter[]): Map<string, EpubChapter> {
   const chapterByHref = new Map<string, EpubChapter>()
   for (const ch of chapters) {
@@ -409,6 +588,149 @@ function buildChapterHrefIndex(chapters: EpubChapter[]): Map<string, EpubChapter
     chapterByHref.set(key, ch)
   }
   return chapterByHref
+}
+
+/**
+ * Slice chapter body from start fragment (inclusive) to end fragment (exclusive)
+ * using structured DOM Range APIs. Missing anchors throw — never fall back to whole file.
+ */
+export function sliceChapterByFragments(
+  root: HTMLElement,
+  startFragment: string,
+  endFragment: string | undefined,
+  hrefForError: string
+): HTMLElement {
+  const { startEl, endEl } = resolveFragmentBounds(
+    root,
+    startFragment,
+    endFragment,
+    hrefForError
+  )
+
+  const doc = root.ownerDocument
+  if (!doc) {
+    throw new Error(
+      `EPUB chapter slice failed (no ownerDocument): href=${hrefForError} fragment=${startFragment}`
+    )
+  }
+
+  const range = doc.createRange()
+  range.setStartBefore(startEl)
+  if (endEl) {
+    range.setEndBefore(endEl)
+  } else {
+    range.setEnd(root, root.childNodes.length)
+  }
+
+  const cloned = range.cloneContents()
+  const container = doc.createElement("div")
+  container.appendChild(cloned)
+  return container
+}
+
+function extractFragmentHeadingTitle(
+  root: HTMLElement,
+  startFragment: string,
+  endFragment: string | undefined,
+  hrefForError: string
+): string {
+  const { startEl, endEl } = resolveFragmentBounds(
+    root,
+    startFragment,
+    endFragment,
+    hrefForError
+  )
+  const headings = Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6"))
+  const firstHeading = headings.find((heading) => {
+    const startsInHeading = heading === startEl || heading.contains(startEl)
+    const followsStart = Boolean(
+      startEl.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    if (!startsInHeading && !followsStart) return false
+    if (!endEl) return true
+    if (heading === endEl || heading.contains(endEl)) return false
+    return Boolean(
+      heading.compareDocumentPosition(endEl) & Node.DOCUMENT_POSITION_FOLLOWING
+    )
+  })
+  if (!firstHeading) return ""
+
+  const container = root.ownerDocument.createElement("div")
+  container.appendChild(firstHeading.cloneNode(true))
+  return extractTopHeadingTitle(container)
+}
+
+function resolveFragmentBounds(
+  root: ParentNode,
+  startFragment: string,
+  endFragment: string | undefined,
+  hrefForError: string
+): { startEl: Element; endEl: Element | null } {
+  const startEl = findAnchorElement(root, startFragment)
+  if (!startEl) {
+    throw new Error(
+      `EPUB chapter start anchor not found: href=${hrefForError} fragment=${startFragment}`
+    )
+  }
+
+  if (!endFragment) return { startEl, endEl: null }
+
+  const endEl = findAnchorElement(root, endFragment)
+  if (!endEl) {
+    throw new Error(
+      `EPUB chapter end anchor not found: href=${hrefForError} fragment=${endFragment}`
+    )
+  }
+  const position = startEl.compareDocumentPosition(endEl)
+  if ((position & Node.DOCUMENT_POSITION_FOLLOWING) === 0) {
+    throw new Error(
+      `EPUB chapter fragment order invalid: href=${hrefForError} start=${startFragment} end=${endFragment}`
+    )
+  }
+  return { startEl, endEl }
+}
+
+/** Resolve an HTML anchor by id or name within a content root. */
+export function findAnchorElement(
+  root: ParentNode,
+  fragment: string
+): Element | null {
+  if (!fragment) return null
+  const escaped = cssEscapeAttr(fragment)
+
+  const byId = queryWithin(root, `[id="${escaped}"]`)
+  if (byId) return byId
+
+  const byName = queryWithin(root, `[name="${escaped}"]`)
+  if (byName) return byName
+
+  return null
+}
+
+function queryWithin(root: ParentNode, selector: string): Element | null {
+  if (typeof Element !== "undefined" && root instanceof Element) {
+    if (root.matches?.(selector)) return root
+  }
+  return (root as ParentNode & { querySelector?: (s: string) => Element | null })
+    .querySelector?.(selector) ?? null
+}
+
+function cssEscapeAttr(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value)
+  }
+  // Minimal attribute-value escape when CSS.escape is unavailable.
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
+}
+
+function safeDecodeFragment(raw: string): string {
+  if (!raw) return ""
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    // Best-effort: keep raw fragment when percent-encoding is malformed.
+    return raw
+  }
 }
 
 function normalizePathSegments(path: string): string {

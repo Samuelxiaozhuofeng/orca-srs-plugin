@@ -4,16 +4,22 @@ import {
   buildEpub2Ncx,
   buildEpub2WithFrontMatter,
   buildEpub3NavRelativePaths,
+  buildEpubMultiFragmentChapters,
+  buildEpubMultiFragmentDualTocNavWins,
+  buildEpubMultiFragmentNumberingTocWithSliceHeadings,
   buildEpubNavZeroMatchNcxFallback,
+  buildEpubSingleFragmentToc,
   buildInvalidContainerEpub,
   buildMinimalEpub3
 } from "./epubFixtures"
 import {
   EpubParser,
+  extractHrefFragment,
   hrefDirectory,
   makeChapterKey,
   normalizeComparableHref,
-  parseEpub
+  parseEpub,
+  resolveHrefTarget
 } from "./epubParser"
 import { parseHtmlOutlineTokens } from "./htmlOutline"
 import {
@@ -105,6 +111,139 @@ describe("epubParser", () => {
     ])
   })
 
+  it.each(["ncx", "nav"] as const)(
+    "expands multi-fragment logical chapters from same XHTML (%s)",
+    async (format) => {
+      const buffer = await buildEpubMultiFragmentChapters(format)
+      const parsed = await parseEpub(buffer)
+
+      expect(parsed.chapters.map((c) => c.title)).toEqual([
+        "前言",
+        "一章",
+        "二章",
+        "三章"
+      ])
+      // Front matter stays whole-file; part expands to 3 logical chapters.
+      expect(parsed.chapters[0].href).toBe("Text/front.xhtml")
+      expect(parsed.chapters[0].key).toBe("0:Text/front.xhtml")
+      expect(parsed.chapters[0].key.includes("#")).toBe(false)
+
+      expect(parsed.chapters.slice(1).map((c) => c.href)).toEqual([
+        "Text/part.xhtml#ch1",
+        "Text/part.xhtml#ch2",
+        "Text/part.xhtml#ch3"
+      ])
+      expect(parsed.chapters.slice(1).map((c) => c.key)).toEqual([
+        "1:Text/part.xhtml#ch1",
+        "1:Text/part.xhtml#ch2",
+        "1:Text/part.xhtml#ch3"
+      ])
+      expect(parsed.chapters[1].spineIndex).toBe(1)
+      expect(parsed.chapters[2].spineIndex).toBe(1)
+      expect(parsed.chapters[3].spineIndex).toBe(1)
+      expect(parsed.chapters[1].endFragment).toBe("ch2")
+      expect(parsed.chapters[2].endFragment).toBe("ch3")
+      expect(parsed.chapters[3].endFragment).toBeUndefined()
+
+      // Parent whole-file TOC entry must not appear as a chapter (would duplicate body).
+      expect(parsed.chapters.some((c) => c.title === "正文部分")).toBe(false)
+      expect(parsed.chapters.some((c) => c.href === "Text/part.xhtml")).toBe(false)
+
+      const parser = new EpubParser()
+      await parser.load(buffer)
+      const html1 = await parser.getChapterContent(
+        parsed.chapters[1].href,
+        parsed.chapters[1].title,
+        { endFragment: parsed.chapters[1].endFragment }
+      )
+      const html2 = await parser.getChapterContent(
+        parsed.chapters[2].href,
+        parsed.chapters[2].title,
+        { endFragment: parsed.chapters[2].endFragment }
+      )
+      const html3 = await parser.getChapterContent(
+        parsed.chapters[3].href,
+        parsed.chapters[3].title,
+        { endFragment: parsed.chapters[3].endFragment }
+      )
+
+      expect(html1).toContain("一章")
+      expect(html1).toContain("Body of chapter one.")
+      expect(html1).not.toContain("二章")
+      expect(html1).not.toContain("Body of chapter two.")
+
+      expect(html2).toContain("二章")
+      expect(html2).toContain("Body of chapter two.")
+      expect(html2).not.toContain("一章")
+      expect(html2).not.toContain("三章")
+
+      expect(html3).toContain("三章")
+      expect(html3).toContain("Body of chapter three last.")
+      expect(html3).not.toContain("一章")
+      expect(html3).not.toContain("Body of chapter two.")
+    }
+  )
+
+  it("prefers nav multi-fragment titles over NCX and does not duplicate chapters", async () => {
+    const parsed = await parseEpub(await buildEpubMultiFragmentDualTocNavWins())
+    expect(parsed.chapters).toHaveLength(2)
+    expect(parsed.chapters.map((c) => c.title)).toEqual(["Nav A", "Nav B"])
+    expect(parsed.chapters.map((c) => c.href)).toEqual([
+      "part.xhtml#a",
+      "part.xhtml#b"
+    ])
+  })
+
+  it("does not expand a single fragment TOC entry (legacy whole-file key)", async () => {
+    const parsed = await parseEpub(await buildEpubSingleFragmentToc())
+    expect(parsed.chapters).toHaveLength(1)
+    expect(parsed.chapters[0].title).toBe("Only Chapter")
+    expect(parsed.chapters[0].href).toBe("chapter.xhtml")
+    expect(parsed.chapters[0].key).toBe("0:chapter.xhtml")
+    expect(parsed.chapters[0].endFragment).toBeUndefined()
+  })
+
+  it("enriches multi-fragment titles from each slice, not the first heading of the whole file", async () => {
+    const parsed = await parseEpub(
+      await buildEpubMultiFragmentNumberingTocWithSliceHeadings()
+    )
+    expect(parsed.chapters).toHaveLength(3)
+    expect(parsed.chapters.map((c) => c.href)).toEqual([
+      "part.xhtml#s1",
+      "part.xhtml#s2",
+      "part.xhtml#s3"
+    ])
+    // Numbering-only TOC ("1"/"2"/"3") must be upgraded by each slice's own h1.
+    // A whole-file title pass would wrongly give all chapters "Alpha Reasons".
+    expect(parsed.chapters.map((c) => c.title)).toEqual([
+      "Alpha Reasons",
+      "Beta Methods",
+      "Gamma Results"
+    ])
+  })
+
+  it("throws a clear error when a logical chapter start anchor is missing", async () => {
+    const buffer = await buildEpubMultiFragmentChapters("ncx")
+    const parser = new EpubParser()
+    await parser.load(buffer)
+    await expect(
+      parser.getChapterContent("Text/part.xhtml#missing-start", "Ghost", {
+        endFragment: "ch2"
+      })
+    ).rejects.toThrow(/start anchor not found.*fragment=missing-start/i)
+  })
+
+  it("throws a clear error when a declared end anchor is missing", async () => {
+    const buffer = await buildEpubMultiFragmentChapters("ncx")
+    const parser = new EpubParser()
+    await parser.load(buffer)
+    await expect(
+      parser.getChapterContent("Text/part.xhtml#ch1", "一章", {
+        endFragment: "missing-end"
+      })
+    ).rejects.toThrow(/end anchor not found.*fragment=missing-end/i)
+  })
+
   it("does not let pure-number content headings overwrite TOC titles", async () => {
     const buffer = await buildMinimalEpub3({
       chapters: [
@@ -185,6 +324,31 @@ describe("normalizeComparableHref", () => {
     )
     // Malformed % sequence must not throw.
     expect(normalizeComparableHref("Text/ch%2.xhtml")).toBe("Text/ch%2.xhtml")
+  })
+})
+
+describe("resolveHrefTarget / extractHrefFragment", () => {
+  it("keeps path comparable and decodes fragment best-effort", () => {
+    const navDir = hrefDirectory("Text/nav.xhtml")
+    expect(resolveHrefTarget("../Text/part.xhtml#mllj1", navDir)).toEqual({
+      path: "Text/part.xhtml",
+      fragment: "mllj1"
+    })
+    expect(extractHrefFragment("Text/part.xhtml#mllj%202")).toBe("mllj 2")
+    expect(extractHrefFragment("Text/part.xhtml")).toBe("")
+    // Malformed fragment encoding must not throw.
+    expect(extractHrefFragment("Text/part.xhtml#%E0%A4%A")).toBe("%E0%A4%A")
+  })
+
+  it("includes fragment in makeChapterKey while preserving legacy keys", () => {
+    const used = new Set<string>()
+    expect(makeChapterKey("Text/part.xhtml", 1, used)).toBe("1:Text/part.xhtml")
+    expect(makeChapterKey("Text/part.xhtml#ch1", 1, used)).toBe(
+      "1:Text/part.xhtml#ch1"
+    )
+    expect(makeChapterKey("Text/part.xhtml#ch2", 1, used)).toBe(
+      "1:Text/part.xhtml#ch2"
+    )
   })
 })
 
