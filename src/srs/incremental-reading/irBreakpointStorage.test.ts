@@ -61,4 +61,59 @@ describe("irBreakpointStorage", () => {
     )
     expect(chosen).toBe(2)
   })
+
+  it("clears stale viewportAnchor when selection/resume changes without new geometry", () => {
+    const result = mergeBreakpointSave(
+      1,
+      20,
+      {
+        previewBlockId: null,
+        selection: null,
+        updatedAt: null,
+        version: 1,
+        schemaVersion: 2,
+        viewportAnchor: { rootBlockId: 10, blockId: 20, topOffsetPx: 80 }
+      },
+      {
+        version: 2,
+        resumeBlockId: 30,
+        selection: {
+          rootBlockId: 10,
+          anchor: { blockId: 30, offset: 0, isInline: false, index: 0 },
+          focus: { blockId: 30, offset: 1, isInline: false, index: 0 },
+          isForward: true
+        }
+      }
+    )
+    expect(result.accepted).toBe(true)
+    if (result.accepted) {
+      expect(result.breakpoint.viewportAnchor).toBeNull()
+      expect(result.breakpoint.schemaVersion).toBe(1)
+      expect(result.resumeBlockId).toBe(30)
+    }
+  })
+
+  it("keeps viewportAnchor when only preview changes", () => {
+    const result = mergeBreakpointSave(
+      1,
+      20,
+      {
+        previewBlockId: null,
+        selection: null,
+        updatedAt: null,
+        version: 1,
+        schemaVersion: 2,
+        viewportAnchor: { rootBlockId: 10, blockId: 20, topOffsetPx: 80 }
+      },
+      {
+        version: 2,
+        previewBlockId: 99
+      }
+    )
+    expect(result.accepted).toBe(true)
+    if (result.accepted) {
+      expect(result.breakpoint.viewportAnchor?.topOffsetPx).toBe(80)
+      expect(result.breakpoint.schemaVersion).toBe(2)
+    }
+  })
 })

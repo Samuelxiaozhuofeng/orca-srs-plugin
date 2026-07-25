@@ -605,10 +605,12 @@ export function registerCommands(
     },
     async undoArgs => {
       if (!undoArgs || typeof undoArgs.cardId !== "number") return
-      await updateResumeBlockId(undoArgs.cardId, undoArgs.prevResumeBlockId ?? null)
+      // 完整恢复断点（含 viewportAnchor）；resume 一并写回，避免两步合并把 anchor 清掉
       await updateReadingBreakpoint(undoArgs.cardId, {
+        resumeBlockId: undoArgs.prevResumeBlockId ?? null,
         previewBlockId: undoArgs.prevReadingBreakpoint?.previewBlockId ?? null,
-        selection: undoArgs.prevReadingBreakpoint?.selection ?? null
+        selection: undoArgs.prevReadingBreakpoint?.selection ?? null,
+        viewportAnchor: undoArgs.prevReadingBreakpoint?.viewportAnchor ?? null
       })
     },
     {

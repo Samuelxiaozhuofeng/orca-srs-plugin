@@ -3,13 +3,10 @@ import type { DbId } from "../orca.d.ts"
 /** Computed overflow-y values that can own a vertical scrollbar. */
 const VERTICAL_SCROLLABLE_OVERFLOW = new Set(["auto", "scroll", "overlay"])
 
-function findBlockIdFromElement(el: Element): DbId | null {
-  const raw =
-    el.getAttribute("data-block-id") ||
-    el.getAttribute("data-blockid") ||
-    el.getAttribute("data-id") ||
-    el.getAttribute("blockid") ||
-    (el.id?.startsWith("block-") ? el.id.slice("block-".length) : null)
+/** 恢复几何稳定：连续两次误差 ≤ 该值视为对齐完成 */
+export const VIEWPORT_ALIGN_EPSILON_PX = 8
+
+function parseBlockIdAttr(raw: string | null): DbId | null {
   if (!raw) return null
   const num = Number(raw)
   return Number.isFinite(num) ? num : null
@@ -53,34 +50,78 @@ export function resolveVerticalScrollOwner(
   return start
 }
 
+/**
+ * 规范 IR 块节点：仅 `.orca-block[data-id]`（与章节 locate / 运行时 Orca 一致）。
+ * 不收集裸 `[data-id]`，避免命中非块节点或错误外层。
+ */
 export function collectVisibleBlockTops(
   contentContainer: HTMLElement,
   viewportContainer: HTMLElement
-): Array<{ blockId: DbId; top: number }> {
-  const nodes = contentContainer.querySelectorAll(
-    "[data-block-id], [data-blockid], [data-id], [blockid], [id^='block-']"
-  )
-  const viewportTop = viewportContainer.getBoundingClientRect().top
-  const viewportHeight = viewportContainer.clientHeight
-  const result: Array<{ blockId: DbId; top: number }> = []
+): Array<{ blockId: DbId; top: number; element: HTMLElement }> {
+  const nodes = contentContainer.querySelectorAll(".orca-block[data-id]")
+  const viewportRect = viewportContainer.getBoundingClientRect()
+  const viewportTop = viewportRect.top
+  const viewportBottom = viewportTop + viewportContainer.clientHeight
+  const result: Array<{ blockId: DbId; top: number; element: HTMLElement }> = []
   const seen = new Set<number>()
 
   nodes.forEach(node => {
     if (!(node instanceof HTMLElement)) return
-    const blockId = findBlockIdFromElement(node)
+    const blockId = parseBlockIdAttr(node.getAttribute("data-id"))
     if (blockId == null || seen.has(blockId)) return
     const rect = node.getBoundingClientRect()
-    if (rect.bottom < viewportTop || rect.top > viewportTop + viewportHeight) return
+    // 严格可见交集：与视口无重叠则跳过
+    if (rect.bottom <= viewportTop || rect.top >= viewportBottom) return
     seen.add(blockId)
-    result.push({ blockId, top: rect.top })
+    result.push({ blockId, top: rect.top, element: node })
   })
 
   return result
 }
 
+/** 阅读线相对视口顶部的偏移（px），与 baseline 绝对 Y 语义一致 */
+export function computeReadingLineOffsetPx(viewportContainer: HTMLElement): number {
+  return Math.min(80, viewportContainer.clientHeight * 0.15)
+}
+
 export function computeVisibleResumeBaseline(viewportContainer: HTMLElement): number {
   const viewportTop = viewportContainer.getBoundingClientRect().top
-  return viewportTop + Math.min(80, viewportContainer.clientHeight * 0.15)
+  return viewportTop + computeReadingLineOffsetPx(viewportContainer)
+}
+
+/**
+ * 目标块顶相对滚动 owner 顶部的偏移。
+ * 负值表示块顶在视口上方（长块内进度）。
+ */
+export function measureBlockTopOffsetPx(
+  blockElement: HTMLElement,
+  scrollOwner: HTMLElement
+): number {
+  const ownerTop = scrollOwner.getBoundingClientRect().top
+  return blockElement.getBoundingClientRect().top - ownerTop
+}
+
+/**
+ * 将块顶对齐到 owner 顶部 + topOffsetPx（确定性 scrollTop 调整，无 smooth）。
+ * 返回对齐后的残差（再测一次）；无 getBoundingClientRect 时返回 0。
+ */
+export function alignBlockTopOffset(
+  blockElement: HTMLElement,
+  scrollOwner: HTMLElement,
+  topOffsetPx: number
+): number {
+  if (typeof scrollOwner.getBoundingClientRect !== "function") {
+    return 0
+  }
+  const current = measureBlockTopOffsetPx(blockElement, scrollOwner)
+  const delta = current - topOffsetPx
+  if (delta !== 0) {
+    scrollOwner.scrollTop += delta
+  }
+  if (typeof blockElement.getBoundingClientRect !== "function") {
+    return 0
+  }
+  return measureBlockTopOffsetPx(blockElement, scrollOwner) - topOffsetPx
 }
 
 export function subscribeToBreakpointScroll(

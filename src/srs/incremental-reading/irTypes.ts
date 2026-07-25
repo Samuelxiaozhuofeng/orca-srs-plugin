@@ -33,12 +33,32 @@ export type IRReadingBreakpointSelection = {
   isForward: boolean
 }
 
+/**
+ * 视口锚点：目标块顶相对滚动 owner 顶部的偏移（px）。
+ * 负值表示块顶在视口上方（长块内阅读进度）。
+ */
+export type IRViewportAnchor = {
+  rootBlockId: DbId
+  blockId: DbId
+  topOffsetPx: number
+}
+
 export type IRReadingBreakpoint = {
   previewBlockId: DbId | null
   selection: IRReadingBreakpointSelection | null
   updatedAt: Date | null
-  /** 防止旧断点响应覆盖新断点 */
+  /**
+   * 进程内保存通道版本（可选）；与 schemaVersion 无关。
+   * 注意：历史 parse/serialize 会丢弃该字段。
+   */
   version?: number
+  /**
+   * 断点 JSON schema 版本。缺省/1 = 仅 preview+selection；
+   * 2 = 含 viewportAnchor。未知未来版本应保留已知字段。
+   */
+  schemaVersion?: number
+  /** v2：捕获时块顶相对滚动 owner 顶部的偏移，恢复时确定性对齐 */
+  viewportAnchor?: IRViewportAnchor | null
 }
 
 export type IRState = {

@@ -182,7 +182,12 @@ export function computeReadingProgressKey(state: {
         sel.isForward ? 1 : 0
       ].join(":")
     : ""
-  return `r=${resume}|p=${preview}|s=${selKey}`
+  const anchor = bp?.viewportAnchor
+  // 同块内滚动也计入实质进展：取整偏移避免亚像素抖动误触发
+  const anchorKey = anchor
+    ? `${anchor.rootBlockId}:${anchor.blockId}:${Math.round(anchor.topOffsetPx)}`
+    : ""
+  return `r=${resume}|p=${preview}|s=${selKey}|a=${anchorKey}`
 }
 
 export type SacStagnationUpdate = {

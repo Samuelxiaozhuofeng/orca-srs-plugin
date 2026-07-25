@@ -225,6 +225,8 @@ export default function IRSessionShell({
     initialBreakpoint: currentCard?.readingBreakpoint ?? null,
     initialResumeBlockId: currentCard?.resumeBlockId ?? null,
     enabled: Boolean(currentCard) && !showSummary && !isReviewEntry,
+    // chapter_browse 为临时探索态：不生成新断点，flush 只排空既有队列
+    allowCapture: readingContext.contextState.mode !== "chapter_browse",
     onSaveError: (err) => {
       setBreakpointError(err instanceof Error ? err.message : String(err))
       metricsRef.current.record("breakpoint.save_failure")

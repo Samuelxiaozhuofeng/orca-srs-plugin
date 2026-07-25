@@ -5,7 +5,8 @@
 import type { Block, CursorNodeData } from "../../orca.d.ts"
 import type {
   IRReadingBreakpoint,
-  IRReadingBreakpointSelection
+  IRReadingBreakpointSelection,
+  IRViewportAnchor
 } from "./irTypes"
 
 export type {
@@ -13,6 +14,7 @@ export type {
   IRLastAction,
   IRReadingBreakpointSelection,
   IRReadingBreakpoint,
+  IRViewportAnchor,
   IRState
 } from "./irTypes"
 
@@ -103,6 +105,23 @@ const normalizeReadingBreakpointSelection = (value: any): IRReadingBreakpointSel
   }
 }
 
+export const normalizeViewportAnchor = (value: any): IRViewportAnchor | null => {
+  if (!value || typeof value !== "object") return null
+
+  const rootBlockId = parseOptionalNumber((value as IRViewportAnchor).rootBlockId)
+  const blockId = parseOptionalNumber((value as IRViewportAnchor).blockId)
+  const topOffsetPx = typeof (value as IRViewportAnchor).topOffsetPx === "number"
+    && Number.isFinite((value as IRViewportAnchor).topOffsetPx)
+    ? (value as IRViewportAnchor).topOffsetPx
+    : null
+
+  if (rootBlockId === null || blockId === null || topOffsetPx === null) {
+    return null
+  }
+
+  return { rootBlockId, blockId, topOffsetPx }
+}
+
 export const normalizeReadingBreakpoint = (
   value: IRReadingBreakpoint | null | undefined
 ): IRReadingBreakpoint | null => {
@@ -110,16 +129,29 @@ export const normalizeReadingBreakpoint = (
 
   const previewBlockId = parseOptionalNumber(value.previewBlockId)
   const selection = normalizeReadingBreakpointSelection(value.selection)
+  const viewportAnchor = normalizeViewportAnchor(value.viewportAnchor)
   const updatedAt = parseDate(value.updatedAt, null)
 
-  if (previewBlockId === null && !selection) {
+  if (previewBlockId === null && !selection && !viewportAnchor) {
     return null
   }
+
+  const rawSchema = typeof value.schemaVersion === "number" && Number.isFinite(value.schemaVersion)
+    ? Math.floor(value.schemaVersion)
+    : null
+  if (rawSchema != null && rawSchema > 2) {
+    console.warn(`[IR] 未知断点 schemaVersion=${rawSchema}，仅使用已知字段`)
+  }
+
+  // 不变量：schemaVersion 2 必须带合法 viewportAnchor；否则降为 v1
+  const schemaVersion = viewportAnchor ? 2 : 1
 
   return {
     previewBlockId,
     selection,
-    updatedAt
+    updatedAt,
+    schemaVersion,
+    viewportAnchor
   }
 }
 
@@ -132,7 +164,9 @@ export const parseReadingBreakpoint = (value: any): IRReadingBreakpoint | null =
     return normalizeReadingBreakpoint({
       previewBlockId: parsed?.previewBlockId ?? null,
       selection: parsed?.selection ?? null,
-      updatedAt: parseDate(parsed?.updatedAt, null)
+      updatedAt: parseDate(parsed?.updatedAt, null),
+      schemaVersion: parsed?.schemaVersion,
+      viewportAnchor: parsed?.viewportAnchor ?? null
     })
   } catch (error) {
     console.warn("[IR] 解析阅读断点失败:", error)
@@ -146,11 +180,16 @@ export const serializeReadingBreakpoint = (
   const normalized = normalizeReadingBreakpoint(value)
   if (!normalized) return null
 
-  return JSON.stringify({
+  const payload: Record<string, unknown> = {
     previewBlockId: normalized.previewBlockId,
     selection: normalized.selection,
-    updatedAt: normalized.updatedAt?.toISOString() ?? null
-  })
+    updatedAt: normalized.updatedAt?.toISOString() ?? null,
+    schemaVersion: normalized.schemaVersion ?? 1
+  }
+  if (normalized.viewportAnchor) {
+    payload.viewportAnchor = normalized.viewportAnchor
+  }
+  return JSON.stringify(payload)
 }
 
 /** 调度身份相关属性（deleteIRSchedulingState 白名单） */

@@ -373,6 +373,7 @@ export async function updateReadingBreakpoint(
     resumeBlockId?: DbId | null
     previewBlockId?: DbId | null
     selection?: IRReadingBreakpointSelection | null
+    viewportAnchor?: import("./irTypes").IRViewportAnchor | null
   }
 ): Promise<IRState> {
   try {
@@ -381,11 +382,21 @@ export async function updateReadingBreakpoint(
     const baseBreakpoint = prev.readingBreakpoint ?? {
       previewBlockId: null,
       selection: null,
-      updatedAt: null
+      updatedAt: null,
+      viewportAnchor: null
     }
+    // selection/resume 替换但未附新几何时清空 anchor，避免旧 topOffset 对齐新 focus
+    const nextViewportAnchor = patch.viewportAnchor !== undefined
+      ? patch.viewportAnchor
+      : (
+        patch.selection !== undefined || patch.resumeBlockId !== undefined
+          ? null
+          : (baseBreakpoint.viewportAnchor ?? null)
+      )
     const nextBreakpoint = normalizeReadingBreakpoint({
       previewBlockId: patch.previewBlockId !== undefined ? patch.previewBlockId : baseBreakpoint.previewBlockId,
       selection: patch.selection !== undefined ? patch.selection : baseBreakpoint.selection,
+      viewportAnchor: nextViewportAnchor,
       updatedAt: new Date()
     })
 

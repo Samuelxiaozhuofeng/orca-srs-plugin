@@ -16,6 +16,7 @@ export type {
   IRLastAction,
   IRReadingBreakpointSelection,
   IRReadingBreakpoint,
+  IRViewportAnchor,
   IRState
 } from "./incremental-reading/irPropertyCodec"
 

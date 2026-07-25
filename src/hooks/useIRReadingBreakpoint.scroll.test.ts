@@ -201,23 +201,25 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
     }
 
     const target = resolveRestoreTarget(cardId, null, resumeId)
-    const scrollIntoView = vi.fn((el: HTMLElement) => {
+    const alignTarget = vi.fn((_el: HTMLElement, _o: number | null, owner: HTMLElement | null) => {
       // 模拟恢复滚动
-      scrollContainer.scrollTop = 120
-      el.dispatchEvent?.(new Event("scroll"))
+      if (owner) owner.scrollTop = 120
       scrollContainer.dispatchEvent(new Event("scroll"))
+      return 0
     })
 
     scheduleBreakpointRestore(target, {
       getContentContainer: () => content,
       getScrollContainer: () => scrollContainer,
       restoreSelection: vi.fn(async () => undefined),
-      scrollIntoView,
+      alignTarget,
       onSuccess: release,
       onFailure: release,
       schedule: (fn, delayMs) => window.setTimeout(fn, delayMs),
       clearSchedule: (id) => window.clearTimeout(id),
-      maxAttempts: 8
+      maxAttempts: 8,
+      stabilityConsecutiveOk: 1,
+      stabilityMaxWaitMs: 0
     })
 
     // 程序化归零会触发 scroll（jsdom 不自动触发，显式派发以模拟浏览器）
@@ -239,7 +241,7 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
     content.appendChild(block)
 
     await vi.advanceTimersByTimeAsync(260)
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(alignTarget).toHaveBeenCalled()
     expect(suppress.isActive()).toBe(false)
     expect(captureFromVisibleBlock).not.toHaveBeenCalled()
 
@@ -282,7 +284,7 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
       getContentContainer: () => document.createElement("div"),
       getScrollContainer: () => scrollContainer,
       restoreSelection: vi.fn(async () => undefined),
-      scrollIntoView: vi.fn(),
+      alignTarget: vi.fn(() => 0),
       onSuccess: release,
       onFailure: release
     })
@@ -323,7 +325,7 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
       getContentContainer: () => document.createElement("div"),
       getScrollContainer: () => ({ scrollTop: 10 }),
       restoreSelection: vi.fn(async () => undefined),
-      scrollIntoView: vi.fn(),
+      alignTarget: vi.fn(() => 0),
       onSuccess: release,
       onFailure: release,
       maxAttempts: 1,
@@ -395,7 +397,7 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
         getContentContainer: () => document.createElement("div"),
         getScrollContainer: () => resolveVerticalScrollOwner(internal),
         restoreSelection: vi.fn(async () => undefined),
-        scrollIntoView: vi.fn()
+        alignTarget: vi.fn(() => 0)
       })
 
       expect(host.scrollTop).toBe(0)
@@ -410,7 +412,7 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
       block.id = "block-200"
       content.appendChild(block)
       const order: string[] = []
-      const scrollIntoView = vi.fn()
+      const alignTarget = vi.fn()
 
       scheduleBreakpointRestore(resolveRestoreTarget(100, null, 200), {
         getContentContainer: () => content,
@@ -420,20 +422,23 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
           return owner
         },
         restoreSelection: vi.fn(async () => undefined),
-        scrollIntoView: (el) => {
+        alignTarget: (el, offset, owner) => {
           order.push("restore")
-          scrollIntoView(el)
+          alignTarget(el, offset, owner)
           if (host) host.scrollTop = 120
+          return 0
         },
         schedule: (fn, delayMs) => window.setTimeout(fn, delayMs),
-        clearSchedule: (id) => window.clearTimeout(id)
+        clearSchedule: (id) => window.clearTimeout(id),
+        stabilityConsecutiveOk: 1,
+        stabilityMaxWaitMs: 0
       })
 
       expect(host.scrollTop).toBe(0)
       expect(order[0]).toBe("reset@3961")
 
       await vi.advanceTimersByTimeAsync(60)
-      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(alignTarget).toHaveBeenCalled()
       expect(order.indexOf("reset@3961")).toBeLessThan(order.indexOf("restore"))
     })
 
@@ -505,15 +510,17 @@ describe("useIRReadingBreakpoint scroll capture wiring", () => {
         getContentContainer: () => content,
         getScrollContainer: () => resolveVerticalScrollOwner(internal),
         restoreSelection: vi.fn(async () => undefined),
-        scrollIntoView: (el) => {
+        alignTarget: () => {
           host.scrollTop = 200
           host.dispatchEvent(new Event("scroll"))
-          el.dispatchEvent?.(new Event("scroll"))
+          return 0
         },
         onSuccess: release,
         onFailure: release,
         schedule: (fn, delayMs) => window.setTimeout(fn, delayMs),
-        clearSchedule: (id) => window.clearTimeout(id)
+        clearSchedule: (id) => window.clearTimeout(id),
+        stabilityConsecutiveOk: 1,
+        stabilityMaxWaitMs: 0
       })
 
       expect(host.scrollTop).toBe(0)

@@ -71,15 +71,21 @@ describe("irBreakpointViewport", () => {
     body.style.height = "800px"
 
     const visible = document.createElement("div")
-    visible.dataset.blockId = "101"
+    visible.className = "orca-block"
+    visible.setAttribute("data-id", "101")
     visible.style.height = "40px"
 
     const hidden = document.createElement("div")
-    hidden.dataset.blockId = "202"
+    hidden.className = "orca-block"
+    hidden.setAttribute("data-id", "202")
     hidden.style.height = "40px"
     hidden.style.marginTop = "500px"
 
-    body.append(visible, hidden)
+    // 裸 data-id 不应成为候选
+    const nonBlock = document.createElement("div")
+    nonBlock.setAttribute("data-id", "999")
+
+    body.append(visible, hidden, nonBlock)
     scroll.appendChild(body)
     document.body.appendChild(scroll)
 
@@ -120,8 +126,21 @@ describe("irBreakpointViewport", () => {
       toJSON: () => ({})
     })
 
+    nonBlock.getBoundingClientRect = () => ({
+      top: 125,
+      left: 0,
+      right: 400,
+      bottom: 145,
+      width: 400,
+      height: 20,
+      x: 0,
+      y: 125,
+      toJSON: () => ({})
+    })
+
     const visibleBlocks = collectVisibleBlockTops(body, scroll)
     expect(visibleBlocks.map(item => item.blockId)).toEqual([101])
+    expect(visibleBlocks[0]?.element).toBe(visible)
     expect(computeVisibleResumeBaseline(scroll)).toBe(130)
   })
 

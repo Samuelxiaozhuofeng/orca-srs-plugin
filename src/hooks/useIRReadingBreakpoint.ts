@@ -5,7 +5,8 @@
 import type { CursorData, DbId } from "../orca.d.ts"
 import type {
   IRReadingBreakpoint,
-  IRReadingBreakpointSelection
+  IRReadingBreakpointSelection,
+  IRViewportAnchor
 } from "../srs/incrementalReadingStorage"
 import { updateReadingBreakpoint } from "../srs/incrementalReadingStorage"
 import {
@@ -16,12 +17,15 @@ import { findBlockElement } from "./irBreakpointDom"
 import {
   collectVisibleBlockTops,
   computeVisibleResumeBaseline,
+  measureBlockTopOffsetPx,
   resolveVerticalScrollOwner,
   subscribeToBreakpointScroll
 } from "./irBreakpointViewport"
 import {
   BreakpointRestoreRunGuard,
+  defaultAlignTarget,
   getRestoreTargetKey,
+  isMeaningfulTextSelection,
   resolveRestoreTarget,
   scheduleBreakpointRestore,
   ScrollCaptureSuppression,
@@ -30,6 +34,7 @@ import {
 } from "./irBreakpointRestore"
 
 export {
+  isMeaningfulTextSelection,
   planCardEnterScroll,
   resetScrollContainerTop,
   ScrollCaptureSuppression,
@@ -73,6 +78,11 @@ export type UseIRReadingBreakpointOptions = {
   initialBreakpoint?: IRReadingBreakpoint | null
   initialResumeBlockId?: DbId | null
   enabled?: boolean
+  /**
+   * 是否允许生成新断点（滚动/选区捕获）。
+   * chapter_browse 应设为 false，flush 只排空既有保存队列。
+   */
+  allowCapture?: boolean
   onSaveError?: (error: unknown) => void
   onSaveSuccess?: () => void
   onRestoreSuccess?: () => void
@@ -102,6 +112,22 @@ function useLatestRef<T>(value: T) {
   return ref
 }
 
+function measureViewportAnchor(
+  rootBlockId: DbId,
+  blockId: DbId,
+  contentContainer: HTMLElement | null,
+  scrollOwner: HTMLElement | null
+): IRViewportAnchor | null {
+  if (!contentContainer || !scrollOwner) return null
+  const el = findBlockElement(contentContainer, blockId)
+  if (!el) return null
+  return {
+    rootBlockId,
+    blockId,
+    topOffsetPx: measureBlockTopOffsetPx(el, scrollOwner)
+  }
+}
+
 export function useIRReadingBreakpoint(
   options: UseIRReadingBreakpointOptions
 ): UseIRReadingBreakpointResult {
@@ -115,6 +141,7 @@ export function useIRReadingBreakpoint(
     initialBreakpoint = null,
     initialResumeBlockId = null,
     enabled = true,
+    allowCapture = true,
     onSaveError,
     onSaveSuccess,
     onRestoreSuccess,
@@ -125,6 +152,7 @@ export function useIRReadingBreakpoint(
   const onSaveSuccessRef = useLatestRef(onSaveSuccess)
   const onRestoreSuccessRef = useLatestRef(onRestoreSuccess)
   const onRestoreFailureRef = useLatestRef(onRestoreFailure)
+  const allowCaptureRef = useLatestRef(allowCapture)
 
   const channelRef = useRef(new BreakpointSaveChannel())
   const debounceRef = useRef<number | null>(null)
@@ -156,6 +184,7 @@ export function useIRReadingBreakpoint(
     resumeBlockId?: DbId | null
     previewBlockId?: DbId | null
     selection?: IRReadingBreakpointSelection | null
+    viewportAnchor?: IRViewportAnchor | null
   }) => {
     if (!cardId || !enabled) return
     const channel = channelRef.current
@@ -181,8 +210,11 @@ export function useIRReadingBreakpoint(
   }, [cardId, enabled])
 
   const captureFromSelection = useCallback(() => {
-    if (!cardId || !enabled) return false
+    if (!cardId || !enabled || !allowCaptureRef.current) return false
     const selection = window.getSelection()
+    // 折叠 caret / 空选区不得优先于视口（flush 时尤其致命）
+    if (!isMeaningfulTextSelection(selection)) return false
+
     const cursor = orca.utils.getCursorDataFromSelection(selection)
     if (!cursor || cursor.panelId !== panelId) return false
 
@@ -195,35 +227,72 @@ export function useIRReadingBreakpoint(
       ? (previewBlockId && previewBlockId !== cardId ? previewBlockId : null)
       : cursor.rootBlockId
 
+    const contentRoot = cursor.rootBlockId === cardId
+      ? containerRef.current
+      : (previewContainerRef?.current ?? containerRef.current)
+    const scrollOwner = resolveSessionScrollOwner(scrollContainerRef, containerRef)
+    const viewportAnchor = measureViewportAnchor(
+      selectionData.rootBlockId,
+      selectionData.focus.blockId,
+      contentRoot,
+      scrollOwner
+    )
+
     void persist({
       resumeBlockId: selectionData.focus.blockId,
       previewBlockId: nextPreview,
-      selection: selectionData
+      selection: selectionData,
+      viewportAnchor
     })
     return true
-  }, [cardId, enabled, panelId, previewBlockId, persist])
+  }, [
+    cardId,
+    containerRef,
+    enabled,
+    panelId,
+    persist,
+    previewBlockId,
+    previewContainerRef,
+    scrollContainerRef
+  ])
 
   const captureFromVisibleBlock = useCallback(() => {
-    if (!cardId || !enabled) return
+    if (!cardId || !enabled || !allowCaptureRef.current) return
     const contentContainer = containerRef.current
     const viewportContainer = resolveSessionScrollOwner(scrollContainerRef, containerRef)
     if (!contentContainer || !viewportContainer) return
     const candidates = collectVisibleBlockTops(contentContainer, viewportContainer)
     const baseline = computeVisibleResumeBaseline(viewportContainer)
-    const resumeBlockId = pickVisibleResumeBlockId(candidates, baseline)
+    const resumeBlockId = pickVisibleResumeBlockId(
+      candidates.map(c => ({ blockId: c.blockId, top: c.top })),
+      baseline
+    )
     if (resumeBlockId == null) return
+
+    const picked = candidates.find(c => c.blockId === resumeBlockId)
+    const viewportAnchor: IRViewportAnchor | null = picked
+      ? {
+        rootBlockId: cardId,
+        blockId: resumeBlockId,
+        topOffsetPx: measureBlockTopOffsetPx(picked.element, viewportContainer)
+      }
+      : null
+
     void persist({
       resumeBlockId,
-      selection: null
+      selection: null,
+      viewportAnchor
     })
   }, [cardId, containerRef, enabled, persist, scrollContainerRef])
 
   const captureNow = useCallback(() => {
+    if (!allowCaptureRef.current) return
     if (captureFromSelection()) return
     captureFromVisibleBlock()
   }, [captureFromSelection, captureFromVisibleBlock])
 
   const scheduleCapture = useCallback(() => {
+    if (!allowCaptureRef.current) return
     if (debounceRef.current != null) window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null
@@ -240,7 +309,10 @@ export function useIRReadingBreakpoint(
       window.clearTimeout(scrollDebounceRef.current)
       scrollDebounceRef.current = null
     }
-    captureNow()
+    // browse 等禁止捕获态：只排空既有队列，不按当前 DOM 生成新断点
+    if (allowCaptureRef.current) {
+      captureNow()
+    }
     await new Promise<void>(resolve => {
       pendingFlushResolvers.current.push(resolve)
       window.setTimeout(resolve, 50)
@@ -272,8 +344,6 @@ export function useIRReadingBreakpoint(
       getContentContainer: (targetRootBlockId) => targetRootBlockId === cardId
         ? containerRef.current
         : (previewContainerRef?.current ?? containerRef.current),
-      // Resolve at call time so card-enter reset hits the host owner, not a
-      // non-scrollable expanded `.ir-reading__scroll`.
       getScrollContainer: () => resolveSessionScrollOwner(scrollContainerRef, containerRef),
       restoreSelection: async (selection) => {
         await orca.utils.setSelectionFromCursorData({
@@ -282,10 +352,8 @@ export function useIRReadingBreakpoint(
           rootBlockId: selection.rootBlockId
         })
       },
-      scrollIntoView: (element) => {
-        // Native scrollIntoView scrolls the resolved host ancestor chain;
-        // reset already zeroed the same owner via getScrollContainer.
-        element.scrollIntoView({ behavior: "smooth", block: "center" })
+      alignTarget: (element, topOffsetPx, scrollOwner) => {
+        return defaultAlignTarget(element, topOffsetPx, scrollOwner)
       },
       onSuccess: () => {
         guard.complete(targetKey)
@@ -321,7 +389,7 @@ export function useIRReadingBreakpoint(
   // 监听真实纵向滚动 owner（可能是 host `.orca-block-editor` 祖先），而非仅内部节点。
   useEffect(() => {
     const scrollContainer = resolveSessionScrollOwner(scrollContainerRef, containerRef)
-    if (!scrollContainer || !enabled || !cardId) return
+    if (!scrollContainer || !enabled || !cardId || !allowCapture) return
 
     const listeningForCardId = cardId
     const onScroll = () => {
@@ -342,7 +410,7 @@ export function useIRReadingBreakpoint(
           return
         }
         const sel = window.getSelection()
-        if (sel && !sel.isCollapsed && sel.toString().trim()) return
+        if (isMeaningfulTextSelection(sel)) return
         captureFromVisibleBlock()
       }, SCROLL_DEBOUNCE_MS)
     }
@@ -352,7 +420,16 @@ export function useIRReadingBreakpoint(
       unsubscribe()
       clearScrollDebounce()
     }
-  }, [activeCardIdRef, captureFromVisibleBlock, clearScrollDebounce, containerRef, enabled, cardId, scrollContainerRef])
+  }, [
+    activeCardIdRef,
+    allowCapture,
+    captureFromVisibleBlock,
+    clearScrollDebounce,
+    containerRef,
+    enabled,
+    cardId,
+    scrollContainerRef
+  ])
 
   // 进入新卡：先归零再按有效断点恢复（归零在 scheduleBreakpointRestore 内；cleanup cancel 并释放 suppress）
   useEffect(() => {

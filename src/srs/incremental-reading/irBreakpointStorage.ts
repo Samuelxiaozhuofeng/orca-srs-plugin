@@ -5,12 +5,17 @@
  */
 
 import type { DbId } from "../../orca.d.ts"
-import type { IRReadingBreakpoint, IRReadingBreakpointSelection } from "./irTypes"
+import type {
+  IRReadingBreakpoint,
+  IRReadingBreakpointSelection,
+  IRViewportAnchor
+} from "./irTypes"
 
 export type BreakpointSaveRequest = {
   resumeBlockId?: DbId | null
   previewBlockId?: DbId | null
   selection?: IRReadingBreakpointSelection | null
+  viewportAnchor?: IRViewportAnchor | null
   version: number
 }
 
@@ -49,6 +54,15 @@ export function mergeBreakpointSave(
     ? request.resumeBlockId
     : currentResume
 
+  // 与 updateReadingBreakpoint 一致：换 selection/resume 且无新几何 → 清空旧 anchor
+  const viewportAnchor = request.viewportAnchor !== undefined
+    ? request.viewportAnchor
+    : (
+      request.selection !== undefined || request.resumeBlockId !== undefined
+        ? null
+        : (base.viewportAnchor ?? null)
+    )
+
   const breakpoint: IRReadingBreakpoint = {
     previewBlockId: request.previewBlockId !== undefined
       ? request.previewBlockId
@@ -56,6 +70,8 @@ export function mergeBreakpointSave(
     selection: request.selection !== undefined
       ? request.selection
       : base.selection,
+    viewportAnchor,
+    schemaVersion: viewportAnchor ? 2 : 1,
     updatedAt: new Date(),
     version: nextVersion
   }
