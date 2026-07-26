@@ -5,6 +5,7 @@ import type { ReviewCard, TagInfo } from "./types"
 import { BlockWithRepr, isSrsCardBlock, resolveFrontBack } from "./blockUtils"
 import { extractDeckName, extractCardType } from "./deckUtils"
 import { extractCardStatus } from "./cardStatusUtils"
+import { readCardBatchId } from "./cardBatch"
 import {
   ensureCardSrsState,
   ensureCardSrsStateWithInitialDue,
@@ -103,6 +104,11 @@ export async function convertBlockToReviewCards(
     return cards
   }
 
+  // pending：卡片已建好但尚未排期。与 suspend 不同，这里不提前返回——
+  // 卡片仍要被收集，只是由队列构建阶段排除，Flash Home 才能统计并批量激活。
+  const isPending = status === "pending"
+  const batchId = readCardBatchId(block)
+
   // 识别卡片类型
   const cardType = extractCardType(block)
 
@@ -136,6 +142,8 @@ export async function convertBlockToReviewCards(
         back: `（填空 c${clozeNumber}）`,
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
         deck: deckName,
         cardType: "cloze",
         tags: extractNonCardTags(block),
@@ -174,6 +182,8 @@ export async function convertBlockToReviewCards(
         back,
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
         deck: deckName,
         cardType: "direction",
         tags: extractNonCardTags(block),
@@ -191,6 +201,8 @@ export async function convertBlockToReviewCards(
       back: "",
       srs: srsState,
       isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
       deck: deckName,
       cardType: "excerpt",
       tags: extractNonCardTags(block)
@@ -210,6 +222,8 @@ export async function convertBlockToReviewCards(
       back: "",
       srs: srsState,
       isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
       deck: deckName,
       cardType: "choice",
       tags: extractNonCardTags(block),
@@ -271,6 +285,8 @@ export async function convertBlockToReviewCards(
         back: "",        // 无 back
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
         deck: deckName,
         cardType: "basic",
         tags: extractNonCardTags(block)
@@ -286,6 +302,8 @@ export async function convertBlockToReviewCards(
         back,
         srs: srsState,
         isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
         deck: deckName,
         cardType: "basic",
         tags: extractNonCardTags(block)

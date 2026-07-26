@@ -2169,3 +2169,24 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* 待激活开关（复习阶段） */
+.ai-card-dialog__pending-toggle {
+  display: flex;
+  /* 预览区是 flex:1 容器；开关必须钉住，否则草稿一多就被压扁到看不见 */
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-2) var(--srs-space-3);
+  margin-bottom: var(--srs-space-2);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-1);
+  cursor: pointer;
+}
+
+.ai-card-dialog__pending-toggle .ai-card-dialog__field-hint {
+  display: block;
+  margin-top: var(--srs-space-1);
+}

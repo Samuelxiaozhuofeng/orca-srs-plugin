@@ -31,6 +31,7 @@ export interface AICardGenerationDialogProps {
   detailLevel: AIDetailLevel
   cardLanguage: AICardLanguage
   customInstruction: string
+  startPending: boolean
   drafts: AICardDraft[]
   selectedIds: string[]
   errorMessage: string | null
@@ -43,6 +44,7 @@ export interface AICardGenerationDialogProps {
   onDetailLevelChange: (level: AIDetailLevel) => void
   onCardLanguageChange: (language: AICardLanguage) => void
   onCustomInstructionChange: (text: string) => void
+  onStartPendingChange: (value: boolean) => void
   onGenerate: () => void
   onGenerateMore: () => void
   onCancelGenerate: () => void
@@ -67,6 +69,7 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     detailLevel,
     cardLanguage,
     customInstruction,
+    startPending,
     drafts,
     selectedIds,
     errorMessage,
@@ -79,6 +82,7 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     onDetailLevelChange,
     onCardLanguageChange,
     onCustomInstructionChange,
+    onStartPendingChange,
     onGenerate,
     onGenerateMore,
     onCancelGenerate,
@@ -177,6 +181,8 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
             isSaving={isSaving}
             isGenerating={isGenerating}
             isGeneratingMore={isGeneratingMore}
+            startPending={startPending}
+            onStartPendingChange={onStartPendingChange}
             onGenerateMore={onGenerateMore}
             onToggleSelect={onToggleSelect}
             onUpdateDraft={onUpdateDraft}
@@ -386,6 +392,8 @@ function ReviewPhase(props: {
   isSaving: boolean
   isGenerating: boolean
   isGeneratingMore: boolean
+  startPending: boolean
+  onStartPendingChange: (value: boolean) => void
   onGenerateMore: () => void
   onToggleSelect: (id: string, selected: boolean) => void
   onUpdateDraft: (id: string, patch: Partial<AICardDraft>) => void
@@ -396,7 +404,7 @@ function ReviewPhase(props: {
   onSave: () => void
   onClose: () => void
 }) {
-  const { Button } = orca.components
+  const { Button, Checkbox } = orca.components
   const {
     drafts,
     selectedIds,
@@ -406,6 +414,8 @@ function ReviewPhase(props: {
     isSaving,
     isGenerating,
     isGeneratingMore,
+    startPending,
+    onStartPendingChange,
     onGenerateMore,
     onToggleSelect,
     onUpdateDraft,
@@ -425,6 +435,24 @@ function ReviewPhase(props: {
         <div className="ai-card-dialog__section-label">
           草稿预览（已选 {selectedCount}/{drafts.length}）
         </div>
+        <label className="ai-card-dialog__pending-toggle">
+          <Checkbox
+            checked={startPending}
+            disabled={busy}
+            aria-label="保存为待激活"
+            onChange={({ checked }: { checked: boolean }) =>
+              onStartPendingChange(checked)
+            }
+          />
+          <span>
+            保存为待激活（不立即排期）
+            <span className="ai-card-dialog__field-hint">
+              一次写入多张会瞬间打爆当日新卡额度并打乱新卡节奏；待激活的卡可在
+              闪卡主页批量放行。
+            </span>
+          </span>
+        </label>
+
         {drafts.length === 0 ? (
           <p className="ai-card-dialog__empty">暂无草稿，请返回重新生成</p>
         ) : (

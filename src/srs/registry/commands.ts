@@ -385,6 +385,45 @@ export function registerCommands(
     "SRS: 测试 AI 连接"
   )
 
+  // 激活全部待激活卡片（AI 批量制卡时选了「保存为待激活」的那些）
+  orca.commands.registerCommand(
+    `${pluginName}.activatePendingCards`,
+    async () => {
+      const { collectReviewCards } = await import("../cardCollector")
+      const { activatePendingCards } = await import("../cardStatusUtils")
+
+      const cards = await collectReviewCards(_pluginName)
+      // 同一个块可能产出多张卡（cloze/direction），按块去重后再写
+      const pendingBlockIds = Array.from(
+        new Set(cards.filter((c) => c.isPending).map((c) => c.id))
+      )
+
+      if (pendingBlockIds.length === 0) {
+        orca.notify("info", "没有待激活的卡片", { title: "激活待激活卡片" })
+        return
+      }
+
+      const { activated, failed } = await activatePendingCards(pendingBlockIds)
+
+      if (failed.length > 0) {
+        orca.notify(
+          "warn",
+          `已激活 ${activated.length} 张，${failed.length} 张失败：${failed
+            .map((f) => `#${f.blockId} ${f.error}`)
+            .slice(0, 3)
+            .join("；")}`,
+          { title: "激活待激活卡片" }
+        )
+        return
+      }
+
+      orca.notify("success", `已激活 ${activated.length} 张卡片`, {
+        title: "激活待激活卡片"
+      })
+    },
+    "SRS: 激活待激活卡片"
+  )
+
   // 管理工具栏 AI 提示词（无需选区）
   orca.commands.registerCommand(
     `${pluginName}.manageAIToolbarPrompts`,

@@ -25,6 +25,8 @@ export interface AIDialogState {
   detailLevel: AIDetailLevel
   cardLanguage: AICardLanguage
   customInstruction: string
+  /** 保存时把卡片写成待激活，不立即排期 */
+  startPending: boolean
   drafts: AICardDraft[]
   selectedIds: string[]
   rejected: RejectedDraftItem[]
@@ -46,6 +48,7 @@ export const aiDialogState = proxy({
   detailLevel: DEFAULT_AI_DETAIL_LEVEL as AIDetailLevel,
   cardLanguage: DEFAULT_AI_CARD_LANGUAGE as AICardLanguage,
   customInstruction: "",
+  startPending: false,
   drafts: [] as AICardDraft[],
   selectedIds: [] as string[],
   rejected: [] as RejectedDraftItem[],
@@ -75,6 +78,7 @@ export function openAIDialog(sourceText: string, sourceBlockId: number): void {
   aiDialogState.detailLevel = DEFAULT_AI_DETAIL_LEVEL
   aiDialogState.cardLanguage = DEFAULT_AI_CARD_LANGUAGE
   aiDialogState.customInstruction = ""
+  aiDialogState.startPending = false
   aiDialogState.drafts = []
   aiDialogState.selectedIds = []
   aiDialogState.rejected = []

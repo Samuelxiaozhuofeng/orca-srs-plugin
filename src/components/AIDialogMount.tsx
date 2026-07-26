@@ -191,7 +191,8 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       const result = await writeAICardDrafts({
         pluginName,
         sourceBlockId: snap.sourceBlockId,
-        drafts: selected
+        drafts: selected,
+        startPending: aiDialogState.startPending
       })
 
       if (!result.success) {
@@ -204,9 +205,13 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
         return
       }
 
-      orca.notify("success", `已保存 ${result.createdBlockIds.length} 张卡片`, {
-        title: "AI 生成闪卡"
-      })
+      orca.notify(
+        "success",
+        aiDialogState.startPending
+          ? `已保存 ${result.createdBlockIds.length} 张卡片（待激活，暂不排期）`
+          : `已保存 ${result.createdBlockIds.length} 张卡片`,
+        { title: "AI 生成闪卡" }
+      )
       closeAIDialog()
     } catch (error) {
       const message =
@@ -229,6 +234,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       detailLevel={snap.detailLevel}
       cardLanguage={snap.cardLanguage}
       customInstruction={snap.customInstruction}
+      startPending={snap.startPending}
       drafts={snap.drafts as AICardDraft[]}
       selectedIds={snap.selectedIds as string[]}
       errorMessage={snap.errorMessage}
@@ -265,6 +271,11 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
             0,
             AI_CUSTOM_INSTRUCTION_MAX
           )
+        }
+      }}
+      onStartPendingChange={(value: boolean) => {
+        if (!aiDialogState.isSaving) {
+          aiDialogState.startPending = value
         }
       }}
       onGenerate={handleGenerate}
