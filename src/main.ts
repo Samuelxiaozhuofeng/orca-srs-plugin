@@ -535,10 +535,17 @@ async function startRepeatReviewSession(blockId: DbId, openInCurrentPanel: boole
     let sourceType: 'query' | 'children'
 
     if (isQueryBlock(block)) {
-      // 先检查查询结果是否为空
+      // 先检查查询结果是否为空（查询执行失败与「结果为空」区分处理）
       const { getQueryResults } = await import("./srs/blockCardCollector")
-      const queryResults = await getQueryResults(blockId)
-      
+      let queryResults
+      try {
+        queryResults = await getQueryResults(blockId)
+      } catch (error) {
+        console.error(`[${pluginName}] 查询执行失败:`, error)
+        orca.notify("error", "查询执行失败，请重试", { title: "SRS 复习" })
+        return
+      }
+
       if (queryResults.length === 0) {
         orca.notify("info", "查询结果为空", { title: "SRS 复习" })
         return

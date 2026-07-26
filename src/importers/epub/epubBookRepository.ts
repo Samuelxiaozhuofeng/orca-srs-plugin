@@ -29,10 +29,24 @@ function getPropValue(block: Block | undefined, name: string): unknown {
   return Array.isArray(value) && value.length === 1 ? value[0] : value
 }
 
+/**
+ * Backend-first block load (same pattern as bookIRPlanRepository.getBlock).
+ * Prefer get-block so post-write reads — e.g. loadManifestFromBook right after
+ * persistManifest — are not stuck on a stale orca.state.blocks snapshot.
+ * State is only a fallback when the backend misses or fails (failure is
+ * logged; never swallowed as empty success).
+ */
 async function getBlock(blockId: DbId): Promise<Block | undefined> {
-  const cached = orca.state.blocks?.[blockId] as Block | undefined
-  if (cached) return cached
-  return (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+  try {
+    const fromBackend = (await orca.invokeBackend("get-block", blockId)) as Block | undefined
+    if (fromBackend) return fromBackend
+  } catch (error) {
+    console.warn(
+      `[EPUB] get-block #${blockId} failed; falling back to orca.state:`,
+      error
+    )
+  }
+  return orca.state.blocks?.[blockId] as Block | undefined
 }
 
 export async function setBookEpubProperties(

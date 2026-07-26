@@ -18,6 +18,41 @@ export { convertBlockToReviewCards, hasCardTag } from "./reviewCardFactory"
 const PLUGIN_NAME = "srs-plugin"
 
 /**
+ * 查询执行失败错误
+ *
+ * getQueryResults 在后端查询抛错时抛出本错误（不再静默返回空数组），
+ * 调用方可用 instanceof 区分「查询执行失败」与「查询结果为空」。
+ */
+export class QueryExecutionError extends Error {
+  readonly cause: unknown
+
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    this.name = "QueryExecutionError"
+    this.cause = cause
+  }
+}
+
+/**
+ * 归一化查询后端返回的结果项
+ *
+ * Backend-API.md 声明 query 返回块数组，但运行时也可能返回 DbId 数组
+ * （与 epubBookRepository/webImport 的双形状归一化保持一致）：
+ * 对每个结果做数字/对象归一化，过滤掉非有限数字后返回 DbId 列表。
+ */
+function normalizeQueryResultIds(results: unknown[]): DbId[] {
+  const ids: DbId[] = []
+  for (const item of results) {
+    const id =
+      typeof item === "number" ? item : (item as { id?: number } | null)?.id
+    if (typeof id === "number" && Number.isFinite(id)) {
+      ids.push(id as DbId)
+    }
+  }
+  return ids
+}
+
+/**
  * 判断块是否为查询块
  * 查询块的 _repr.type 为 "query"
  * 注意：Orca 中查询块的 _repr 存储在 properties 中
@@ -45,9 +80,13 @@ export function isQueryBlock(block: BlockWithRepr | undefined): boolean {
 /**
  * 获取查询块的结果列表
  * 通过执行查询块的查询语句来获取结果
- * 
+ *
+ * 后端返回 DbId[] 或 Block[] 均可正确归一化为 DbId[]。
+ * 查询执行失败时抛出 QueryExecutionError（错误可见，不再伪装成空结果）。
+ *
  * @param blockId - 查询块 ID
  * @returns 查询结果块 ID 数组
+ * @throws QueryExecutionError 查询执行失败时
  */
 export async function getQueryResults(blockId: DbId): Promise<DbId[]> {
   // 必须从后端获取完整的块数据（state 中的数据可能不完整）
@@ -74,21 +113,30 @@ export async function getQueryResults(blockId: DbId): Promise<DbId[]> {
   
   console.log(`[blockCardCollector] 查询块 ${blockId} 的查询语句:`, JSON.stringify(repr.q))
   
+  let rawResults: unknown
   try {
     // 执行查询获取结果
-    const queryResults = await orca.invokeBackend("query", repr.q) as DbId[] | null
-    
-    if (!queryResults || queryResults.length === 0) {
-      console.log(`[blockCardCollector] 查询块 ${blockId} 查询结果为空`)
-      return []
-    }
-    
-    console.log(`[blockCardCollector] 查询块 ${blockId} 获取到 ${queryResults.length} 个结果`)
-    return queryResults
+    rawResults = await orca.invokeBackend("query", repr.q)
   } catch (error) {
     console.error(`[blockCardCollector] 执行查询失败:`, error)
+    throw new QueryExecutionError(`查询块 ${blockId} 执行查询失败`, error)
+  }
+
+  if (!Array.isArray(rawResults) || rawResults.length === 0) {
+    console.log(`[blockCardCollector] 查询块 ${blockId} 查询结果为空`)
     return []
   }
+
+  // 归一化 DbId[] / Block[] 双形状
+  const resultIds = normalizeQueryResultIds(rawResults)
+
+  if (resultIds.length === 0) {
+    console.log(`[blockCardCollector] 查询块 ${blockId} 查询结果为空`)
+    return []
+  }
+
+  console.log(`[blockCardCollector] 查询块 ${blockId} 获取到 ${resultIds.length} 个结果`)
+  return resultIds
 }
 
 /**
@@ -127,13 +175,18 @@ export async function getAllDescendantIds(blockId: DbId): Promise<DbId[]> {
   return result
 }
 
+/**
+ * 从查询块收集卡片
+ *
+ * @throws QueryExecutionError 查询执行失败时向上传播（不吞错）
+ */
 export async function collectCardsFromQueryBlock(
   blockId: DbId,
   pluginName: string = PLUGIN_NAME
 ): Promise<ReviewCard[]> {
   const cards: ReviewCard[] = []
-  
-  // 获取查询结果
+
+  // 获取查询结果（查询执行失败时向上抛出 QueryExecutionError）
   const resultIds = await getQueryResults(blockId)
   
   if (resultIds.length === 0) {
@@ -220,15 +273,17 @@ export async function collectCardsFromChildren(
  * @param blockId - 块 ID
  * @param isQuery - 是否为查询块
  * @returns 预估的卡片数量
+ * @throws QueryExecutionError 查询块查询执行失败时向上传播（不吞错）
  */
 export async function estimateCardCount(
   blockId: DbId,
   isQuery: boolean
 ): Promise<number> {
   let count = 0
-  
+
   if (isQuery) {
     // 查询块：统计查询结果中带 #Card 标签的块数量
+    // （查询执行失败时向上抛出 QueryExecutionError，由调用方展示错误状态）
     const resultIds = await getQueryResults(blockId)
     for (const resultId of resultIds) {
       let block = orca.state.blocks?.[resultId] as Block | undefined

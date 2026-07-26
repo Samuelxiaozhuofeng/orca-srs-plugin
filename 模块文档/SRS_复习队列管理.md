@@ -1,7 +1,8 @@
 # SRS 复习队列管理模块
 
-> **文档同步日期：2026-07-13**  
-> 变更说明：收集/建队入口改为 `cardCollector.ts`；到期判定统一为精确时间（删除过时的「仅比日期」段落）；补全 descriptor / scope / budget / pending / 子卡展开相关文件。
+> **文档同步日期：2026-07-26**  
+> 变更说明：新增「查询块收集」小节——`getQueryResults` 对后端 `query` 返回做 DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不再静默返回空数组）。  
+> 2026-07-13：收集/建队入口改为 `cardCollector.ts`；到期判定统一为精确时间（删除过时的「仅比日期」段落）；补全 descriptor / scope / budget / pending / 子卡展开相关文件。
 
 ## 概述
 
@@ -135,6 +136,18 @@ flowchart LR
 ### `calculateDeckStats(cards): DeckStats`
 
 实现位于 **`src/srs/deckUtils.ts`**（非 cardCollector）。返回各 Deck 与全局 total/new/overdue。
+
+### 查询块收集（`blockCardCollector.ts`）
+
+右键菜单「复习此查询结果 / 子树复习」的收集入口：
+
+- **`getQueryResults(blockId)`**：后端 `get-block` 读查询块 `_repr.q` 后 `invokeBackend("query", repr.q)`。返回值做**双形状归一化**（`normalizeQueryResultIds`）：`Backend-API.md` 声明 query 返回块数组，但运行时也可能返回 DbId 数组——逐项按「number → 直接用 / 对象 → 取 `.id`」归一化，过滤非有限数字（与 `epubBookRepository` / `webImport` 的同 API 归一化一致）。**禁止** `as DbId[]` 纯断言。
+- **失败语义**：查询执行抛错时 `console.error` 后抛 **`QueryExecutionError`**（导出类，携带 `cause`），沿 `collectCardsFromQueryBlock` / `estimateCardCount` 向上传播——**不得** `return []` 把失败伪装成空结果。调用方用 `instanceof` 区分：
+  - `main.ts` 查询分支 / `contextMenuRegistry.handleReviewError`：notify `error`「查询执行失败，请重试」（title「SRS 复习」），与「查询结果中没有找到卡片」的 info 区分；
+  - `QueryBlockMenuItem.fetchCount` 失败置 `hasError` → 菜单标题「复习此查询结果 (加载失败)」并禁用。
+- 「查询结果为空 / 非查询块 / 无 `repr.q`」仍返回 `[]`（属正常空结果，console.log 可见）。
+
+回归：`blockCardCollector.test.ts`（含块对象形状归一化与 `QueryExecutionError` 传播用例）。
 
 ---
 

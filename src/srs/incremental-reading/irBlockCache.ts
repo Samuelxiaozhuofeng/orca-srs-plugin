@@ -28,6 +28,36 @@ export const getBlockCached = async (blockId: DbId): Promise<Block | undefined> 
   return block
 }
 
+/**
+ * 用后端返回的完整块批量预热缓存（语义对齐 storage.ts 的 preheatBlockCache）。
+ *
+ * 预热来源必须是后端返回的块（get-blocks-with-tags / get-blocks / get-block 的结果可信）。
+ * 不得用 orca.state.blocks 里的块预热：见上方 getBlockCached 内注释，
+ * state 可能是旧快照（properties 不一定最新），预热会把旧值固化进缓存。
+ *
+ * 不发起后端请求；覆盖同 id 的既有缓存条目。
+ * 写入后的 invalidateIrBlockCache（saveIRState 等）按块失效语义不变。
+ *
+ * @returns 写入缓存的块数量
+ */
+export function preheatIrBlockCache(blocks: ReadonlyArray<Block | null | undefined>): number {
+  let count = 0
+  for (const block of blocks) {
+    if (block == null || block.id == null) continue
+    blockCache.set(block.id, block)
+    count++
+  }
+  return count
+}
+
+/**
+ * 清空全部块缓存（测试边界清理用，语义对齐 storage.ts 的 clearBlockCache）。
+ * 生产路径依赖 invalidateIrBlockCache 做精确失效，不应依赖本函数。
+ */
+export function clearIrBlockCache(): void {
+  blockCache.clear()
+}
+
 export const invalidateIrBlockCache = (blockId: DbId): void => {
   blockCache.delete(blockId)
 }

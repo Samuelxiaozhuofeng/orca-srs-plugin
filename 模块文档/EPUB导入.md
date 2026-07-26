@@ -1,7 +1,8 @@
 # EPUB 导入
 
-> 文档同步日期：2026-07-25
-> 变更说明：WP-07 **纯层**已落地严格 HTML 清洗、资源预算、MIME 魔数、解析层 AbortSignal；ZIP load 与 entry 解压完成后会再次检查取消。
+> 文档同步日期：2026-07-26
+> 变更说明：`epubBookRepository.getBlock` 改 **backend-first**（对齐 `bookIRPlanRepository` 范式）：优先后端 `get-block`，失败 `console.warn` 后回退 `orca.state`——`persistManifest` 后紧接的 `loadManifestFromBook` / `ensureChaptersHeading` / `ensureInlineReference` 写后读不再受旧 state 快照影响（旧行为会把已导入章节当 pending 重跑 / 重复建页）。回归：`epubBookRepository.test.ts`。另更正：工具栏 `importEpubButton` 已移除，导入入口为斜杠 / 命令面板。
+> 2026-07-25：WP-07 **纯层**已落地严格 HTML 清洗、资源预算、MIME 魔数、解析层 AbortSignal；ZIP load 与 entry 解压完成后会再次检查取消。
 > **未验收 / 证据阻塞**：`importEpub` / `resumeEpubImport` 写入链取消、超限图片「省略 vs 零写入拒绝」preflight、真机 Network 与 resume 一致性。
 > 2026-07-19：ir_setup 重要性字段——用户文案「重要性」，三档绝对档位（20/50/80，默认中），选项来自 `importanceSetupOptions`（`irImportance.ts`）；存储仍写 `priority` → 各章 `ir.priority`。
 > 2026-07-25：**logical fragment chapters** 已落地——同一 spine XHTML 在 nav/NCX 中有 ≥2 个不同 fragment 目录项时，展开为按目录顺序的逻辑章节；正文用 DOM Range 切片；无 fragment / 仅 1 个 fragment 的文件保持历史整文件章节与 key。标题补全阶段按源文件路径缓存原始 XHTML 字符串（同文件只 `getFile` 一次），逻辑章对缓存内容重新 parse + `sliceChapterByFragments` 后再提取 heading，避免重复预算计数与用第一章 heading 覆盖后续章。
@@ -18,8 +19,7 @@
 | --- | --- | --- |
 | 命令 | `${pluginName}.importEpub` | `showEpubImportDialog` 打开向导 |
 | 命令 | `${pluginName}.resumeEpubImport` | 对指定 `bookBlockId` 调用 `resumeEpubImport`（块菜单也可触发） |
-| 工具栏 | `${pluginName}.importEpubButton`（`ti-book-upload`） | 绑定 `importEpub` |
-| 斜杠 | 组 SRS / 标题「导入 EPUB」 | 绑定 `importEpub` |
+| 斜杠 | `${pluginName}.importEpub`（组 SRS / 标题「导入 EPUB」/ `ti ti-book-upload`） | 绑定 `importEpub`；旧工具栏 `importEpubButton` **已移除** |
 | Headbar 挂载 | `${pluginName}.epubImportDialogMount` | `EpubImportDialogMount`（Valtio `isOpen`） |
 | 块菜单 | `resumeEpubImportMenu`（`contextMenuRegistry`） | 对带 epub 属性的书触发继续导入 |
 
@@ -47,7 +47,7 @@ src/srs/book-ir/                    第二阶段 IR（计划 / 顺序推进 / �
 | `epubAssets.ts` | 章节内图片上传（拒外部/data/blob、MIME 校验）；`uploadSourceEpub` / `loadSourceEpubBuffer` |
 | `epubManifestChapters.ts` | 从 manifest 列已导入章节；`isPartialEpubImport` |
 | `manifest.ts` | **严格** `parseEpubManifest` / `serializeEpubManifest`（禁止静默兜底） |
-| `epubBookRepository.ts` | 书籍壳、章节写入、属性、指纹查找、疑似重名、checkpoint |
+| `epubBookRepository.ts` | 书籍壳、章节写入、属性、指纹查找、疑似重名、checkpoint；内部 `getBlock` **backend-first**（后端失败 warn 后回退 `orca.state`），保证 manifest 写后读可信 |
 | `orcaBookHelpers.ts` | 建书页/章节页、行内引用、导航 |
 | `htmlOutline.ts` | HTML → heading/content token 流 + 空白清理 |
 | `orcaOutlineImporter.ts` | token → 父子 block（`importHtmlAsOutline`） |
@@ -133,6 +133,8 @@ chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|impo
 2. `loadSourceEpubBuffer` 后校验指纹与 manifest 一致，否则停止且不改清单
 3. 跳过已 `imported`；对 `pending`/`failed` 重试
 4. 可从结果页「继续导入」或块菜单 / 命令 `resumeEpubImport` 触发
+
+清单读取一致性：`loadManifestFromBook`（及 `ensureChaptersHeading` / `ensureInlineReference` 的书块读取）经 repository 内部 `getBlock` **backend-first**——`persistManifest` checkpoint 刚写入后立即 resume 也能读到最新章节状态；旧 state-first 读法会拿到旧快照，把已导入章节当 `pending` 重跑并重复建章节页（回归：`epubBookRepository.test.ts`）。注意 `ensureInlineReference` / `ensureChaptersHeading` 对**内层子块**的遍历仍走 `orca.state`（独立低危面，未改）。
 
 章节选择会过滤 EPUB 纯封面包装页。前置页不在目录中时，尝试 HTML 标题与首段短文本，避免无意义的 `Chapter N`。
 

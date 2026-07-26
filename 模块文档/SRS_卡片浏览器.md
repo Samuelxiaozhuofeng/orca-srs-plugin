@@ -101,9 +101,10 @@ flowchart TD
    - 短 TTL（45s）缓存 + 并发 inflight 去重，减少重复全量 `collectReviewCards`
    - 产出 `cards` + `calculateDeckStats` + `calculateHomeStats`；备注另经 `getAllDeckNotes` 合并
    - 用户刷新 / 评分事件：`invalidate` + `force` 重载
-2. 事件：`CARD_GRADED` / `CARD_POSTPONED` / `CARD_SUSPENDED` → 失效缓存并重载
-3. 定时：每 **120s** `force` 刷新
-4. 复习：`startReviewSession(deckName?)`；困难卡走 `createFixedRepeatSessionDescriptor` + `createRepeatReviewSession` + `createReviewSessionBlockWithDescriptor`
+2. 今日摘要：同一轮 `applyLoaded` 中 `loadTodayLearning(true, data.cards)` —— 经 `loadTodayLearningSummaryCached` 的 **`deps.collectReviewCards` 注入复用本轮 cards**，一次刷新只做一遍 SRS 全量收集（IR 收集链不受影响；回归：`src/srs/todayLearning/todayLearningSummary.depsReuse.test.ts`）；随后 `loadResume()` 读恢复点
+3. 事件：`CARD_GRADED` / `CARD_POSTPONED` / `CARD_SUSPENDED` → 失效缓存并重载
+4. 定时：每 **120s** `force` 刷新（`document.hidden` 时跳过本轮，避免后台反复全量收集）
+5. 复习：`startReviewSession(deckName?)`；困难卡走 `createFixedRepeatSessionDescriptor` + `createRepeatReviewSession` + `createReviewSessionBlockWithDescriptor`
 
 ### TodayStats（主页三卡）
 
@@ -147,8 +148,19 @@ flowchart TD
 4. 列表项外壳：`CardFrame` — 左侧状态强调色条 + 状态徽标；内层 `CardListItem` 承载预览与操作
 5. 状态来源：`cardStatus.ts`（`new` / `today` / `backlog` / `future` + 到期/间隔日期格式化）；与筛选自然日边界一致
 6. 列表项内容：`SafeBlockPreview`、到期相对描述、间隔、Cloze/Direction 标记、重置次数
-7. 操作：**删除**（清 SRS + 去 `#card`）、**重置**（变新卡）、**跳转**（`orca.nav.openInLastPanel("block", …)`）
+7. 操作：**删除**（变体感知，见下）、**重置**（变新卡）、**跳转**（`orca.nav.openInLastPanel("block", …)`）
 8. 无限滚动：每页 20 张
+
+### 删除的变体感知语义（`deleteReviewCardBackendData`，`SrsFlashcardHome.tsx` 导出）
+
+cloze / direction 变体行的删除**不得**直接摘整块 `#card`（否则同块其它变体被静默踢出复习系统）：
+
+- 先以后端 `get-block` 读块内容（**不走本地块缓存**；读取失败**抛错**，不静默降级为整卡删除），用 `getAllClozeNumbers` / `extractDirectionInfo + getDirectionList` 判断同块是否还有**其它存活变体**。
+- **仍有其它变体** → 仅删该变体前缀属性（`deleteClozeCardSrsData` 删 `srs.cN.*` / `deleteDirectionCardSrsData` 删 `srs.<dir>.*`），**保留 `#card`**；返回 `{ kind: "variant-only", remainingVariants }`，成功通知「已删除{填空 cN|正向卡|反向卡}，同块其它卡片保留 #card」。
+- **无剩余变体**（或普通卡） → `deleteCardSrsData` 清全部 `srs.*` 属性 + `core.editor.removeTag("card")`；返回 `{ kind: "full" }`。
+- 每次属性写入后 `invalidateBlockCache(card.id)`。
+
+回归：`src/components/SrsFlashcardHome.delete.test.ts`（cloze/direction 变体保留、最后一个变体整卡删除、读块失败抛错）。
 
 ### 视觉帧结构（Deck 下钻）
 
@@ -186,7 +198,13 @@ CardListView
 
 ## 危险操作确认
 
-`CardListItem` 删除 / 重置经 `orca.components.ConfirmBox` 二次确认后再生效。
+`CardListItem` 删除 / 重置经 `orca.components.ConfirmBox` 二次确认后再生效。删除确认文案按变体三分（`deleteConfirmText`，导出便于测试）：
+
+| 行类型 | 文案要点 |
+| ------ | -------- |
+| cloze 变体 | 「确定删除此填空（cN）？…同块其它填空/卡片不受影响，仅当它是本块最后一个卡片变体时才移除 #card」 |
+| direction 变体 | 「确定删除此方向（正向/反向）？…同块另一方向不受影响，仅当它是本块最后一个卡片变体时才移除 #card」 |
+| 普通卡 | 「确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。」 |
 
 ## 扩展点
 

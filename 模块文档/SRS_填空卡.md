@@ -1,7 +1,8 @@
 # SRS 填空卡（Cloze）
 
-> **文档同步日期**：2026-07-13  
-> **变更说明**：由「实现过程/阶段计划」改写为以当前代码为准的实现文档；删除过时的 `{c1::}` 纯文本方案描述，统一为 ContentFragment 机制。
+> **文档同步日期**：2026-07-26  
+> **变更说明**：新增导出谓词 `isClozeFragment`（生成/读取侧共用宽松匹配，兼容旧前缀 `*.cloze`）；创建流程第 8 步改为「仅新建编号初始写入、已存在编号 ensure 不覆盖」，`srs.isCard` 写后补 `invalidateBlockCache`。  
+> 2026-07-13：由「实现过程/阶段计划」改写为以当前代码为准的实现文档；删除过时的 `{c1::}` 纯文本方案描述，统一为 ContentFragment 机制。
 
 ---
 
@@ -50,7 +51,7 @@
 | due / lastReviewed | 到期与上次复习 |
 | reps / lapses | 次数统计 |
 
-创建时分天推送：`daysOffset = clozeNumber - 1`（c1 今天、c2 明天……），由 `writeInitialClozeSrsState` 写入。
+创建时分天推送：`daysOffset = clozeNumber - 1`（c1 今天、c2 明天……）。**仅本次新建的编号**由 `writeInitialClozeSrsState` 无条件写入初始状态；已存在的编号只经 `ensureClozeSrsState(blockId, clozeNumber, daysOffset)` 在缺属性时补齐，**绝不覆盖已有复习进度**（否则二次挖空会静默重置块内旧填空的 FSRS 状态，见 `问题经验.md` 2026-07-26 条目）。
 
 ### 身份（cardIdentity）
 
@@ -65,20 +66,21 @@
 实现：`src/srs/clozeUtils.ts` → `createCloze(cursor, pluginName)`
 
 1. 校验光标：同一块、同一 fragment 内有非空选区（不支持跨 fragment/跨样式选区）
-2. `getMaxClozeNumberFromContent` → 下一编号
+2. `getMaxClozeNumberFromContent` → 下一编号（与读取侧共用 `isClozeFragment` 宽松判定，块内含旧前缀 `*.cloze` fragment 时不会重复分配其编号）
 3. `buildNewContent`：在 fragment 内按 offset 拆分并插入 cloze fragment
 4. `core.editor.setBlocksContent` 更新内容
 5. 无 `#card` 则 `insertTag` + `buildCardTagData(..., "cloze")`；已有则 `setRefData` 将 `type` 设为 `cloze`
 6. `ensureCardTagProperties` 初始化标签属性定义
-7. 设置 `_repr`、`srs.isCard`
-8. 对所有 cloze 编号调用 `writeInitialClozeSrsState`
+7. 设置 `_repr`、`srs.isCard`；`srs.isCard` 写入后 `invalidateBlockCache(blockId)`，保证下一步 ensure 读到最新属性
+8. 遍历 `getAllClozeNumbers` 的全部编号：**仅新建编号**走 `writeInitialClozeSrsState`（避免复用已删除编号时继承孤儿 `srs.cN.*` 旧状态），**已存在编号**走 `ensureClozeSrsState`（缺属性才初始化，不覆盖已有进度）；`daysOffset = clozeNumber - 1` 不变
 
 ### 工具函数
 
 | 函数 | 说明 |
 | ---- | ---- |
-| `getMaxClozeNumberFromContent` | 当前最大编号 |
-| `getAllClozeNumbers` | 全部编号（去重排序）；匹配 `pluginName.cloze` 或任意 `*.cloze` |
+| `isClozeFragment` | **共用谓词**（导出）：精确匹配 `${pluginName}.cloze`，同时宽松匹配任意 `*.cloze` 后缀（兼容历史插件名如 `srs-plugin`）。生成侧与读取侧必须共用它——若生成侧只认新前缀，旧前缀 c1 存在时会重复分配编号 1，导致 cardKey / `srs.cN.*` 状态混叠 |
+| `getMaxClozeNumberFromContent` | 当前最大编号（经 `isClozeFragment` 宽松判定，含旧前缀 fragment） |
+| `getAllClozeNumbers` | 全部编号（去重排序；同样经 `isClozeFragment`） |
 | `createCloze` | 创建填空 |
 
 ---

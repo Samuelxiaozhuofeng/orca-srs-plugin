@@ -1,6 +1,6 @@
 /** 今日学习主页：统一摘要、可恢复入口、卡组与困难卡次级区。 */
 
-import type { DbId } from "../orca.d.ts"
+import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../srs/types"
 import type { FilterType } from "../srs/cardFilterUtils"
 import { filterCards } from "../srs/cardFilterUtils"
@@ -56,6 +56,83 @@ async function mergeDeckNotes(
   }
 }
 
+/** 卡片删除结果：variant-only = 同块仍有其它变体，#card 标签保留 */
+export type CardDeleteOutcome =
+  | { kind: "variant-only"; remainingVariants: number }
+  | { kind: "full" }
+
+/**
+ * 删除卡片的后端数据。
+ *
+ * cloze/direction 变体：先读后端块内容判断同块是否还有其它存活变体——
+ * - 仍有其它变体 → 只删该变体的 srs.cN.* / srs.<dir>.* 属性，保留 #card 标签
+ *   （避免把同块其它变体静默踢出复习系统）；
+ * - 无剩余变体 → 清理全部 srs.* 属性并移除 #card（整卡删除）。
+ *
+ * 读取块失败时抛错（错误保持可见），不得静默降级为整卡删除。
+ * 每次属性写入后通过 invalidateBlockCache 失效块缓存。
+ */
+export async function deleteReviewCardBackendData(
+  card: Pick<ReviewCard, "id" | "clozeNumber" | "directionType">,
+  pluginName: string
+): Promise<CardDeleteOutcome> {
+  const {
+    deleteCardSrsData,
+    deleteClozeCardSrsData,
+    deleteDirectionCardSrsData,
+    invalidateBlockCache
+  } = await import("../srs/storage")
+
+  if (card.clozeNumber || card.directionType) {
+    // 变体删除决策必须基于后端最新内容，不走本地块缓存
+    const block = (await orca.invokeBackend("get-block", card.id)) as
+      | Block
+      | null
+      | undefined
+    if (!block) {
+      throw new Error(`读取块 #${card.id} 失败，无法判断同块剩余卡片变体`)
+    }
+
+    let remainingVariants = 0
+    if (card.clozeNumber) {
+      const { getAllClozeNumbers } = await import("../srs/clozeUtils")
+      const numbers = getAllClozeNumbers(block.content, pluginName)
+      remainingVariants = numbers.filter((n) => n !== card.clozeNumber).length
+    } else if (card.directionType) {
+      const { extractDirectionInfo, getDirectionList } = await import(
+        "../srs/directionUtils"
+      )
+      const dirInfo = extractDirectionInfo(block.content, pluginName)
+      remainingVariants = dirInfo
+        ? getDirectionList(dirInfo.direction).filter(
+            (dir) => dir !== card.directionType
+          ).length
+        : 0
+    }
+
+    if (remainingVariants > 0) {
+      if (card.clozeNumber) {
+        await deleteClozeCardSrsData(card.id, card.clozeNumber)
+      } else if (card.directionType) {
+        await deleteDirectionCardSrsData(card.id, card.directionType)
+      }
+      invalidateBlockCache(card.id)
+      return { kind: "variant-only", remainingVariants }
+    }
+  }
+
+  // 整卡删除：清理全部 srs.* 属性并移除 #card
+  await deleteCardSrsData(card.id)
+  await orca.commands.invokeEditorCommand(
+    "core.editor.removeTag",
+    null,
+    card.id,
+    "card"
+  )
+  invalidateBlockCache(card.id)
+  return { kind: "full" }
+}
+
 export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFlashcardHomeProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("home")
   const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
@@ -109,12 +186,17 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }, [pluginName])
 
   const loadTodayLearning = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, presetCards?: ReviewCard[]) => {
       setTodayLearningLoading(true)
       try {
         if (force) invalidateTodayLearningSummaryCache()
         const summary = await loadTodayLearningSummaryCached(pluginName, {
-          force
+          force,
+          // 复用同一轮 loadFlashHomeData 已收集的 cards，
+          // 使一次刷新只做一遍 SRS 全量收集（IR 收集链不受影响）
+          deps: presetCards
+            ? { collectReviewCards: async () => presetCards }
+            : undefined
         })
         setTodayLearning(summary)
       } catch (error) {
@@ -155,8 +237,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         setAllCards(data.cards)
         setTodayStats(data.todayStats)
         setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
-        // 首页 mount / 强制刷新：绕过 45s 缓存拉今日剩余
-        await loadTodayLearning(true)
+        // 首页 mount / 强制刷新：绕过 45s 缓存拉今日剩余；
+        // 复用本轮 cards，避免 collectReviewCards 连跑两遍
+        await loadTodayLearning(true, data.cards)
         await loadResume()
       } catch (error) {
         console.error(`[${pluginName}] 今日学习主页加载数据失败:`, error)
@@ -180,15 +263,16 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     void applyLoaded(false, true)
   }, [applyLoaded])
 
-  // 120s 兜底：强制刷新
+  // 120s 兜底：强制刷新（面板不可见时跳过本轮，避免后台反复全量收集）
   useEffect(() => {
     const autoRefresh = async () => {
+      if (typeof document !== "undefined" && document.hidden) return
       try {
         const data = await loadFlashHomeData({ pluginName, force: true })
         setAllCards(data.cards)
         setTodayStats(data.todayStats)
         setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
-        await loadTodayLearning(true)
+        await loadTodayLearning(true, data.cards)
         await loadResume()
       } catch (error) {
         console.warn(`[${pluginName}] 今日学习自动刷新失败:`, error)
@@ -511,31 +595,25 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     })
 
     try {
-      const {
-        deleteCardSrsData,
-        deleteClozeCardSrsData,
-        deleteDirectionCardSrsData
-      } = await import("../srs/storage")
-
-      if (card.clozeNumber) {
-        await deleteClozeCardSrsData(card.id, card.clozeNumber)
-      } else if (card.directionType) {
-        await deleteDirectionCardSrsData(card.id, card.directionType)
-      } else {
-        await deleteCardSrsData(card.id)
-      }
-
-      await orca.commands.invokeEditorCommand(
-        "core.editor.removeTag",
-        null,
-        card.id,
-        "card"
-      )
+      const outcome = await deleteReviewCardBackendData(card, pluginName)
 
       invalidateFlashHomeDataCache()
       invalidateTodayLearningSummaryCache()
       void loadTodayLearning(true)
-      orca.notify("success", "卡片已删除", { title: "SRS" })
+      if (outcome.kind === "variant-only") {
+        const variantLabel = card.clozeNumber
+          ? `填空 c${card.clozeNumber}`
+          : card.directionType === "forward"
+            ? "正向卡"
+            : "反向卡"
+        orca.notify(
+          "success",
+          `已删除${variantLabel}，同块其它卡片保留 #card`,
+          { title: "SRS" }
+        )
+      } else {
+        orca.notify("success", "卡片已删除", { title: "SRS" })
+      }
     } catch (error) {
       console.error(`[${pluginName}] 删除卡片失败:`, error)
       orca.notify("error", "删除卡片失败", { title: "SRS" })

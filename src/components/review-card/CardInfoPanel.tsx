@@ -1,7 +1,7 @@
 import type { SrsState } from "../../srs/types"
 import { State } from "ts-fsrs"
 
-function formatCardState(state?: State): string {
+export function formatCardState(state?: State): string {
   switch (state) {
     case State.Learning: return "学习中"
     case State.Review: return "复习中"
@@ -15,7 +15,7 @@ function formatCardState(state?: State): string {
   }
 }
 
-function formatDateTime(date: Date | null | undefined): string {
+export function formatDateTime(date: Date | null | undefined): string {
   if (!date) return "从未"
   const value = new Date(date)
   const year = value.getFullYear()
@@ -26,16 +26,27 @@ function formatDateTime(date: Date | null | undefined): string {
   return `${year}-${month}-${day} ${hour}:${minute}`
 }
 
-export default function CardInfoPanel({ srsInfo }: { srsInfo?: Partial<SrsState> }) {
-  const rows = [
+export default function CardInfoPanel({
+  srsInfo,
+  showSchedulingDetails = true
+}: {
+  srsInfo?: Partial<SrsState>
+  /** 是否显示间隔天数/稳定性/难度三行（选择题卡历史上不展示） */
+  showSchedulingDetails?: boolean
+}) {
+  const rows: Array<[string, string]> = [
     ["遗忘次数", String(srsInfo?.lapses ?? 0)],
     ["复习次数", String(srsInfo?.reps ?? 0)],
     ["最后复习", formatDateTime(srsInfo?.lastReviewed)],
-    ["下次到期", formatDateTime(srsInfo?.due)],
-    ["间隔天数", `${srsInfo?.interval ?? 0} 天`],
-    ["稳定性", (srsInfo?.stability ?? 0).toFixed(2)],
-    ["难度", (srsInfo?.difficulty ?? 0).toFixed(2)]
-  ] as const
+    ["下次到期", formatDateTime(srsInfo?.due)]
+  ]
+  if (showSchedulingDetails) {
+    rows.push(
+      ["间隔天数", `${srsInfo?.interval ?? 0} 天`],
+      ["稳定性", (srsInfo?.stability ?? 0).toFixed(2)],
+      ["难度", (srsInfo?.difficulty ?? 0).toFixed(2)]
+    )
+  }
 
   const stateColor = srsInfo?.state === State.Review
     ? "var(--orca-color-success)"

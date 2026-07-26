@@ -39,6 +39,23 @@ function statusBadgeLabel(card: ReviewCard, status: ReturnType<typeof getCardDue
   return formatDueDate(card.srs.due)
 }
 
+/**
+ * 删除确认文案：区分「删除单个 cloze/direction 变体」与「删除整卡」。
+ * 变体删除只移除该变体的 SRS 数据；仅当它是本块最后一个变体时才移除 #card。
+ */
+export function deleteConfirmText(
+  card: Pick<ReviewCard, "clozeNumber" | "directionType">
+): string {
+  if (card.clozeNumber != null && card.clozeNumber > 0) {
+    return `确定删除此填空（c${card.clozeNumber}）？将移除该填空的 SRS 数据；同块其它填空/卡片不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
+  }
+  if (card.directionType) {
+    const label = card.directionType === "forward" ? "正向" : "反向"
+    return `确定删除此方向（${label}）？将移除该方向的 SRS 数据；同块另一方向不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
+  }
+  return "确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。"
+}
+
 export default function CardListItem({
   card,
   panelId,
@@ -102,7 +119,7 @@ export default function CardListItem({
 
         <div className="srs-card-frame__actions">
           <ConfirmBox
-            text="确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。"
+            text={deleteConfirmText(card)}
             onConfirm={(_e: unknown, close: () => void) => {
               onCardDelete(card)
               close()
@@ -116,7 +133,11 @@ export default function CardListItem({
                   open(e)
                 }}
                 className="srs-card-action srs-card-action--danger"
-                title="删除卡片（移除 Card 标记和 SRS 数据）"
+                title={
+                  card.clozeNumber || card.directionType
+                    ? "删除此变体（仅该变体 SRS 数据；最后一个变体时移除 Card 标记）"
+                    : "删除卡片（移除 Card 标记和 SRS 数据）"
+                }
               >
                 <i className="ti ti-trash" style={{ marginRight: "4px" }} />
                 删除

@@ -15,6 +15,10 @@ import {
 } from "../srs/incremental-reading/irBreakpointStorage"
 import { findBlockElement } from "./irBreakpointDom"
 import {
+  INTERACTIVE_CAPTURE_DEBOUNCE_MS,
+  shouldAllowInteractiveCapture
+} from "./irBreakpointInteractiveCapture"
+import {
   collectVisibleBlockTops,
   computeVisibleResumeBaseline,
   measureBlockTopOffsetPx,
@@ -42,6 +46,11 @@ export {
   SCROLL_DEBOUNCE_MS
 } from "./irBreakpointRestore"
 
+export {
+  INTERACTIVE_CAPTURE_DEBOUNCE_MS,
+  shouldAllowInteractiveCapture
+} from "./irBreakpointInteractiveCapture"
+
 export { findBlockElement } from "./irBreakpointDom"
 export {
   collectVisibleBlockTops,
@@ -62,8 +71,6 @@ function resolveSessionScrollOwner(
 }
 
 const { useCallback, useEffect, useMemo, useRef } = window.React
-
-const DEBOUNCE_MS = 180
 
 export type UseIRReadingBreakpointOptions = {
   cardId: DbId | null
@@ -153,6 +160,8 @@ export function useIRReadingBreakpoint(
   const onRestoreSuccessRef = useLatestRef(onRestoreSuccess)
   const onRestoreFailureRef = useLatestRef(onRestoreFailure)
   const allowCaptureRef = useLatestRef(allowCapture)
+  /** 当前活动卡；捕获闭包必须与其一致才允许持久化（scroll 与交互路径共用） */
+  const activeCardIdRef = useLatestRef(cardId)
 
   const channelRef = useRef(new BreakpointSaveChannel())
   const debounceRef = useRef<number | null>(null)
@@ -211,6 +220,13 @@ export function useIRReadingBreakpoint(
 
   const captureFromSelection = useCallback(() => {
     if (!cardId || !enabled || !allowCaptureRef.current) return false
+    // 切卡竞态守卫：闭包 cardId 已不是当前活动卡时丢弃（防止把新卡 DOM 写入旧卡断点）
+    if (!shouldAllowInteractiveCapture({
+      closureCardId: cardId,
+      activeCardId: activeCardIdRef.current
+    })) {
+      return false
+    }
     const selection = window.getSelection()
     // 折叠 caret / 空选区不得优先于视口（flush 时尤其致命）
     if (!isMeaningfulTextSelection(selection)) return false
@@ -246,6 +262,7 @@ export function useIRReadingBreakpoint(
     })
     return true
   }, [
+    activeCardIdRef,
     cardId,
     containerRef,
     enabled,
@@ -258,6 +275,13 @@ export function useIRReadingBreakpoint(
 
   const captureFromVisibleBlock = useCallback(() => {
     if (!cardId || !enabled || !allowCaptureRef.current) return
+    // 切卡竞态守卫：闭包 cardId 已不是当前活动卡时丢弃（防止把新卡可见块写入旧卡断点）
+    if (!shouldAllowInteractiveCapture({
+      closureCardId: cardId,
+      activeCardId: activeCardIdRef.current
+    })) {
+      return
+    }
     const contentContainer = containerRef.current
     const viewportContainer = resolveSessionScrollOwner(scrollContainerRef, containerRef)
     if (!contentContainer || !viewportContainer) return
@@ -283,13 +307,20 @@ export function useIRReadingBreakpoint(
       selection: null,
       viewportAnchor
     })
-  }, [cardId, containerRef, enabled, persist, scrollContainerRef])
+  }, [activeCardIdRef, cardId, containerRef, enabled, persist, scrollContainerRef])
 
   const captureNow = useCallback(() => {
     if (!allowCaptureRef.current) return
+    // 切卡竞态守卫：过期 debounce / 外部调用携带旧 cardId 闭包时整体丢弃
+    if (!shouldAllowInteractiveCapture({
+      closureCardId: cardId,
+      activeCardId: activeCardIdRef.current
+    })) {
+      return
+    }
     if (captureFromSelection()) return
     captureFromVisibleBlock()
-  }, [captureFromSelection, captureFromVisibleBlock])
+  }, [activeCardIdRef, captureFromSelection, captureFromVisibleBlock, cardId])
 
   const scheduleCapture = useCallback(() => {
     if (!allowCaptureRef.current) return
@@ -297,7 +328,7 @@ export function useIRReadingBreakpoint(
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null
       captureNow()
-    }, DEBOUNCE_MS)
+    }, INTERACTIVE_CAPTURE_DEBOUNCE_MS)
   }, [captureNow])
 
   const flush = useCallback(async () => {
@@ -383,8 +414,6 @@ export function useIRReadingBreakpoint(
     return handle ? () => handle.cancel() : undefined
   }, [cardId, enabled, restoreTarget, restoreTargetKey, startRestore])
 
-  const activeCardIdRef = useLatestRef(cardId)
-
   // 滚动捕获与恢复用显式 suppression 门闩，不依赖 effect 声明顺序作为唯一保障。
   // 监听真实纵向滚动 owner（可能是 host `.orca-block-editor` 祖先），而非仅内部节点。
   useEffect(() => {
@@ -439,6 +468,15 @@ export function useIRReadingBreakpoint(
       handle?.cancel()
     }
   }, [cardId, enabled, restoreTargetKey, restoreTarget, startRestore])
+
+  // 切卡：清掉旧卡遗留的交互捕获 debounce（keydown 下一篇 flush 后，keyup 会重新
+  // 武装携带旧 cardId 闭包的定时器；若存活到新卡 DOM 就会把新卡可见块写入旧卡断点）
+  useEffect(() => () => {
+    if (debounceRef.current != null) {
+      window.clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+  }, [cardId])
 
   useEffect(() => () => {
     if (debounceRef.current != null) window.clearTimeout(debounceRef.current)

@@ -12,7 +12,8 @@ import {
   isQueryBlock,
   collectCardsFromQueryBlock,
   collectCardsFromChildren,
-  estimateCardCount
+  estimateCardCount,
+  QueryExecutionError
 } from "../blockCardCollector"
 import { createRepeatReviewSession } from "../repeatReviewManager"
 import {
@@ -48,8 +49,14 @@ function handleReviewError(
   blockId: DbId,
   sourceType: 'query' | 'children'
 ): void {
+  // 查询执行失败：与「查询结果为空」的 info 文案明确区分
+  if (error instanceof QueryExecutionError) {
+    orca.notify("error", "查询执行失败，请重试", { title: "SRS 复习" })
+    return
+  }
+
   const errorMessage = error instanceof Error ? error.message : String(error)
-  
+
   // 检查是否为网络或加载错误
   const isLoadError = errorMessage.includes('load') || 
                       errorMessage.includes('fetch') || 
@@ -297,6 +304,8 @@ function QueryBlockMenuItem({
     async function fetchCount() {
       try {
         // 先检查查询结果是否为空
+        // （getQueryResults 查询执行失败时抛 QueryExecutionError，
+        //   由下方 catch 置 hasError，标题显示「加载失败」而非「查询为空」）
         const { getQueryResults } = await import("../blockCardCollector")
         const queryResults = await getQueryResults(blockId)
         
@@ -345,9 +354,16 @@ function QueryBlockMenuItem({
         }
       }
 
-      // 检查查询结果是否为空
+      // 检查查询结果是否为空（查询执行失败与「结果为空」区分处理）
       const { getQueryResults } = await import("../blockCardCollector")
-      const queryResults = await getQueryResults(blockId)
+      let queryResults: DbId[]
+      try {
+        queryResults = await getQueryResults(blockId)
+      } catch (error) {
+        console.error(`[${pluginName}] 查询执行失败:`, error)
+        orca.notify("error", "查询执行失败，请重试", { title: "SRS 复习" })
+        return
+      }
       if (queryResults.length === 0) {
         orca.notify("info", "查询结果为空", { title: "SRS 复习" })
         return

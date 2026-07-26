@@ -25,6 +25,7 @@
 
 2. **[SRS_数据存储.md](SRS_数据存储.md)**
    - 卡片属性持久化；块 exists/missing/unknown；日志与会话进度等存储面
+   - 核心持久层已有直测：`src/srs/storage.test.ts`（三卡型 save→load 往返、属性名与 type code、缓存失效、reset、按前缀删除、解析回退、`ensureClozeSrsState` 守卫）
    - 关联：`src/srs/storage.ts`、`blockExistence.ts`、`deletedCardCleanup.ts`、`reviewLogStorage.ts`、`sessionProgressStorage.ts` 等
 
 3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)**
@@ -37,7 +38,7 @@
 
 ### 卡种
 
-5. **[SRS_填空卡.md](SRS_填空卡.md)** — Cloze fragment / 分天 SRS / 复习渲染
+5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-07-26 更新 — Cloze fragment / 分天 SRS / 复习渲染；`isClozeFragment` 共用谓词（兼容旧前缀）；创建仅新编号初始写入、已有编号 ensure 不覆盖
 6. **[SRS_方向卡.md](SRS_方向卡.md)** — Direction 左右向、入队条件、渲染（实现文档，非设计草稿）
 7. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
 8. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-13 新建
@@ -49,15 +50,17 @@
 9. **[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)**
    - 会话 UI、块加载三态、评分门控、宿主 chrome、会话进度
    - Basic 答案嵌入：CSS 精确隐藏卡根正文（无长期 MutationObserver）；显示答案后题目静态 `front`（单 live 卡根）；Tab/Enter 实例验证边界见该文档与 `问题经验.md`
+   - 「卡片信息」面板统一为 `review-card/CardInfoPanel.tsx`（五渲染器共用；`showSchedulingDetails` prop）
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
 
 10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-26 更新
     - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
     - 统一 remaining（SRS 日额度 + IR due）、预计分钟、10/20/30、开始/继续；resume 非队列快照
     - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡
+    - 删除为**变体感知**（`deleteReviewCardBackendData`：仍有存活变体只删该变体前缀属性、保留 `#card`）；今日摘要经 deps 注入复用同轮 cards
     - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`src/srs/todayLearning/*`、`styles/flashcard-home.css`
 
-11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** — 主页 `HomeSummaryBar` 三卡（新卡/今日到期/积压）与 `calculateHomeStats`
+11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** ⭐ 2026-07-26 收窄 — 仅维护三 `StatCard`（新卡/今日到期/积压）的 `calculateHomeStats` 计算口径；三卡已降级为次级「卡库概览」区，主页布局/主按钮/数据流以 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) 为权威
 12. **[SRS_困难卡片.md](SRS_困难卡片.md)** — 困难集合与 fixed repeat 专项复习
 13. **[SRS_块渲染器.md](SRS_块渲染器.md)** — 编辑器内 `srs.*` 块渲染 vs 会话内 `*ReviewRenderer`
 14. **[SRS 搜索快捷键.md](SRS%20搜索快捷键.md)** — 卡组搜索 / 复习 / IR 快捷键与门控
@@ -71,13 +74,15 @@
     - `load` / `unload`（`runPluginUnloadSequence`）、业务 export
     - 关联：`src/main.ts`、`pluginUnloadSequence.ts`、`registry/*`、settings schemas
 
-19. **[SRS_注册模块.md](SRS_注册模块.md)**
+19. **[SRS_注册模块.md](SRS_注册模块.md)** ⭐ 2026-07-26 重写过时部分
     - 命令 / UI / 渲染器 / 转换器 / 右键菜单 / panel 工具
-    - 关联：`src/srs/registry/*`
+    - Headbar：单一可见入口 `todayLearningButton` + 7 个对话框 mount + LEGACY 清理组（`headbarButtons.ts`）；命令/斜杠表对齐现行 label
+    - 关联：`src/srs/registry/*`（含 `headbarButtons.ts`）
 
-20. **[SRS_复习队列管理.md](SRS_复习队列管理.md)**
+20. **[SRS_复习队列管理.md](SRS_复习队列管理.md)** ⭐ 2026-07-26 更新
     - 收集、descriptor（F2-01）、scope / budget / pending、repeat
-    - 关联：`cardCollector.ts`、`reviewSessionDescriptor.ts`、`reviewSessionManager.ts`、`repeatReviewManager.ts` 等
+    - 查询块收集：`getQueryResults` DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不吞错）
+    - 关联：`cardCollector.ts`、`blockCardCollector.ts`、`reviewSessionDescriptor.ts`、`reviewSessionManager.ts`、`repeatReviewManager.ts` 等
 
 21. **[SRS 动态复习队列.md](SRS%20动态复习队列.md)** — 动态队列与 resume 相关细节
 22. **[SRS_事件通信.md](SRS_事件通信.md)**
@@ -88,16 +93,18 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)**
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-26 更新
     - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话启动只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
+    - 2026-07-26：断点**交互捕获守卫**（`irBreakpointInteractiveCapture.ts`，切卡清交互 debounce、过期捕获丢弃）；收集索引路径批量 `get-blocks`（批 50/并发 4）、`preheatIrBlockCache` 仅后端块、`mapPool` 并发 8
     - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)**
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression（完成主路径 / skip 兼容）、整本/章节移出、完成本章后大纲保留「已完成」结构、顺序徽标与 toast 文案
     - 关联：`src/srs/book-ir/*`、`bookIRCreator.ts`
 
-26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-25 更新（multi-fragment logical chapters）
+26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-26 更新（repository backend-first）
     - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界；同 XHTML 多 fragment 逻辑章节展开与 DOM 切片
+    - `epubBookRepository.getBlock` backend-first：manifest 写后读可信，resume 不再误判已导入章节
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
 27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-24 更新（可选 AI 总结）
@@ -144,6 +151,7 @@
 
 ## 更新记录
 
+- **2026-07-26（修复批文档同步）**：cloze 二次挖空/旧前缀（[SRS_填空卡.md](SRS_填空卡.md)）；IR 断点交互捕获守卫 + 收集批量化/预热（[渐进阅读.md](渐进阅读.md)）；epub repository backend-first（[EPUB导入.md](EPUB导入.md)）；查询块 `QueryExecutionError`（[SRS_复习队列管理.md](SRS_复习队列管理.md)、[SRS_插件入口与命令.md](SRS_插件入口与命令.md)）；删除变体感知 + 摘要复用 cards（[SRS_卡片浏览器.md](SRS_卡片浏览器.md)）；[SRS_注册模块.md](SRS_注册模块.md) 重写过时的 Headbar/命令/斜杠表；[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md) 收窄为 StatCard 计算口径；复习「卡片信息」面板统一 `CardInfoPanel`（[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)）；`storage.test.ts` 直测持久层；[问题经验.md](问题经验.md) 新增 6 条
 - **2026-07-26**：「今日学习」统一主页 + 可恢复入口 + Headbar 单入口；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)、[SRS_插件入口与命令.md](SRS_插件入口与命令.md)、[SRS_数据存储.md](SRS_数据存储.md)、[渐进阅读.md](渐进阅读.md)；删除不存在的「统一注意力队列设计」错误索引
 - **2026-07-25**：IR 定位续读精度——折叠 caret 不再覆盖视口；`viewportAnchor.topOffsetPx`（schema v2）；恢复改确定性 scrollTop 对齐 + 几何稳定后释放抑制；`chapter_browse` 禁止捕获；见 [渐进阅读.md](渐进阅读.md)
 - 2025-12-08：创建模块文档结构

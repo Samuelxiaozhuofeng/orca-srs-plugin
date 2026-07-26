@@ -6,6 +6,12 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import { resolveIRCardType } from "./incremental-reading/irHybridExtract"
+import { preheatIrBlockCache } from "./incremental-reading/irBlockCache"
+import {
+  BLOCK_PREFETCH_BATCH_SIZE,
+  BLOCK_PREFETCH_CONCURRENCY,
+  runBoundedConcurrency
+} from "./storage"
 import { isCardTag } from "./tagUtils"
 import { ensureIRState, loadIRState } from "./incrementalReadingStorage"
 import type { IRLastAction, IRReadingBreakpoint, IRStage } from "./incrementalReadingStorage"
@@ -211,6 +217,56 @@ async function collectTaggedBlocks(pluginName: string): Promise<Block[]> {
 }
 
 /**
+ * 索引命中路径的批量块读取：`get-blocks` 分批（批 50、有界并发 4，
+ * 复用 storage.ts 的既有上限与 runBoundedConcurrency），替代逐 id 串行 get-block。
+ *
+ * - missing 由「请求 id − 返回 id」差集得出；单个批次失败会记录日志并把该批
+ *   全部 id 计入 missing（与旧逐 id 失败计 missing 的语义一致），由调用方的
+ *   「缺失超 30% 回退全量」兜底，不静默吞错。
+ * - 返回块保持 ids 的原有顺序（缺失 id 跳过），并预热到 irBlockCache，
+ *   使后续 ensureIRState/loadIRState 走缓存命中。
+ */
+async function fetchIndexedBlocksBatched(
+  pluginName: string,
+  ids: ReadonlyArray<DbId>
+): Promise<{ blocks: Block[]; missing: number }> {
+  const batches: DbId[][] = []
+  for (let i = 0; i < ids.length; i += BLOCK_PREFETCH_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + BLOCK_PREFETCH_BATCH_SIZE))
+  }
+
+  const blockById = new Map<DbId, Block>()
+  await runBoundedConcurrency(batches, BLOCK_PREFETCH_CONCURRENCY, async (batch) => {
+    try {
+      const result = await orca.invokeBackend("get-blocks", batch) as Block[] | undefined | null
+      if (!Array.isArray(result)) {
+        throw new Error(`get-blocks 返回非数组（batchSize=${batch.length}）`)
+      }
+      for (const block of result) {
+        if (block == null || block.id == null) continue
+        blockById.set(block.id, block)
+      }
+    } catch (error) {
+      // 批次失败：不静默——记录后按 missing 处理，触发调用方的 30% 回退全量兜底
+      console.warn(
+        `[${pluginName}] IR 索引批量 get-blocks 失败（count=${batch.length}），该批按 missing 处理:`,
+        error
+      )
+    }
+  })
+
+  const blocks: Block[] = []
+  let missing = 0
+  for (const id of ids) {
+    const block = blockById.get(id)
+    if (block) blocks.push(block)
+    else missing += 1
+  }
+  preheatIrBlockCache(blocks)
+  return { blocks, missing }
+}
+
+/**
  * 优先用 IR 索引缩小候选，失败则全量标签扫描并重建索引
  */
 async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
@@ -227,17 +283,7 @@ async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
       && (index.topicIds.length > 0 || index.extractIds.length > 0)
     ) {
       const ids = [...index.topicIds, ...index.extractIds]
-      const blocks: Block[] = []
-      let missing = 0
-      for (const id of ids) {
-        try {
-          const block = await orca.invokeBackend("get-block", id) as Block | undefined
-          if (block) blocks.push(block)
-          else missing += 1
-        } catch {
-          missing += 1
-        }
-      }
+      const { blocks, missing } = await fetchIndexedBlocksBatched(pluginName, ids)
       // 索引大量失效时回退全量
       if (missing > ids.length * 0.3) {
         const full = await collectTaggedBlocks(pluginName)
@@ -346,6 +392,10 @@ export async function collectIRCardsFromBlocksDetailed(
   const sourceMetaById = new Map<DbId, IRSourceMeta>(
     blocks.map(block => [block.id, readIRSourceMeta(block)])
   )
+  // 在手的 blocks 均来自后端查询（get-blocks-with-tags / get-blocks / get-block），
+  // 先预热 irBlockCache，使 ensureIRState/loadIRState 走缓存命中，避免同块重复 get-block。
+  // 不得改用 orca.state.blocks 预热（旧快照风险，见 irBlockCache.ts）。
+  preheatIrBlockCache(blocks)
 
   let failedCount = 0
   const mapped = await mapPool(candidates, COLLECT_CONCURRENCY, async (block) => {
@@ -414,15 +464,22 @@ export async function collectAllIRCardsFromBlocks(
   options?: IRCollectionOptions
 ): Promise<IRCard[]> {
   const readOnly = options?.readOnly === true
-  const results: IRCard[] = []
   const sourceMetaById = new Map<DbId, IRSourceMeta>(
     blocks.map(block => [block.id, readIRSourceMeta(block)])
   )
+  // 在手的 blocks 均来自后端查询（get-blocks-with-tags / get-blocks / get-block），
+  // 先预热 irBlockCache，使 ensureIRState/loadIRState 走缓存命中，避免同块重复 get-block。
+  // 不得改用 orca.state.blocks 预热（旧快照风险，见 irBlockCache.ts）。
+  preheatIrBlockCache(blocks)
 
+  const candidates: Array<{ block: Block; cardType: IRCardType }> = []
   for (const block of blocks) {
     const cardType = resolveIRCardType(block)
-    if (!cardType) continue
+    if (cardType) candidates.push({ block, cardType })
+  }
 
+  // 有界并发处理（mapPool 按下标回填结果，输出顺序与输入 blocks 顺序一致）
+  const mapped = await mapPool(candidates, COLLECT_CONCURRENCY, async ({ block, cardType }) => {
     try {
       if (!readOnly) {
         await ensureIRState(block.id)
@@ -434,7 +491,7 @@ export async function collectAllIRCardsFromBlocks(
         sourceMetaById
       )
 
-      results.push({
+      return {
         id: block.id,
         cardType,
         priority: state.priority,
@@ -450,12 +507,17 @@ export async function collectAllIRCardsFromBlocks(
         resumeBlockId: state.resumeBlockId,
         readingBreakpoint: state.readingBreakpoint ?? null,
         ...sourceMeta
-      })
+      } satisfies IRCard
     } catch (error) {
       console.error(`[${pluginName}] collectAllIRCardsFromBlocks: 处理块 #${block.id} 失败:`, error)
+      return null
     }
-  }
+  })
 
+  const results: IRCard[] = []
+  for (const item of mapped) {
+    if (item) results.push(item)
+  }
   return results
 }
 

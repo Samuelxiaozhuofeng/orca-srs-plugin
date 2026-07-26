@@ -9,16 +9,46 @@
 
 import type { CursorData, Block, ContentFragment } from "../orca.d.ts"
 import { BlockWithRepr } from "./blockUtils"
-import { writeInitialClozeSrsState } from "./storage"
+import {
+  ensureClozeSrsState,
+  invalidateBlockCache,
+  writeInitialClozeSrsState
+} from "./storage"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
 
 /**
+ * 判断一个 fragment 是否为 cloze fragment
+ *
+ * 首选精确匹配 `${pluginName}.cloze`，同时宽松匹配任何 `xxx.cloze` 后缀，
+ * 以兼容历史插件名（如 srs-plugin）创建的旧 fragment。
+ *
+ * 编号生成（getMaxClozeNumberFromContent）与编号读取（getAllClozeNumbers）
+ * 必须共用本判定：若生成侧只认新前缀，块内存在旧前缀 c1 时会重新分配编号 1，
+ * 导致两个填空的 cardKey / srs.cN.* 状态混叠。
+ *
+ * @param fragment - 待判断的 ContentFragment
+ * @param pluginName - 插件名称
+ */
+export function isClozeFragment(
+  fragment: ContentFragment,
+  pluginName: string
+): boolean {
+  return (
+    fragment.t === `${pluginName}.cloze` ||
+    (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
+  )
+}
+
+/**
  * 从 ContentFragment 数组中提取当前最大的 cloze 编号
  *
+ * 与 getAllClozeNumbers 共用 isClozeFragment 宽松判定，
+ * 保证新编号 = 全部 .cloze fragment 的最大编号 + 1（含旧前缀 fragment）。
+ *
  * @param content - ContentFragment 数组
- * @param pluginName - 插件名称
+ * @param pluginName - 插件名称（用于首选匹配，但也会匹配任何 xxx.cloze 格式）
  * @returns 当前最大的 cloze 编号，如果没有则返回 0
  */
 export function getMaxClozeNumberFromContent(
@@ -31,7 +61,7 @@ export function getMaxClozeNumberFromContent(
 
   let maxNumber = 0
   for (const fragment of content) {
-    if (fragment.t === `${pluginName}.cloze` && typeof fragment.clozeNumber === "number") {
+    if (isClozeFragment(fragment, pluginName) && typeof fragment.clozeNumber === "number") {
       if (fragment.clozeNumber > maxNumber) {
         maxNumber = fragment.clozeNumber
       }
@@ -55,14 +85,8 @@ export function getAllClozeNumbers(content: ContentFragment[] | undefined, plugi
   const clozeNumbers = new Set<number>()
 
   for (const fragment of content) {
-    // 首先尝试精确匹配 pluginName.cloze
-    // 如果不匹配，则尝试匹配任何 xxx.cloze 格式
-    const isClozeFragment = 
-      fragment.t === `${pluginName}.cloze` ||
-      (typeof fragment.t === "string" && fragment.t.endsWith(".cloze"))
-    
-    if (isClozeFragment && typeof (fragment as any).clozeNumber === "number") {
-      clozeNumbers.add((fragment as any).clozeNumber)
+    if (isClozeFragment(fragment, pluginName) && typeof fragment.clozeNumber === "number") {
+      clozeNumbers.add(fragment.clozeNumber)
     }
   }
 
@@ -312,11 +336,20 @@ export async function createCloze(
       [{ name: "srs.isCard", value: true, type: 4 }]
     )
 
-    // 为每个填空设置分天的初始 SRS 状态
+    // 属性写入后使块缓存失效，确保下方 ensureClozeSrsState 读取到最新属性
+    invalidateBlockCache(blockId)
+
+    // 为每个填空设置分天的初始 SRS 状态（daysOffset = clozeNumber - 1）：
+    // - 仅本次新建的编号无条件写入初始状态（避免复用已删除编号时继承孤儿 srs.cN.* 旧状态）
+    // - 已存在的编号只在缺少 srs.cN.* 属性时初始化，绝不覆盖已有复习进度
     for (let i = 0; i < clozeNumbers.length; i++) {
       const clozeNumber = clozeNumbers[i]
       const daysOffset = clozeNumber - 1
-      await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
+      if (clozeNumber === nextClozeNumber) {
+        await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
+      } else {
+        await ensureClozeSrsState(blockId, clozeNumber, daysOffset)
+      }
     }
 
     // 显示成功通知

@@ -96,17 +96,20 @@ Orca 启用插件
 | `openFlashcardHome` | SRS: 今日学习 | 动态 import `openFlashcardHome` |
 | `openOldReviewPanel` | SRS: 开始复习 | 动态 import `startReviewSession`（次级入口） |
 | `startIncrementalReadingSession` | SRS: 打开阅读材料 | 动态 import（次级入口） |
-| `openIRManager` | SRS: 阅读资料库 | 动态 import `openIRManager` |
+| `openIRManager` | SRS: 渐进阅读（资料库） | 动态 import `openIRManager` |
 | `toggleAutoExtractMark` | SRS: 切换渐进阅读自动标签 | 写设置并 start/stop 自动标记 |
 | `clearRecentDeckPreference` | SRS: 清除最近默认牌组 | `clearRecentDeckPreference` |
 | `resetFsrsSettings` | SRS: 恢复 FSRS 默认设置 | `resetFsrsSettingsToDefaults` + notify（F2-08） |
 | `testAIConnection` | SRS: 测试 AI 连接 | `testAIConfigWithDetails` |
+| `manageAIToolbarPrompts` | SRS: 打开 AI 提示词库 | 动态 import `openAIPromptManager` |
+| `openAIServiceSettings` | SRS: AI / Firecrawl 服务设置 | 动态 import `openAIServiceSettings` |
 | `importEpub` | 导入 EPUB | 挂载导入对话框 |
 | `importWeb` | 导入网页 | 挂载 Firecrawl 网页导入对话框 |
 | `resumeEpubImport` | 继续导入 EPUB | 参数 `bookBlockId` |
 | `removeBookFromIR` | IR: 将整本书移出渐进阅读 | 参数 `bookBlockId` |
 | `skipSequentialChapter` | IR: 跳过本章（兼容；主路径用「完成」） | `orca-srs:ir-session-action` / 提示 |
 | `irSessionNext` / `irSessionPostpone` / `irSessionPriority` | IR: 下一篇 / 推后 / 调整重要性 | `CustomEvent("orca-srs:ir-session-action")` |
+| `irToggleViewMode` | IR: 切换到编辑模式 | 同上（`action: "toggleViewMode"`） |
 
 #### 编辑器命令
 
@@ -120,6 +123,7 @@ Orca 启用插件
 | `createDirectionForward` / `createDirectionBackward` | 正向 / 反向方向卡 |
 | `makeAICard` | SRS: AI 生成闪卡 |
 | `interactiveAICard` | SRS: AI 生成闪卡（兼容别名，同流程） |
+| `aiQuickInteract` | SRS: AI 快捷交互（`hasArgs: true`） |
 | `irRecordProgress` | IR: 记录阅读进度（ir_record） |
 
 #### F2-08：`resetFsrsSettings`
@@ -154,6 +158,8 @@ Orca 启用插件
 | `listCard` | 列表卡（子块作为条目） | `createListCard` |
 | `directionForward` / `directionBackward` | 方向卡 | 对应编辑器命令 |
 | `aiCard` | AI 生成记忆卡 | `makeAICard` |
+| `manageAIPrompts` | 打开 AI 提示词库 | `manageAIToolbarPrompts` |
+| `openAIServiceSettings` | AI / Firecrawl 服务设置 | `openAIServiceSettings` |
 | `todayLearning` | 今日学习 | `openFlashcardHome` |
 | `ir` | 创建阅读材料（主题） | `createTopicCard` |
 | `incrementalReading` | 打开阅读工作区 | `startIncrementalReadingSession` |
@@ -175,6 +181,8 @@ Orca 启用插件
 | `removeBookFromIRMenu` | 含 `ir.bookPlan`：整本移出 IR |
 | `resumeEpubImportMenu` | `epub.importStatus` 为 partial/importing |
 | `joinTopicIR` / `readTopicToday` | Topic IR 分类菜单 |
+
+查询块失败语义：`getQueryResults` 失败抛 `QueryExecutionError`（见 [SRS_复习队列管理.md](./SRS_复习队列管理.md)）；`main.ts` 查询分支与 `handleReviewError` 对其 notify `error`「查询执行失败，请重试」（title「SRS 复习」），菜单项计数失败显示「(加载失败)」并禁用——均与「查询结果中没有找到卡片」的 info 区分。
 
 ## 用户交互
 
@@ -217,5 +225,6 @@ Orca 启用插件
 
 ## 文档同步
 
-- **文档同步日期：2026-07-13**
-- 对齐现行 `load`/`unload`、F2-01 会话块、完整命令与 Headbar；删除不存在的 `cardBrowser.ts` 等路径；相关文件改为仓库相对路径。
+- **文档同步日期：2026-07-26**
+- 命令表补 `manageAIToolbarPrompts` / `openAIServiceSettings` / `irToggleViewMode` / `aiQuickInteract`；斜杠表补 `manageAIPrompts` / `openAIServiceSettings`；更正 `openIRManager` label；右键菜单节补查询块 `QueryExecutionError` 失败文案。
+- 2026-07-13：对齐现行 `load`/`unload`、F2-01 会话块、完整命令与 Headbar；删除不存在的 `cardBrowser.ts` 等路径；相关文件改为仓库相对路径。

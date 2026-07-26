@@ -334,6 +334,7 @@ stateDiagram-v2
 - 复习中可直接编辑答案子块（依赖编辑器能力，非 `contentEditable: false` 锁死）。
 - 评分按钮：Again / Hard / Good / Easy；间隔/到期预览走 F2-08。
 - 界面默认**不展示**完整 SRS 技术字段（稳定度、完整时间戳等）；评分后日志可用简化日期 `M-D`。
+- **「卡片信息」面板统一实现**：`src/components/review-card/CardInfoPanel.tsx`（Basic / Cloze / Direction / List / Choice 复习渲染器共用，替代此前各渲染器内联的重复实现）。`formatCardState` / `formatDateTime` 为 named export，唯一实现在该文件。可选 prop `showSchedulingDetails`（默认 `true`）控制「间隔天数 / 稳定性 / 难度」三行；`ChoiceCardReviewRenderer` 传 `false` 保持其历史 5 行输出。回归：`CardInfoPanel.test.ts`（含与旧实现逐输入等价断言）。
 
 ### Basic 答案编辑：自动化 vs Orca 实例验证
 

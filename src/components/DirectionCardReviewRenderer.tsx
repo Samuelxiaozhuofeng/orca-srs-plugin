@@ -16,35 +16,7 @@ import type { Grade, SrsState } from "../srs/types"
 import { extractDirectionInfo } from "../srs/directionUtils"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, formatInterval, previewDueDates, formatDueDate } from "../srs/algorithm"
-import { State } from "ts-fsrs"
-
-/**
- * 格式化卡片状态为中文
- */
-function formatCardState(state?: State): string {
-  if (state === undefined || state === null) return "新卡"
-  switch (state) {
-    case State.New: return "新卡"
-    case State.Learning: return "学习中"
-    case State.Review: return "复习中"
-    case State.Relearning: return "重学中"
-    default: return "未知"
-  }
-}
-
-/**
- * 格式化日期时间
- */
-function formatDateTime(date: Date | null | undefined): string {
-  if (!date) return "从未"
-  const d = new Date(date)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hour = String(d.getHours()).padStart(2, '0')
-  const minute = String(d.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hour}:${minute}`
-}
+import CardInfoPanel from "./review-card/CardInfoPanel"
 
 interface DirectionCardReviewRendererProps {
   blockId: DbId
@@ -314,60 +286,7 @@ export default function DirectionCardReviewRenderer({
       </div>
 
       {/* 可折叠的卡片信息面板 */}
-      {showCardInfo && (
-        <div 
-          contentEditable={false}
-          style={{
-            marginBottom: "12px",
-            padding: "12px 16px",
-            backgroundColor: "var(--orca-color-bg-2)",
-            borderRadius: "8px",
-            fontSize: "13px",
-            color: "var(--orca-color-text-2)"
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>遗忘次数</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.lapses ?? 0}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>复习次数</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.reps ?? 0}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>卡片状态</span>
-              <span style={{ 
-                color: srsInfo?.state === State.Review ? "var(--orca-color-success)" : 
-                       srsInfo?.state === State.Learning || srsInfo?.state === State.Relearning ? "var(--orca-color-warning)" :
-                       "var(--orca-color-primary)"
-              }}>
-                {formatCardState(srsInfo?.state)}
-              </span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>最后复习</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{formatDateTime(srsInfo?.lastReviewed)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>下次到期</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{formatDateTime(srsInfo?.due)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>间隔天数</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{srsInfo?.interval ?? 0} 天</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>稳定性</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{(srsInfo?.stability ?? 0).toFixed(2)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>难度</span>
-              <span style={{ color: "var(--orca-color-text-1)" }}>{(srsInfo?.difficulty ?? 0).toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
 
       {/* 题目区域 */}
       <div

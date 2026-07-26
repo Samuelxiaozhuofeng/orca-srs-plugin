@@ -5,11 +5,11 @@
  * 使用 fast-check 进行属性测�?
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 // @ts-nocheck
-import * as fc from 'fast-check'
+import * as fc from 'fast-check'
 // @ts-nocheck
-import type { DbId, Block } from '../orca.d.ts'
+import type { DbId, Block } from '../orca.d.ts'
 // @ts-nocheck
 
 // 模拟 orca 全局对象
@@ -30,17 +30,18 @@ const mockOrca = {
 globalThis.orca = mockOrca
 
 // 导入被测模块（必须在 mock 之后�?
-import { 
+import { 
 // @ts-nocheck
-  getAllDescendantIds, 
-  isQueryBlock, 
+  getAllDescendantIds,
+  isQueryBlock,
   getQueryResults,
   hasCardTag,
   collectCardsFromQueryBlock,
   collectCardsFromChildren,
-  convertBlockToReviewCards
+  convertBlockToReviewCards,
+  QueryExecutionError
 } from './blockCardCollector'
-import type { BlockWithRepr } from './blockUtils'
+import type { BlockWithRepr } from './blockUtils'
 // @ts-nocheck
 
 /**
@@ -322,20 +323,114 @@ describe('blockCardCollector', () => {
         refs: [],
         backRefs: []
       }
-      
-      // Mock invokeBackend to return block and query results
+
+      // Mock invokeBackend：query 返回 Block[]（文档声明的形态），应归一化为 id 列表
       mockOrca.invokeBackend.mockImplementation(async (method: string, arg: any) => {
         if (method === 'get-block') {
           return block
         }
         if (method === 'query') {
-          return [2, 3]
+          return [
+            { id: 2, text: 'Block 2', properties: [], refs: [], backRefs: [], children: [] },
+            { id: 3, text: 'Block 3', properties: [], refs: [], backRefs: [], children: [] }
+          ]
         }
         return null
       })
-      
+
       const result = await getQueryResults(1 as DbId)
       expect(result).toEqual([2, 3])
+    })
+
+    it('should normalize mixed number/object results and drop invalid entries', async () => {
+      const block: BlockWithRepr = {
+        id: 1 as DbId,
+        created: new Date(),
+        modified: new Date(),
+        children: [],
+        aliases: [],
+        properties: [
+          { name: '_repr', type: 0, value: { type: 'query', q: { kind: 1 } } }
+        ],
+        refs: [],
+        backRefs: []
+      }
+
+      mockOrca.invokeBackend.mockImplementation(async (method: string) => {
+        if (method === 'get-block') {
+          return block
+        }
+        if (method === 'query') {
+          // 数字与块对象混合，另含无 id 对象、null、NaN 等非法项
+          return [2, { id: 3 }, { foo: 'bar' }, null, NaN, { id: Infinity }]
+        }
+        return null
+      })
+
+      const result = await getQueryResults(1 as DbId)
+      expect(result).toEqual([2, 3])
+    })
+
+    it('should return empty array for a query that succeeds with no results', async () => {
+      const block: BlockWithRepr = {
+        id: 1 as DbId,
+        created: new Date(),
+        modified: new Date(),
+        children: [],
+        aliases: [],
+        properties: [
+          { name: '_repr', type: 0, value: { type: 'query', q: { kind: 1 } } }
+        ],
+        refs: [],
+        backRefs: []
+      }
+
+      mockOrca.invokeBackend.mockImplementation(async (method: string) => {
+        if (method === 'get-block') {
+          return block
+        }
+        if (method === 'query') {
+          return []
+        }
+        return null
+      })
+
+      const result = await getQueryResults(1 as DbId)
+      expect(result).toEqual([])
+    })
+
+    it('should propagate a QueryExecutionError when query execution fails', async () => {
+      const block: BlockWithRepr = {
+        id: 1 as DbId,
+        created: new Date(),
+        modified: new Date(),
+        children: [],
+        aliases: [],
+        properties: [
+          { name: '_repr', type: 0, value: { type: 'query', q: { kind: 1 } } }
+        ],
+        refs: [],
+        backRefs: []
+      }
+
+      const backendError = new Error('backend query exploded')
+      mockOrca.invokeBackend.mockImplementation(async (method: string) => {
+        if (method === 'get-block') {
+          return block
+        }
+        if (method === 'query') {
+          throw backendError
+        }
+        return null
+      })
+
+      // 不再静默返回 []：错误必须向上传播
+      await expect(getQueryResults(1 as DbId)).rejects.toThrow(QueryExecutionError)
+      await expect(getQueryResults(1 as DbId)).rejects.toThrow('执行查询失败')
+
+      // 原始错误保留在 cause 上
+      const rejection = await getQueryResults(1 as DbId).catch(e => e)
+      expect(rejection.cause).toBe(backendError)
     })
   })
 
@@ -589,6 +684,79 @@ describe('blockCardCollector', () => {
       
       const result = await collectCardsFromQueryBlock(1 as DbId)
       expect(result).toEqual([])
+    })
+
+    it('should collect cards when query returns block objects', async () => {
+      const queryBlock: BlockWithRepr = {
+        id: 1 as DbId,
+        created: new Date(),
+        modified: new Date(),
+        children: [],
+        aliases: [],
+        properties: [
+          { name: '_repr', type: 0, value: { type: 'query', q: { kind: 1 } } }
+        ],
+        refs: [],
+        backRefs: []
+      }
+      mockBlocks[1 as DbId] = queryBlock as Block
+
+      // 带 #card 标签的结果块
+      const cardBlock: Block = {
+        id: 2 as DbId,
+        created: new Date(),
+        modified: new Date(),
+        children: [],
+        aliases: [],
+        properties: [],
+        refs: [{ id: 1 as DbId, from: 2 as DbId, to: 100 as DbId, type: 2, alias: 'card' }],
+        backRefs: [],
+        text: 'Card Block'
+      }
+      mockBlocks[2 as DbId] = cardBlock
+
+      mockOrca.invokeBackend.mockImplementation(async (method: string, arg: any) => {
+        if (method === 'get-block') {
+          return mockBlocks[arg] || null
+        }
+        if (method === 'query') {
+          // 后端按文档返回 Block[]：归一化后仍应收集到卡片
+          return [cardBlock]
+        }
+        return null
+      })
+
+      const result = await collectCardsFromQueryBlock(1 as DbId)
+      expect(result.length).toBe(1)
+      expect(result[0].id).toBe(2)
+    })
+
+    it('should propagate query execution failure instead of returning []', async () => {
+      const queryBlock: BlockWithRepr = {
+        id: 1 as DbId,
+        created: new Date(),
+        modified: new Date(),
+        children: [],
+        aliases: [],
+        properties: [
+          { name: '_repr', type: 0, value: { type: 'query', q: { kind: 1 } } }
+        ],
+        refs: [],
+        backRefs: []
+      }
+      mockBlocks[1 as DbId] = queryBlock as Block
+
+      mockOrca.invokeBackend.mockImplementation(async (method: string, arg: any) => {
+        if (method === 'get-block') {
+          return mockBlocks[arg] || null
+        }
+        if (method === 'query') {
+          throw new Error('backend down')
+        }
+        return null
+      })
+
+      await expect(collectCardsFromQueryBlock(1 as DbId)).rejects.toThrow(QueryExecutionError)
     })
   })
 
