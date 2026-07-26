@@ -19,7 +19,7 @@ export default function IRArchiveConfirmDialog({
 }: Props) {
   if (!open) return null
 
-  const busyStyle = isWorking ? { opacity: 0.5, pointerEvents: "none" as const } : undefined
+  const busyClassName = isWorking ? "ir-button--blocked" : undefined
 
   return (
     <ModalOverlay
@@ -30,26 +30,14 @@ export default function IRArchiveConfirmDialog({
         onClose()
       }}
     >
-      <div
-        style={{
-          minWidth: 320,
-          maxWidth: 420,
-          padding: "18px 20px",
-          borderRadius: 12,
-          background: "var(--orca-color-bg-1)",
-          border: "1px solid var(--orca-color-border-1)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--orca-color-text-1)" }}>
+      <div className="ir-dialog">
+        <div className="ir-dialog__title">
           完成
         </div>
-        <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
+        <div className="ir-dialog__text">
           将退出阅读队列并保留正文与已有卡片。
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+        <div className="ir-dialog__actions">
           <Button
             tabIndex={0}
             variant="outline"
@@ -57,7 +45,7 @@ export default function IRArchiveConfirmDialog({
               if (isWorking) return
               onClose()
             }}
-            style={busyStyle}
+            className={busyClassName}
           >
             取消
           </Button>
@@ -68,7 +56,7 @@ export default function IRArchiveConfirmDialog({
               if (isWorking) return
               onConfirm()
             }}
-            style={busyStyle}
+            className={busyClassName}
           >
             {isWorking ? "处理中…" : "完成"}
           </Button>

@@ -68,7 +68,7 @@ export default function IRDetailsDrawer({
             <div className="ir-drawer__hint">未选择卡片</div>
           ) : (
             <>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
+              <div className="ir-drawer__item-title">{title}</div>
               <dl className="ir-details-kv">
                 <dt>类型</dt>
                 <dd>{formatIRCardTypeLabel(card.cardType)}</dd>
@@ -103,7 +103,7 @@ export default function IRDetailsDrawer({
                 <dt>Block ID</dt>
                 <dd>{String(card.id)}</dd>
               </dl>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="ir-drawer__actions">
                 <Button tabIndex={0} variant="solid" onClick={() => onStartReading(card.id)}>
                   开始阅读
                 </Button>

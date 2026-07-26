@@ -24,7 +24,7 @@ export default function IRCompleteChapterDialog({
 }: Props) {
   if (!open) return null
 
-  const busyStyle = isWorking ? { opacity: 0.5, pointerEvents: "none" as const } : undefined
+  const busyClassName = isWorking ? "ir-button--blocked" : undefined
 
   return (
     <ModalOverlay
@@ -35,28 +35,16 @@ export default function IRCompleteChapterDialog({
         onClose()
       }}
     >
-      <div
-        style={{
-          minWidth: 320,
-          maxWidth: 420,
-          padding: "18px 20px",
-          borderRadius: 12,
-          background: "var(--orca-color-bg-1)",
-          border: "1px solid var(--orca-color-border-1)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--orca-color-text-1)" }}>
+      <div className="ir-dialog">
+        <div className="ir-dialog__title">
           完成本章
         </div>
         {hasNextChapter ? (
           <>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
+            <div className="ir-dialog__text">
               本章会退出阅读队列（笔记保留）。下一章什么时候开始？
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+            <div className="ir-dialog__actions">
               <Button
                 tabIndex={0}
                 variant="outline"
@@ -64,7 +52,7 @@ export default function IRCompleteChapterDialog({
                   if (isWorking) return
                   onClose()
                 }}
-                style={busyStyle}
+                className={busyClassName}
               >
                 取消
               </Button>
@@ -75,7 +63,7 @@ export default function IRCompleteChapterDialog({
                   if (isWorking) return
                   onConfirmTomorrow()
                 }}
-                style={busyStyle}
+                className={busyClassName}
               >
                 {isWorking ? "处理中…" : "明天"}
               </Button>
@@ -86,7 +74,7 @@ export default function IRCompleteChapterDialog({
                   if (isWorking) return
                   onConfirmToday()
                 }}
-                style={busyStyle}
+                className={busyClassName}
               >
                 {isWorking ? "处理中…" : "今天"}
               </Button>
@@ -94,10 +82,10 @@ export default function IRCompleteChapterDialog({
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--orca-color-text-2)" }}>
+            <div className="ir-dialog__text">
               这是计划中的最后一章。完成后，本书不再按顺序解锁。
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+            <div className="ir-dialog__actions">
               <Button
                 tabIndex={0}
                 variant="outline"
@@ -105,7 +93,7 @@ export default function IRCompleteChapterDialog({
                   if (isWorking) return
                   onClose()
                 }}
-                style={busyStyle}
+                className={busyClassName}
               >
                 取消
               </Button>
@@ -116,7 +104,7 @@ export default function IRCompleteChapterDialog({
                   if (isWorking) return
                   onConfirmToday()
                 }}
-                style={busyStyle}
+                className={busyClassName}
               >
                 {isWorking ? "处理中…" : "完成"}
               </Button>

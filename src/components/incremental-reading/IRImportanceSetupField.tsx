@@ -29,42 +29,25 @@ export default function IRImportanceSetupField({
     <div
       role="radiogroup"
       aria-label="重要性"
-      style={{ display: "flex", flexDirection: "column", gap: 8 }}
+      className="ir-importance-field"
     >
-      <div
-        style={{
-          fontSize: 12,
-          color: "var(--orca-color-text-2)",
-          fontWeight: 600,
-          letterSpacing: "0.02em"
-        }}
-      >
+      <div className="ir-importance-field__label">
         重要性
       </div>
-      <div style={{ fontSize: 12, color: "var(--orca-color-text-3)", lineHeight: 1.45 }}>
+      <div className="ir-importance-field__hint">
         越高越容易进今天的队列，之后也会更频繁再推；可随时在阅读中改。
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="ir-importance-field__options">
         {options.map((opt) => {
           const checked = selectedTier === opt.tier
           return (
             <label
               key={opt.tier}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: checked
-                  ? "1px solid var(--orca-color-primary-6, #3b82f6)"
-                  : "1px solid var(--orca-color-border-1, #ddd)",
-                backgroundColor: checked
-                  ? "var(--orca-color-bg-2, #f8fafc)"
-                  : "transparent",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.55 : 1
-              }}
+              className={[
+                "ir-importance-option",
+                checked ? "ir-importance-option--checked" : "",
+                disabled ? "ir-importance-option--disabled" : ""
+              ].filter(Boolean).join(" ")}
             >
               <input
                 type="radio"
@@ -76,26 +59,19 @@ export default function IRImportanceSetupField({
                   if (disabled) return
                   onChange(opt.priority)
                 }}
-                style={{ marginTop: 3 }}
+                className="ir-importance-option__radio"
                 aria-label={opt.title}
               />
-              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--orca-color-text-1)" }}>
+              <span className="ir-importance-option__body">
+                <span className="ir-importance-option__title">
                   {opt.title}
                   {opt.recommended ? (
-                    <span
-                      style={{
-                        marginLeft: 8,
-                        fontSize: 11,
-                        fontWeight: 500,
-                        color: "var(--orca-color-primary-6, #3b82f6)"
-                      }}
-                    >
+                    <span className="ir-importance-option__recommended">
                       推荐
                     </span>
                   ) : null}
                 </span>
-                <span style={{ fontSize: 12, color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
+                <span className="ir-importance-option__scene">
                   {opt.scene}
                 </span>
               </span>

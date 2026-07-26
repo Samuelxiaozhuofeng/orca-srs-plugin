@@ -55,7 +55,7 @@ export default function IRSessionMorePanel({
   }, [contentWidth, open])
 
   if (!open) return null
-  const busyStyle = isWorking ? { opacity: 0.5, pointerEvents: "none" as const } : undefined
+  const busyClassName = isWorking ? "ir-button--blocked" : undefined
 
   const commitDraft = () => {
     if (isWorking) return
@@ -70,7 +70,7 @@ export default function IRSessionMorePanel({
   }
 
   return (
-    <div className="ir-reading__more" style={{ padding: "6px 12px" }}>
+    <div className="ir-reading__more">
       <Button
         tabIndex={0}
         variant="plain"
@@ -78,7 +78,7 @@ export default function IRSessionMorePanel({
           if (isWorking) return
           onPostpone()
         }}
-        style={busyStyle}
+        className={busyClassName}
         title="推后 Shift+Enter"
       >
         推后…
@@ -91,7 +91,7 @@ export default function IRSessionMorePanel({
             if (isWorking) return
             onConvertToQA()
           }}
-          style={busyStyle}
+          className={busyClassName}
           title="将摘录转为问答卡（正文为题、首个子块为答案）"
           aria-label="转为问答卡"
         >
@@ -106,7 +106,7 @@ export default function IRSessionMorePanel({
             if (isWorking) return
             onConvertToDirection()
           }}
-          style={busyStyle}
+          className={busyClassName}
           title="在光标处分隔，转为正向方向卡"
           aria-label="转为方向卡"
         >
@@ -118,7 +118,7 @@ export default function IRSessionMorePanel({
         tabIndex={0}
         variant={theme === "mint" ? "solid" : "plain"}
         onClick={() => onThemeChange("mint")}
-        style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
+        className="ir-reading__more-swatch"
       >
         绿茶
       </Button>
@@ -126,7 +126,7 @@ export default function IRSessionMorePanel({
         tabIndex={0}
         variant={theme === "sepia" ? "solid" : "plain"}
         onClick={() => onThemeChange("sepia")}
-        style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
+        className="ir-reading__more-swatch"
       >
         书卷
       </Button>
@@ -134,7 +134,7 @@ export default function IRSessionMorePanel({
         tabIndex={0}
         variant={theme === "academic" ? "solid" : "plain"}
         onClick={() => onThemeChange("academic")}
-        style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0" }}
+        className="ir-reading__more-swatch"
       >
         文献
       </Button>
@@ -149,7 +149,7 @@ export default function IRSessionMorePanel({
             setDraftWidth(String(px))
             onContentWidthChange(px)
           }}
-          style={{ gridColumn: "span 1", fontSize: 11, padding: "4px 0", ...busyStyle }}
+          className={`ir-reading__more-swatch${isWorking ? " ir-button--blocked" : ""}`}
           title={`正文最大宽度 ${px}px`}
           aria-label={`正文宽度 ${px}`}
           aria-pressed={contentWidth === px}
@@ -157,7 +157,7 @@ export default function IRSessionMorePanel({
           {px}
         </Button>
       ))}
-      <div className="ir-reading__more-width-custom" style={busyStyle}>
+      <div className={`ir-reading__more-width-custom${isWorking ? " ir-button--blocked" : ""}`}>
         <input
           type="number"
           min={IR_READER_WIDTH_MIN}

@@ -209,7 +209,7 @@ export default function IRWorkspaceSettings({
             <>
               <div className="ir-drawer__field">
                 <label htmlFor="ir-setting-auto-extract">自动标签 Extract</label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400 }}>
+                <label className="ir-settings__checkbox-row">
                   <input
                     id="ir-setting-auto-extract"
                     type="checkbox"
@@ -269,7 +269,7 @@ export default function IRWorkspaceSettings({
 
               <div className="ir-drawer__field">
                 <label htmlFor="ir-setting-mixed-learning">混合学习模式</label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400 }}>
+                <label className="ir-settings__checkbox-row">
                   <input
                     id="ir-setting-mixed-learning"
                     type="checkbox"
@@ -289,7 +289,7 @@ export default function IRWorkspaceSettings({
               {settings.mixedLearningEnabled ? (
                 <div className="ir-drawer__field">
                   <label>SRS 占比</label>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div className="ir-settings__row ir-settings__row--wrap">
                     {MIXED_LEARNING_RATIO_OPTIONS.map(ratio => (
                       <Button
                         key={ratio}
@@ -311,7 +311,7 @@ export default function IRWorkspaceSettings({
 
               <div className="ir-drawer__field">
                 <label htmlFor="ir-setting-auto-defer">溢出推后按钮</label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400 }}>
+                <label className="ir-settings__checkbox-row">
                   <input
                     id="ir-setting-auto-defer"
                     type="checkbox"
@@ -327,7 +327,7 @@ export default function IRWorkspaceSettings({
                 </label>
               </div>
 
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="ir-settings__row">
                 <Button
                   tabIndex={0}
                   variant="outline"

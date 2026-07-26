@@ -32,21 +32,21 @@ export default function IRSessionHeader({
   return (
     <>
       <div className="ir-reading__banner ir-reading__banner--info">
-        <span>
+        <span className="ir-session-header__progress">
           已完成 {formatSessionProgress(progress)}
-          <span style={{ marginLeft: 8, color: "var(--orca-color-text-3)" }}>
+          <span className="ir-session-header__remaining">
             剩余 {progress.remaining}
           </span>
           {remainingTimeLabel ? (
-            <span style={{ marginLeft: 12 }}>
+            <span className="ir-session-header__eta">
               <i className="ti ti-clock" aria-hidden="true" /> {remainingTimeLabel}
             </span>
           ) : null}
         </span>
-        <span style={{ flex: 1 }} />
+        <span className="ir-session-header__spacer" />
         {autoPostponeLabel ? (
           <>
-            <span style={{ fontSize: 12, color: "var(--orca-color-text-3)" }}>
+            <span className="ir-session-header__note">
               {autoPostponeLabel}
             </span>
             {onUndoAutoPostpone ? (

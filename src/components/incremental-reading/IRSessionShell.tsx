@@ -582,7 +582,7 @@ export default function IRSessionShell({
   if (loadFailed) {
     return (
       <div className="ir-reading__launch" role="alert">
-        <div style={{ color: "var(--orca-color-danger-5)" }}>
+        <div className="ir-reading__launch-error">
           数据读取失败{loadErrorMessage ? `：${loadErrorMessage}` : ""}
         </div>
         <div className="ir-reading__launch-hint">这不是「暂无到期内容」。</div>

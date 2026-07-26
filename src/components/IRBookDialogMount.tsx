@@ -168,14 +168,14 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
     <ModalOverlay visible={snap.isOpen} canClose={!isSubmitting} onClose={closeIRBookDialog}>
       <div
         style={{
-          background: "var(--orca-bg-primary, #ffffff)",
-          borderRadius: "8px",
-          padding: "20px",
+          background: "var(--srs-surface-base)",
+          borderRadius: "var(--srs-radius-lg)",
+          padding: "var(--srs-space-5)",
           width: "min(520px, 92vw)",
           maxHeight: "90vh",
           overflowY: "auto",
-          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
-          border: "1px solid var(--orca-border, #e0e0e0)",
+          boxShadow: "var(--srs-shadow-overlay)",
+          border: "1px solid var(--srs-hairline)",
           display: "flex",
           flexDirection: "column",
           gap: 12
@@ -183,10 +183,10 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
           <div>
-            <div style={{ fontSize: "18px", fontWeight: 600, color: "var(--orca-text-primary, #333)" }}>
+            <div style={{ fontSize: "var(--srs-text-subtitle)", fontWeight: 600, color: "var(--orca-color-text-1)" }}>
               创建渐进阅读书籍
             </div>
-            <div style={{ fontSize: "13px", color: "var(--orca-text-secondary, #666)", marginTop: "4px" }}>
+            <div style={{ fontSize: "var(--srs-text-secondary)", color: "var(--orca-color-text-2)", marginTop: "var(--srs-space-1)" }}>
               {title}
             </div>
           </div>
@@ -252,19 +252,19 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
               setTotalDays(Math.max(0, Number(e.target.value) || 0))
             }
             style={{
-              padding: "8px 10px",
-              borderRadius: "8px",
-              border: "1px solid var(--orca-border, #d0d0d0)"
+              padding: "var(--srs-space-2) 10px",
+              borderRadius: "var(--srs-radius-sm)",
+              border: "1px solid var(--srs-hairline)"
             }}
           />
         </label>
 
-        <div style={{ fontSize: 13, color: "var(--orca-text-secondary, #666)" }}>
+        <div style={{ fontSize: "var(--srs-text-secondary)", color: "var(--orca-color-text-2)" }}>
           {schedulePreviewText(mode, selectedChapterIds.length, totalDays, priority)}
         </div>
 
         {failedCount > 0 ? (
-          <div role="status" style={{ fontSize: 13, color: "var(--orca-color-warning-6, #a60)" }}>
+          <div role="status" style={{ fontSize: "var(--srs-text-secondary)", color: "var(--srs-accent-warn)" }}>
             上次：成功 {successCount}，失败 {failedCount}。成功章节已保留在计划中。
           </div>
         ) : null}

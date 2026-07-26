@@ -128,7 +128,7 @@ export default function IRLibraryList({
                   />
                 ))}
                 {remaining > 0 ? (
-                  <div style={{ padding: "8px 12px" }}>
+                  <div className="ir-library-list__load-more">
                     <button type="button" className="ir-load-more-btn" onClick={() => onLoadMore(group.key)}>
                       加载更多（剩余 {remaining} 张）
                     </button>

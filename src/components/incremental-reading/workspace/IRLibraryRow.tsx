@@ -74,7 +74,7 @@ export default function IRLibraryRow({
             {typeLabel}
           </span>
           <span className={`ir-tag ir-tag--due ir-tag--due-${dueTone}`}>
-            <i className="ti ti-calendar" aria-hidden="true" style={{ fontSize: 11, marginRight: 3 }} />
+            <i className="ti ti-calendar ir-tag__icon" aria-hidden="true" />
             到期: {dueDateLabel}
           </span>
           <span className="ir-tag ir-tag--stage" title={`阶段：${card.stage}`}>
@@ -98,7 +98,7 @@ export default function IRLibraryRow({
           title={canAdvanceLearn ? "提前到今天并开始阅读" : "以该卡开始阅读"}
           className="ir-action-btn ir-action-btn--read"
         >
-          <i className="ti ti-book-read" aria-hidden="true" style={{ marginRight: 4 }} />
+          <i className="ti ti-book-read ir-action-btn__icon" aria-hidden="true" />
           <span>{canAdvanceLearn ? "提前阅读" : "开始阅读"}</span>
         </button>
         {canAdvanceLearn ? (
@@ -109,7 +109,7 @@ export default function IRLibraryRow({
             title="仅提前到期到今天"
             className="ir-action-btn ir-action-btn--advance"
           >
-            <i className="ti ti-calendar-forward" aria-hidden="true" style={{ marginRight: 4 }} />
+            <i className="ti ti-calendar-forward ir-action-btn__icon" aria-hidden="true" />
             <span>{isAdvancing ? "处理中" : "提前到期"}</span>
           </button>
         ) : null}

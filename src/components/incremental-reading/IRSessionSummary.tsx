@@ -92,7 +92,7 @@ export default function IRSessionSummary({
         {onClose ? (
           <div className="ir-session-summary__actions">
             <Button tabIndex={0} variant="solid" onClick={onClose} className="ir-summary-close-btn">
-              <i className="ti ti-arrow-left" aria-hidden="true" style={{ marginRight: 6 }} />
+              <i className="ti ti-arrow-left ir-summary-close-btn__icon" aria-hidden="true" />
               {closeLabel}
             </Button>
           </div>

@@ -143,30 +143,23 @@ export default function IncrementalReadingBreadcrumb({
   }
 
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-      fontSize: "12px",
-      color: "var(--orca-color-text-2)",
-      flexWrap: "wrap"
-    }}>
+    <div className="ir-breadcrumb">
       {items.map((item: BreadcrumbItem, index: number) => {
         const isLast = index === items.length - 1
         return (
-          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div key={item.id} className="ir-breadcrumb__item">
             <span
               onClick={event => handleJump(item.id, event.shiftKey)}
-              style={{
-                cursor: "pointer",
-                color: isLast ? "var(--orca-color-text-1)" : "var(--orca-color-primary-6)",
-                fontWeight: isLast ? 600 : 500
-              }}
+              className={
+                isLast
+                  ? "ir-breadcrumb__link ir-breadcrumb__link--current"
+                  : "ir-breadcrumb__link"
+              }
               title={item.text}
             >
               {item.displayText}
             </span>
-            {!isLast && <span style={{ color: "var(--orca-color-text-3)" }}>{">"}</span>}
+            {!isLast && <span className="ir-breadcrumb__sep">{">"}</span>}
           </div>
         )
       })}
