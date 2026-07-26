@@ -141,15 +141,18 @@ describe("CardInfoPanel 行集合", () => {
     ])
   })
 
-  it("卡片状态配色与原内联面板一致", () => {
+  // 断言的是「状态 → 语义令牌」的映射，不是具体色值。
+  // 旧断言锁定的 `--orca-color-success/warning/primary`（无数字后缀）在 Orca 中不存在，
+  // 等于把「状态色从不生效」这个 bug 固化成了回归契约，故一并更新。
+  it("卡片状态配色映射到设计令牌语义色", () => {
     const colorOf = (state?: State) =>
       collectInfoRows(CardInfoPanel({ srsInfo: { ...sampleSrsInfo, state } }))
         .find((row) => row.label === "卡片状态")?.color
-    expect(colorOf(State.Review)).toBe("var(--orca-color-success)")
-    expect(colorOf(State.Learning)).toBe("var(--orca-color-warning)")
-    expect(colorOf(State.Relearning)).toBe("var(--orca-color-warning)")
-    expect(colorOf(State.New)).toBe("var(--orca-color-primary)")
-    expect(colorOf(undefined)).toBe("var(--orca-color-primary)")
+    expect(colorOf(State.Review)).toBe("var(--srs-accent-success)")
+    expect(colorOf(State.Learning)).toBe("var(--srs-accent-warn)")
+    expect(colorOf(State.Relearning)).toBe("var(--srs-accent-warn)")
+    expect(colorOf(State.New)).toBe("var(--srs-accent-new)")
+    expect(colorOf(undefined)).toBe("var(--srs-accent-new)")
   })
 
   it("srsInfo 缺省时全部字段落到 0/从未", () => {

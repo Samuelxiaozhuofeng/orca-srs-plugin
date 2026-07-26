@@ -509,14 +509,7 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
   const renderContent = () => {
     if (isLoading) {
       return (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          fontSize: "14px",
-          color: "var(--orca-color-text-2)"
-        }}>
+        <div className="srs-review-state">
           加载复习队列中...
         </div>
       )
@@ -524,18 +517,9 @@ export default function SrsReviewSessionRenderer(props: RendererProps) {
 
     if (errorMessage) {
       return (
-        <div style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
-          padding: "24px",
-          height: "100%",
-          justifyContent: "center",
-          alignItems: "center",
-          textAlign: "center"
-        }}>
-          <div style={{ color: "var(--orca-color-danger-5)" }}>加载失败：{errorMessage}</div>
-          <Button variant="solid" onClick={handleRetry}>
+        <div className="srs-review-state srs-review-state--error">
+          <div className="srs-review-state__error-text">加载失败：{errorMessage}</div>
+          <Button variant="solid" onClick={handleRetry} className="srs-review-secondary-btn">
             重试
           </Button>
         </div>

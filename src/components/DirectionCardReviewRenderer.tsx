@@ -141,22 +141,14 @@ export default function DirectionCardReviewRenderer({
   // 块数据可能只是尚未加载；不要误判为“已删除”
   if (!block) {
     return (
-      <div style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "32px",
-        textAlign: "center",
-        color: "var(--orca-color-text-2)"
-      }}>
-        <div style={{ fontSize: "14px", opacity: 0.75 }}>卡片加载中...</div>
-      </div>
+      <div className="srs-review-card-placeholder">卡片加载中...</div>
     )
   }
 
   if (!dirInfo) {
     return (
-      <div style={{ padding: "20px", textAlign: "center" }}>
-        无法解析方向卡内容
+      <div className="srs-review-state srs-review-state--error">
+        <div className="srs-review-state__error-text">无法解析方向卡内容</div>
       </div>
     )
   }
@@ -170,81 +162,49 @@ export default function DirectionCardReviewRenderer({
   const arrowIcon =
     reviewDirection === "forward" ? "ti-arrow-right" : "ti-arrow-left"
   const dirLabel = reviewDirection === "forward" ? "正向" : "反向"
-  const dirColor = reviewDirection === "forward" 
-    ? "var(--orca-color-primary-5)" 
-    : "var(--orca-color-warning-5)"
-  const dirBgColor = reviewDirection === "forward"
-    ? "var(--orca-color-primary-1)"
-    : "var(--orca-color-warning-1)"
+  // 方向语义色（正向=primary / 反向=warning）由容器 modifier 类下发，
+  // 见 srs-review.css 的 .srs-review-card--dir-forward / --dir-backward
+  const dirModifier =
+    reviewDirection === "forward"
+      ? "srs-review-card--dir-forward"
+      : "srs-review-card--dir-backward"
 
   return (
     <div
-      className="srs-direction-card-container"
-      style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "16px",
-        width: inSidePanel ? "100%" : "90%",
-        minWidth: inSidePanel ? "0" : "600px",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      }}
+      className={`srs-direction-card-container srs-review-card ${dirModifier} ${
+        inSidePanel ? "" : "srs-review-card--modal"
+      }`}
     >
       {/* 卡片类型标识 */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "8px",
-          opacity: 0.6,
-          transition: "opacity 0.2s"
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = "0.6"}
-      >
+      <div className="srs-review-toolbar">
         {/* 左侧：回到上一张按钮 + 卡片类型标识 */}
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <div className="srs-review-toolbar__group">
           {onPrevious && (
             <Button
               variant="plain"
               onClick={canGoPrevious ? onPrevious : undefined}
               title="回到上一张"
-              style={{
-                padding: "4px 6px",
-                fontSize: "14px",
-                opacity: canGoPrevious ? 1 : 0.3,
-                cursor: canGoPrevious ? "pointer" : "not-allowed"
-              }}
+              className={`srs-review-icon-btn ${
+                canGoPrevious ? "" : "srs-review-icon-btn--disabled"
+              }`}
             >
               <i className="ti ti-arrow-left" />
             </Button>
           )}
-          <div
-            style={{
-              fontSize: "12px",
-              fontWeight: "500",
-              color: dirColor,
-              backgroundColor: dirBgColor,
-              padding: "2px 8px",
-              borderRadius: "4px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            <i className={`ti ${arrowIcon}`} style={{ fontSize: "11px" }} />
+          <div className="srs-review-type-chip srs-review-type-chip--direction">
+            <i className={`ti ${arrowIcon}`} />
             {dirLabel}
           </div>
         </div>
 
         {/* 右侧：操作按钮（仅图标） */}
-        <div style={{ display: "flex", gap: "2px" }}>
+        <div className="srs-review-toolbar__group">
           {!readOnly && onPostpone && (
             <Button
               variant="plain"
               onClick={onPostpone}
               title="推迟到明天 (B)"
-              style={{ padding: "4px 6px", fontSize: "14px" }}
+              className="srs-review-icon-btn"
             >
               <i className="ti ti-calendar-pause" />
             </Button>
@@ -254,7 +214,7 @@ export default function DirectionCardReviewRenderer({
               variant="plain"
               onClick={onSuspend}
               title="暂停卡片 (S)"
-              style={{ padding: "4px 6px", fontSize: "14px" }}
+              className="srs-review-icon-btn"
             >
               <i className="ti ti-player-pause" />
             </Button>
@@ -264,7 +224,7 @@ export default function DirectionCardReviewRenderer({
               variant="plain"
               onClick={(e: React.MouseEvent) => onJumpToCard(blockId, e.shiftKey)}
               title="跳转到卡片 (Shift+点击在侧面板打开)"
-              style={{ padding: "4px 6px", fontSize: "14px" }}
+              className="srs-review-icon-btn"
             >
               <i className="ti ti-external-link" />
             </Button>
@@ -274,11 +234,9 @@ export default function DirectionCardReviewRenderer({
             variant="plain"
             onClick={() => setShowCardInfo(!showCardInfo)}
             title="卡片信息"
-            style={{
-              padding: "4px 6px",
-              fontSize: "14px",
-              color: showCardInfo ? "var(--orca-color-primary-5)" : undefined
-            }}
+            className={`srs-review-icon-btn ${
+              showCardInfo ? "srs-review-icon-btn--active" : ""
+            }`}
           >
             <i className="ti ti-info-circle" />
           </Button>
@@ -289,54 +247,17 @@ export default function DirectionCardReviewRenderer({
       {showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
 
       {/* 题目区域 */}
-      <div
-        className="srs-direction-question"
-        style={{
-          marginBottom: "16px",
-          padding: "20px",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "8px",
-          minHeight: "100px",
-          fontSize: "18px",
-          lineHeight: "1.8",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "12px",
-        }}
-      >
+      <div className="srs-direction-question srs-review-face">
         {reviewDirection === "forward" ? (
           <>
-            <span style={{ fontWeight: 500 }}>{question}</span>
-            <i
-              className={`ti ${arrowIcon}`}
-              style={{
-                fontSize: "20px",
-                color: dirColor,
-              }}
-            />
+            <span className="srs-direction-question__term">{question}</span>
+            <i className={`ti ${arrowIcon} srs-direction-question__arrow`} />
             {showAnswer ? (
-              <span
-                style={{
-                  fontWeight: 600,
-                  color: dirColor,
-                  backgroundColor: dirBgColor,
-                  padding: "4px 12px",
-                  borderRadius: "6px",
-                }}
-              >
+              <span className="srs-direction-question__answer">
                 {answer}
               </span>
             ) : (
-              <span
-                style={{
-                  color: "var(--orca-color-text-2)",
-                  backgroundColor: "var(--orca-color-bg-3)",
-                  padding: "4px 12px",
-                  borderRadius: "6px",
-                  border: "1px dashed var(--orca-color-border-1)",
-                }}
-              >
+              <span className="srs-direction-question__mask">
                 ❓
               </span>
             )}
@@ -344,86 +265,49 @@ export default function DirectionCardReviewRenderer({
         ) : (
           <>
             {showAnswer ? (
-              <span
-                style={{
-                  fontWeight: 600,
-                  color: dirColor,
-                  backgroundColor: dirBgColor,
-                  padding: "4px 12px",
-                  borderRadius: "6px",
-                }}
-              >
+              <span className="srs-direction-question__answer">
                 {answer}
               </span>
             ) : (
-              <span
-                style={{
-                  color: "var(--orca-color-text-2)",
-                  backgroundColor: "var(--orca-color-bg-3)",
-                  padding: "4px 12px",
-                  borderRadius: "6px",
-                  border: "1px dashed var(--orca-color-border-1)",
-                }}
-              >
+              <span className="srs-direction-question__mask">
                 ❓
               </span>
             )}
-            <i
-              className={`ti ${arrowIcon}`}
-              style={{
-                fontSize: "20px",
-                color: dirColor,
-              }}
-            />
-            <span style={{ fontWeight: 500 }}>{question}</span>
+            <i className={`ti ${arrowIcon} srs-direction-question__arrow`} />
+            <span className="srs-direction-question__term">{question}</span>
           </>
         )}
       </div>
 
       {readOnly && (
-        <div
-          contentEditable={false}
-          style={{
-            marginBottom: "10px",
-            padding: "8px 12px",
-            borderRadius: "8px",
-            fontSize: "13px",
-            fontWeight: 500,
-            color: "var(--orca-color-warning-6)",
-            backgroundColor: "var(--orca-color-warning-1)",
-            textAlign: "center",
-          }}
-        >
+        <div contentEditable={false} className="srs-review-banner">
           {readOnlyStatusText ?? "只读回看"}
         </div>
       )}
 
       {/* 显示答案 / 评分按钮 / 只读继续 */}
       {readOnly ? (
-        <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+        <div className="srs-review-actions">
           {onSkip && (
             <Button
               variant="solid"
               onClick={onSkip}
               title="继续复习"
-              style={{ padding: "12px 32px", fontSize: "16px" }}
+              className="srs-review-cta"
             >
               继续
             </Button>
           )}
         </div>
       ) : !showAnswer ? (
-        <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "12px" }}>
+        <div className="srs-review-actions">
           {/* 跳过按钮 - 在答案未显示时也可用 */}
           {onSkip && (
             <Button
               variant="outline"
               onClick={onSkip}
               title="跳过当前卡片，不评分"
-              style={{
-                padding: "12px 24px",
-                fontSize: "16px",
-              }}
+              className="srs-review-secondary-btn"
             >
               跳过
             </Button>
@@ -431,170 +315,59 @@ export default function DirectionCardReviewRenderer({
           <Button
             variant="solid"
             onClick={() => setShowAnswer(true)}
-            style={{
-              padding: "12px 32px",
-              fontSize: "16px",
-            }}
+            className="srs-review-cta"
           >
             显示答案
           </Button>
         </div>
       ) : (
-        <div
-          className="srs-card-grade-buttons"
-          style={{
-            display: "grid",
-            gridTemplateColumns: onSkip ? "repeat(5, 1fr)" : "repeat(4, 1fr)",
-            gap: "8px",
-            marginTop: "16px",
-          }}
-        >
+        <div className="srs-card-grade-buttons srs-grade-buttons">
           {/* 跳过按钮 */}
           {onSkip && (
             <button
               onClick={onSkip}
-              style={{
-                padding: "16px 8px",
-                fontSize: "14px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "6px",
-                backgroundColor: "rgba(156, 163, 175, 0.12)",
-                border: "1px solid rgba(156, 163, 175, 0.2)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "all 0.2s"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.18)"
-                e.currentTarget.style.transform = "translateY(-2px)"
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.12)"
-                e.currentTarget.style.transform = "translateY(0)"
-              }}
+              className="srs-grade-btn srs-grade-btn--skip"
             >
-              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>不评分</div>
-              <span style={{ fontSize: "32px", lineHeight: "1" }}>⏭️</span>
-              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>跳过</span>
+              <div className="srs-grade-btn__preview">不评分</div>
+              <span className="srs-grade-btn__emoji">⏭️</span>
+              <span className="srs-grade-btn__label">跳过</span>
             </button>
           )}
 
           <button
             onClick={() => handleGrade("again")}
-            style={{
-              padding: "16px 8px",
-              fontSize: "14px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "6px",
-              backgroundColor: "rgba(239, 68, 68, 0.12)",
-              border: "1px solid rgba(239, 68, 68, 0.2)",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.18)"
-              e.currentTarget.style.transform = "translateY(-2px)"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)"
-              e.currentTarget.style.transform = "translateY(0)"
-            }}
+            className="srs-grade-btn srs-grade-btn--again"
           >
-            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.again)}</div>
-            <span style={{ fontSize: "32px", lineHeight: "1" }}>😞</span>
-            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>忘记</span>
+            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.again)}</div>
+            <span className="srs-grade-btn__emoji">😞</span>
+            <span className="srs-grade-btn__label">忘记</span>
           </button>
 
           <button
             onClick={() => handleGrade("hard")}
-            style={{
-              padding: "16px 8px",
-              fontSize: "14px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "6px",
-              backgroundColor: "rgba(251, 191, 36, 0.12)",
-              border: "1px solid rgba(251, 191, 36, 0.2)",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.18)"
-              e.currentTarget.style.transform = "translateY(-2px)"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.12)"
-              e.currentTarget.style.transform = "translateY(0)"
-            }}
+            className="srs-grade-btn srs-grade-btn--hard"
           >
-            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.hard)}</div>
-            <span style={{ fontSize: "32px", lineHeight: "1" }}>😐</span>
-            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>困难</span>
+            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.hard)}</div>
+            <span className="srs-grade-btn__emoji">😐</span>
+            <span className="srs-grade-btn__label">困难</span>
           </button>
 
           <button
             onClick={() => handleGrade("good")}
-            style={{
-              padding: "16px 8px",
-              fontSize: "14px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "6px",
-              backgroundColor: "rgba(34, 197, 94, 0.12)",
-              border: "1px solid rgba(34, 197, 94, 0.2)",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.18)"
-              e.currentTarget.style.transform = "translateY(-2px)"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.12)"
-              e.currentTarget.style.transform = "translateY(0)"
-            }}
+            className="srs-grade-btn srs-grade-btn--good"
           >
-            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.good)}</div>
-            <span style={{ fontSize: "32px", lineHeight: "1" }}>😊</span>
-            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>良好</span>
+            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.good)}</div>
+            <span className="srs-grade-btn__emoji">😊</span>
+            <span className="srs-grade-btn__label">良好</span>
           </button>
 
           <button
             onClick={() => handleGrade("easy")}
-            style={{
-              padding: "16px 8px",
-              fontSize: "14px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "6px",
-              backgroundColor: "rgba(59, 130, 246, 0.12)",
-              border: "1px solid rgba(59, 130, 246, 0.2)",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.18)"
-              e.currentTarget.style.transform = "translateY(-2px)"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.12)"
-              e.currentTarget.style.transform = "translateY(0)"
-            }}
+            className="srs-grade-btn srs-grade-btn--easy"
           >
-            <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.easy)}</div>
-            <span style={{ fontSize: "32px", lineHeight: "1" }}>😄</span>
-            <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>简单</span>
+            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.easy)}</div>
+            <span className="srs-grade-btn__emoji">😄</span>
+            <span className="srs-grade-btn__label">简单</span>
           </button>
         </div>
       )}

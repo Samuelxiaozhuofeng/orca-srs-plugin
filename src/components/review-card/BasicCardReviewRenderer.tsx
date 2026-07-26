@@ -127,65 +127,41 @@ export default function BasicCardReviewRenderer({
   )
 
   const cardContent = (
-    <div className="srs-card-container" style={{
-      borderRadius: "12px",
-      padding: "16px",
-      width: inSidePanel ? "100%" : "90%",
-      minWidth: inSidePanel ? "0" : "600px",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
-    }}>
+    <div
+      className={`srs-card-container srs-review-card ${
+        inSidePanel ? "" : "srs-review-card--modal"
+      }`}
+    >
       {readOnly && (
-        <div contentEditable={false} style={{
-          marginBottom: "10px",
-          padding: "8px 12px",
-          borderRadius: "8px",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--orca-color-warning-6)",
-          backgroundColor: "var(--orca-color-warning-1)",
-          textAlign: "center"
-        }}>
+        <div contentEditable={false} className="srs-review-banner">
           {readOnlyStatusText ?? "只读回看"}
         </div>
       )}
 
       {blockId && (
-        <div contentEditable={false} style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "8px",
-          opacity: 0.6,
-          transition: "opacity 0.2s"
-        }}
-          onMouseEnter={(event) => { event.currentTarget.style.opacity = "1" }}
-          onMouseLeave={(event) => { event.currentTarget.style.opacity = "0.6" }}
-        >
-          <div style={{ display: "flex", gap: "4px" }}>
+        <div contentEditable={false} className="srs-review-toolbar">
+          <div className="srs-review-toolbar__group">
             {onPrevious && (
               <Button
                 variant="plain"
                 onClick={canGoPrevious ? onPrevious : undefined}
                 title="回到上一张"
-                style={{
-                  padding: "4px 6px",
-                  fontSize: "14px",
-                  opacity: canGoPrevious ? 1 : 0.3,
-                  cursor: canGoPrevious ? "pointer" : "not-allowed"
-                }}
+                className={`srs-review-icon-btn ${
+                  canGoPrevious ? "" : "srs-review-icon-btn--disabled"
+                }`}
               >
                 <i className="ti ti-arrow-left" />
               </Button>
             )}
           </div>
-          <div style={{ display: "flex", gap: "2px" }}>
+          <div className="srs-review-toolbar__group">
             {!readOnly && onPostpone && (
-              <Button variant="plain" onClick={onPostpone} title="推迟到明天 (B)" style={{ padding: "4px 6px", fontSize: "14px" }}>
+              <Button variant="plain" onClick={onPostpone} title="推迟到明天 (B)" className="srs-review-icon-btn">
                 <i className="ti ti-calendar-pause" />
               </Button>
             )}
             {!readOnly && onSuspend && (
-              <Button variant="plain" onClick={onSuspend} title="暂停卡片 (S)" style={{ padding: "4px 6px", fontSize: "14px" }}>
+              <Button variant="plain" onClick={onSuspend} title="暂停卡片 (S)" className="srs-review-icon-btn">
                 <i className="ti ti-player-pause" />
               </Button>
             )}
@@ -194,7 +170,7 @@ export default function BasicCardReviewRenderer({
                 variant="plain"
                 onClick={(event: React.MouseEvent) => onJumpToCard(blockId, event.shiftKey)}
                 title="跳转到卡片 (Shift+点击在侧面板打开)"
-                style={{ padding: "4px 6px", fontSize: "14px" }}
+                className="srs-review-icon-btn"
               >
                 <i className="ti ti-external-link" />
               </Button>
@@ -203,11 +179,9 @@ export default function BasicCardReviewRenderer({
               variant="plain"
               onClick={() => setShowCardInfo((visible: boolean) => !visible)}
               title="卡片信息"
-              style={{
-                padding: "4px 6px",
-                fontSize: "14px",
-                color: showCardInfo ? "var(--orca-color-primary-5)" : undefined
-              }}
+              className={`srs-review-icon-btn ${
+                showCardInfo ? "srs-review-icon-btn--active" : ""
+              }`}
             >
               <i className="ti ti-info-circle" />
             </Button>
@@ -218,13 +192,7 @@ export default function BasicCardReviewRenderer({
       {blockId && showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
 
       {!isExcerptCard && (
-        <div className="srs-card-front" style={{
-          marginBottom: "16px",
-          padding: "20px",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "8px",
-          minHeight: "80px"
-        }}>
+        <div className="srs-card-front srs-review-face srs-review-face--question">
           {/*
             显示答案时只挂一份卡根 live Block（答案区），题目改静态 front，
             避免同 panelId+blockId 双实例抢 selection / 破坏编辑会话。
@@ -232,15 +200,8 @@ export default function BasicCardReviewRenderer({
           */}
           {showAnswer && totalChildCount > 0 ? (
             <div
-              className="srs-question-static"
+              className="srs-question-static srs-review-face__text"
               contentEditable={false}
-              style={{
-                padding: "12px",
-                fontSize: "16px",
-                color: "var(--orca-color-text-1)",
-                lineHeight: "1.6",
-                whiteSpace: "pre-wrap"
-              }}
             >
               {front}
             </div>
@@ -252,20 +213,9 @@ export default function BasicCardReviewRenderer({
 
       {isExcerptCard ? (
         <>
-          <div className="srs-card-back" style={{
-            marginBottom: "16px",
-            padding: "20px",
-            borderRadius: "8px",
-            minHeight: "80px"
-          }}>
+          <div className="srs-card-back srs-review-face">
             {blockId && <BlockBreadcrumb key={blockId} blockId={blockId} />}
-            <div contentEditable={false} style={{
-              fontSize: "18px",
-              fontWeight: "600",
-              color: "var(--orca-color-text-2)",
-              marginBottom: "16px",
-              textAlign: "center"
-            }}>
+            <div contentEditable={false} className="srs-review-face__label">
               摘录
             </div>
             {blockId && panelId ? (
@@ -277,16 +227,7 @@ export default function BasicCardReviewRenderer({
                 initiallyCollapsed={false}
               />
             ) : (
-              <div style={{
-                padding: "12px",
-                fontSize: "20px",
-                fontWeight: "500",
-                color: "var(--orca-color-text-1)",
-                lineHeight: "1.6",
-                whiteSpace: "pre-wrap",
-                userSelect: "text",
-                WebkitUserSelect: "text"
-              }}>
+              <div className="srs-review-face__text srs-review-face__text--answer srs-review-face__text--selectable">
                 {front}
               </div>
             )}
@@ -296,19 +237,8 @@ export default function BasicCardReviewRenderer({
       ) : totalChildCount === 0 || showAnswer ? (
         <>
           {totalChildCount > 0 && showAnswer && (
-            <div className="srs-card-back" style={{
-              marginBottom: "16px",
-              padding: "20px",
-              borderRadius: "8px",
-              minHeight: "80px"
-            }}>
-              <div contentEditable={false} style={{
-                fontSize: "18px",
-                fontWeight: "600",
-                color: "var(--orca-color-text-2)",
-                marginBottom: "16px",
-                textAlign: "center"
-              }}>
+            <div className="srs-card-back srs-review-face">
+              <div contentEditable={false} className="srs-review-face__label">
                 答案
               </div>
               <EmbeddedAnswerBlock blockId={blockId} panelId={panelId} fallback={back} />
@@ -317,18 +247,13 @@ export default function BasicCardReviewRenderer({
           {gradeButtons}
         </>
       ) : (
-        <div contentEditable={false} style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: "12px",
-          marginBottom: "12px"
-        }}>
+        <div contentEditable={false} className="srs-review-actions">
           {onSkip && (
-            <Button variant="outline" onClick={onSkip} title="跳过当前卡片，不评分" style={{ padding: "12px 24px", fontSize: "16px" }}>
+            <Button variant="outline" onClick={onSkip} title="跳过当前卡片，不评分" className="srs-review-secondary-btn">
               跳过
             </Button>
           )}
-          <Button variant="solid" onClick={() => setShowAnswer(true)} style={{ padding: "12px 32px", fontSize: "16px" }}>
+          <Button variant="solid" onClick={() => setShowAnswer(true)} className="srs-review-cta">
             显示答案
           </Button>
         </div>
@@ -337,12 +262,7 @@ export default function BasicCardReviewRenderer({
   )
 
   const prefetchBlock = nextBlockId && panelId ? (
-    <div style={{
-      position: "absolute",
-      left: "-9999px",
-      visibility: "hidden",
-      pointerEvents: "none"
-    }}>
+    <div className="srs-review-prefetch">
       <Block panelId={panelId} blockId={nextBlockId} blockLevel={0} indentLevel={0} />
     </div>
   ) : null
@@ -350,7 +270,7 @@ export default function BasicCardReviewRenderer({
   if (inSidePanel) {
     return (
       <SrsErrorBoundary componentName="复习卡片" errorTitle="卡片加载出错">
-        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+        <div className="srs-review-card-host">
           {cardContent}
           {prefetchBlock}
         </div>

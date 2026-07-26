@@ -1,7 +1,8 @@
 # SRS 卡片复习窗口模块
 
-> 文档同步日期：2026-07-20  
-> 变更说明：Basic 答案区改为 CSS 精确隐藏卡根正文（移除长期 MutationObserver）；显示答案后题目改静态 `front`，同 panel 仅一份卡根 live Block。自动化契约已覆盖；**Orca 实例 Tab/Enter 编辑会话仍待用户验证**。
+> 文档同步日期：2026-07-27  
+> 变更说明（2026-07-27）：复习面板 UI 对齐 Apple HIG 基线，视觉层内联样式全部迁移到 `srs-review.css` 的 CSS 类，见下方「视觉规范」。**仅视觉层**，交互/数据流未变。  
+> 变更说明（2026-07-20）：Basic 答案区改为 CSS 精确隐藏卡根正文（移除长期 MutationObserver）；显示答案后题目改静态 `front`，同 panel 仅一份卡根 live Block。自动化契约已覆盖；**Orca 实例 Tab/Enter 编辑会话仍待用户验证**。
 
 ## 概述
 
@@ -16,6 +17,57 @@
 ### 不存在的组件
 
 - **`SrsCardBrowser` 不存在**。卡片浏览/主页见 `SrsFlashcardHome` / `SrsFlashcardHomeRenderer`（`模块文档/SRS_卡片浏览器.md`）。
+
+## 视觉规范（2026-07-27 起）
+
+> **唯一验收标准**：[SRS_UI设计规范.md](SRS_UI设计规范.md)（Apple HIG 基线）。
+> 令牌真源 `src/styles/srs-design-tokens.css`（由 `src/main.ts` **最先**导入）；
+> 形态基准 `src/styles/flashcard-home.css`。
+
+### 内联样式已迁移至 CSS 类
+
+复习面板原有约 **269 处 React 内联样式**（padding / border / background / fontSize /
+borderRadius / boxShadow）已全部迁移到 `src/styles/srs-review.css` 的 `srs-review-*`
+/ `srs-grade-*` BEM 类，仅保留 **7 处**运行时值：
+
+| 保留位置 | 值 | 理由 |
+| -------- | -- | ---- |
+| `ReviewSessionActiveView.ProgressBar` | `width: {progress}%` | 进度百分比 |
+| `ReviewSessionActiveView.FloatingStatus` / 错误浮层 | `top` | 浮层按 lastLog/错误堆叠顺序动态定位 |
+| `GradeDistributionBar` | `height` / `flexBasis` | height 为 prop，flexBasis 为占比 |
+| `CardInfoPanel.InfoRow` | `color` | 卡片状态语义色，取值被 `CardInfoPanel.test.ts` 固定 |
+
+**`srs-review.css` 顶部（约 1-90 行）的宿主 DOM 兼容选择器**（`user-select`、
+`.srs-answer-block > .orca-block > …`）是踩坑记录，**不得改动**；见
+[问题经验.md](问题经验.md) 与 `reviewBlockExpand.test.ts` 的 CSS 契约断言。
+
+### 关键类与形态
+
+| 区域 | 类 | 形态 |
+| ---- | -- | ---- |
+| 卡片外壳（托盘） | `.srs-review-card`（+`--modal`） | `bg-2` + hairline + `radius-xl` + `shadow-hero`，flex 列 + `space-4` gap，`max-width: --srs-measure`（720px） |
+| 正 / 反面容器 | `.srs-review-face`（+`--question`） | `bg-1` + hairline + `radius-lg` + `shadow-1`；hover 升 `shadow-2` + `hairline-strong` |
+| 评分按钮组 | `.srs-grade-buttons` / `.srs-grade-btn--again\|hard\|good\|easy\|skip` | `radius-lg`、13px/600、四态齐全，按压 `translateY(0.5px)`；语义色 **Again=danger / Hard=warning / Good=primary / Easy=success**（全部取自 `--orca-color-*`） |
+| 完成态英雄卡 | `.srs-review-summary` | `radius-xl` + `shadow-hero`；🎉 用 `--srs-text-hero`，指标数字 `--srs-text-title` + `tabular-nums` |
+| 空 / 加载 / 错误态 | `.srs-review-empty` / `.srs-review-state`（`--error` / `--viewport`） | 居中，错误用 `danger-5`，详情最大宽 `--srs-measure-prose` |
+| 工具栏 | `.srs-review-toolbar` | 静置 `opacity .6`，`:hover` / `:focus-within` 升 1（原 JS `onMouseEnter/Leave` 改写 style 已移除，改由 CSS 承担） |
+| 卡种徽章 | `.srs-review-type-chip--primary\|success\|warning\|direction` | `radius-pill`、`micro/500` |
+| 分布条 | `.srs-grade-dist__segment\|swatch--*` | 与评分按钮同一语义色映射 |
+
+方向卡的正/反向语义色由容器 modifier `.srs-review-card--dir-forward|--dir-backward`
+下发 `--srs-direction-color` / `--srs-direction-tint`，后代元素取用，不再在 TSX 里拼颜色字符串。
+
+**已知偏差**：完成态四宫格指标数字用 `--srs-text-title`（20px）而非 `--srs-text-hero`（44px）——
+520px 宽英雄卡里并排四个 44px 数字会溢出（「总时长」为中文时长串）；`--srs-text-hero` 用在 🎉 上。
+
+### 交互不变量
+
+本次改造**只动视觉层**：未改任何事件处理、数据流、组件 props（`ReviewSessionCompletedView`
+内部私有 helper `SummaryMetric` 的 `color: string` 改为 `tone: MetricTone`，仅为消除硬编码
+十六进制色值，不是对外 props）、条件渲染分支或 DOM 语义结构。评分门闩（F2-05）、
+块三态（F2-06）、只读回看（FC-06）、进度与 flush（FC-09/FC-03）行为不变。
+
+---
 
 ## 技术实现
 

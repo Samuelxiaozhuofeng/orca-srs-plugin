@@ -11,16 +11,21 @@ type ReviewGradeButtonsProps = {
   readOnly?: boolean
 }
 
+/**
+ * 评分语义色（见 模块文档/SRS_UI设计规范.md 一致性原则）：
+ * Again=danger / Hard=warning / Good=primary / Easy=success。
+ * 具体取色在 `srs-review.css` 的 `.srs-grade-btn--*` 中由 Orca 主题变量派生。
+ */
 const GRADE_BUTTONS: Array<{
   grade: Grade
   emoji: string
   label: string
-  color: string
+  tone: string
 }> = [
-  { grade: "again", emoji: "😞", label: "忘记", color: "239, 68, 68" },
-  { grade: "hard", emoji: "😐", label: "困难", color: "251, 191, 36" },
-  { grade: "good", emoji: "😊", label: "良好", color: "34, 197, 94" },
-  { grade: "easy", emoji: "😄", label: "简单", color: "59, 130, 246" }
+  { grade: "again", emoji: "😞", label: "忘记", tone: "again" },
+  { grade: "hard", emoji: "😐", label: "困难", tone: "hard" },
+  { grade: "good", emoji: "😊", label: "良好", tone: "good" },
+  { grade: "easy", emoji: "😄", label: "简单", tone: "easy" }
 ]
 
 function formatPreview(interval: number, dueDate: Date): string {
@@ -39,17 +44,13 @@ export default function ReviewGradeButtons({
 }: ReviewGradeButtonsProps) {
   if (readOnly) {
     return (
-      <div contentEditable={false} style={{
-        display: "flex",
-        justifyContent: "center",
-        marginTop: "8px"
-      }}>
+      <div contentEditable={false} className="srs-review-actions">
         {onSkip && (
           <Button
             variant="solid"
             onClick={onSkip}
             title="继续复习"
-            style={{ padding: "12px 32px", fontSize: "16px" }}
+            className="srs-review-cta"
           >
             继续
           </Button>
@@ -59,27 +60,23 @@ export default function ReviewGradeButtons({
   }
 
   return (
-    <div contentEditable={false} className="srs-card-grade-buttons" style={{
-      display: "grid",
-      gridTemplateColumns: onSkip ? "repeat(5, 1fr)" : "repeat(4, 1fr)",
-      gap: "8px"
-    }}>
+    <div contentEditable={false} className="srs-card-grade-buttons srs-grade-buttons">
       {onSkip && (
         <GradeButton
           preview="不评分"
           emoji="⏭️"
           label="跳过"
-          color="156, 163, 175"
+          tone="skip"
           onClick={onSkip}
         />
       )}
-      {GRADE_BUTTONS.map(({ grade, emoji, label, color }) => (
+      {GRADE_BUTTONS.map(({ grade, emoji, label, tone }) => (
         <GradeButton
           key={grade}
           preview={formatPreview(intervals[grade], dueDates[grade])}
           emoji={emoji}
           label={label}
-          color={color}
+          tone={tone}
           onClick={() => onGrade(grade)}
         />
       ))}
@@ -91,45 +88,25 @@ function GradeButton({
   preview,
   emoji,
   label,
-  color,
+  tone,
   onClick
 }: {
   preview: string
   emoji: string
   label: string
-  color: string
+  tone: string
   onClick: () => void | Promise<void>
 }) {
   return (
     <button
       onClick={onClick}
-      style={{
-        padding: "16px 8px",
-        fontSize: "14px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "6px",
-        backgroundColor: `rgba(${color}, 0.12)`,
-        border: `1px solid rgba(${color}, 0.2)`,
-        borderRadius: "8px",
-        cursor: "pointer",
-        transition: "all 0.2s"
-      }}
-      onMouseEnter={(event) => {
-        event.currentTarget.style.backgroundColor = `rgba(${color}, 0.18)`
-        event.currentTarget.style.transform = "translateY(-2px)"
-      }}
-      onMouseLeave={(event) => {
-        event.currentTarget.style.backgroundColor = `rgba(${color}, 0.12)`
-        event.currentTarget.style.transform = "translateY(0)"
-      }}
+      className={`srs-grade-btn srs-grade-btn--${tone}`}
     >
-      <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>
+      <div className="srs-grade-btn__preview">
         {preview}
       </div>
-      <span style={{ fontSize: "32px", lineHeight: "1" }}>{emoji}</span>
-      <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>
+      <span className="srs-grade-btn__emoji">{emoji}</span>
+      <span className="srs-grade-btn__label">
         {label}
       </span>
     </button>

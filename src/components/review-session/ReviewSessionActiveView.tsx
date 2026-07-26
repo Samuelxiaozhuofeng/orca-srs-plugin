@@ -58,22 +58,10 @@ export default function ReviewSessionActiveView(props: ReviewSessionActiveViewPr
       <div
         ref={props.containerRef}
         className={`srs-review-session-panel ${props.isMaximized ? "orca-maximized" : ""}`}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-          backgroundColor: "var(--orca-color-bg-0)"
-        }}
       >
         <ProgressBar progress={progress} />
-        <div className="srs-review-header" contentEditable={false} style={{
-          padding: "12px 16px",
-          borderBottom: "1px solid var(--orca-color-border-1)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between"
-        }}>
-          <div contentEditable={false} style={{ userSelect: "none" }}>
+        <div className="srs-review-header" contentEditable={false}>
+          <div contentEditable={false} className="srs-review-header__main">
             <ProgressText {...props} />
             {props.lastLog && <InlineStatus>{props.lastLog}</InlineStatus>}
             {activeError && (
@@ -83,11 +71,16 @@ export default function ReviewSessionActiveView(props: ReviewSessionActiveViewPr
               <InlineStatus warning>{props.childExpandWarning}</InlineStatus>
             )}
           </div>
-          <Button variant="plain" onClick={props.onCheckNewCards} title="检查新到期卡片" style={{ marginLeft: "8px" }}>
+          <Button
+            variant="plain"
+            onClick={props.onCheckNewCards}
+            title="检查新到期卡片"
+            className="srs-review-icon-btn srs-review-header__refresh"
+          >
             <i className="ti ti-refresh" />
           </Button>
         </div>
-        <div style={{ flex: 1, overflow: "auto", padding: "0" }}>
+        <div className="srs-review-session-body">
           <ActiveCard {...props} inSidePanel={true} />
         </div>
       </div>
@@ -96,44 +89,21 @@ export default function ReviewSessionActiveView(props: ReviewSessionActiveViewPr
 
   return (
     <div ref={props.containerRef} className="srs-review-session">
-      <div contentEditable={false} style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 10000
-      }}>
+      <div contentEditable={false} className="srs-review-topbar">
         <ProgressBar progress={progress} />
       </div>
-      <div contentEditable={false} style={{
-        position: "fixed",
-        top: "12px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        padding: "8px 16px",
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "20px",
-        fontSize: "14px",
-        color: "var(--orca-color-text-2)",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-        zIndex: 10001,
-        display: "flex",
-        alignItems: "center",
-        gap: "8px"
-      }}>
+      <div contentEditable={false} className="srs-review-hud">
         <ProgressText {...props} />
       </div>
       {props.lastLog && (
         <FloatingStatus top="48px">{props.lastLog}</FloatingStatus>
       )}
       {activeError && (
-        <div contentEditable={false} style={{
-          position: "fixed",
-          top: props.lastLog ? "80px" : "48px",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 10001
-        }}>
+        <div
+          contentEditable={false}
+          className="srs-review-floating"
+          style={{ top: props.lastLog ? "80px" : "48px" }}
+        >
           <InlineAlert message={activeError.message} onRetry={props.onRetryBlockLoad} />
         </div>
       )}
@@ -156,13 +126,11 @@ function ActiveCard(
   const card = props.currentCard
   if (!card) {
     return (
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        height: props.inSidePanel ? "100%" : "100vh",
-        color: "var(--orca-color-text-2)"
-      }}>
+      <div
+        className={`srs-review-state ${
+          props.inSidePanel ? "" : "srs-review-state--viewport"
+        }`}
+      >
         加载中...
       </div>
     )
@@ -201,16 +169,9 @@ function ActiveCard(
 
 function ProgressBar({ progress }: { progress: number }) {
   return (
-    <div className="srs-review-progress-bar" contentEditable={false} style={{
-      height: "4px",
-      backgroundColor: "var(--orca-color-bg-2)"
-    }}>
-      <div style={{
-        height: "100%",
-        width: `${progress}%`,
-        backgroundColor: "var(--orca-color-primary-5)",
-        transition: "width 0.3s ease"
-      }} />
+    <div className="srs-review-progress-bar" contentEditable={false}>
+      {/* 宽度是运行时动态几何量，按规范保留内联 */}
+      <div className="srs-review-progress-bar__fill" style={{ width: `${progress}%` }} />
     </div>
   )
 }
@@ -222,23 +183,16 @@ function ProgressText(props: Pick<
   return (
     <>
       {props.isRepeatMode && (
-        <span style={{
-          backgroundColor: "var(--orca-color-warning-1)",
-          color: "var(--orca-color-warning-6)",
-          padding: "2px 8px",
-          borderRadius: "4px",
-          fontSize: "12px",
-          fontWeight: 600
-        }}>
+        <span className="srs-review-repeat-badge">
           重复复习 · 第 {props.currentRound} 轮
         </span>
       )}
-      <span>
+      <span className="srs-review-counts">
         卡片 {props.currentIndex + 1} / {props.totalCards}
         （到期 {props.counters.due} | 新卡 {props.counters.fresh}）
       </span>
       {props.newCardsAdded > 0 && (
-        <span style={{ color: "var(--orca-color-primary-6)", fontSize: "12px" }}>
+        <span className="srs-review-newly-added">
           +{props.newCardsAdded} 新增
         </span>
       )}
@@ -248,20 +202,14 @@ function ProgressText(props: Pick<
 
 function InlineAlert({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div role="alert" style={{
-      marginTop: "6px",
-      fontSize: "12px",
-      color: "var(--orca-color-danger-6, var(--orca-color-warning-6))",
-      backgroundColor: "var(--orca-color-danger-1, var(--orca-color-warning-1))",
-      padding: "4px 8px",
-      borderRadius: "4px",
-      maxWidth: "480px",
-      display: "flex",
-      alignItems: "center",
-      gap: "8px"
-    }}>
-      <span style={{ flex: 1 }}>{message}</span>
-      <Button variant="plain" onClick={onRetry} title="重试加载卡片块" style={{ flexShrink: 0, fontSize: "12px" }}>
+    <div role="alert" className="srs-review-inline-alert">
+      <span className="srs-review-inline-alert__message">{message}</span>
+      <Button
+        variant="plain"
+        onClick={onRetry}
+        title="重试加载卡片块"
+        className="srs-review-inline-alert__retry"
+      >
         重试
       </Button>
     </div>
@@ -276,16 +224,12 @@ function InlineStatus({
   warning?: boolean
 }) {
   return (
-    <div role={warning ? "status" : undefined} style={{
-      marginTop: "6px",
-      fontSize: "12px",
-      color: warning ? "var(--orca-color-warning-6)" : "var(--orca-color-text-2)",
-      backgroundColor: warning ? "var(--orca-color-warning-1)" : undefined,
-      padding: warning ? "4px 8px" : undefined,
-      borderRadius: warning ? "4px" : undefined,
-      opacity: warning ? 1 : 0.8,
-      maxWidth: "480px"
-    }}>
+    <div
+      role={warning ? "status" : undefined}
+      className={`srs-review-inline-status ${
+        warning ? "srs-review-inline-status--warning" : ""
+      }`}
+    >
       {children}
     </div>
   )
@@ -301,24 +245,15 @@ function FloatingStatus({
   warning?: boolean
 }) {
   return (
-    <div role={warning ? "status" : undefined} contentEditable={false} style={{
-      position: "fixed",
-      top,
-      left: "50%",
-      transform: "translateX(-50%)",
-      padding: "6px 12px",
-      backgroundColor: warning
-        ? "var(--orca-color-warning-1)"
-        : "var(--orca-color-bg-2)",
-      borderRadius: "12px",
-      fontSize: "12px",
-      color: warning
-        ? "var(--orca-color-warning-6)"
-        : "var(--orca-color-text-2)",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-      zIndex: 10001,
-      maxWidth: "90vw"
-    }}>
+    // top 由调用方按浮层堆叠顺序动态给出，属运行时几何量，保留内联
+    <div
+      role={warning ? "status" : undefined}
+      contentEditable={false}
+      className={`srs-review-floating-status ${
+        warning ? "srs-review-floating-status--warning" : ""
+      }`}
+      style={{ top }}
+    >
       {children}
     </div>
   )

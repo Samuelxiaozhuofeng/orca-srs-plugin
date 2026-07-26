@@ -7,6 +7,9 @@ import GradeDistributionBar from "../GradeDistributionBar"
 
 const { Button, ModalOverlay } = orca.components
 
+/** 指标语义色（对应 `srs-review.css` 的 `.srs-review-metric__value--*`） */
+type MetricTone = "neutral" | "primary" | "success" | "warning" | "danger"
+
 type ReviewSessionCompletedViewProps = {
   stats: SessionStatsSummary | null
   inSidePanel: boolean
@@ -27,64 +30,32 @@ export default function ReviewSessionCompletedView({
   onClose
 }: ReviewSessionCompletedViewProps) {
   const content = stats == null ? (
-    <div className="srs-session-complete-container" style={{
-      backgroundColor: "var(--orca-color-bg-1)",
-      borderRadius: "12px",
-      padding: "32px 48px",
-      maxWidth: "520px",
-      width: "100%",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      textAlign: "center"
-    }}>
-      <div style={{ fontSize: "16px", color: "var(--orca-color-text-2)" }}>
+    <div className="srs-session-complete-container srs-review-summary">
+      <div className="srs-review-summary__loading">
         正在汇总...
       </div>
     </div>
   ) : (
-    <div className="srs-session-complete-container" style={{
-      backgroundColor: "var(--orca-color-bg-1)",
-      borderRadius: "12px",
-      padding: "32px 48px",
-      maxWidth: "520px",
-      width: "100%",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      textAlign: "center"
-    }}>
-      <div style={{ fontSize: "56px", marginBottom: "16px" }}>🎉</div>
-      <h2 style={{
-        fontSize: "22px",
-        fontWeight: "600",
-        color: "var(--orca-color-text-1)",
-        marginBottom: "24px"
-      }}>
+    <div className="srs-session-complete-container srs-review-summary">
+      <div className="srs-review-summary__emoji">🎉</div>
+      <h2 className="srs-review-summary__title">
         {isRepeatMode ? `第 ${currentRound} 轮复习结束！` : "本次复习结束！"}
       </h2>
 
-      <div style={{
-        backgroundColor: "var(--orca-color-bg-2)",
-        borderRadius: "8px",
-        padding: "20px",
-        marginBottom: "24px",
-        textAlign: "left"
-      }}>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
-          gap: "16px",
-          marginBottom: "20px"
-        }}>
+      <div className="srs-review-summary__panel">
+        <div className="srs-review-summary__grid">
           <SummaryMetric
             value={String(stats.totalReviewed)}
             label="复习卡片"
-            color="var(--orca-color-primary-5)"
+            tone="primary"
           />
           <SummaryMetric
             value={formatAccuracyRate(stats.accuracyRate)}
             label="准确率"
-            color={
+            tone={
               stats.accuracyRate >= 0.8
-                ? "#22c55e"
-                : stats.accuracyRate >= 0.6 ? "#f59e0b" : "#ef4444"
+                ? "success"
+                : stats.accuracyRate >= 0.6 ? "warning" : "danger"
             }
           />
           <SummaryMetric value={formatDuration(stats.totalSessionTime)} label="总时长" />
@@ -98,23 +69,13 @@ export default function ReviewSessionCompletedView({
 
         {stats.totalSessionTime > 0 &&
           stats.effectiveReviewTime < stats.totalSessionTime * 0.9 && (
-          <div style={{
-            fontSize: "12px",
-            color: "var(--orca-color-text-3)",
-            textAlign: "center",
-            marginBottom: "16px"
-          }}>
+          <div className="srs-review-summary__note">
             有效复习时长: {formatDuration(stats.effectiveReviewTime)}
           </div>
         )}
 
         <div>
-          <div style={{
-            fontSize: "13px",
-            color: "var(--orca-color-text-2)",
-            marginBottom: "8px",
-            textAlign: "center"
-          }}>
+          <div className="srs-review-summary__section-title">
             评分分布
           </div>
           <GradeDistributionBar
@@ -125,21 +86,17 @@ export default function ReviewSessionCompletedView({
         </div>
       </div>
 
-      <div style={{
-        fontSize: "14px",
-        color: "var(--orca-color-text-2)",
-        marginBottom: "24px"
-      }}>
+      <div className="srs-review-summary__tagline">
         坚持复习，持续进步！
       </div>
 
-      <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+      <div className="srs-review-actions">
         {isRepeatMode && onRepeatRound && (
-          <Button variant="outline" onClick={onRepeatRound} style={{ padding: "12px 24px", fontSize: "16px" }}>
+          <Button variant="outline" onClick={onRepeatRound} className="srs-review-secondary-btn">
             再复习一轮
           </Button>
         )}
-        <Button variant="solid" onClick={onFinish} style={{ padding: "12px 32px", fontSize: "16px" }}>
+        <Button variant="solid" onClick={onFinish} className="srs-review-cta">
           完成
         </Button>
       </div>
@@ -148,13 +105,7 @@ export default function ReviewSessionCompletedView({
 
   if (inSidePanel) {
     return (
-      <div style={{
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px"
-      }}>
+      <div className="srs-review-center">
         {content}
       </div>
     )
@@ -175,20 +126,18 @@ export default function ReviewSessionCompletedView({
 function SummaryMetric({
   value,
   label,
-  color = "var(--orca-color-text-1)"
+  tone = "neutral"
 }: {
   value: string
   label: string
-  color?: string
+  tone?: MetricTone
 }) {
   return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "28px", fontWeight: "600", color }}>{value}</div>
-      <div style={{
-        fontSize: "12px",
-        color: "var(--orca-color-text-3)",
-        marginTop: "4px"
-      }}>
+    <div className="srs-review-metric">
+      <div className={`srs-review-metric__value srs-review-metric__value--${tone}`}>
+        {value}
+      </div>
+      <div className="srs-review-metric__label">
         {label}
       </div>
     </div>

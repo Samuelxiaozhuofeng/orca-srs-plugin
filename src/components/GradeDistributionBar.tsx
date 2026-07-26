@@ -28,13 +28,12 @@ export interface GradeDistributionBarProps {
 // Constants
 // ============================================
 
-/** 评分颜色配置 */
-const GRADE_COLORS = {
-  again: "#ef4444", // 红色
-  hard: "#f59e0b",  // 黄色
-  good: "#22c55e",  // 绿色
-  easy: "#3b82f6",  // 蓝色
-} as const
+/**
+ * 评分语义色由 CSS 承担（`srs-review.css` 的 `.srs-grade-dist__segment--*` /
+ * `.srs-grade-dist__swatch--*`），取自 Orca 主题变量：
+ * Again=danger / Hard=warning / Good=primary / Easy=success，
+ * 与评分按钮组保持同一语义映射（见 模块文档/SRS_UI设计规范.md）。
+ */
 
 /** 评分标签 */
 const GRADE_LABELS = {
@@ -75,29 +74,14 @@ export function GradeDistributionBar({
     }
   }, [distribution])
 
-  // 空状态：显示灰色占位条
+  // 空状态：显示灰色占位条（height 为 prop 传入的运行时几何量，保留内联）
   if (total === 0) {
     return (
       <div
-        className="srs-grade-distribution-bar"
-        style={{
-          display: "flex",
-          height: `${height}px`,
-          borderRadius: "4px",
-          overflow: "hidden",
-          backgroundColor: "var(--orca-color-bg-3)",
-        }}
+        className="srs-grade-distribution-bar srs-grade-dist__track srs-grade-dist__track--empty"
+        style={{ height: `${height}px` }}
       >
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "12px",
-            color: "var(--orca-color-text-3)",
-          }}
-        >
+        <div className="srs-grade-dist__empty-text">
           暂无评分数据
         </div>
       </div>
@@ -109,45 +93,24 @@ export function GradeDistributionBar({
   return (
     <div className="srs-grade-distribution-bar">
       {/* 颜色条 */}
-      <div
-        style={{
-          display: "flex",
-          height: `${height}px`,
-          borderRadius: "4px",
-          overflow: "hidden",
-        }}
-      >
+      <div className="srs-grade-dist__track" style={{ height: `${height}px` }}>
         {grades.map((grade) => {
           const percentage = percentages[grade]
           const count = distribution[grade]
-          
+
           // 跳过 0% 的部分
           if (percentage === 0) return null
-          
+
           return (
             <div
               key={grade}
               title={`${GRADE_LABELS[grade]}: ${count} (${percentage.toFixed(1)}%)`}
-              style={{
-                flexBasis: `${percentage}%`,
-                backgroundColor: GRADE_COLORS[grade],
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "flex-basis 0.3s ease",
-                minWidth: percentage > 0 ? "4px" : "0",
-              }}
+              className={`srs-grade-dist__segment srs-grade-dist__segment--${grade}`}
+              style={{ flexBasis: `${percentage}%` }}
             >
               {/* 仅当宽度足够时显示数字 */}
               {showLabels && percentage >= 10 && (
-                <span
-                  style={{
-                    color: "white",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    textShadow: "0 1px 2px rgba(0,0,0,0.2)",
-                  }}
-                >
+                <span className="srs-grade-dist__count">
                   {count}
                 </span>
               )}
@@ -158,37 +121,15 @@ export function GradeDistributionBar({
 
       {/* 图例（可选） */}
       {showLabels && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: "16px",
-            marginTop: "8px",
-            fontSize: "12px",
-          }}
-        >
+        <div className="srs-grade-dist__legend">
           {grades.map((grade) => {
             const count = distribution[grade]
             if (count === 0) return null
-            
+
             return (
-              <div
-                key={grade}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <div
-                  style={{
-                    width: "12px",
-                    height: "12px",
-                    borderRadius: "2px",
-                    backgroundColor: GRADE_COLORS[grade],
-                  }}
-                />
-                <span style={{ color: "var(--orca-color-text-2)" }}>
+              <div key={grade} className="srs-grade-dist__legend-item">
+                <div className={`srs-grade-dist__swatch srs-grade-dist__swatch--${grade}`} />
+                <span>
                   {GRADE_LABELS[grade]}: {count}
                 </span>
               </div>

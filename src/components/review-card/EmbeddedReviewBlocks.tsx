@@ -46,13 +46,7 @@ export function EmbeddedQuestionBlock({
 
   if (!blockId || !panelId) {
     return (
-      <div style={{
-        padding: "12px",
-        fontSize: "16px",
-        color: "var(--orca-color-text-1)",
-        lineHeight: "1.6",
-        whiteSpace: "pre-wrap"
-      }}>
+      <div className="srs-review-face__text">
         {fallback}
       </div>
     )
@@ -92,14 +86,7 @@ export function EmbeddedAnswerBlock({
 }: EmbeddedAnswerBlockProps) {
   if (!blockId || !panelId) {
     return (
-      <div style={{
-        padding: "12px",
-        fontSize: "20px",
-        fontWeight: "500",
-        color: "var(--orca-color-text-1)",
-        lineHeight: "1.6",
-        whiteSpace: "pre-wrap"
-      }}>
+      <div className="srs-review-face__text srs-review-face__text--answer">
         {fallback}
       </div>
     )
@@ -108,7 +95,6 @@ export function EmbeddedAnswerBlock({
   return (
     <div
       className="srs-answer-block"
-      style={{ marginLeft: "-25.6px" }}
       data-orca-block-root="true"
     >
       <Block

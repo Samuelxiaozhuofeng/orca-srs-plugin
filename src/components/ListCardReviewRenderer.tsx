@@ -150,98 +150,53 @@ export default function ListCardReviewRenderer({
 
   if (!parentBlock) {
     return (
-      <div style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "32px",
-        textAlign: "center",
-        color: "var(--orca-color-text-2)"
-      }}>
-        <div style={{ fontSize: "14px", opacity: 0.75 }}>列表卡加载中...</div>
-      </div>
+      <div className="srs-review-card-placeholder">列表卡加载中...</div>
     )
   }
 
   return (
-    <div style={{ padding: inSidePanel ? "12px" : "16px" }}>
+    <div
+      className={`srs-review-list-shell ${
+        inSidePanel ? "srs-review-list-shell--side" : ""
+      }`}
+    >
       {isAuxiliaryPreview && (
-        <div
-          contentEditable={false}
-          style={{
-            marginBottom: "10px",
-            padding: "8px 12px",
-            borderRadius: "10px",
-            backgroundColor: "var(--orca-color-warning-1)",
-            color: "var(--orca-color-warning-6)",
-            fontSize: "13px",
-            fontWeight: 600
-          }}
-        >
+        <div contentEditable={false} className="srs-review-banner">
           辅助预览：允许评分，但不计入统计，也不会更新记忆状态
         </div>
       )}
 
-      <div style={{
-        backgroundColor: "var(--orca-color-bg-1)",
-        borderRadius: "12px",
-        padding: "16px",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
-      }}>
+      <div className="srs-review-card">
         {/* 顶部工具栏 */}
-        <div contentEditable={false} style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "8px",
-          opacity: 0.6,
-          transition: "opacity 0.2s"
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = "0.6"}
-        >
+        <div contentEditable={false} className="srs-review-toolbar">
           {/* 左侧：回到上一张按钮 + 卡片类型标识 */}
-          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <div className="srs-review-toolbar__group">
             {onPrevious && (
               <Button
                 variant="plain"
                 onClick={canGoPrevious ? onPrevious : undefined}
                 title="回到上一张"
-                style={{
-                  padding: "4px 6px",
-                  fontSize: "14px",
-                  opacity: canGoPrevious ? 1 : 0.3,
-                  cursor: canGoPrevious ? "pointer" : "not-allowed",
-                }}
+                className={`srs-review-icon-btn ${
+                  canGoPrevious ? "" : "srs-review-icon-btn--disabled"
+                }`}
               >
                 <i className="ti ti-arrow-left" />
               </Button>
             )}
-            <div
-              style={{
-                fontSize: "12px",
-                fontWeight: "500",
-                color: "var(--orca-color-success-5)",
-                backgroundColor: "var(--orca-color-success-1)",
-                padding: "2px 8px",
-                borderRadius: "4px",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
-            >
-              <i className="ti ti-list-numbers" style={{ fontSize: "11px" }} />
+            <div className="srs-review-type-chip srs-review-type-chip--success">
+              <i className="ti ti-list-numbers" />
               列表卡
             </div>
           </div>
 
           {/* 右侧：操作按钮 */}
-          <div style={{ display: "flex", gap: "2px" }}>
+          <div className="srs-review-toolbar__group">
             {!readOnly && onPostpone && (
               <Button
                 variant="plain"
                 onClick={onPostpone}
                 title="推迟到明天 (B)"
-                style={{ padding: "4px 6px", fontSize: "14px" }}
+                className="srs-review-icon-btn"
               >
                 <i className="ti ti-calendar-pause" />
               </Button>
@@ -251,7 +206,7 @@ export default function ListCardReviewRenderer({
                 variant="plain"
                 onClick={onSuspend}
                 title="暂停卡片 (S)"
-                style={{ padding: "4px 6px", fontSize: "14px" }}
+                className="srs-review-icon-btn"
               >
                 <i className="ti ti-player-pause" />
               </Button>
@@ -261,7 +216,7 @@ export default function ListCardReviewRenderer({
                 variant="plain"
                 onClick={(e: React.MouseEvent) => onJumpToCard(blockId, e.shiftKey)}
                 title="跳转到卡片 (Shift+点击在侧面板打开)"
-                style={{ padding: "4px 6px", fontSize: "14px" }}
+                className="srs-review-icon-btn"
               >
                 <i className="ti ti-external-link" />
               </Button>
@@ -271,11 +226,9 @@ export default function ListCardReviewRenderer({
               variant="plain"
               onClick={() => setShowCardInfo(!showCardInfo)}
               title="卡片信息"
-              style={{
-                padding: "4px 6px",
-                fontSize: "14px",
-                color: showCardInfo ? "var(--orca-color-primary-5)" : undefined
-              }}
+              className={`srs-review-icon-btn ${
+                showCardInfo ? "srs-review-icon-btn--active" : ""
+              }`}
             >
               <i className="ti ti-info-circle" />
             </Button>
@@ -286,29 +239,17 @@ export default function ListCardReviewRenderer({
         {showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
 
         {/* 题目区域 */}
-        <div style={{
-          marginBottom: "16px",
-          padding: "16px",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "8px",
-        }}>
-          <div style={{ fontSize: "16px", fontWeight: 600, color: "var(--orca-color-text-1)", marginBottom: "8px" }}>
+        <div className="srs-review-face">
+          <div className="srs-review-list-prompt__title">
             {title}
           </div>
-          <div style={{ fontSize: "13px", color: "var(--orca-color-text-3)" }}>
+          <div className="srs-review-list-prompt__counter">
             条目 {listItemIndex} / {listItemIds.length}
           </div>
         </div>
 
         {/* 列表内容 */}
-        <ol style={{
-          margin: 0,
-          marginBottom: "16px",
-          paddingLeft: "24px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px"
-        }}>
+        <ol className="srs-review-list">
           {itemTexts.map((text: string, idx: number) => {
             const isCurrent = idx + 1 === listItemIndex
             const display = isCurrent && !showAnswer ? "[...]" : text
@@ -316,15 +257,9 @@ export default function ListCardReviewRenderer({
             return (
               <li
                 key={listItemIds[idx]}
-                style={{
-                  color: highlight ? "var(--orca-color-primary-6)" : "var(--orca-color-text-1)",
-                  fontWeight: highlight ? 700 : 500,
-                  backgroundColor: highlight ? "var(--orca-color-primary-1)" : "transparent",
-                  borderRadius: "8px",
-                  padding: highlight ? "8px 12px" : "4px 0",
-                  fontSize: "15px",
-                  lineHeight: "1.6"
-                }}
+                className={`srs-review-list__item ${
+                  highlight ? "srs-review-list__item--highlight" : ""
+                }`}
               >
                 {display}
               </li>
@@ -333,49 +268,34 @@ export default function ListCardReviewRenderer({
         </ol>
 
         {readOnly && (
-          <div
-            contentEditable={false}
-            style={{
-              marginBottom: "10px",
-              padding: "8px 12px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: 500,
-              color: "var(--orca-color-warning-6)",
-              backgroundColor: "var(--orca-color-warning-1)",
-              textAlign: "center",
-            }}
-          >
+          <div contentEditable={false} className="srs-review-banner">
             {readOnlyStatusText ?? "只读回看"}
           </div>
         )}
 
         {/* 显示答案按钮 / 评分按钮 / 只读继续 */}
         {readOnly ? (
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+          <div className="srs-review-actions">
             {onSkip && (
               <Button
                 variant="solid"
                 onClick={onSkip}
                 title="继续复习"
-                style={{ padding: "12px 32px", fontSize: "16px" }}
+                className="srs-review-cta"
               >
                 继续
               </Button>
             )}
           </div>
         ) : !showAnswer ? (
-          <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "12px" }}>
+          <div className="srs-review-actions">
             {/* 跳过按钮 - 在答案未显示时也可用 */}
             {onSkip && (
               <Button
                 variant="outline"
                 onClick={onSkip}
                 title="跳过当前卡片，不评分"
-                style={{
-                  padding: "12px 24px",
-                  fontSize: "16px"
-                }}
+                className="srs-review-secondary-btn"
               >
                 跳过
               </Button>
@@ -383,181 +303,67 @@ export default function ListCardReviewRenderer({
             <Button
               variant="solid"
               onClick={isGrading ? undefined : () => setShowAnswer(true)}
-              style={{
-                padding: "12px 32px",
-                fontSize: "16px",
-                opacity: isGrading ? 0.6 : 1,
-                cursor: isGrading ? "not-allowed" : "pointer"
-              }}
+              className={`srs-review-cta ${isGrading ? "srs-review-cta--busy" : ""}`}
             >
               显示答案
             </Button>
           </div>
         ) : (
-          <div className="srs-card-grade-buttons" style={{
-            display: "grid",
-            gridTemplateColumns: onSkip ? "repeat(5, 1fr)" : "repeat(4, 1fr)",
-            gap: "8px",
-            marginTop: "16px"
-          }}>
+          <div className="srs-card-grade-buttons srs-grade-buttons">
             {/* 跳过按钮 */}
             {onSkip && (
               <button
                 onClick={onSkip}
-                style={{
-                  padding: "16px 8px",
-                  fontSize: "14px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "6px",
-                  backgroundColor: "rgba(156, 163, 175, 0.12)",
-                  border: "1px solid rgba(156, 163, 175, 0.2)",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.18)"
-                  e.currentTarget.style.transform = "translateY(-2px)"
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(156, 163, 175, 0.12)"
-                  e.currentTarget.style.transform = "translateY(0)"
-                }}
+                className="srs-grade-btn srs-grade-btn--skip"
               >
-                <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>不评分</div>
-                <span style={{ fontSize: "32px", lineHeight: "1" }}>⏭️</span>
-                <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>跳过</span>
+                <div className="srs-grade-btn__preview">不评分</div>
+                <span className="srs-grade-btn__emoji">⏭️</span>
+                <span className="srs-grade-btn__label">跳过</span>
               </button>
             )}
 
             <button
               onClick={() => handleGrade("again")}
-              style={{
-                padding: "16px 8px",
-                fontSize: "14px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "6px",
-                backgroundColor: "rgba(239, 68, 68, 0.12)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                borderRadius: "8px",
-                cursor: isGrading ? "not-allowed" : "pointer",
-                opacity: isGrading ? 0.6 : 1,
-                transition: "all 0.2s"
-              }}
-              onMouseEnter={(e) => {
-                if (!isGrading) {
-                  e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.18)"
-                  e.currentTarget.style.transform = "translateY(-2px)"
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)"
-                e.currentTarget.style.transform = "translateY(0)"
-              }}
+              className={`srs-grade-btn srs-grade-btn--again ${
+                isGrading ? "srs-grade-btn--busy" : ""
+              }`}
             >
-              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.again)}</div>
-              <span style={{ fontSize: "32px", lineHeight: "1" }}>😞</span>
-              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>忘记</span>
+              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.again)}</div>
+              <span className="srs-grade-btn__emoji">😞</span>
+              <span className="srs-grade-btn__label">忘记</span>
             </button>
 
             <button
               onClick={() => handleGrade("hard")}
-              style={{
-                padding: "16px 8px",
-                fontSize: "14px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "6px",
-                backgroundColor: "rgba(251, 191, 36, 0.12)",
-                border: "1px solid rgba(251, 191, 36, 0.2)",
-                borderRadius: "8px",
-                cursor: isGrading ? "not-allowed" : "pointer",
-                opacity: isGrading ? 0.6 : 1,
-                transition: "all 0.2s"
-              }}
-              onMouseEnter={(e) => {
-                if (!isGrading) {
-                  e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.18)"
-                  e.currentTarget.style.transform = "translateY(-2px)"
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(251, 191, 36, 0.12)"
-                e.currentTarget.style.transform = "translateY(0)"
-              }}
+              className={`srs-grade-btn srs-grade-btn--hard ${
+                isGrading ? "srs-grade-btn--busy" : ""
+              }`}
             >
-              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.hard)}</div>
-              <span style={{ fontSize: "32px", lineHeight: "1" }}>😐</span>
-              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>困难</span>
+              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.hard)}</div>
+              <span className="srs-grade-btn__emoji">😐</span>
+              <span className="srs-grade-btn__label">困难</span>
             </button>
 
             <button
               onClick={() => handleGrade("good")}
-              style={{
-                padding: "16px 8px",
-                fontSize: "14px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "6px",
-                backgroundColor: "rgba(34, 197, 94, 0.12)",
-                border: "1px solid rgba(34, 197, 94, 0.2)",
-                borderRadius: "8px",
-                cursor: isGrading ? "not-allowed" : "pointer",
-                opacity: isGrading ? 0.6 : 1,
-                transition: "all 0.2s"
-              }}
-              onMouseEnter={(e) => {
-                if (!isGrading) {
-                  e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.18)"
-                  e.currentTarget.style.transform = "translateY(-2px)"
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(34, 197, 94, 0.12)"
-                e.currentTarget.style.transform = "translateY(0)"
-              }}
+              className={`srs-grade-btn srs-grade-btn--good ${
+                isGrading ? "srs-grade-btn--busy" : ""
+              }`}
             >
-              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.good)}</div>
-              <span style={{ fontSize: "32px", lineHeight: "1" }}>😊</span>
-              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>良好</span>
+              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.good)}</div>
+              <span className="srs-grade-btn__emoji">😊</span>
+              <span className="srs-grade-btn__label">良好</span>
             </button>
 
             <button
               onClick={() => handleGrade("easy")}
-              style={{
-                padding: "16px 8px",
-                fontSize: "14px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "6px",
-                backgroundColor: "rgba(59, 130, 246, 0.12)",
-                border: "1px solid rgba(59, 130, 246, 0.2)",
-                borderRadius: "8px",
-                cursor: isGrading ? "not-allowed" : "pointer",
-                opacity: isGrading ? 0.6 : 1,
-                transition: "all 0.2s"
-              }}
-              onMouseEnter={(e) => {
-                if (!isGrading) {
-                  e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.18)"
-                  e.currentTarget.style.transform = "translateY(-2px)"
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.12)"
-                e.currentTarget.style.transform = "translateY(0)"
-              }}
+              className={`srs-grade-btn srs-grade-btn--easy ${
+                isGrading ? "srs-grade-btn--busy" : ""
+              }`}
             >
-              <div style={{ fontSize: "10px", opacity: 0.7, lineHeight: "1.2" }}>{formatDueDate(dueDates.easy)}</div>
-              <span style={{ fontSize: "32px", lineHeight: "1" }}>😄</span>
-              <span style={{ fontSize: "12px", opacity: 0.85, fontWeight: "500" }}>简单</span>
+              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.easy)}</div>
+              <span className="srs-grade-btn__emoji">😄</span>
+              <span className="srs-grade-btn__label">简单</span>
             </button>
           </div>
         )}

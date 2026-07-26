@@ -98,14 +98,14 @@
 
 /* 旗标相关样式 */
 .card-flag-indicator {
-  transition: all 0.2s ease;
+  transition: all var(--srs-duration-slow) var(--srs-ease);
   z-index: 1000 !important;
   position: relative !important;
 }
 
 .card-flag-indicator:hover {
   transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: var(--srs-shadow-2);
 }
 
 /* Anki风格旗标指示器 */
@@ -144,10 +144,11 @@
   right: 12px !important;
   z-index: 1000 !important;
   pointer-events: auto !important;
-  background: rgba(255, 255, 255, 0.9) !important;
-  border-radius: 4px !important;
+  background: var(--orca-color-bg-1) !important;
+  border: 1px solid var(--srs-hairline) !important;
+  border-radius: var(--srs-radius-xs) !important;
   padding: 2px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+  box-shadow: var(--srs-shadow-2) !important;
 }
 
 /* 确保旗标容器内的所有元素都可以点击 */
@@ -172,12 +173,12 @@
 }
 
 .card-flag-display {
-  transition: all 0.2s ease;
+  transition: all var(--srs-duration-slow) var(--srs-ease);
 }
 
 .card-flag-display:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: var(--srs-shadow-2);
 }
 
 .card-flag-editor-modal {
@@ -185,16 +186,16 @@
 }
 
 .card-flag-rating-button {
-  transition: all 0.15s ease;
+  transition: all var(--srs-duration-base) var(--srs-ease);
 }
 
 .card-flag-rating-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: var(--srs-shadow-1);
 }
 
 .card-flag-color-button {
-  transition: all 0.15s ease;
+  transition: all var(--srs-duration-base) var(--srs-ease);
   position: relative;
 }
 
@@ -361,13 +362,14 @@
 
 /* 数据更新过渡效果 */
 .srs-chart-updating {
-  transition: opacity 0.3s ease;
+  transition: opacity var(--srs-duration-gauge) var(--srs-ease);
   opacity: 0.6;
 }
 
 /* 图表悬停效果增强 */
 .srs-chart-bar-hover {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-base) var(--srs-ease);
 }
 
 .srs-chart-bar-hover:hover {
@@ -377,7 +379,8 @@
 }
 
 .srs-chart-pie-hover {
-  transition: transform 0.2s ease, opacity 0.15s ease;
+  transition: transform var(--srs-duration-slow) var(--srs-ease),
+    opacity var(--srs-duration-base) var(--srs-ease);
 }
 
 .srs-chart-pie-hover:hover {
@@ -409,7 +412,8 @@
 
 /* 统计数值变化动画 */
 .srs-stat-value-animated {
-  transition: transform 0.3s ease, color 0.3s ease;
+  transition: transform var(--srs-duration-gauge) var(--srs-ease),
+    color var(--srs-duration-gauge) var(--srs-ease);
 }
 
 .srs-stat-value-increase {
@@ -478,7 +482,8 @@
 
 /* 图例项悬停动画 */
 .srs-chart-legend-item-animated {
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition: transform var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease);
 }
 
 .srs-chart-legend-item-animated:hover {
@@ -518,14 +523,26 @@
 .srs-choice-option {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
+  gap: var(--srs-space-3);
+  padding: var(--srs-space-3) var(--srs-space-4);
+  border-radius: var(--srs-radius-md);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
   border: 2px solid transparent;
   background-color: var(--orca-color-bg-2);
   min-height: 48px;
+}
+
+.srs-choice-option:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-choice-option:active:not(.srs-choice-option-disabled) {
+  transform: translateY(0.5px);
 }
 
 /* 选项悬停效果 */
@@ -546,20 +563,20 @@
 
 /* 答案揭晓后 - 正确且选中 */
 .srs-choice-option-correct-selected {
-  background-color: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.5);
+  background-color: var(--orca-color-success-1, var(--orca-color-bg-2));
+  border-color: var(--orca-color-success-5);
 }
 
 /* 答案揭晓后 - 正确但未选中 */
 .srs-choice-option-correct-unselected {
-  background-color: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.3);
+  background-color: var(--orca-color-success-1, var(--orca-color-bg-2));
+  border-color: var(--orca-color-success-6);
 }
 
 /* 答案揭晓后 - 错误且选中 */
 .srs-choice-option-incorrect-selected {
-  background-color: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.5);
+  background-color: var(--orca-color-danger-1, var(--orca-color-bg-2));
+  border-color: var(--orca-color-danger-5);
 }
 
 /* 禁用状态 */
@@ -571,7 +588,7 @@
 .srs-choice-option-label {
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--srs-radius-xs);
   background-color: var(--orca-color-bg-3);
   color: var(--orca-color-text-2);
   display: flex;
@@ -580,23 +597,23 @@
   font-weight: 600;
   font-size: 12px;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: all var(--srs-duration-slow) var(--srs-ease);
 }
 
 .srs-choice-option-selected .srs-choice-option-label {
   background-color: var(--orca-color-primary-5);
-  color: white;
+  color: var(--orca-color-white, white);
 }
 
 .srs-choice-option-correct-selected .srs-choice-option-label,
 .srs-choice-option-correct-unselected .srs-choice-option-label {
-  background-color: rgba(34, 197, 94, 0.8);
-  color: white;
+  background-color: var(--orca-color-success-5);
+  color: var(--orca-color-white, white);
 }
 
 .srs-choice-option-incorrect-selected .srs-choice-option-label {
-  background-color: rgba(239, 68, 68, 0.8);
-  color: white;
+  background-color: var(--orca-color-danger-5);
+  color: var(--orca-color-white, white);
 }
 
 /* 选择指示器 (radio/checkbox) */
@@ -608,7 +625,9 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease);
   margin-top: 2px;
 }
 
@@ -617,7 +636,7 @@
 }
 
 .srs-choice-indicator-checkbox {
-  border-radius: 4px;
+  border-radius: var(--srs-radius-xs);
 }
 
 .srs-choice-option-selected .srs-choice-indicator {
@@ -627,16 +646,16 @@
 
 .srs-choice-option-correct-selected .srs-choice-indicator,
 .srs-choice-option-correct-unselected .srs-choice-indicator {
-  border-color: rgba(34, 197, 94, 0.8);
+  border-color: var(--orca-color-success-5);
 }
 
 .srs-choice-option-correct-selected .srs-choice-indicator {
-  background-color: rgba(34, 197, 94, 0.8);
+  background-color: var(--orca-color-success-5);
 }
 
 .srs-choice-option-incorrect-selected .srs-choice-indicator {
-  border-color: rgba(239, 68, 68, 0.8);
-  background-color: rgba(239, 68, 68, 0.8);
+  border-color: var(--orca-color-danger-5);
+  background-color: var(--orca-color-danger-5);
 }
 
 /* 选项内容区域 */
@@ -680,19 +699,31 @@
 }
 
 .srs-choice-submit-button {
-  padding: 12px 32px;
-  font-size: 16px;
+  padding: 11px 30px;
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-callout);
+  font-weight: var(--srs-weight-semibold);
   background-color: var(--orca-color-primary-5);
-  color: white;
+  color: var(--orca-color-white, white);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--srs-radius-lg);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
 }
 
 .srs-choice-submit-button:hover:not(:disabled) {
   background-color: var(--orca-color-primary-6);
-  transform: translateY(-1px);
+}
+
+.srs-choice-submit-button:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.srs-choice-submit-button:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
 }
 
 .srs-choice-submit-button:disabled {
@@ -717,7 +748,7 @@
 /* 评分按钮高亮（建议评分） */
 .srs-choice-grade-suggested {
   border-width: 2px !important;
-  box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--srs-shadow-2);
 }
 
 /* 选项进入动画 */
@@ -772,7 +803,7 @@
   font-size: 10px;
   color: var(--orca-color-text-3);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--srs-duration-slow) var(--srs-ease);
 }
 
 .srs-choice-option:hover .srs-choice-shortcut-hint {
@@ -796,4 +827,1009 @@
     width: 18px;
     height: 18px;
   }
+}
+
+
+/* ==========================================================================
+ * Apple HIG 视觉层（卡片复习面板）
+ *
+ * 令牌真源：src/styles/srs-design-tokens.css
+ * 规范：模块文档/SRS_UI设计规范.md ；基准实现：src/styles/flashcard-home.css
+ *
+ * 约定：本段以下的类承载全部视觉表现，React 组件内联 style 仅保留运行时动态
+ * 几何量（进度条百分比宽度、分布条 flex-basis、浮层动态 top、分布条高度）。
+ * 本文件顶部（约 1-90 行）的宿主 DOM 兼容选择器属于踩坑记录，不得改动。
+ * ========================================================================== */
+
+/* ---------- 会话外壳 ---------- */
+
+.srs-review-session-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--orca-color-bg-0, var(--orca-color-bg-1));
+  font-family: var(--srs-font-family);
+}
+
+.srs-review-session-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.srs-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-3) var(--srs-space-4);
+  border-bottom: 1px solid var(--srs-hairline);
+}
+
+.srs-review-header__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+  user-select: none;
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+}
+
+.srs-review-header__refresh {
+  flex-shrink: 0;
+  margin-left: var(--srs-space-2);
+}
+
+/* ---------- 进度条 / 顶部 HUD ---------- */
+
+.srs-review-progress-bar {
+  height: 4px;
+  background: var(--srs-surface-sunken);
+}
+
+.srs-review-progress-bar__fill {
+  height: 100%;
+  background: var(--orca-color-primary-5);
+  transition: width var(--srs-duration-slow) var(--srs-ease);
+}
+
+.srs-review-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+}
+
+/* 悬浮胶囊：卡片进度 */
+.srs-review-hud {
+  position: fixed;
+  top: var(--srs-space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  max-width: 90vw;
+  padding: var(--srs-space-2) var(--srs-space-4);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-pill);
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-2);
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+}
+
+.srs-review-repeat-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--srs-space-2);
+  border-radius: var(--srs-radius-pill);
+  background: var(--orca-color-warning-1, var(--orca-color-bg-2));
+  color: var(--orca-color-warning-6);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.srs-review-counts {
+  font-variant-numeric: tabular-nums;
+}
+
+.srs-review-newly-added {
+  color: var(--orca-color-primary-6);
+  font-size: var(--srs-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 内联状态 / 告警 ---------- */
+
+.srs-review-inline-status {
+  max-width: var(--srs-measure-prose);
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+  color: var(--orca-color-text-3);
+}
+
+.srs-review-inline-status--warning {
+  padding: var(--srs-space-1) var(--srs-space-2);
+  border-radius: var(--srs-radius-xs);
+  background: var(--orca-color-warning-1, var(--orca-color-bg-2));
+  color: var(--orca-color-warning-6);
+}
+
+.srs-review-inline-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  max-width: var(--srs-measure-prose);
+  padding: var(--srs-space-1) var(--srs-space-2);
+  border-radius: var(--srs-radius-xs);
+  background: var(--orca-color-danger-1, var(--orca-color-warning-1));
+  color: var(--orca-color-danger-6, var(--orca-color-warning-6));
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+}
+
+.srs-review-inline-alert__message {
+  flex: 1;
+  min-width: 0;
+}
+
+.srs-review-inline-alert__retry {
+  flex-shrink: 0;
+  font-size: var(--srs-text-caption) !important;
+}
+
+/* 全屏模式下的浮动提示（top 由组件按堆叠顺序动态给出） */
+.srs-review-floating {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+}
+
+.srs-review-floating-status {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  max-width: 90vw;
+  padding: var(--srs-space-1) var(--srs-space-3);
+  border-radius: var(--srs-radius-pill);
+  background: var(--srs-surface-sunken);
+  color: var(--orca-color-text-2);
+  box-shadow: var(--srs-shadow-2);
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-caption);
+}
+
+.srs-review-floating-status--warning {
+  background: var(--orca-color-warning-1, var(--orca-color-bg-2));
+  color: var(--orca-color-warning-6);
+}
+
+/* ---------- 加载 / 错误 / 空态 ---------- */
+
+.srs-review-center {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--srs-space-6);
+}
+
+.srs-review-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  padding: var(--srs-space-6);
+  box-sizing: border-box;
+  text-align: center;
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-body);
+  color: var(--orca-color-text-2);
+}
+
+.srs-review-state--viewport {
+  height: 100vh;
+}
+
+.srs-review-state--error {
+  flex-direction: column;
+  gap: var(--srs-space-3);
+}
+
+.srs-review-state__error-text {
+  max-width: var(--srs-measure-prose);
+  color: var(--orca-color-danger-5);
+}
+
+.srs-review-card-placeholder {
+  box-sizing: border-box;
+  padding: var(--srs-space-8);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-1);
+  text-align: center;
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-body);
+  color: var(--orca-color-text-2);
+}
+
+.srs-review-empty {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--srs-space-3);
+  padding: 30px 28px 26px;
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-xl);
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-hero);
+  text-align: center;
+  font-family: var(--srs-font-family);
+}
+
+.srs-review-empty__title {
+  margin: 0;
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-text-1);
+}
+
+.srs-review-empty__hint {
+  max-width: var(--srs-measure-prose);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-3);
+}
+
+/* ---------- 卡片外壳（托盘） ---------- */
+
+.srs-review-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--srs-measure);
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-4);
+  padding: var(--srs-space-4);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-xl);
+  background: var(--srs-surface-sunken);
+  box-shadow: var(--srs-shadow-hero);
+  font-family: var(--srs-font-family);
+}
+
+.srs-review-card--modal {
+  width: 90%;
+  min-width: 600px;
+}
+
+.srs-review-card-host {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* 下一张卡预取：不可见但保持在文档流外 */
+.srs-review-prefetch {
+  position: absolute;
+  left: -9999px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 方向卡语义色（正向=primary / 反向=warning），供后代元素取用 */
+.srs-review-card--dir-forward {
+  --srs-direction-color: var(--orca-color-primary-6);
+  --srs-direction-tint: var(--orca-color-primary-1, var(--orca-color-bg-2));
+}
+
+.srs-review-card--dir-backward {
+  --srs-direction-color: var(--orca-color-warning-6);
+  --srs-direction-tint: var(--orca-color-warning-1, var(--orca-color-bg-2));
+}
+
+/* ---------- 卡片工具栏 ---------- */
+
+.srs-review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--srs-space-2);
+  opacity: 0.6;
+  transition: opacity var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-review-toolbar:hover,
+.srs-review-toolbar:focus-within {
+  opacity: 1;
+}
+
+.srs-review-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  min-width: 0;
+}
+
+.srs-review-icon-btn {
+  padding: var(--srs-space-1) 6px !important;
+  border-radius: var(--srs-radius-xs) !important;
+  font-size: var(--srs-text-body) !important;
+}
+
+.srs-review-icon-btn--disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.srs-review-icon-btn--active {
+  color: var(--orca-color-primary-6) !important;
+}
+
+/* 卡种徽章 */
+.srs-review-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  padding: 2px var(--srs-space-2);
+  border-radius: var(--srs-radius-pill);
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-2);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.srs-review-type-chip i {
+  font-size: var(--srs-text-micro);
+}
+
+.srs-review-type-chip--primary {
+  background: var(--orca-color-primary-1, var(--orca-color-bg-2));
+  color: var(--orca-color-primary-6);
+}
+
+.srs-review-type-chip--success {
+  background: var(--orca-color-success-1, var(--orca-color-bg-2));
+  color: var(--orca-color-success-6);
+}
+
+.srs-review-type-chip--warning {
+  background: var(--orca-color-warning-1, var(--orca-color-bg-2));
+  color: var(--orca-color-warning-6);
+}
+
+.srs-review-type-chip--direction {
+  background: var(--srs-direction-tint);
+  color: var(--srs-direction-color);
+}
+
+/* ---------- 只读 / 辅助预览横幅 ---------- */
+
+.srs-review-banner {
+  box-sizing: border-box;
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-warning-1, var(--orca-color-bg-2));
+  color: var(--orca-color-warning-6);
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-medium);
+  text-align: center;
+}
+
+/* ---------- 卡片正 / 反面 ---------- */
+
+.srs-review-face {
+  box-sizing: border-box;
+  min-height: 80px;
+  padding: var(--srs-space-5);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-1);
+  color: var(--orca-color-text-1);
+  transition:
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-review-face:hover {
+  border-color: var(--srs-hairline-strong);
+  box-shadow: var(--srs-shadow-2);
+}
+
+.srs-review-face--question {
+  font-size: var(--srs-text-heading);
+  line-height: 1.7;
+}
+
+.srs-review-face__label {
+  margin-bottom: var(--srs-space-3);
+  text-align: center;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+  letter-spacing: var(--srs-tracking-wide);
+  color: var(--orca-color-text-3);
+}
+
+/* 无宿主 Block 可挂载时的纯文本兜底 */
+.srs-review-face__text {
+  padding: var(--srs-space-3);
+  font-size: var(--srs-text-heading);
+  line-height: 1.6;
+  color: var(--orca-color-text-1);
+  white-space: pre-wrap;
+}
+
+.srs-review-face__text--answer {
+  font-size: var(--srs-text-title);
+  font-weight: var(--srs-weight-medium);
+}
+
+.srs-review-face__text--selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 答案区补偿宿主块的项目符号缩进 */
+.srs-answer-block {
+  margin-left: -25.6px;
+}
+
+/* ---------- 卡片信息面板 ---------- */
+
+.srs-review-info-panel {
+  box-sizing: border-box;
+  padding: var(--srs-space-3) var(--srs-space-4);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-md);
+  background: var(--srs-surface-base);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+}
+
+.srs-review-info-panel__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.srs-review-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--srs-space-3);
+}
+
+.srs-review-info-row__value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 行动区（显示答案 / 跳过 / 继续） ---------- */
+
+.srs-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--srs-space-3);
+}
+
+/* 主 CTA：与 Flash Home `.srs-home-primary-btn` 同规格 */
+.srs-review-cta {
+  min-width: 160px;
+  justify-content: center !important;
+  padding: 11px 30px !important;
+  border-radius: var(--srs-radius-lg) !important;
+  font-size: var(--srs-text-callout) !important;
+  font-weight: var(--srs-weight-semibold) !important;
+}
+
+/* 次级按钮：与 Flash Home `.srs-home-nav-btn` 同规格 */
+.srs-review-secondary-btn {
+  padding: 7px 14px !important;
+  border-radius: var(--srs-radius-md) !important;
+  font-size: var(--srs-text-secondary) !important;
+  font-weight: var(--srs-weight-medium) !important;
+}
+
+/* 原生 button 版本（选择题使用），四态齐全 */
+.srs-review-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  padding: 11px 30px;
+  border: 1px solid transparent;
+  border-radius: var(--srs-radius-lg);
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-2);
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-callout);
+  font-weight: var(--srs-weight-semibold);
+  cursor: pointer;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
+}
+
+.srs-review-btn--primary {
+  background: var(--orca-color-primary-5);
+  color: var(--orca-color-white, white);
+}
+
+.srs-review-btn--primary:hover:not(:disabled):not(.srs-review-btn--disabled) {
+  background: var(--orca-color-primary-6);
+}
+
+.srs-review-btn--outline {
+  min-width: 0;
+  padding: 11px 24px;
+  background: var(--srs-surface-base);
+  border-color: var(--srs-hairline);
+  font-weight: var(--srs-weight-medium);
+}
+
+.srs-review-btn--outline:hover:not(:disabled):not(.srs-review-btn--disabled) {
+  background: var(--orca-color-bg-2);
+  border-color: var(--srs-hairline-strong);
+}
+
+.srs-review-btn:active:not(:disabled):not(.srs-review-btn--disabled) {
+  transform: translateY(0.5px);
+}
+
+.srs-review-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-review-btn:disabled,
+.srs-review-btn--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- 评分按钮组（主行动区） ---------- */
+
+.srs-grade-buttons {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--srs-space-2);
+}
+
+.srs-grade-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--srs-space-1);
+  min-height: 76px;
+  padding: var(--srs-space-3) var(--srs-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--srs-radius-lg);
+  background: var(--srs-grade-tint, var(--orca-color-bg-2));
+  color: var(--srs-grade-color, var(--orca-color-text-2));
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+  cursor: pointer;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
+}
+
+.srs-grade-btn--again {
+  --srs-grade-color: var(--orca-color-danger-6);
+  --srs-grade-tint: var(--orca-color-danger-1, var(--orca-color-bg-2));
+}
+
+.srs-grade-btn--hard {
+  --srs-grade-color: var(--orca-color-warning-6);
+  --srs-grade-tint: var(--orca-color-warning-1, var(--orca-color-bg-2));
+}
+
+.srs-grade-btn--good {
+  --srs-grade-color: var(--orca-color-primary-6);
+  --srs-grade-tint: var(--orca-color-primary-1, var(--orca-color-bg-2));
+}
+
+.srs-grade-btn--easy {
+  --srs-grade-color: var(--orca-color-success-6);
+  --srs-grade-tint: var(--orca-color-success-1, var(--orca-color-bg-2));
+}
+
+.srs-grade-btn--skip {
+  --srs-grade-color: var(--orca-color-text-2);
+  --srs-grade-tint: var(--orca-color-bg-2);
+}
+
+.srs-grade-btn:hover:not(:disabled):not(.srs-grade-btn--busy) {
+  border-color: var(--srs-grade-color, var(--orca-color-text-3));
+  box-shadow: var(--srs-shadow-2);
+}
+
+.srs-grade-btn:active:not(:disabled):not(.srs-grade-btn--busy) {
+  transform: translateY(0.5px);
+  box-shadow: var(--srs-shadow-1);
+}
+
+.srs-grade-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-grade-btn:disabled,
+.srs-grade-btn--busy {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* 选择题自动判分推荐的评分 */
+.srs-grade-btn--suggested {
+  border-color: var(--srs-grade-color, var(--orca-color-text-3));
+  box-shadow: var(--srs-shadow-2);
+}
+
+.srs-grade-btn__preview {
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-regular);
+  line-height: 1.3;
+  color: var(--orca-color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.srs-grade-btn__emoji {
+  font-size: var(--srs-text-title);
+  line-height: 1;
+}
+
+.srs-grade-btn__label {
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+  line-height: 1.3;
+}
+
+/* ---------- 完成态（英雄卡） ---------- */
+
+.srs-review-summary {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--srs-space-5);
+  padding: 30px 28px 26px;
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-xl);
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-hero);
+  text-align: center;
+  font-family: var(--srs-font-family);
+}
+
+.srs-review-summary__loading {
+  font-size: var(--srs-text-body);
+  color: var(--orca-color-text-3);
+}
+
+.srs-review-summary__emoji {
+  font-size: var(--srs-text-hero);
+  line-height: 1;
+}
+
+.srs-review-summary__title {
+  margin: 0;
+  font-size: var(--srs-text-title);
+  font-weight: var(--srs-weight-semibold);
+  letter-spacing: var(--srs-tracking-tight);
+  color: var(--orca-color-text-1);
+}
+
+.srs-review-summary__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-4);
+  padding: var(--srs-space-4);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  background: var(--srs-surface-sunken);
+  text-align: left;
+}
+
+.srs-review-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--srs-space-4);
+}
+
+.srs-review-summary__note {
+  text-align: center;
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+}
+
+.srs-review-summary__section-title {
+  text-align: center;
+  font-size: var(--srs-text-caption);
+  font-weight: var(--srs-weight-semibold);
+  letter-spacing: var(--srs-tracking-wide);
+  color: var(--orca-color-text-3);
+  margin-bottom: var(--srs-space-2);
+}
+
+.srs-review-summary__tagline {
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-3);
+}
+
+.srs-review-metric {
+  text-align: center;
+  min-width: 0;
+}
+
+.srs-review-metric__value {
+  font-size: var(--srs-text-title);
+  font-weight: var(--srs-weight-semibold);
+  line-height: 1.2;
+  letter-spacing: var(--srs-tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--orca-color-text-1);
+}
+
+.srs-review-metric__value--primary {
+  color: var(--orca-color-primary-6);
+}
+
+.srs-review-metric__value--success {
+  color: var(--orca-color-success-6);
+}
+
+.srs-review-metric__value--warning {
+  color: var(--orca-color-warning-6);
+}
+
+.srs-review-metric__value--danger {
+  color: var(--orca-color-danger-6);
+}
+
+.srs-review-metric__label {
+  margin-top: var(--srs-space-1);
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+}
+
+/* ---------- 评分分布条 ---------- */
+
+.srs-grade-dist__track {
+  display: flex;
+  border-radius: var(--srs-radius-xs);
+  overflow: hidden;
+}
+
+.srs-grade-dist__track--empty {
+  background: var(--orca-color-bg-3, var(--orca-color-bg-2));
+}
+
+.srs-grade-dist__empty-text {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+}
+
+.srs-grade-dist__segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4px;
+  transition: flex-basis var(--srs-duration-slow) var(--srs-ease);
+}
+
+.srs-grade-dist__segment--again {
+  background: var(--orca-color-danger-6);
+}
+
+.srs-grade-dist__segment--hard {
+  background: var(--orca-color-warning-6);
+}
+
+.srs-grade-dist__segment--good {
+  background: var(--orca-color-primary-6);
+}
+
+.srs-grade-dist__segment--easy {
+  background: var(--orca-color-success-6);
+}
+
+.srs-grade-dist__count {
+  color: var(--orca-color-white, white);
+  font-size: var(--srs-text-caption);
+  font-weight: var(--srs-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.srs-grade-dist__legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--srs-space-4);
+  margin-top: var(--srs-space-2);
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-2);
+}
+
+.srs-grade-dist__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+}
+
+.srs-grade-dist__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--srs-radius-pill);
+  flex-shrink: 0;
+}
+
+.srs-grade-dist__swatch--again {
+  background: var(--orca-color-danger-6);
+}
+
+.srs-grade-dist__swatch--hard {
+  background: var(--orca-color-warning-6);
+}
+
+.srs-grade-dist__swatch--good {
+  background: var(--orca-color-primary-6);
+}
+
+.srs-grade-dist__swatch--easy {
+  background: var(--orca-color-success-6);
+}
+
+/* ---------- 方向卡题面 ---------- */
+
+.srs-direction-question {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--srs-space-3);
+  min-height: 100px;
+  font-size: var(--srs-text-title);
+  line-height: 1.8;
+}
+
+.srs-direction-question__term {
+  font-weight: var(--srs-weight-medium);
+}
+
+.srs-direction-question__arrow {
+  font-size: var(--srs-text-title);
+  color: var(--srs-direction-color, var(--orca-color-text-3));
+}
+
+.srs-direction-question__answer {
+  padding: var(--srs-space-1) var(--srs-space-3);
+  border-radius: var(--srs-radius-xs);
+  background: var(--srs-direction-tint, var(--orca-color-bg-2));
+  color: var(--srs-direction-color, var(--orca-color-text-1));
+  font-weight: var(--srs-weight-semibold);
+}
+
+.srs-direction-question__mask {
+  padding: var(--srs-space-1) var(--srs-space-3);
+  border: 1px dashed var(--srs-hairline);
+  border-radius: var(--srs-radius-xs);
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-2);
+}
+
+/* ---------- 列表卡 ---------- */
+
+.srs-review-list-shell {
+  box-sizing: border-box;
+  padding: var(--srs-space-4);
+}
+
+.srs-review-list-shell--side {
+  padding: var(--srs-space-3);
+}
+
+.srs-review-list-prompt__title {
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-text-1);
+  margin-bottom: var(--srs-space-2);
+}
+
+.srs-review-list-prompt__counter {
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.srs-review-list {
+  margin: 0;
+  padding-left: var(--srs-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.srs-review-list__item {
+  padding: var(--srs-space-1) 0;
+  border-radius: var(--srs-radius-md);
+  font-size: var(--srs-text-body);
+  font-weight: var(--srs-weight-medium);
+  line-height: 1.6;
+  color: var(--orca-color-text-1);
+}
+
+.srs-review-list__item--highlight {
+  padding: var(--srs-space-2) var(--srs-space-3);
+  background: var(--orca-color-primary-1, var(--orca-color-bg-2));
+  color: var(--orca-color-primary-6);
+  font-weight: var(--srs-weight-bold);
+}
+
+/* ---------- 窄屏回落 ---------- */
+
+@media (max-width: 600px) {
+  .srs-review-card--modal {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .srs-grade-buttons {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------- 各卡种题面微调（承接 .srs-review-face 基线） ---------- */
+
+.srs-cloze-question {
+  min-height: 100px;
+  line-height: 1.8;
+}
+
+/* 中性指标：显式列出，便于与语义色 modifier 一起阅读 */
+.srs-review-metric__value--neutral {
+  color: var(--orca-color-text-1);
+}
+
+/* 评分/切卡进行中：主 CTA 的忙态（视觉与 disabled 一致，不改按钮语义） */
+.srs-review-cta--busy {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 评分建议提示：间距改由卡片外壳的 gap 统一控制 */
+.srs-choice-grade-hint {
+  margin-top: 0;
 }

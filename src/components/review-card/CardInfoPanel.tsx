@@ -48,22 +48,18 @@ export default function CardInfoPanel({
     )
   }
 
+  // 语义色取自设计令牌层（`srs-design-tokens.css`）。
+  // 原实现用的 `--orca-color-success/warning/primary`（无数字后缀）在 Orca 里并不存在，
+  // 且未写 fallback —— 卡片状态色实际一直静默继承父级颜色，从未生效。
   const stateColor = srsInfo?.state === State.Review
-    ? "var(--orca-color-success)"
+    ? "var(--srs-accent-success)"
     : srsInfo?.state === State.Learning || srsInfo?.state === State.Relearning
-      ? "var(--orca-color-warning)"
-      : "var(--orca-color-primary)"
+      ? "var(--srs-accent-warn)"
+      : "var(--srs-accent-new)"
 
   return (
-    <div contentEditable={false} style={{
-      marginBottom: "12px",
-      padding: "12px 16px",
-      backgroundColor: "var(--orca-color-bg-2)",
-      borderRadius: "8px",
-      fontSize: "13px",
-      color: "var(--orca-color-text-2)"
-    }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+    <div contentEditable={false} className="srs-review-info-panel">
+      <div className="srs-review-info-panel__rows">
         {rows.slice(0, 2).map(([label, value]) => (
           <InfoRow key={label} label={label} value={value} />
         ))}
@@ -77,10 +73,17 @@ export default function CardInfoPanel({
 }
 
 function InfoRow({ label, value, color }: { label: string; value: string; color?: string }) {
+  // 卡片状态色为语义色（回归测试 CardInfoPanel.test.ts 固定其取值），
+  // 属运行时动态值，按规范允许留在内联 style；其余视觉表现全部由 CSS 类承担。
   return (
-    <div style={{ display: "flex", justifyContent: "space-between" }}>
+    <div className="srs-review-info-row">
       <span>{label}</span>
-      <span style={{ color: color ?? "var(--orca-color-text-1)" }}>{value}</span>
+      <span
+        className="srs-review-info-row__value"
+        style={{ color: color ?? "var(--orca-color-text-1)" }}
+      >
+        {value}
+      </span>
     </div>
   )
 }
