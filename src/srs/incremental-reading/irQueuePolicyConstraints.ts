@@ -10,10 +10,11 @@ import {
   MIN_EXPLORATION_QUEUE_LENGTH,
   computeNewExtractCap,
   computeTopicFloor,
+  explorationUnitRandom,
   isHighPriority,
   isNewExtract,
-  isOverdue,
-  stableUnitRandom
+  sortByValue,
+  sortVictimsLowValueFirst
 } from "./irQueuePolicyCore"
 
 export type QueueSelectionMutators = {
@@ -38,30 +39,6 @@ function totalQueueCost(queue: IRCard[]): number {
 function trialCostAllowed(trial: IRCard[], budget: number): boolean {
   if (trial.length <= 1) return true
   return totalQueueCost(trial) <= budget
-}
-
-function sortByValue(list: IRCard[], seed: string, now: Date): IRCard[] {
-  return [...list].sort((a, b) => {
-    if (b.priority !== a.priority) return b.priority - a.priority
-    const overdueDelta =
-      (isOverdue(b, now) ? 1 : 0) - (isOverdue(a, now) ? 1 : 0)
-    if (overdueDelta !== 0) return overdueDelta
-    return stableUnitRandom(seed, a.id) - stableUnitRandom(seed, b.id)
-  })
-}
-
-function sortVictimsLowValueFirst(
-  list: IRCard[],
-  seed: string,
-  now: Date
-): IRCard[] {
-  return [...list].sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority
-    const overdueDelta =
-      (isOverdue(a, now) ? 1 : 0) - (isOverdue(b, now) ? 1 : 0)
-    if (overdueDelta !== 0) return overdueDelta
-    return stableUnitRandom(seed, b.id) - stableUnitRandom(seed, a.id)
-  })
 }
 
 function topicCountOf(queue: IRCard[]): number {
@@ -337,15 +314,14 @@ export function applyExploration(args: {
     return topicCountOf(m.selected) <= topicFloorNow
   }
 
-  const pool = sortByValue(
-    cards.filter(
-      c =>
-        !m.selectedIds.has(c.id) &&
-        !isHighPriority(c, highPriorityThreshold)
-    ),
-    seed,
-    now
-  )
+  // 候选池 = **全部未入选、非硬保护**的候选（不再限于"截断线附近价值最高"）。
+  // 用独立 salt 的稳定随机做**均匀采样**：被新材料挤掉的旧料有非零概率回来
+  // （对抗 priority bias），且当日确定性（同一天同一候选集结果一致）。
+  const pool = [...cards]
+    .filter(c => !m.selectedIds.has(c.id) && !m.hardProtectedIds.has(c.id))
+    .sort(
+      (a, b) => explorationUnitRandom(seed, a.id) - explorationUnitRandom(seed, b.id)
+    )
 
   if (pool.length === 0) {
     diagnostics.push({
@@ -358,18 +334,33 @@ export function applyExploration(args: {
 
   let appliedSwaps = 0
   let attemptedSlots = 0
+  let firstSwapInId: number | null = null
+  // 本轮已换入者不再作为换出受害者，保证每槽净引入一张新卡，不来回抖动。
+  const swappedInIds = new Set<number>()
 
   for (let slot = 0; slot < exploreSlots; slot++) {
     attemptedSlots += 1
     let slotApplied = false
 
-    for (let offset = 0; offset < m.selected.length && !slotApplied; offset++) {
-      const replaceIndex = m.selected.length - 1 - offset
-      const victim = m.selected[replaceIndex]
-      if (m.hardProtectedIds.has(victim.id)) continue
-      if (isHighPriority(victim, highPriorityThreshold)) continue
-      if (isTopicFloorEssential(victim)) continue
+    // 换出：**价值最低**且非硬保护 / 非高优先级 / 非 topic floor 必需 / 非本轮换入者。
+    const victims = sortVictimsLowValueFirst(
+      m.selected.filter(
+        c =>
+          !m.hardProtectedIds.has(c.id) &&
+          !isHighPriority(c, highPriorityThreshold) &&
+          !isTopicFloorEssential(c) &&
+          !swappedInIds.has(c.id)
+      ),
+      seed,
+      now
+    )
 
+    for (const victim of victims) {
+      if (slotApplied) break
+      const replaceIndex = m.selected.findIndex(c => c.id === victim.id)
+      if (replaceIndex < 0) continue
+
+      // 探索换入者按均匀采样顺序（pool 已按 explorationUnitRandom 排好）。
       for (const explorer of pool) {
         if (m.selectedIds.has(explorer.id)) continue
 
@@ -390,6 +381,8 @@ export function applyExploration(args: {
         if (!trialCostAllowed(trial, budget)) continue
 
         m.replaceAt(replaceIndex, explorer)
+        swappedInIds.add(explorer.id)
+        if (firstSwapInId === null) firstSwapInId = explorer.id
         appliedSwaps += 1
         slotApplied = true
         break
@@ -408,5 +401,19 @@ export function applyExploration(args: {
         poolSize: pool.length
       }
     })
+    return
   }
+
+  // 换入卡的来源标记：探索采样策略 + 首张换入 id（供诊断解释低价值卡为何出现）。
+  diagnostics.push({
+    code: "exploration_applied",
+    reason: "uniform_random_sampling",
+    detail: {
+      desiredSlots: exploreSlots,
+      attemptedSlots,
+      appliedSwaps,
+      poolSize: pool.length,
+      sampleSwapInId: firstSwapInId ?? -1
+    }
+  })
 }

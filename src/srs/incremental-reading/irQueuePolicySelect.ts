@@ -19,7 +19,7 @@ import {
   isHighPriority,
   isNewExtract,
   isOverdue,
-  stableUnitRandom
+  sortByValue
 } from "./irQueuePolicyCore"
 import {
   type QueueSelectionMutators,
@@ -34,16 +34,6 @@ function cardCost(card: IRCard): number {
 
 function totalQueueCost(queue: IRCard[]): number {
   return queue.reduce((sum, c) => sum + cardCost(c), 0)
-}
-
-function sortByValue(list: IRCard[], seed: string, now: Date): IRCard[] {
-  return [...list].sort((a, b) => {
-    if (b.priority !== a.priority) return b.priority - a.priority
-    const overdueDelta =
-      (isOverdue(b, now) ? 1 : 0) - (isOverdue(a, now) ? 1 : 0)
-    if (overdueDelta !== 0) return overdueDelta
-    return stableUnitRandom(seed, a.id) - stableUnitRandom(seed, b.id)
-  })
 }
 
 /**

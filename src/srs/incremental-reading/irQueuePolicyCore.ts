@@ -41,6 +41,7 @@ export type QueuePolicyDiagnosticCode =
   | "new_extract_cap_unsatisfiable"
   | "exploration_skipped"
   | "exploration_no_legal_swap"
+  | "exploration_applied"
   | "first_card_exceeds_budget"
 
 export type QueuePolicyDiagnostic = {
@@ -118,12 +119,95 @@ export function stableUnitRandom(seed: string, id: number): number {
   return (h >>> 0) / 4294967296
 }
 
+/**
+ * 探索采样的独立播种 salt。
+ * 探索换入者用它做均匀采样，与价值排序 tie-break 的 stableUnitRandom(seed, id)
+ * 走**不同**的随机流，避免"平票顺序"与"探索顺序"耦合。
+ */
+export const EXPLORATION_SEED_SALT = "exploration"
+
+/** 探索均匀采样用的稳定随机（当日确定性；与价值 tie-break 独立）。 */
+export function explorationUnitRandom(seed: string, id: number): number {
+  return stableUnitRandom(`${seed}:${EXPLORATION_SEED_SALT}`, id)
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
 function getDayStart(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
 export function isOverdue(card: IRCard, now: Date): boolean {
   return getDayStart(card.due).getTime() < getDayStart(now).getTime()
+}
+
+/**
+ * 逾期天数（整数，按**本地日边界**计）。
+ * due 当日为 0；此后每过一个本地日 +1；未到期为 0。
+ * 用 floor(ms/天) 吸收可能的 DST 偏移。
+ */
+export function overdueDays(card: IRCard, now: Date): number {
+  const dueDay = getDayStart(card.due).getTime()
+  const nowDay = getDayStart(now).getTime()
+  if (dueDay >= nowDay) return 0
+  return Math.floor((nowDay - dueDay) / MS_PER_DAY)
+}
+
+/**
+ * 老化（aging）常量：把"逾期布尔"升级为**加性得分**，遏制低优先级无限饥饿。
+ *
+ * 设计（排序价值 = priority + agingBonus）：
+ * - IR_AGING_RATE = 0.5：每逾期 1 天 +0.5 分 → 满 cap 需 **50 天**。
+ * - IR_AGING_CAP  = 25：老化最多把价值抬高 25。
+ *   于是 p=50 逾期 50 天可达 75，胜过刚到期的 p=74（旧比较器里 p=51 永远压过逾期 100 天的 p=50）；
+ *   而普通卡封顶 priority+25，一张 p=50 老化到极限也只有 75 < 80，**绝不越过** 80 的高优先级
+ *   硬保护线，保证高优先级保护语义不被老化淹没。
+ */
+export const IR_AGING_CAP = 25
+export const IR_AGING_RATE = 0.5
+
+/** 老化加成：min(IR_AGING_CAP, overdueDays × IR_AGING_RATE)。 */
+export function agingBonus(card: IRCard, now: Date): number {
+  return Math.min(IR_AGING_CAP, overdueDays(card, now) * IR_AGING_RATE)
+}
+
+/**
+ * 排序价值（**单一真相**）：priority + agingBonus。
+ * 所有队列比较器与"最低值受害者"选择都必须统一走本函数，
+ * 不得在别处另立第二套价值定义。
+ */
+export function cardValue(card: IRCard, now: Date): number {
+  return card.priority + agingBonus(card, now)
+}
+
+/**
+ * 价值降序比较器：cardValue 高者在前；平票用当日稳定 stableUnitRandom(seed, id)。
+ * select 的填充/回填与 constraints 的约束都复用它。
+ */
+export function sortByValue(list: IRCard[], seed: string, now: Date): IRCard[] {
+  return [...list].sort((a, b) => {
+    const av = cardValue(a, now)
+    const bv = cardValue(b, now)
+    if (bv !== av) return bv - av
+    return stableUnitRandom(seed, a.id) - stableUnitRandom(seed, b.id)
+  })
+}
+
+/**
+ * "最低值受害者优先"比较器：cardValue 低者在前（sortByValue 的镜像）。
+ * 用于 Topic floor 换出、新 Extract cap 换出、探索换出的受害者选择。
+ */
+export function sortVictimsLowValueFirst(
+  list: IRCard[],
+  seed: string,
+  now: Date
+): IRCard[] {
+  return [...list].sort((a, b) => {
+    const av = cardValue(a, now)
+    const bv = cardValue(b, now)
+    if (av !== bv) return av - bv
+    return stableUnitRandom(seed, b.id) - stableUnitRandom(seed, a.id)
+  })
 }
 
 export function isHighPriority(card: IRCard, threshold: number): boolean {
