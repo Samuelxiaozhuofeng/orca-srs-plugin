@@ -13,9 +13,22 @@
 import type { DbId } from "../orca.d.ts"
 import SrsFlashcardHome from "./SrsFlashcardHome"
 import SrsErrorBoundary from "./SrsErrorBoundary"
+import {
+  shouldInvokePanelWideViewToggle,
+  shouldManageHostEditorChrome
+} from "../srs/registry/panelTreeUtils"
 
-const { useState, useEffect } = window.React
+const { useState, useEffect, useRef } = window.React
 const { BlockShell, Button } = orca.components
+
+/**
+ * Host `.orca-block-editor` class applied only when the panel main block view is
+ * the flashcard-home block. Hides bullet / handle / query tabs (引用/同标签/候选引用)
+ * / query views so 今日学习 reads as a clean full-panel surface. Mirrors the IR
+ * workspace's `srs-ir-host-panel-chrome-managed`; scoped to a distinct class so
+ * embedded flashcard-home renderings (backlinks / ref previews) never lose chrome.
+ */
+export const FLASH_HOME_HOST_CHROME_CLASS = "srs-flash-home-host-chrome-managed"
 
 type RendererProps = {
   panelId: string
@@ -44,11 +57,53 @@ export default function SrsFlashcardHomeRenderer(props: RendererProps) {
   const [pluginName, setPluginName] = useState<string>("orca-srs")
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  /** 防止 effect 重跑时重复 toggle Wide View。 */
+  const wideViewAttemptedRef = useRef(false)
 
   // 加载插件名称
   useEffect(() => {
     void loadPluginName()
   }, [])
+
+  /**
+   * 当 flashcard-home 块是面板主视图时：隐藏宿主编辑器 chrome + 默认 Wide View。
+   * fail-closed（shouldManageHostEditorChrome）——绝不触碰 Journal 内嵌 / 查询 / 引用预览。
+   * 用 Renderer 传入的 panelId（非 activePanel）；Wide 仅在 panel.wide 非 true 时切一次。
+   */
+  useEffect(() => {
+    const panel = orca.nav.findViewPanel(panelId, orca.state.panels)
+    const manageHost = shouldManageHostEditorChrome(panel, panelId, blockId)
+    if (!manageHost) return
+
+    const blockEditor = rootRef.current?.closest<HTMLElement>(".orca-block-editor")
+    if (blockEditor) {
+      blockEditor.classList.add(FLASH_HOME_HOST_CHROME_CLASS)
+    }
+
+    const shouldToggle = shouldInvokePanelWideViewToggle(
+      manageHost,
+      panel?.wide,
+      wideViewAttemptedRef.current
+    )
+    wideViewAttemptedRef.current = true
+    if (shouldToggle) {
+      void (async () => {
+        try {
+          await orca.commands.invokeCommand("core.panel.toggleWideView", panelId)
+        } catch (error) {
+          console.error("[今日学习] 启用 Wide View 失败:", error)
+          orca.notify("error", "启用宽屏视图失败", { title: "今日学习" })
+        }
+      })()
+    }
+
+    return () => {
+      if (blockEditor) {
+        blockEditor.classList.remove(FLASH_HOME_HOST_CHROME_CLASS)
+      }
+    }
+  }, [panelId, blockId])
 
   const loadPluginName = async () => {
     setIsLoading(true)
@@ -140,7 +195,11 @@ export default function SrsFlashcardHomeRenderer(props: RendererProps) {
       renderingMode={renderingMode}
       reprClassName="srs-repr-flashcard-home"
       contentClassName="srs-repr-flashcard-home-content"
-      contentJsx={renderContent()}
+      contentJsx={(
+        <div ref={rootRef} className="srs-flash-home-host">
+          {renderContent()}
+        </div>
+      )}
       childrenJsx={null}
     />
   )

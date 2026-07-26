@@ -602,6 +602,19 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     setViewMode("difficult-cards")
   }, [])
 
+  const handleOpenReadingLibrary = useCallback(async () => {
+    try {
+      const { openIRWorkspace } = await import(
+        "../srs/incremental-reading/irWorkspacePanelLaunch"
+      )
+      await openIRWorkspace({ pluginName, mode: "library" })
+    } catch (error) {
+      console.error(`[${pluginName}] 打开渐进阅读资料库失败:`, error)
+      const message = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `打开阅读资料库失败：${message}`, { title: "今日学习" })
+    }
+  }, [pluginName])
+
   const handleFilterChange = useCallback((filter: FilterType) => {
     setCurrentFilter(filter)
   }, [])
@@ -703,6 +716,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             onRefresh={handleRefresh}
             onNoteChange={handleNoteChange}
             onShowDifficultCards={handleShowDifficultCards}
+            onOpenReadingLibrary={() => void handleOpenReadingLibrary()}
             onStatClick={handleStatClick}
           />
         </div>

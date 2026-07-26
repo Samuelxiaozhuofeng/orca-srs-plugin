@@ -90,7 +90,8 @@ flowchart TD
   1. `getOrCreateFlashcardHomeBlock(pluginName)`
   2. 若某面板已打开该块 → `switchFocusTo`
   3. 否则右侧复用/新建面板，或 `openInCurrentPanel` 时在当前面板 `goTo`
-- **面板组件** `SrsFlashcardHomePanel`：硬编码 `pluginName="srs-plugin"`，外层 `SrsErrorBoundary` + `attachHideableDisplayManager`
+- **实际渲染路径是块渲染器** `SrsFlashcardHomeRenderer`（注册于 `registry/renderers.ts`）：`openFlashcardHome` 走 `orca.nav.goTo("block", …)`，宿主用块编辑器渲染该块。`src/panels/SrsFlashcardHomePanel.tsx` 为**历史遗留、未被引用**，勿当作现行入口。
+- **宿主 chrome 清理 + Wide View（2026-07-27 落地）**：渲染器 mount 时经 `shouldManageHostEditorChrome(panel, panelId, blockId)` **fail-closed** 判定「本面板主视图确为该块」，成立才给最近 `.orca-block-editor` 加类 `srs-flash-home-host-chrome-managed`，CSS 隐藏左侧 bullet / handle / `orca-repr-scope-line` / 查询 Tab（引用·同标签·候选引用，`orca-block-editor-query-tabs(-container)`）/ `orca-block-editor-query-views` / `orca-memoizedviews`；并按 `shouldInvokePanelWideViewToggle`（`panel.wide` 非 true 时一次性）切 Wide View。卸载移除该类。内嵌（Journal / 查询 / 引用预览）永不命中裸选择器。镜像 IR 的 `srs-ir-host-panel-chrome-managed`，但用独立类名解耦。
 - **转换器**：plain 输出占位文本（见 `converters.ts`）
 
 ---
@@ -129,8 +130,21 @@ flowchart TD
 
 ## FlashHomePage（单页主页）
 
-- 上半：`HomeSummaryBar` — **今日学习**（统一 remaining、预计分钟、建议、10/20/30、开始/继续）+ 次级卡库三 `StatCard`
+- 上半：`HomeSummaryBar` — **今日学习**（统一 remaining、预计分钟、建议、10/20/30、开始/继续）+ 次级卡库统计细带（`StatChip`）
 - 下半：`DeckListView` — 搜索 + 卡组表
+
+### 动作层级与入口（2026-07-27 调整）
+
+`HomeSummaryBar` 动作区分两行，语义层级清晰（Apple 风）：
+
+1. `.srs-home-summary__actions`（主 CTA 行）：主按钮「开始今日学习 / 继续上次学习」（`srs-home-primary-btn`）+ 可选「重新开始」（`srs-home-linkbtn`，仅 `canContinue && canStart`）。
+2. `.srs-home-summary__nav`（次级入口行）：**「阅读资料库」**（`srs-home-nav-btn--library` 强调色调，`onOpenReadingLibrary` → `openIRWorkspace({ mode: "library" })`，经 `FlashHomePage` 由 `SrsFlashcardHome.handleOpenReadingLibrary` 透传，失败可见 notify）· 「困难卡」· 刷新图标。
+
+### 视觉（2026-07-27）
+
+- 内容居中于最大宽度列（`.srs-flash-home-page/…-view/…-difficult-cards-view` `max-width: 720px`），`.srs-flash-home-root` flex 居中 + 大留白。
+- 「今日学习」升级为主卡片：大圆角 + 分层柔和阴影；剩余数 44px tabular-nums；时长选择为 iOS 分段控件（轨道 + 抬升选中态）。
+- 全部用 Orca CSS tokens，深浅色自适应。样式集中在 `src/styles/flashcard-home.css`。
 - 主按钮：有有效当日 resume 且仍有任务 →「继续上次学习」；否则「开始今日学习」
 - 开始：有 IR 今日内容 → IR reading 自动 `mixed` + 所选时长；仅 SRS → 普通复习会话；都无 → 禁用并显示完成
 - 继续：SRS → 验证会话块 + 导航；IR → 打开工作区 autoStart 重装队列（断点靠既有 `ir.resumeBlockId` / breakpoint）

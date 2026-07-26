@@ -24,6 +24,7 @@ export type HomeSummaryBarProps = {
   onRetryContinue: () => void
   onStartFresh: () => void
   onShowDifficultCards: () => void
+  onOpenReadingLibrary: () => void
   onRefresh: () => void
   onStatClick?: (kind: HomeStatKind) => void
 }
@@ -49,6 +50,7 @@ export default function HomeSummaryBar({
   onRetryContinue,
   onStartFresh,
   onShowDifficultCards,
+  onOpenReadingLibrary,
   onRefresh,
   onStatClick
 }: HomeSummaryBarProps) {
@@ -294,56 +296,58 @@ export default function HomeSummaryBar({
               <Button
                 variant="solid"
                 onClick={primaryDisabled ? undefined : onPrimaryAction}
-                className={primaryDisabled ? "srs-btn-disabled" : undefined}
+                className={
+                  "srs-home-primary-btn" +
+                  (primaryDisabled ? " srs-btn-disabled" : "")
+                }
                 style={{
                   opacity: primaryDisabled ? 0.5 : 1,
-                  cursor: primaryDisabled ? "not-allowed" : "pointer",
-                  padding: "8px 24px"
+                  cursor: primaryDisabled ? "not-allowed" : "pointer"
                 }}
               >
                 {primaryLabel}
               </Button>
               {canContinue && canStart ? (
-                <Button
-                  variant="plain"
+                <button
+                  type="button"
+                  className="srs-home-linkbtn"
                   onClick={actionBusy ? undefined : onStartFresh}
-                  style={{
-                    padding: "8px 12px",
-                    fontSize: "13px",
-                    opacity: actionBusy ? 0.5 : 1
-                  }}
+                  disabled={actionBusy}
                 >
                   重新开始
-                </Button>
+                </button>
               ) : null}
-              <Button
-                variant="plain"
+            </div>
+
+            <div className="srs-home-summary__nav" aria-label="更多入口">
+              <button
+                type="button"
+                className="srs-home-nav-btn srs-home-nav-btn--library"
+                onClick={onOpenReadingLibrary}
+                title="打开渐进阅读资料库"
+              >
+                <i className="ti ti-books" />
+                <span>阅读资料库</span>
+              </button>
+              <button
+                type="button"
+                className="srs-home-nav-btn srs-home-nav-btn--danger"
                 onClick={onShowDifficultCards}
-                className="srs-difficult-cards-button"
-                style={{
-                  fontSize: "13px",
-                  padding: "6px 12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  color: "var(--orca-color-danger-6)"
-                }}
                 title="查看困难记忆卡"
               >
                 <i className="ti ti-alert-triangle" />
-                困难卡
-              </Button>
-              <Button
-                variant="plain"
+                <span>困难卡</span>
+              </button>
+              <button
+                type="button"
+                className="srs-home-nav-btn srs-home-nav-btn--icon"
                 onClick={actionBusy ? undefined : onRefresh}
-                style={{
-                  padding: "8px 12px",
-                  opacity: actionBusy ? 0.5 : 1
-                }}
+                disabled={actionBusy}
                 title="刷新数据"
+                aria-label="刷新数据"
               >
                 <i className="ti ti-refresh" />
-              </Button>
+              </button>
             </div>
           </>
         )}

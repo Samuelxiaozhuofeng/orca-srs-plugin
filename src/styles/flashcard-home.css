@@ -1,7 +1,30 @@
 /**
- * Flash Home — card list visual frame
- * Uses Orca CSS tokens; cards sit as discrete shells on a tray surface.
+ * Flash Home（今日学习）— Apple-grade layout & card list visual frame
+ * Uses Orca CSS tokens so it adapts to light / dark theme.
  */
+
+/* ---------- Host panel chrome (main block view only) ---------- */
+/*
+ * Applied only when SrsFlashcardHomeRenderer confirms the panel main view is the
+ * flashcard-home block (class on the nearest .orca-block-editor). Never match bare
+ * selectors — embedded flashcard-home (backlinks / query / ref previews) keeps chrome.
+ */
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-block-bullet,
+.orca-block-editor.srs-flash-home-host-chrome-managed [data-role="bullet"],
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-repr-scope-line,
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-block-handle,
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-block-editor-query-tabs,
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-block-editor-query-tabs-container,
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-block-editor-query-views,
+.orca-block-editor.srs-flash-home-host-chrome-managed .orca-memoizedviews {
+  display: none !important;
+}
+
+/* Layout-transparent wrapper: keeps DOM ancestry for .closest() host lookup
+   while letting the height chain pass straight through to .srs-flash-home-root. */
+.srs-flash-home-host {
+  display: contents;
+}
 
 /* ---------- List tray ---------- */
 
@@ -209,16 +232,36 @@
 /* ---------- Shell / page ---------- */
 
 .srs-flash-home-root {
-  padding: 16px;
   height: 100%;
   overflow: auto;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 24px 56px;
+  background: var(--orca-color-bg-1);
+  font-family: var(
+    --orca-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif
+  );
+}
+
+/* Shared centered content column — comfortable reading measure. */
+.srs-flash-home-page,
+.srs-flash-home-view,
+.srs-difficult-cards-view {
+  width: 100%;
+  max-width: 720px;
 }
 
 .srs-flash-home-page-inner {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 
 .srs-flash-home-state {
@@ -246,26 +289,31 @@
 .srs-home-summary {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   align-items: stretch;
+  width: 100%;
 }
 
 .srs-today-learning {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
   align-items: center;
-  padding: 16px;
-  border-radius: 8px;
+  padding: 30px 28px 26px;
+  border-radius: 20px;
   border: 1px solid var(--orca-color-border-1);
-  background: var(--orca-color-bg-2);
+  background: var(--orca-color-bg-1);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.06);
   box-sizing: border-box;
 }
 
 .srs-today-learning__title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--orca-color-text-1);
+  letter-spacing: 0.04em;
+  color: var(--orca-color-text-3);
 }
 
 .srs-today-learning__loading {
@@ -347,10 +395,12 @@
 }
 
 .srs-today-learning__remaining-value {
-  font-size: 36px;
+  font-size: 44px;
   font-weight: 700;
   color: var(--orca-color-text-1);
-  line-height: 1.1;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 .srs-today-learning__remaining-label {
@@ -410,28 +460,42 @@
   max-width: 420px;
 }
 
+/* iOS-style segmented control: a track with a lifted selected pill. */
 .srs-today-learning__timebox {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--orca-color-bg-2);
+  border: 1px solid var(--orca-color-border-1);
 }
 
 .srs-today-learning__timebox-btn {
-  border: 1px solid var(--orca-color-border-1);
-  background: var(--orca-color-bg-1);
+  border: none;
+  background: transparent;
   color: var(--orca-color-text-2);
-  border-radius: 8px;
-  padding: 6px 14px;
+  border-radius: 9px;
+  padding: 7px 18px;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.srs-today-learning__timebox-btn:hover:not(:disabled):not(
+    .srs-today-learning__timebox-btn--selected
+  ) {
+  color: var(--orca-color-text-1);
 }
 
 .srs-today-learning__timebox-btn--selected {
-  border-color: var(--orca-color-primary-6);
-  color: var(--orca-color-primary-6);
+  color: var(--orca-color-text-1);
   background: var(--orca-color-bg-1);
   font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 
 .srs-today-learning__timebox-btn:disabled {
@@ -519,9 +583,108 @@
 .srs-home-summary__actions {
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+/* Primary CTA — 开始 / 继续今日学习 */
+.srs-home-primary-btn {
+  min-width: 208px;
+  justify-content: center !important;
+  padding: 11px 30px !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+/* Quiet inline action (重新开始) */
+.srs-home-linkbtn {
+  border: none;
+  background: transparent;
+  color: var(--orca-color-primary-6);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.srs-home-linkbtn:hover:not(:disabled) {
+  background: var(--orca-color-bg-2);
+}
+
+.srs-home-linkbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary entries row: 阅读资料库 · 困难卡 · 刷新 */
+.srs-home-summary__nav {
+  display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+.srs-home-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--orca-color-border-1);
+  background: var(--orca-color-bg-1);
+  color: var(--orca-color-text-2);
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.srs-home-nav-btn i {
+  font-size: 15px;
+}
+
+.srs-home-nav-btn:hover:not(:disabled) {
+  background: var(--orca-color-bg-2);
+  border-color: var(--orca-color-border-2, var(--orca-color-border-1));
+}
+
+.srs-home-nav-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.srs-home-nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 阅读资料库 — the prominent tonal entry */
+.srs-home-nav-btn--library {
+  color: var(--orca-color-primary-6);
+  background: var(--orca-color-primary-1, var(--orca-color-bg-2));
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.srs-home-nav-btn--library:hover:not(:disabled) {
+  background: var(--orca-color-primary-2, var(--orca-color-bg-2));
+  border-color: transparent;
+}
+
+.srs-home-nav-btn--danger {
+  color: var(--orca-color-danger-6);
+}
+
+.srs-home-nav-btn--icon {
+  padding: 7px 11px;
 }
 
 /* 窄屏：hero 回落为纵向居中 */
