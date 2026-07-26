@@ -107,10 +107,22 @@
   color: var(--orca-color-text-1);
 }
 
+/*
+ * 配置区必须自己滚动。
+ * 容器是 `max-height: 80vh; overflow: hidden` 的纵向 flex，header/source/footer
+ * 都是 flex-shrink:0；配置区一旦长过剩余空间，就会把 footer（生成/取消按钮）
+ * 顶出可视区且无法滚到——与提示词库表单历史上踩过的是同一个坑，解法一致：
+ * 字段区 flex:1 + min-height:0 + 自身滚动，底栏保持固定。
+ */
 .ai-card-dialog__controls {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--srs-space-3);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .ai-card-dialog__field {
@@ -332,6 +344,7 @@
 /* ---------- 滚动条（所有 AI 浮层共用） ---------- */
 
 .ai-card-dialog__source-body::-webkit-scrollbar,
+.ai-card-dialog__controls::-webkit-scrollbar,
 .ai-card-dialog__draft-list::-webkit-scrollbar,
 .ai-quick-dialog__source-body::-webkit-scrollbar,
 .ai-quick-dialog__result-body::-webkit-scrollbar,
@@ -340,6 +353,7 @@
 }
 
 .ai-card-dialog__source-body::-webkit-scrollbar-thumb,
+.ai-card-dialog__controls::-webkit-scrollbar-thumb,
 .ai-card-dialog__draft-list::-webkit-scrollbar-thumb,
 .ai-quick-dialog__source-body::-webkit-scrollbar-thumb,
 .ai-quick-dialog__result-body::-webkit-scrollbar-thumb,
@@ -2082,4 +2096,47 @@
   max-width: var(--srs-measure-narrow);
   /* 上游错误正文可能很长且无空格，强制折行避免撑破面板 */
   overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   制卡弹窗 v2 配置项（详细程度 / 语言 / 自定义指令）
+   ============================================================ */
+
+.ai-card-dialog__field-hint {
+  margin: var(--srs-space-1) 0 0;
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+  color: var(--orca-color-text-3);
+  max-width: var(--srs-measure-prose);
+}
+
+.ai-card-dialog__select,
+.ai-card-dialog__textarea {
+  width: 100%;
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border: 1px solid var(--orca-color-border);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-1);
+  color: var(--orca-color-text-1);
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-body);
+  transition: border-color var(--srs-duration-base) var(--srs-ease);
+}
+
+.ai-card-dialog__select:focus,
+.ai-card-dialog__textarea:focus {
+  outline: none;
+  border-color: var(--orca-color-primary-5);
+}
+
+.ai-card-dialog__select:disabled,
+.ai-card-dialog__textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-card-dialog__textarea {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.6;
 }

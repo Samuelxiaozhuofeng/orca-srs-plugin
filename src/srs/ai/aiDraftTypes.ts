@@ -4,7 +4,72 @@
 
 export type AICardType = "basic" | "cloze"
 
+/** @deprecated 由 AIDetailLevel 取代；保留供旧调用点编译。 */
 export type MaxCardsOption = 1 | 3 | 5
+
+/**
+ * 详细程度。
+ *
+ * 取代此前的固定张数（1/3/5）。旧设计里「最多 3 张」与 system prompt 的
+ * "Quality over quantity ... return fewer cards or an empty array" 直接打架：
+ * 给了数字，模型就把它当成产量目标去凑；给了质量优先，数字又成了摆设。
+ * 语义档位把「要多深」交给用户，把「几张合适」交还给模型。
+ */
+export const AI_DETAIL_LEVELS = ["summary", "key", "exhaustive"] as const
+export type AIDetailLevel = (typeof AI_DETAIL_LEVELS)[number]
+export const DEFAULT_AI_DETAIL_LEVEL: AIDetailLevel = "key"
+
+export const AI_DETAIL_LEVEL_LABELS: Record<AIDetailLevel, string> = {
+  summary: "高层概要",
+  key: "重要观点",
+  exhaustive: "详尽覆盖"
+}
+
+export const AI_DETAIL_LEVEL_HINTS: Record<AIDetailLevel, string> = {
+  summary: "只取最核心的一两点",
+  key: "覆盖必须记住的要点（推荐）",
+  exhaustive: "连次要细节一并覆盖"
+}
+
+/**
+ * 各档的硬闸门。
+ * 只作为「不得超过」的上限传给模型与本地截断，**不是产量目标**。
+ */
+export const AI_DETAIL_LEVEL_CARD_CAP: Record<AIDetailLevel, number> = {
+  summary: 2,
+  key: 5,
+  exhaustive: 12
+}
+
+/**
+ * 卡片语言。
+ *
+ * 注意：只影响**题干措辞**。答案 / sourceQuote / cloze 正文必须是源文本的
+ * 连续摘录（接地校验的前提），翻译它们会让整批卡校验失败——因此明确不翻译。
+ */
+export const AI_CARD_LANGUAGES = ["auto", "zh", "en", "ja"] as const
+export type AICardLanguage = (typeof AI_CARD_LANGUAGES)[number]
+export const DEFAULT_AI_CARD_LANGUAGE: AICardLanguage = "auto"
+
+export const AI_CARD_LANGUAGE_LABELS: Record<AICardLanguage, string> = {
+  auto: "跟随源文本",
+  zh: "中文",
+  en: "English",
+  ja: "日本語"
+}
+
+/** 送进 prompt 的语言名（英文，模型侧更稳）。 */
+export const AI_CARD_LANGUAGE_PROMPT_NAMES: Record<
+  Exclude<AICardLanguage, "auto">,
+  string
+> = {
+  zh: "Chinese",
+  en: "English",
+  ja: "Japanese"
+}
+
+/** 自定义指令长度上限。 */
+export const AI_CUSTOM_INSTRUCTION_MAX = 500
 
 export interface BasicCardDraft {
   id: string
@@ -60,7 +125,17 @@ export interface GenerateDraftsOptions {
   pluginName: string
   sourceText: string
   cardType: AICardType
-  maxCards: MaxCardsOption
+  /** 详细程度；决定深度与硬上限。 */
+  detailLevel?: AIDetailLevel
+  /** 用户自定义追加指令（在 SOURCE 分隔符之外，仍属受信指令）。 */
+  customInstruction?: string
+  /** 题干语言；答案与摘录始终保持源文本原文。 */
+  cardLanguage?: AICardLanguage
+  /**
+   * 已有草稿的去重线索（题干 / cloze 目标）。
+   * 「再生成一批」时传入，避免第二批原样重复第一批。
+   */
+  excludeSummaries?: string[]
   signal?: AbortSignal
 }
 

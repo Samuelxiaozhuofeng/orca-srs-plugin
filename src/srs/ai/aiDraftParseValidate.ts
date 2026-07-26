@@ -266,7 +266,8 @@ export function parseAndValidateDrafts(
   rawContent: string,
   sourceText: string,
   expectedType: AICardType,
-  maxCards: MaxCardsOption
+  /** 硬上限（由详细程度档位推出）；超出部分计入 truncatedCount。 */
+  maxCards: number
 ): AIDraftValidationResult {
   const jsonText = extractJsonText(rawContent)
   if (jsonText == null) {
