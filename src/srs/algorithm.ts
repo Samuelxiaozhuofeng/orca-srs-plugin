@@ -48,7 +48,14 @@ const createFsrsInstanceFromValidated = (
   const params: Partial<FSRSParameters> = {
     request_retention: config.requestRetention,
     maximum_interval: config.maximumInterval,
-    w: [...config.weights]
+    w: [...config.weights],
+    // 启用 FSRS fuzz：对天级间隔（≥2.5 天）叠加确定性抖动，分散复习负载、削峰到期，
+    // 避免同一天到期卡片"雪崩式"堆积。ts-fsrs 的 fuzz 由卡片状态 + 复习时刻确定性播种
+    // （DefaultInitSeedStrategy：`${reviewTime}_${reps}_${difficulty*stability}`），
+    // apply_fuzz 每次都以该 seed 重建 alea 生成器、无跨调用状态；因此单例实例下
+    // "预览间隔"与"实际评分"只要输入 SrsState 与 now 相同，结果必然一致（有回归覆盖）。
+    // 学习步/重学步等分钟级间隔不走 apply_fuzz，不受影响。
+    enable_fuzz: true
   }
   return new FSRS(generatorParameters(params))
 }
@@ -368,7 +375,7 @@ export const nextReviewState = (
   const nextState: SrsState = {
     stability: record.card.stability,           // 记忆稳定度，评分越高增长越快
     difficulty: record.card.difficulty,         // 记忆难度，Again/Hard 会调高，Easy 会降低
-    interval: record.card.scheduled_days,       // 下次间隔天数，已包含 FSRS 的遗忘曲线与 fuzz
+    interval: record.card.scheduled_days,       // 下次间隔天数（FSRS scheduled_days）：遗忘曲线计算结果；enable_fuzz 时对 ≥2.5 天间隔叠加确定性 fuzz，分钟级学习步不受影响
     due: record.card.due,                       // 具体下次到期时间（now + interval）
     lastReviewed: record.log.review,            // 本次复习时间
     reps: record.card.reps,                     // 总复习次数（每次评分 +1）

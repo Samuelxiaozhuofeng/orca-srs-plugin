@@ -22,19 +22,25 @@ const PLUGIN_B = "plugin-b"
 const fixedNow = new Date("2026-07-13T08:00:00.000Z")
 
 /**
- * 模拟各渲染器在 useMemo 中的预览调用约定（与组件源码一致）：
- * previewIntervals(fullState, undefined, pluginName)
+ * 模拟各渲染器在 useMemo 中的预览调用约定（第 3 参为 pluginName，与组件源码一致；
+ * 源码"第 3 参必为 pluginName"的防回归由下方读取源文件的用例保证）。
+ *
+ * 显式传入固定 now：enable_fuzz 后 fuzz 由复习时刻（reviewTime）参与确定性播种，
+ * 若各次调用各用一个 DEFAULT_NOW()，天级间隔会因 seed 不同而产生 ±1 天抖动，
+ * 无法断言"各卡类型结果一致"。测试意图是"同一 state/now/plugin → 同一结果"，
+ * 故此处 pin 同一 now，令 fuzz 结果在四种卡类型间确定一致。
  */
 function previewLikeCardRenderers(
   pluginName: string,
-  srsState: ReturnType<typeof createInitialSrsState>
+  srsState: ReturnType<typeof createInitialSrsState>,
+  now: Date
 ) {
   return {
-    basic: previewIntervals(srsState, undefined, pluginName),
-    cloze: previewIntervals(srsState, undefined, pluginName),
-    direction: previewIntervals(srsState, undefined, pluginName),
-    list: previewIntervals(srsState, undefined, pluginName),
-    choiceDue: previewDueDates(srsState, undefined, pluginName)
+    basic: previewIntervals(srsState, now, pluginName),
+    cloze: previewIntervals(srsState, now, pluginName),
+    direction: previewIntervals(srsState, now, pluginName),
+    list: previewIntervals(srsState, now, pluginName),
+    choiceDue: previewDueDates(srsState, now, pluginName)
   }
 }
 
@@ -66,7 +72,7 @@ beforeEach(() => {
 describe("F2-08 preview pluginName harness", () => {
   it("各卡类型预览约定传入同一 pluginName 时生效参数一致", () => {
     const state = createInitialSrsState(fixedNow)
-    const previews = previewLikeCardRenderers(PLUGIN_A, state)
+    const previews = previewLikeCardRenderers(PLUGIN_A, state, fixedNow)
     // 全部预览后生效参数应为 A
     expect(getEffectiveFsrsParams().requestRetention).toBe(0.75)
     expect(getEffectiveFsrsParams().maximumInterval).toBe(30)
