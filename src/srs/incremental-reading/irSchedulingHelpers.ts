@@ -137,6 +137,48 @@ export function growIntervalDays(
   return clampIntervalDays(cardType, base * factor)
 }
 
+/**
+ * 迟到补偿系数（只影响「迟到读」：实际时距 > 存储间隔）。
+ * 设计意图：材料在比存储间隔更长的时距后依然被读，说明当前节奏对读者
+ * 仍有价值，下一次排期不必因为「已到期」就把间隔压回起点、很快又回流
+ * （否则会形成 backlog 自我强化）；因此按此权重部分采信实际时距。
+ * 系数取 0.5（而非 1）是为了防止极端拖延（例如放了几个月才读）
+ * 导致下一次间隔一次性爆炸式变长。
+ * 提前/准时读（elapsed ≤ storedInterval）不受影响，行为与旧版完全一致。
+ */
+export const IR_LATENESS_WEIGHT = 0.5
+
+/**
+ * 距上次已读的实际时距（天）。无 `lastRead`（新卡首读）返回 null，
+ * 调用方应据此跳过迟到补偿。
+ */
+export function computeElapsedDaysSinceLastRead(
+  lastRead: Date | null | undefined,
+  now: Date
+): number | null {
+  if (!lastRead) return null
+  const elapsedMs = now.getTime() - lastRead.getTime()
+  if (!Number.isFinite(elapsedMs)) return null
+  return elapsedMs / 86_400_000
+}
+
+/**
+ * 迟到补偿后的增长基数（喂给 `growIntervalDays` 的「current」参数）。
+ * - 无实际时距（新卡首读）→ 原样返回 storedIntervalDays（不补偿）。
+ * - 未迟到（elapsedDays ≤ storedIntervalDays，含提前/准时读）→
+ *   原样返回 storedIntervalDays，行为与旧版完全一致。
+ * - 迟到（elapsedDays > storedIntervalDays）→
+ *   `storedIntervalDays + (elapsedDays - storedIntervalDays) * IR_LATENESS_WEIGHT`。
+ */
+export function computeLatenessEffectiveBase(
+  storedIntervalDays: number,
+  elapsedDays: number | null
+): number {
+  if (elapsedDays === null || !Number.isFinite(elapsedDays)) return storedIntervalDays
+  if (elapsedDays <= storedIntervalDays) return storedIntervalDays
+  return storedIntervalDays + (elapsedDays - storedIntervalDays) * IR_LATENESS_WEIGHT
+}
+
 export function clampSacIntervalDays(raw: number): number {
   const value = typeof raw === "number" && Number.isFinite(raw) ? raw : 2
   return Math.min(SAC_MAX_INTERVAL_DAYS, Math.max(1, value))

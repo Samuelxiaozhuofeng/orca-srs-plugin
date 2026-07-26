@@ -22,6 +22,8 @@ import {
   clampSacIntervalDays,
   computeBaseIntervalDays,
   computeDispersedSchedule,
+  computeElapsedDaysSinceLastRead,
+  computeLatenessEffectiveBase,
   computeNewExtractQueueDelayDays,
   computeReadingProgressKey,
   computeSacIntervalDays,
@@ -92,7 +94,12 @@ export async function markAsRead(
         }
       }
     } else {
-      const baseIntervalDays = growIntervalDays(cardType, prev.intervalDays)
+      // 迟到补偿：拖延后才读的卡按部分权重采信实际时距，避免 backlog 自我强化；
+      // 无 lastRead（首读）或提前/准时读时 effectiveBase 就是 prev.intervalDays，
+      // 与旧行为完全一致。详见 computeLatenessEffectiveBase。
+      const elapsedDays = computeElapsedDaysSinceLastRead(prev.lastRead, now)
+      const effectiveBase = computeLatenessEffectiveBase(prev.intervalDays, elapsedDays)
+      const baseIntervalDays = growIntervalDays(cardType, effectiveBase)
       schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
         isNew: isNewCard(prev)
       })
