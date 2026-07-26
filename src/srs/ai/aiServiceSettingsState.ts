@@ -33,7 +33,8 @@ const emptyAI: AISettings = {
   apiUrl: "",
   model: "",
   enableNativeWebSearch: false,
-  reasoningEffort: "default"
+  reasoningEffort: "default",
+  webSearchToolType: "auto"
 }
 
 const emptyFirecrawl: WebImportSettings = {

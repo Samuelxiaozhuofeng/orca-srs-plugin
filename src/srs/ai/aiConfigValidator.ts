@@ -254,6 +254,10 @@ export async function testAIConfigWithDetails(
   const chat = await callChatCompletions({
     pluginName,
     settingsOverride: settings,
+    purpose: "connection-test",
+    // 测连是用户显式的单发探测：不排队、不重试，失败就要立刻看到原因
+    bypassConcurrencyGate: true,
+    maxRetries: 0,
     messages: [{ role: "user", content: "Hi" }],
     maxTokens: 5,
     // 测连不触发联网 tool，避免额外延迟/计费；reasoning_effort 仍会带上

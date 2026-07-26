@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { callChatCompletions, normalizeChatUsage } from "./aiChatClient"
 import { clearAISettingsCache } from "./aiSettingsSchema"
+import {
+  getAiRequestSemaphore,
+  resetAiRequestSemaphore
+} from "./aiChatPolicy"
+import {
+  clearAiRequestLog,
+  getAiRequestLog,
+  getAiUsageTotals
+} from "./aiRequestLog"
 
 const PLUGIN = "test-ai-chat-client"
 
@@ -21,13 +30,18 @@ function installSettings(overrides?: Record<string, string>) {
   }
 }
 
-function jsonResponse(payload: unknown, status = 200): Response {
+function jsonResponse(
+  payload: unknown,
+  status = 200,
+  extraHeaders?: Record<string, string>
+): Response {
   const body = JSON.stringify(payload)
   return new Response(body, {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Content-Length": String(new TextEncoder().encode(body).byteLength)
+      "Content-Length": String(new TextEncoder().encode(body).byteLength),
+      ...extraHeaders
     }
   })
 }
@@ -263,6 +277,8 @@ describe("callChatCompletions", () => {
     const result = await callChatCompletions({
       pluginName: PLUGIN,
       messages: [{ role: "user", content: "hi" }],
+      // 本例只验分类；重试行为另有用例，这里不必空等退避
+      maxRetries: 0,
       fetchImpl: fetchImpl as unknown as typeof fetch
     })
 
@@ -321,5 +337,263 @@ describe("normalizeChatUsage", () => {
     expect(normalizeChatUsage({ prompt_tokens: 3, completion_tokens: 4 })).toEqual(
       { promptTokens: 3, completionTokens: 4, totalTokens: 7 }
     )
+  })
+})
+
+describe("callChatCompletions retry policy", () => {
+  beforeEach(() => {
+    clearAISettingsCache()
+    installSettings()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearAISettingsCache()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  it("retries a 503 and reports the attempt count on success", async () => {
+    let calls = 0
+    const fetchImpl = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) return jsonResponse({ error: { message: "busy" } }, 503)
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] })
+    })
+
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      // Retry-After: 0 让退避不真的睡，测的是重试决策本身
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      maxRetries: 2
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.content).toBe("ok")
+    expect(result.attempts).toBe(2)
+  })
+
+  it("does not retry a 401", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: { message: "bad key" } }, 401)
+    )
+
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      maxRetries: 2
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.attempts).toBe(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("honours maxRetries: 0", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({}, 503))
+
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      maxRetries: 0
+    })
+
+    expect(result.success).toBe(false)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("gives up after maxRetries and surfaces the last error", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: { message: "still busy" } }, 503, {
+        "Retry-After": "0"
+      })
+    )
+
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      maxRetries: 2
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.code).toBe("HTTP_503")
+    expect(result.attempts).toBe(3)
+  })
+
+  it("stops retrying when the caller aborts during backoff", async () => {
+    const controller = new AbortController()
+    const fetchImpl = vi.fn(async () => {
+      queueMicrotask(() => controller.abort())
+      return jsonResponse({}, 503)
+    })
+
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      signal: controller.signal,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      maxRetries: 3
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.code).toBe("CANCELLED")
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("callChatCompletions concurrency gate", () => {
+  beforeEach(() => {
+    clearAISettingsCache()
+    installSettings()
+    clearAiRequestLog()
+    resetAiRequestSemaphore(2)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearAISettingsCache()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  it("never exceeds the configured in-flight limit", async () => {
+    let inFlight = 0
+    let peak = 0
+    const release: Array<() => void> = []
+
+    const fetchImpl = vi.fn(() => {
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      return new Promise<Response>((resolve) => {
+        release.push(() => {
+          inFlight -= 1
+          resolve(jsonResponse({ choices: [{ message: { content: "x" } }] }))
+        })
+      })
+    })
+
+    const calls = Array.from({ length: 5 }, () =>
+      callChatCompletions({
+        pluginName: PLUGIN,
+        messages: [{ role: "user", content: "hi" }],
+        fetchImpl: fetchImpl as unknown as typeof fetch
+      })
+    )
+
+    // acquire 是异步的：先让出一轮，等首批请求真正进入 fetch
+    await new Promise((r) => setTimeout(r, 0))
+
+    let settled = 0
+    // 逐个放行，直到 5 个请求全部完成
+    while (settled < 5) {
+      const next = release.shift()
+      if (next) {
+        next()
+        settled += 1
+      }
+      await new Promise((r) => setTimeout(r, 0))
+    }
+    await Promise.all(calls)
+
+    expect(peak).toBeLessThanOrEqual(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(5)
+  })
+
+  it("bypassConcurrencyGate skips the queue entirely", async () => {
+    const semaphore = getAiRequestSemaphore()
+    // 占满名额：被闸门管辖的请求会排队，绕过闸门的不会
+    await semaphore.acquire()
+    await semaphore.acquire()
+
+    const fetchImpl = okFetch("probe")
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "Hi" }],
+      bypassConcurrencyGate: true,
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+
+    expect(result.success).toBe(true)
+    semaphore.release()
+    semaphore.release()
+  })
+})
+
+describe("callChatCompletions request log", () => {
+  beforeEach(() => {
+    clearAISettingsCache()
+    installSettings()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearAISettingsCache()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  it("records a successful call with usage and host", async () => {
+    const fetchImpl = okFetch("hi", {
+      usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 }
+    })
+    await callChatCompletions({
+      pluginName: PLUGIN,
+      purpose: "card",
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+
+    const [entry] = getAiRequestLog()
+    expect(entry.ok).toBe(true)
+    expect(entry.purpose).toBe("card")
+    expect(entry.model).toBe("test-model")
+    expect(entry.endpointHost).toBe("example.test")
+    expect(entry.usage?.totalTokens).toBe(14)
+
+    const totals = getAiUsageTotals()
+    expect(totals.requests).toBe(1)
+    expect(totals.totalTokens).toBe(14)
+  })
+
+  it("records failures with a redacted message", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: { message: "key test-key is invalid" } }, 401)
+    )
+    await callChatCompletions({
+      pluginName: PLUGIN,
+      purpose: "quick",
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+
+    const [entry] = getAiRequestLog()
+    expect(entry.ok).toBe(false)
+    expect(entry.errorCode).toBe("HTTP_401")
+    expect(entry.errorMessage).not.toContain("test-key")
+    expect(getAiUsageTotals().failed).toBe(1)
+  })
+
+  it("does not log a missing-key configuration error as a request", async () => {
+    installSettings({ "ai.apiKey": "" })
+    await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: okFetch("x") as unknown as typeof fetch
+    })
+
+    expect(getAiRequestLog()).toHaveLength(0)
+    expect(getAiUsageTotals().requests).toBe(0)
   })
 })

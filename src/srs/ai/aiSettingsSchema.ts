@@ -20,6 +20,18 @@ export type AIReasoningEffort = (typeof AI_REASONING_EFFORTS)[number]
 export const DEFAULT_AI_REASONING_EFFORT: AIReasoningEffort = "default"
 export const DEFAULT_AI_ENABLE_NATIVE_WEB_SEARCH = false
 
+/**
+ * 联网 tool 形态。
+ * `auto` = 按 model id 推荐（目前只认 grok-4.5）；其余为显式指定，不看 model。
+ */
+export const AI_WEB_SEARCH_TOOL_TYPES = [
+  "auto",
+  "web_search",
+  "google_search"
+] as const
+export type AIWebSearchToolType = (typeof AI_WEB_SEARCH_TOOL_TYPES)[number]
+export const DEFAULT_AI_WEB_SEARCH_TOOL_TYPE: AIWebSearchToolType = "auto"
+
 /** plugin data 键 */
 export const AI_CONNECTION_DATA_KEY = "ai.connection" as const
 
@@ -51,6 +63,11 @@ export interface AISettings {
    * 仅部分推理模型/网关支持。
    */
   reasoningEffort: AIReasoningEffort
+  /**
+   * 联网 tool 形态。`auto` 沿用旧的按 model 推荐行为（仅 grok-4.5）；
+   * 显式值直接写进请求体 tools，由用户对自己的网关负责。
+   */
+  webSearchToolType: AIWebSearchToolType
 }
 
 type CacheEntry = { value: AISettings }
@@ -63,6 +80,16 @@ export function clearAISettingsCache(pluginName?: string): void {
     return
   }
   aiSettingsCache.clear()
+}
+
+function normalizeWebSearchToolType(value: unknown): AIWebSearchToolType {
+  if (
+    typeof value === "string" &&
+    (AI_WEB_SEARCH_TOOL_TYPES as readonly string[]).includes(value)
+  ) {
+    return value as AIWebSearchToolType
+  }
+  return DEFAULT_AI_WEB_SEARCH_TOOL_TYPE
 }
 
 function normalizeReasoningEffort(value: unknown): AIReasoningEffort {
@@ -88,7 +115,8 @@ export function normalizeAISettings(input: Partial<AISettings> | null | undefine
     apiUrl: apiUrlRaw || DEFAULT_AI_API_URL,
     model: modelRaw || DEFAULT_AI_MODEL,
     enableNativeWebSearch,
-    reasoningEffort: normalizeReasoningEffort(input?.reasoningEffort)
+    reasoningEffort: normalizeReasoningEffort(input?.reasoningEffort),
+    webSearchToolType: normalizeWebSearchToolType(input?.webSearchToolType)
   }
 }
 

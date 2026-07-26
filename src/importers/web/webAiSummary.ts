@@ -7,6 +7,7 @@
 import type { Block, DbId } from "../../orca.d.ts"
 import { getAISettings } from "../../srs/ai/aiSettingsSchema"
 import { callChatCompletions } from "../../srs/ai/aiChatClient"
+import { WEB_SUMMARY_TIMEOUT_MS } from "../../srs/ai/aiDraftTypes"
 import { sanitizeAiTextForOrcaInsert } from "../../srs/ai/aiQuickInteractMd"
 import { sanitizePublicError } from "../../srs/http/redactSecrets"
 import { parseHtml } from "../epub/epubHtml"
@@ -89,6 +90,8 @@ export async function generateWebArticleSummary(options: {
     pluginName: options.pluginName,
     signal: options.signal,
     fetchImpl: options.fetchImpl,
+    purpose: "web-summary",
+    timeoutMs: WEB_SUMMARY_TIMEOUT_MS,
     temperature: 0.3,
     maxTokens: WEB_AI_SUMMARY_MAX_TOKENS,
     // Web import summary should not spend tokens on native web_search.

@@ -1952,3 +1952,134 @@
   line-height: 1.4;
   margin-top: 2px;
 }
+
+/* ============================================================
+   AI 用量与最近请求（AIRequestLogSection）
+   全部消费 srs-design-tokens.css，不硬编码圆角/间距/字号。
+   ============================================================ */
+
+.ai-request-log__totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--srs-space-2);
+  margin-bottom: var(--srs-space-3);
+}
+
+.ai-request-log__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--srs-space-1);
+  padding: var(--srs-space-2) var(--srs-space-1);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+}
+
+.ai-request-log__stat-value {
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  letter-spacing: var(--srs-tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--orca-color-text-1);
+}
+
+.ai-request-log__stat-label {
+  font-size: var(--srs-text-micro);
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ai-request-log__row {
+  padding: var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-2);
+  /* 左侧 accent 用 inset shadow：不占文档流，避免行高跳动 */
+  box-shadow: inset 2px 0 0 0 var(--srs-accent-success);
+}
+
+.ai-request-log__row--error {
+  box-shadow: inset 2px 0 0 0 var(--srs-accent-danger);
+}
+
+.ai-request-log__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-2);
+}
+
+.ai-request-log__time,
+.ai-request-log__duration {
+  font-variant-numeric: tabular-nums;
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__purpose {
+  font-weight: var(--srs-weight-medium);
+  color: var(--orca-color-text-1);
+}
+
+.ai-request-log__model {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__badge {
+  padding: 0 var(--srs-space-1);
+  border-radius: var(--srs-radius-pill);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
+  color: var(--srs-accent-warn);
+  background: var(--orca-color-bg-1);
+}
+
+.ai-request-log__status {
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-request-log__status--ok {
+  color: var(--srs-accent-success);
+}
+
+.ai-request-log__status--error {
+  color: var(--srs-accent-danger);
+}
+
+.ai-request-log__row-meta {
+  display: flex;
+  gap: var(--srs-space-2);
+  margin-top: var(--srs-space-1);
+  font-size: var(--srs-text-micro);
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__tokens {
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-request-log__error {
+  margin: var(--srs-space-1) 0 0;
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+  color: var(--srs-accent-danger);
+  max-width: var(--srs-measure-narrow);
+  /* 上游错误正文可能很长且无空格，强制折行避免撑破面板 */
+  overflow-wrap: anywhere;
+}

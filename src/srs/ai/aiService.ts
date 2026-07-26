@@ -7,7 +7,8 @@ import { callChatCompletions } from "./aiChatClient"
 import {
   type GenerateDraftsOptions,
   type GenerateDraftsResult,
-  AI_CARD_SOURCE_MAX
+  AI_CARD_SOURCE_MAX,
+  CARD_GENERATION_TIMEOUT_MS
 } from "./aiDraftTypes"
 
 function buildSystemPrompt(cardType: "basic" | "cloze"): string {
@@ -115,6 +116,8 @@ export async function generateFlashcardDrafts(
   const chat = await callChatCompletions({
     pluginName,
     signal,
+    purpose: "card",
+    timeoutMs: CARD_GENERATION_TIMEOUT_MS,
     temperature: 0.2,
     maxTokens: 2000,
     messages: [

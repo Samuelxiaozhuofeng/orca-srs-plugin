@@ -7,7 +7,10 @@
 
 import type { Block, CursorData } from "../../orca.d.ts"
 import { callChatCompletions } from "./aiChatClient"
-import { type AIServiceError } from "./aiDraftTypes"
+import {
+  type AIServiceError,
+  QUICK_INTERACT_TIMEOUT_MS
+} from "./aiDraftTypes"
 import { parsePlainTextPayload } from "./aiBlockExplain"
 
 /** 选中文本发送上限 */
@@ -180,6 +183,8 @@ export async function runToolbarAIPrompt(
 
   const chat = await callChatCompletions({
     pluginName: options.pluginName,
+    purpose: "quick",
+    timeoutMs: QUICK_INTERACT_TIMEOUT_MS,
     maxTokens: 1600,
     temperature: 0.4,
     signal: options.signal,

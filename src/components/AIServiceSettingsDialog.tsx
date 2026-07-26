@@ -6,7 +6,12 @@ import type {
   AIReasoningEffort,
   AISettings
 } from "../srs/ai/aiSettingsSchema"
-import { AI_REASONING_EFFORTS } from "../srs/ai/aiSettingsSchema"
+import {
+  AI_REASONING_EFFORTS,
+  AI_WEB_SEARCH_TOOL_TYPES,
+  type AIWebSearchToolType
+} from "../srs/ai/aiSettingsSchema"
+import { AiRequestLogSection } from "./AIRequestLogSection"
 import type { WebImportSettings } from "../srs/settings/webImportSettingsSchema"
 
 export type ServiceSettingsDraft = {
@@ -70,6 +75,8 @@ function ServiceSettingsForm(props: {
   const [reasoningEffort, setReasoningEffort] = useState<AIReasoningEffort>(
     props.initialAI.reasoningEffort
   )
+  const [webSearchToolType, setWebSearchToolType] =
+    useState<AIWebSearchToolType>(props.initialAI.webSearchToolType)
   const [firecrawlApiKey, setFirecrawlApiKey] = useState(
     props.initialFirecrawl.firecrawlApiKey
   )
@@ -84,7 +91,8 @@ function ServiceSettingsForm(props: {
       apiUrl,
       model,
       enableNativeWebSearch,
-      reasoningEffort
+      reasoningEffort,
+      webSearchToolType
     },
     firecrawl: { firecrawlApiKey, firecrawlApiUrl }
   })
@@ -215,17 +223,40 @@ function ServiceSettingsForm(props: {
               disabled={busy}
             />
             <span>
-              仅{" "}
-              <code className="ai-service-settings__code">grok-4.5</code>{" "}
-              支持：请求附带{" "}
-              <code className="ai-service-settings__code">
-                {'tools: [{ type: "web_search" }]'}
-              </code>
+              开启后按下方形态附带{" "}
+              <code className="ai-service-settings__code">tools</code>
             </span>
           </label>
           <p className="ai-service-settings__hint">
-            目前只支持 grok-4.5。其它模型（如 Gemini、GPT、其它 Grok
-            版本）即使开启此开关，也不会附带 web_search，按普通对话请求处理。制卡仍做源文本接地校验。
+            制卡仍做源文本接地校验：开启联网后若答案依赖源外内容，校验可能失败。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">联网 tool 形态</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={webSearchToolType}
+            onChange={(e) =>
+              setWebSearchToolType(e.target.value as AIWebSearchToolType)
+            }
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy || !enableNativeWebSearch}
+          >
+            {AI_WEB_SEARCH_TOOL_TYPES.map((toolType) => (
+              <option key={toolType} value={toolType}>
+                {toolType === "auto"
+                  ? "自动（仅 grok-4.5 附带 web_search）"
+                  : toolType}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            「自动」只认 model id 含 grok-4.5，新版本号一发布即失效。你的网关支持哪种
+            tool，比这里的字符串匹配更清楚——需要时直接选定形态，它会原样写进请求体
+            <code className="ai-service-settings__code">tools</code>
+            ；上游不支持会返回可见的 HTTP 错误，不静默降级。
           </p>
         </label>
 
@@ -308,6 +339,8 @@ function ServiceSettingsForm(props: {
           />
         </label>
       </section>
+
+      <AiRequestLogSection />
 
       {props.statusMessage ? (
         <p className="ai-service-settings__status" role="status">

@@ -34,6 +34,20 @@ import {
   ResponseTooLargeError
 } from "../http/safeResponse"
 import { sanitizePublicError } from "../http/redactSecrets"
+import {
+  AbortedWhileQueuedError,
+  backoffDelayMs,
+  delayWithAbort,
+  DEFAULT_MAX_RETRIES,
+  getAiRequestSemaphore,
+  isRetryableErrorCode,
+  parseRetryAfterMs
+} from "./aiChatPolicy"
+import {
+  extractEndpointHost,
+  recordAiRequest,
+  type AiRequestPurpose
+} from "./aiRequestLog"
 
 export type ChatFetchImpl = typeof fetch
 
@@ -47,6 +61,12 @@ export type ChatUsage = {
 export type CallChatCompletionsOptions = {
   pluginName: string
   messages: ChatCompletionsMessage[]
+  /** 请求日志归类；默认 "other"。 */
+  purpose?: AiRequestPurpose
+  /** 额外重试次数上限；0 表示不重试。默认 DEFAULT_MAX_RETRIES。 */
+  maxRetries?: number
+  /** 跳过并发闸门（连接测试等用户显式发起的单发请求）。 */
+  bypassConcurrencyGate?: boolean
   temperature?: number
   maxTokens?: number
   /** 非空时覆盖设置中的 model（提示词库按条绑定模型用）。 */
@@ -80,8 +100,31 @@ export type CallChatCompletionsResult =
       model?: string
       usage?: ChatUsage
       status: number
+      /** 实际发出的请求次数；> 1 表示发生过重试。 */
+      attempts: number
     }
-  | { success: false; error: AIServiceError; status?: number }
+  | {
+      success: false
+      error: AIServiceError
+      status?: number
+      attempts: number
+    }
+
+/** 单次尝试的内部结果；比对外结果多带一个 Retry-After。 */
+type AttemptResult =
+  | {
+      success: true
+      content: string
+      model?: string
+      usage?: ChatUsage
+      status: number
+    }
+  | {
+      success: false
+      error: AIServiceError
+      status?: number
+      retryAfterMs?: number | null
+    }
 
 type ChatCompletionsPayload = {
   model?: string
@@ -116,13 +159,12 @@ export function normalizeChatUsage(
 }
 
 /**
- * 发起一次 Chat Completions 请求并提取首条 message content。
- *
- * 不做重试/并发控制（见 aiChatPolicy）；不做流式（请求体恒 stream:false）。
+ * 单次尝试：发请求并提取首条 message content。
+ * 重试与并发由 callChatCompletions 负责；本函数只关心一发一收。
  */
-export async function callChatCompletions(
+async function attemptChatCompletions(
   options: CallChatCompletionsOptions
-): Promise<CallChatCompletionsResult> {
+): Promise<AttemptResult> {
   const baseSettings = options.settingsOverride
     ? normalizeAISettings(options.settingsOverride)
     : getAISettings(options.pluginName)
@@ -190,6 +232,10 @@ export async function callChatCompletions(
       return {
         success: false,
         status: response.status,
+        retryAfterMs: parseRetryAfterMs(
+          response.headers.get("Retry-After"),
+          Date.now()
+        ),
         error: { code: `HTTP_${response.status}`, message: errorMessage }
       }
     }
@@ -260,4 +306,101 @@ export async function callChatCompletions(
       signal.removeEventListener("abort", onExternalAbort)
     }
   }
+}
+
+/**
+ * 发起一次 Chat Completions 调用（含并发闸门、有限次退避重试、请求日志）。
+ *
+ * 语义保证：
+ * - 并发超限时排队等待，**排队期间不计入超时**——deadline 从真正开始发请求起算
+ * - 只对 429 / 5xx / 网络抖动重试；用户取消、鉴权失败、参数错误一律立即返回
+ * - 无论成功失败都写入请求日志（已脱敏），错误始终可见
+ */
+export async function callChatCompletions(
+  options: CallChatCompletionsOptions
+): Promise<CallChatCompletionsResult> {
+  const settings = options.settingsOverride
+    ? normalizeAISettings(options.settingsOverride)
+    : getAISettings(options.pluginName)
+
+  // 无 Key 是配置问题而非请求失败：不占并发名额、不进日志。
+  if (!settings.apiKey) {
+    return {
+      success: false,
+      attempts: 0,
+      error: { code: "NO_API_KEY", message: "请先在设置中配置 API Key" }
+    }
+  }
+
+  const purpose = options.purpose ?? "other"
+  const maxRetries = Math.max(0, options.maxRetries ?? DEFAULT_MAX_RETRIES)
+  const cancelledMessage = options.cancelledMessage ?? "已取消生成"
+  const requestedModel = options.modelOverride?.trim() || settings.model
+
+  const semaphore = getAiRequestSemaphore()
+  const gated = options.bypassConcurrencyGate !== true
+
+  if (gated) {
+    try {
+      await semaphore.acquire(options.signal)
+    } catch (error) {
+      if (error instanceof AbortedWhileQueuedError) {
+        return {
+          success: false,
+          attempts: 0,
+          error: { code: "CANCELLED", message: cancelledMessage }
+        }
+      }
+      throw error
+    }
+  }
+
+  const startedAt = Date.now()
+  let attempts = 0
+  let last: AttemptResult | null = null
+
+  try {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      attempts += 1
+      last = await attemptChatCompletions(options)
+
+      if (last.success) break
+      if (attempt === maxRetries) break
+      if (!isRetryableErrorCode(last.error.code)) break
+
+      const wait =
+        last.retryAfterMs != null ? last.retryAfterMs : backoffDelayMs(attempt)
+      try {
+        await delayWithAbort(wait, options.signal)
+      } catch {
+        // 退避期间用户取消：按取消返回，不再发下一次。
+        last = {
+          success: false,
+          error: { code: "CANCELLED", message: cancelledMessage }
+        }
+        break
+      }
+    }
+  } finally {
+    if (gated) semaphore.release()
+  }
+
+  const result = last!
+  recordAiRequest({
+    startedAt,
+    durationMs: Date.now() - startedAt,
+    purpose,
+    model: requestedModel,
+    endpointHost: extractEndpointHost(settings.apiUrl),
+    ok: result.success,
+    httpStatus: result.status,
+    errorCode: result.success ? undefined : result.error.code,
+    errorMessage: result.success ? undefined : result.error.message,
+    usage: result.success ? result.usage : undefined,
+    attempts
+  })
+
+  return result.success
+    ? { ...result, attempts }
+    : { success: false, error: result.error, status: result.status, attempts }
 }

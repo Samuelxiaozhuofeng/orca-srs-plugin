@@ -3,7 +3,10 @@
  */
 
 import { callChatCompletions } from "./aiChatClient"
-import { type AIServiceError } from "./aiDraftTypes"
+import {
+  type AIServiceError,
+  BLOCK_EXPLAIN_TIMEOUT_MS
+} from "./aiDraftTypes"
 
 /** Max source chars sent for one block explain request. */
 export const BLOCK_EXPLAIN_SOURCE_MAX = 4_000
@@ -301,6 +304,8 @@ export async function generateBlockExplanation(
 
   const chat = await callChatCompletions({
     pluginName,
+    purpose: "explain",
+    timeoutMs: BLOCK_EXPLAIN_TIMEOUT_MS,
     temperature: 0.3,
     maxTokens: 900,
     signal,
@@ -339,6 +344,8 @@ export async function generateBlockSideContent(
 
   const chat = await callChatCompletions({
     pluginName: options.pluginName,
+    purpose: "explain",
+    timeoutMs: BLOCK_EXPLAIN_TIMEOUT_MS,
     temperature: 0.3,
     maxTokens: 700,
     signal: options.signal,
