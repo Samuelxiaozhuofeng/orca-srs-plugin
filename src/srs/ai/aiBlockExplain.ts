@@ -307,7 +307,6 @@ export async function generateBlockExplanation(
     purpose: "explain",
     timeoutMs: BLOCK_EXPLAIN_TIMEOUT_MS,
     temperature: 0.3,
-    maxTokens: 900,
     signal,
     messages: [
       { role: "system", content: buildBlockExplainSystemPrompt(thinner) },
@@ -347,7 +346,6 @@ export async function generateBlockSideContent(
     purpose: "explain",
     timeoutMs: BLOCK_EXPLAIN_TIMEOUT_MS,
     temperature: 0.3,
-    maxTokens: 700,
     signal: options.signal,
     messages: [
       { role: "system", content: buildBlockSideSystemPrompt(options.mode) },
@@ -393,7 +391,6 @@ export async function generateBlockFollowUp(
   const chat = await callChatCompletions({
     pluginName: options.pluginName,
     temperature: 0.3,
-    maxTokens: 900,
     signal: options.signal,
     messages: [
       { role: "system", content: buildBlockFollowUpSystemPrompt() },

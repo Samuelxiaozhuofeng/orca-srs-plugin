@@ -93,7 +93,6 @@ export async function generateWebArticleSummary(options: {
     purpose: "web-summary",
     timeoutMs: WEB_SUMMARY_TIMEOUT_MS,
     temperature: 0.3,
-    maxTokens: WEB_AI_SUMMARY_MAX_TOKENS,
     // Web import summary should not spend tokens on native web_search.
     allowWebSearch: false,
     timeoutLabel: "AI 分析超时",

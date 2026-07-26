@@ -21,6 +21,21 @@ export const DEFAULT_AI_REASONING_EFFORT: AIReasoningEffort = "default"
 export const DEFAULT_AI_ENABLE_NATIVE_WEB_SEARCH = false
 
 /**
+ * 单次响应的最大输出 token。
+ *
+ * 注意这是**输出**上限，与模型的上下文窗口无关：百万上下文的模型输出上限
+ * 通常仍是 8k~64k，填超过会被网关按 400 拒绝。
+ *
+ * 默认给到 16384 而不是历史上的 2000：推理模型（deepseek-v4-flash 等）把
+ * reasoning token 一起计入 completion_tokens，2000 会被思考吃光，
+ * 正文只剩几百 token，JSON 直接被截断在半路。
+ */
+export const DEFAULT_AI_MAX_OUTPUT_TOKENS = 16384
+export const MIN_AI_MAX_OUTPUT_TOKENS = 256
+/** 上限只做防御性钳制，真实边界由上游模型决定。 */
+export const MAX_AI_MAX_OUTPUT_TOKENS = 1_000_000
+
+/**
  * 联网 tool 形态。
  * `auto` = 按 model id 推荐（目前只认 grok-4.5）；其余为显式指定，不看 model。
  */
@@ -63,6 +78,8 @@ export interface AISettings {
    * 仅部分推理模型/网关支持。
    */
   reasoningEffort: AIReasoningEffort
+  /** 单次响应最大输出 token（含推理 token）。 */
+  maxOutputTokens: number
   /**
    * 联网 tool 形态。`auto` 沿用旧的按 model 推荐行为（仅 grok-4.5）；
    * 显式值直接写进请求体 tools，由用户对自己的网关负责。
@@ -80,6 +97,16 @@ export function clearAISettingsCache(pluginName?: string): void {
     return
   }
   aiSettingsCache.clear()
+}
+
+function normalizeMaxOutputTokens(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_AI_MAX_OUTPUT_TOKENS
+  }
+  const rounded = Math.floor(value)
+  if (rounded < MIN_AI_MAX_OUTPUT_TOKENS) return MIN_AI_MAX_OUTPUT_TOKENS
+  if (rounded > MAX_AI_MAX_OUTPUT_TOKENS) return MAX_AI_MAX_OUTPUT_TOKENS
+  return rounded
 }
 
 function normalizeWebSearchToolType(value: unknown): AIWebSearchToolType {
@@ -116,6 +143,7 @@ export function normalizeAISettings(input: Partial<AISettings> | null | undefine
     model: modelRaw || DEFAULT_AI_MODEL,
     enableNativeWebSearch,
     reasoningEffort: normalizeReasoningEffort(input?.reasoningEffort),
+    maxOutputTokens: normalizeMaxOutputTokens(input?.maxOutputTokens),
     webSearchToolType: normalizeWebSearchToolType(input?.webSearchToolType)
   }
 }

@@ -9,6 +9,8 @@ import type {
 import {
   AI_REASONING_EFFORTS,
   AI_WEB_SEARCH_TOOL_TYPES,
+  MAX_AI_MAX_OUTPUT_TOKENS,
+  MIN_AI_MAX_OUTPUT_TOKENS,
   type AIWebSearchToolType
 } from "../srs/ai/aiSettingsSchema"
 import { AiRequestLogSection } from "./AIRequestLogSection"
@@ -77,6 +79,9 @@ function ServiceSettingsForm(props: {
   )
   const [webSearchToolType, setWebSearchToolType] =
     useState<AIWebSearchToolType>(props.initialAI.webSearchToolType)
+  const [maxOutputTokens, setMaxOutputTokens] = useState(
+    String(props.initialAI.maxOutputTokens)
+  )
   const [firecrawlApiKey, setFirecrawlApiKey] = useState(
     props.initialFirecrawl.firecrawlApiKey
   )
@@ -92,7 +97,9 @@ function ServiceSettingsForm(props: {
       model,
       enableNativeWebSearch,
       reasoningEffort,
-      webSearchToolType
+      webSearchToolType,
+      // 非法输入交给 normalizeAISettings 兜底钳制，这里不静默改用户的字
+      maxOutputTokens: Number(maxOutputTokens)
     },
     firecrawl: { firecrawlApiKey, firecrawlApiUrl }
   })
@@ -257,6 +264,30 @@ function ServiceSettingsForm(props: {
             tool，比这里的字符串匹配更清楚——需要时直接选定形态，它会原样写进请求体
             <code className="ai-service-settings__code">tools</code>
             ；上游不支持会返回可见的 HTTP 错误，不静默降级。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">最大输出 token</span>
+          <input
+            type="number"
+            className="ai-service-settings__input"
+            value={maxOutputTokens}
+            min={MIN_AI_MAX_OUTPUT_TOKENS}
+            max={MAX_AI_MAX_OUTPUT_TOKENS}
+            step={1024}
+            onChange={(e) => setMaxOutputTokens(e.target.value)}
+            onKeyDown={stopKeys}
+            onKeyUp={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          />
+          <p className="ai-service-settings__hint">
+            这是<strong>输出</strong>上限，与模型的上下文窗口无关——百万上下文的模型
+            输出上限通常仍是 8k~64k，填超过会被网关按 400 拒绝。
+            推理模型（deepseek-v4 / gemini thinking 等）会把思考 token
+            一并计入，预算不足时正文会被截断成半个 JSON；真撞上了会明确提示
+            「被最大输出 token 截断」并告诉你花了多少 token 在推理上。
           </p>
         </label>
 

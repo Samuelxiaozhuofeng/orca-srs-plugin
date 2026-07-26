@@ -44,7 +44,8 @@ describe("AI / Firecrawl settings setData store", () => {
       model: "gpt-test",
       enableNativeWebSearch: false,
       reasoningEffort: "default",
-      webSearchToolType: "auto"
+      webSearchToolType: "auto",
+      maxOutputTokens: 16384
     })
   })
 
@@ -89,6 +90,7 @@ describe("AI / Firecrawl settings setData store", () => {
         model: "deepseek-chat",
         enableNativeWebSearch: true,
         reasoningEffort: "high",
+        maxOutputTokens: 16384,
         webSearchToolType: "auto"
       })
     )

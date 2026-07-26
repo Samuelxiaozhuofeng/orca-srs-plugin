@@ -597,3 +597,123 @@ describe("callChatCompletions request log", () => {
     expect(getAiUsageTotals().requests).toBe(0)
   })
 })
+
+describe("callChatCompletions output-budget truncation", () => {
+  beforeEach(() => {
+    clearAISettingsCache()
+    installSettings()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearAISettingsCache()
+    clearAiRequestLog()
+    resetAiRequestSemaphore()
+  })
+
+  it("reports a truncated response instead of letting broken JSON through", async () => {
+    // 真实案例：deepseek-v4-flash 把 2000 中的 1827 花在推理上，
+    // 正文只写到一半。以前这会被报成「不是合法 JSON」——把预算问题
+    // 说成模型返回有问题，用户照着排查永远查不到根因。
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        choices: [
+          {
+            message: { content: '{"cards":[{"type":"choice","question":"半' },
+            finish_reason: "length"
+          }
+        ],
+        usage: {
+          prompt_tokens: 685,
+          completion_tokens: 2000,
+          total_tokens: 2685,
+          completion_tokens_details: { reasoning_tokens: 1827 }
+        }
+      })
+    )
+
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      maxRetries: 0,
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.code).toBe("RESPONSE_TRUNCATED")
+    expect(result.error.message).toContain("2000")
+    expect(result.error.message).toContain("1827")
+    expect(result.error.message).toContain("最大输出 token")
+  })
+
+  it("still reports truncation when usage is absent", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        choices: [{ message: { content: "half" }, finish_reason: "length" }]
+      })
+    )
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      maxRetries: 0,
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.code).toBe("RESPONSE_TRUNCATED")
+  })
+
+  it("names the budget when only reasoning came back", async () => {
+    // 语言选项那个 bug：推理吃光预算，content 一个字都没剩
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        choices: [
+          { message: { content: "", reasoning_content: "想了很久…" } }
+        ]
+      })
+    )
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      maxRetries: 0,
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.code).toBe("EMPTY_RESPONSE")
+    expect(result.error.message).toContain("最大输出 token")
+  })
+
+  it("surfaces reasoning tokens in usage", async () => {
+    const fetchImpl = okFetch("ok", {
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 500,
+        total_tokens: 510,
+        completion_tokens_details: { reasoning_tokens: 400 }
+      }
+    })
+    const result = await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.usage?.reasoningTokens).toBe(400)
+  })
+
+  it("sends the configured output budget by default", async () => {
+    const fetchImpl = okFetch("ok")
+    await callChatCompletions({
+      pluginName: PLUGIN,
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body)).max_tokens).toBe(16384)
+  })
+})

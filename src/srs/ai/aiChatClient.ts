@@ -56,6 +56,8 @@ export type ChatUsage = {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  /** 推理模型专有：计入 completionTokens 的思考 token。 */
+  reasoningTokens?: number
 }
 
 export type CallChatCompletionsOptions = {
@@ -73,7 +75,7 @@ export type CallChatCompletionsOptions = {
   modelOverride?: string
   /** 连接探测等短请求可关掉联网 tool，默认 true。 */
   allowWebSearch?: boolean
-  /** 默认 GENERATION_TIMEOUT_MS。 */
+  /** 缺省时用设置里的 maxOutputTokens。 */
   timeoutMs?: number
   /** 超时提示前缀，如「连接超时」。默认「生成超时」。 */
   timeoutLabel?: string
@@ -128,11 +130,15 @@ type AttemptResult =
 
 type ChatCompletionsPayload = {
   model?: string
-  choices?: Array<{ message?: { content?: string } }>
+  choices?: Array<{
+    message?: { content?: string; reasoning_content?: string }
+    finish_reason?: string
+  }>
   usage?: {
     prompt_tokens?: number
     completion_tokens?: number
     total_tokens?: number
+    completion_tokens_details?: { reasoning_tokens?: number }
   }
 }
 
@@ -155,7 +161,13 @@ export function normalizeChatUsage(
       ? usage.total_tokens
       : prompt + completion
   if (prompt === 0 && completion === 0 && total === 0) return undefined
-  return { promptTokens: prompt, completionTokens: completion, totalTokens: total }
+  const reasoning = usage.completion_tokens_details?.reasoning_tokens
+  return {
+    promptTokens: prompt,
+    completionTokens: completion,
+    totalTokens: total,
+    reasoningTokens: typeof reasoning === "number" ? reasoning : undefined
+  }
 }
 
 /**
@@ -215,7 +227,7 @@ async function attemptChatCompletions(
           settings,
           messages: options.messages,
           temperature: options.temperature,
-          maxTokens: options.maxTokens,
+          maxTokens: options.maxTokens ?? settings.maxOutputTokens,
           allowWebSearch: options.allowWebSearch
         })
       ),
@@ -260,14 +272,59 @@ async function attemptChatCompletions(
       throw error
     }
 
-    const rawContent = data.choices?.[0]?.message?.content
+    const choice = data.choices?.[0]
+    const rawContent = choice?.message?.content
     const hasContent = typeof rawContent === "string" && rawContent.length > 0
+    const usage = normalizeChatUsage(data.usage)
 
-    if (!hasContent && options.allowEmptyContent !== true) {
+    /*
+     * finish_reason === "length" 表示正文被 max_tokens 硬切断。
+     * 必须在解析之前拦下来：否则截断的 JSON 会报成「不是合法 JSON」、
+     * 完全没生成时报成「返回内容为空」——两条都把「预算不够」说成了
+     * 「模型返回有问题」，用户照着排查永远查不到根因。
+     *
+     * 推理模型尤其容易撞上：reasoning token 计入 completion_tokens，
+     * 思考可以吃掉九成预算。
+     */
+    if (choice?.finish_reason === "length") {
+      const spent = usage?.completionTokens
+      const reasoning = usage?.reasoningTokens
+      const detail =
+        spent != null
+          ? reasoning != null
+            ? `已用 ${spent} 个输出 token，其中 ${reasoning} 个用于模型推理`
+            : `已用 ${spent} 个输出 token`
+          : ""
       return {
         success: false,
         status: response.status,
-        error: { code: "EMPTY_RESPONSE", message: "AI 返回内容为空" }
+        error: {
+          code: "RESPONSE_TRUNCATED",
+          message: [
+            "AI 响应被最大输出 token 截断，内容不完整。",
+            detail,
+            "请在「AI 服务设置」调高「最大输出 token」，或降低详细程度 / 关闭思考强度。"
+          ]
+            .filter(Boolean)
+            .join("")
+        }
+      }
+    }
+
+    if (!hasContent && options.allowEmptyContent !== true) {
+      // 有推理正文但没有 answer：同样是预算问题，只是没触发 length
+      const reasoningOnly =
+        typeof choice?.message?.reasoning_content === "string" &&
+        choice.message.reasoning_content.length > 0
+      return {
+        success: false,
+        status: response.status,
+        error: {
+          code: "EMPTY_RESPONSE",
+          message: reasoningOnly
+            ? "AI 只返回了推理过程、没有正文——通常是最大输出 token 不够，请在「AI 服务设置」调高后重试"
+            : "AI 返回内容为空"
+        }
       }
     }
 
@@ -276,7 +333,7 @@ async function attemptChatCompletions(
       status: response.status,
       content: hasContent ? (rawContent as string) : "",
       model: typeof data.model === "string" ? data.model : undefined,
-      usage: normalizeChatUsage(data.usage)
+      usage
     }
   } catch (error) {
     if (isAbortError(error)) {

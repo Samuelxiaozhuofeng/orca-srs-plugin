@@ -235,8 +235,9 @@ export async function generateFlashcardDrafts(
     purpose: "card",
     timeoutMs: CARD_GENERATION_TIMEOUT_MS,
     temperature: 0.2,
-    // 详尽档一次要产出更多结构化卡，2000 会被截断成半个 JSON
-    maxTokens: detailLevel === "exhaustive" ? 4000 : 2000,
+    // 不再按档位写死上限：推理模型会把 reasoning token 一并计入，
+    // 任何固定小值都可能被思考吃光。统一用设置里的「最大输出 token」。
+
     messages: [
       { role: "system", content: buildSystemPrompt(allowedTypes, cardLanguage) },
       {

@@ -8,6 +8,7 @@ import {
   AI_CARD_SOURCE_MAX,
   AI_CUSTOM_INSTRUCTION_MAX
 } from "./aiDraftTypes"
+import { DEFAULT_AI_MAX_OUTPUT_TOKENS } from "./aiSettingsSchema"
 
 const PLUGIN = "test-ai-service"
 const SOURCE = "使役形（～させる）表示让某人做某事。"
@@ -433,16 +434,22 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     expect(user).not.toContain("Maximum cards:")
   })
 
-  it("raises max_tokens for the exhaustive level", async () => {
-    const fetchMock = mockEmptyCards()
-    await generateFlashcardDrafts({
-      pluginName: PLUGIN,
-      sourceText: SOURCE,
-      cardTypes: ["basic"],
-      detailLevel: "exhaustive"
-    })
-    // 12 张结构化卡在 2000 tokens 下会被截成半个 JSON
-    expect(captureBody(fetchMock).max_tokens).toBe(4000)
+  it("takes max_tokens from settings rather than the detail level", async () => {
+    // 档位不再决定输出预算：推理模型把 reasoning token 一并计入
+    // completion_tokens，任何按档位写死的小值都会被思考吃光。
+    for (const level of ["summary", "key", "exhaustive"] as const) {
+      const fetchMock = mockEmptyCards()
+      await generateFlashcardDrafts({
+        pluginName: PLUGIN,
+        sourceText: SOURCE,
+        cardTypes: ["basic"],
+        detailLevel: level
+      })
+      expect(captureBody(fetchMock).max_tokens).toBe(
+        DEFAULT_AI_MAX_OUTPUT_TOKENS
+      )
+      vi.unstubAllGlobals()
+    }
   })
 
   it("passes a custom instruction outside the untrusted source markers", async () => {

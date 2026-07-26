@@ -185,7 +185,6 @@ export async function runToolbarAIPrompt(
     pluginName: options.pluginName,
     purpose: "quick",
     timeoutMs: QUICK_INTERACT_TIMEOUT_MS,
-    maxTokens: 1600,
     temperature: 0.4,
     signal: options.signal,
     modelOverride: options.model,

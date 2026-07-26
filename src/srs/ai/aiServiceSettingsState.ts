@@ -34,7 +34,8 @@ const emptyAI: AISettings = {
   model: "",
   enableNativeWebSearch: false,
   reasoningEffort: "default",
-  webSearchToolType: "auto"
+  webSearchToolType: "auto",
+  maxOutputTokens: 16384
 }
 
 const emptyFirecrawl: WebImportSettings = {
