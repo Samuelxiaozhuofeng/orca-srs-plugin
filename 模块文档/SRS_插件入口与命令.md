@@ -45,10 +45,11 @@ Orca 启用插件
 
 ### unload 流程
 
-由 `runPluginUnloadSequence` 统一执行（见 `pluginUnloadSequence.ts`）：
+`main.unload` 首先 `clearTimeout` 掉 load 时延迟 3s 调度的 `cleanupDeletedCards` 定时器（低危#15：避免卸载期间/之后再触发批量块读写），随后由 `runPluginUnloadSequence` 统一执行（见 `pluginUnloadSequence.ts`）。flush 阶段现为**两段**（2026-07-26，低危#13）：
 
-1. **先** `flushReviewLogs(pluginName)`：数据 API 仍可用时落盘；失败 `console.error` + 可选 `orca.notify`，**不阻断**后续卸载，且不宣称日志已落盘。
-2. **再**按序执行 cleanup（单步失败记录后继续）：
+1. **先** `flushReviewLogs(pluginName)`：数据 API 仍可用时落盘；失败 `console.error` + 可选 `orca.notify`，**不阻断**后续卸载，且不宣称日志已落盘（结果字段 `flushOk`）。
+2. **再** `flushPendingBreakpointSaves()`：排空渐进阅读断点的在途保存（`BreakpointSaveChannel` WeakRef 注册表 + `drain`，机制与局限见 [渐进阅读.md](./渐进阅读.md) 断点章节）；失败同样可见不阻断，结果新增字段 **`breakpointFlushOk`** / `breakpointFlushError`。
+3. **最后**按序执行 cleanup（单步失败记录后继续）：
 
 | 顺序 | name | 行为 |
 |------|------|------|
@@ -57,7 +58,7 @@ Orca 启用插件
 | 3 | `stopRecentDeckWatcher` | 停止最近牌组监听 |
 | 4 | `stopAutoMarkExtract` | 停止 IR 自动标记 |
 | 5 | `unregisterCommands` | 注销命令 |
-| 6 | `unregisterUIComponents` | 注销 Headbar / Toolbar / Slash |
+| 6 | `unregisterUIComponents` | 注销 Headbar / Toolbar / Slash（已 **async**：有界等待 AI 后台任务取消，默认 3s 超时，低危#17；见 [SRS_注册模块.md](./SRS_注册模块.md)） |
 | 7 | `unregisterRenderers` | 注销块 / inline 渲染器 |
 | 8 | `unregisterConverters` | 注销 plain 转换器 |
 | 9 | `unregisterContextMenu` | 注销块右键菜单 |

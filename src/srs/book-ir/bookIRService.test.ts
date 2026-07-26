@@ -853,6 +853,24 @@ describe("advanceSequentialBook plan-save / retry recovery", () => {
     })
   }
 
+  /** Count get-block calls per block id while delegating to the base backend mock. */
+  function trackGetBlockCalls(): { counts: Map<DbId, number>; restore: () => void } {
+    const base = mockOrca.invokeBackend.getMockImplementation()!
+    const counts = new Map<DbId, number>()
+    mockOrca.invokeBackend.mockImplementation(async (command: string, id: DbId) => {
+      if (command === "get-block") {
+        counts.set(id, (counts.get(id) ?? 0) + 1)
+      }
+      return base(command, id)
+    })
+    return {
+      counts,
+      restore: () => {
+        mockOrca.invokeBackend.mockImplementation(base)
+      }
+    }
+  }
+
   it("plan-save failure after next init returns partial, keeps current, dual-live until retry", async () => {
     await setupSequential()
     let planWriteCount = 0
@@ -964,6 +982,75 @@ describe("advanceSequentialBook plan-save / retry recovery", () => {
     expect(blockMap.get(2)!.properties?.find((p) => p.name === "ir.sourceBookId")?.value).toBe(100)
     expect(blockMap.get(1)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBeFalsy()
     expect(blockMap.get(3)!.refs?.some((r) => r.type === 2 && r.alias === "card")).toBeFalsy()
+  })
+
+  it("retrySequentialActivation reads each chapter block once per reconcile round", async () => {
+    await setupSequential()
+    // Reproduce dual-live (1 and 2 both fully active) via a failed plan save.
+    let planWriteCount = 0
+    mockOrca.commands.invokeEditorCommand.mockImplementation(async (command: string, ...args: any[]) => {
+      if (command === "core.editor.setProperties") {
+        const props = args[2] as Array<{ name: string }>
+        if (props.some((p) => p.name === IR_BOOK_PLAN_PROP)) {
+          planWriteCount++
+          if (planWriteCount === 1) throw new Error("plan save boom")
+        }
+      }
+      return defaultEditorImpl(command, ...args)
+    })
+    await advanceSequentialBook({
+      bookBlockId: 100,
+      chapterId: 1,
+      outcome: "completed"
+    })
+    mockOrca.commands.invokeEditorCommand.mockImplementation(defaultEditorImpl)
+
+    const { counts, restore } = trackGetBlockCalls()
+    const { retrySequentialActivation } = await import("./bookIRProgression")
+    const repaired = await retrySequentialActivation(100)
+    restore()
+
+    expect(repaired.kind).toBe("advanced")
+    expect(repaired.plan!.activeChapterId).toBe(2)
+    // Untouched non-target chapter: exactly one strict read per round
+    // (initial scan / strip decision / final re-scan) — no same-block repeats.
+    expect(counts.get(3)).toBe(3)
+    // Target (already fully active): initial scan + ensureChapterCardTag verify
+    // + post-ensure full-active verify + final re-scan.
+    expect(counts.get(2)).toBe(4)
+    // Stripped chapter: three round reads plus completeIRCard's own reads.
+    expect(counts.get(1) ?? 0).toBeLessThanOrEqual(5)
+  })
+
+  it("retry activation of a partial target reuses the scan read (no repeat get-block)", async () => {
+    await setupSequential()
+    // Half-init: target 2 has ir.due + sourceBookId but no #card; current 1 stays live.
+    setProp(blockMap.get(2)!, "ir.due", new Date(), 5)
+    setProp(blockMap.get(2)!, "ir.sourceBookId", 100, 3)
+    blockMap.get(2)!.refs = []
+    const broken = parseBookIRPlan(
+      blockMap.get(100)!.properties?.find((p) => p.name === IR_BOOK_PLAN_PROP)?.value,
+      100
+    )
+    await (await import("./bookIRPlanRepository")).saveBookIRPlan(100, {
+      ...broken,
+      activeChapterId: null,
+      outcomes: { ...broken.outcomes, "1": "active", "2": "pending" },
+      lastError: "partial next"
+    })
+
+    const { counts, restore } = trackGetBlockCalls()
+    const { retrySequentialActivation } = await import("./bookIRProgression")
+    const repaired = await retrySequentialActivation(100)
+    restore()
+
+    expect(repaired.kind).toBe("advanced")
+    expect(repaired.plan!.activeChapterId).toBe(2)
+    // Activated target: the scan read is reused by the full-active/conflict checks
+    // and by activateSequentialChapter; only ensureChapterCardTag verification and
+    // the final re-scan read the block again.
+    expect(counts.get(2)).toBe(3)
+    expect(counts.get(3)).toBe(3)
   })
 
   it("retry completes due-only partial next (missing #card) into fully active", async () => {

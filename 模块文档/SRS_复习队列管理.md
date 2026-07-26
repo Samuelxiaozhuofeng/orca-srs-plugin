@@ -1,7 +1,7 @@
 # SRS 复习队列管理模块
 
 > **文档同步日期：2026-07-26**  
-> 变更说明：新增「查询块收集」小节——`getQueryResults` 对后端 `query` 返回做 DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不再静默返回空数组）。  
+> 变更说明：新增「查询块收集」小节——`getQueryResults` 对后端 `query` 返回做 DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不再静默返回空数组）。低危批次：`collectSrsBlocks` 的 `get-all-blocks` 兜底改**仅标签查询失败时触发**；会话块创建补 `insertBlock` 返回值校验与 `reviewSessionManager.test.ts` 回归。  
 > 2026-07-13：收集/建队入口改为 `cardCollector.ts`；到期判定统一为精确时间（删除过时的「仅比日期」段落）；补全 descriptor / scope / budget / pending / 子卡展开相关文件。
 
 ## 概述
@@ -44,9 +44,11 @@
 收集 SRS 卡片块：
 
 1. `get-blocks-with-tags` 查询 `card` / `Card`
-2. 无结果时备用：`get-all-blocks` + 手动过滤 `#card`（`isCardTag` 大小写不敏感）
+2. **仅当标签查询全部失败（抛错）时**才走备用：`get-all-blocks` + 手动过滤 `#card`（`isCardTag` 大小写不敏感）。查询**成功且为空**直接跳过兜底（零卡片仓库不再每轮触发无界全库读取，低危#1）
 3. 合并 `orca.state.blocks` 中 `_repr.type` 为 `srs.card` / `srs.cloze-card` / `srs.direction-card` 的块
 4. 按 id 去重返回
+
+> **有意取舍**：只打非常规大小写标签（如 `#CARD`）的块此前靠「无结果就全库扫描」被兜底捕获；门控后**查询成功场景不再被兜底捕获**（`get-blocks-with-tags` 只查 `card`/`Card` 两个变体）。审计确认此行为变化为预期——代价是极端大小写变体，收益是消除零卡库的每轮全库读取。回归：`cardCollector.fallback.test.ts`。
 
 ### `collectReviewCards(pluginName?, options?): Promise<ReviewCard[]>`
 
@@ -179,8 +181,9 @@ flowchart LR
 ### 与会话块的稳定关联（`reviewSessionManager.ts`）
 
 - 每次「启动复习」调用 `createReviewSessionBlockWithDescriptor(pluginName, descriptor)` **新建** `srs.review-session` 块。
+- **`insertBlock` 返回值校验（低危#24）**：`core.editor.insertBlock` 未承诺非空返回；返回值必须是**有限正数**，否则抛错（含 sessionId/kind/deck 上下文）——坏 ID **零落盘**，绝不继续写属性/持久化。
 - 描述写入块 `_repr.sessionDescriptor`（`SESSION_DESCRIPTOR_REPR_KEY`）；属性 `srs.sessionId` / `srs.isReviewSessionBlock` / `srs.pluginName` 便于诊断。
-- **禁止**复用单一全局 `reviewSessionBlockId` 再覆盖描述（`getOrCreateReviewSessionBlock` 已废弃并**抛错**）。
+- **禁止**复用单一全局 `reviewSessionBlockId` 再覆盖描述（`getOrCreateReviewSessionBlock` 已废弃并**抛错**）。该「必须抛错」契约与 insertBlock 校验现有回归保障：`reviewSessionManager.test.ts`（15 用例：锚点 / 废弃单例必抛 / 八种坏返回值）。
 - Renderer 只按当前 `blockId` 读描述；异步收集期间其它启动创建的是**另一块**。
 
 | 动作 | 语义 |

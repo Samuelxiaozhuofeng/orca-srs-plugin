@@ -15,7 +15,8 @@
 
 import type { Block, DbId } from "../orca.d.ts"
 import type { Grade } from "../srs/types"
-import { updateSrsState } from "../srs/storage"
+import type { BlockWithRepr } from "../srs/blockUtils"
+import { updateSrsState, invalidateBlockCache } from "../srs/storage"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 import { showNotification } from "../srs/settings/reviewSettingsSchema"
 
@@ -134,12 +135,15 @@ export default function SrsCardBlockRenderer({
         false
       )
 
-      const liveBlock = orca.state.blocks?.[targetBlockId] as any
-      if (liveBlock) {
-        liveBlock.text = editedFront
-        if (liveBlock._repr) {
-          liveBlock._repr.front = editedFront
-        }
+      // content/text 由宿主 setBlocksContent 自行同步到 orca.state（不手写 store）；
+      // 写后失效块缓存，让后续后端读取（getBlockCached）拿到最新内容
+      invalidateBlockCache(targetBlockId)
+
+      // _repr.front 是插件维护的展示元数据（宿主不感知、不同步），
+      // 按仓库惯例（directionUtils/clozeUtils）整体重赋值刷新
+      const liveBlock = orca.state.blocks?.[targetBlockId] as BlockWithRepr | undefined
+      if (liveBlock?._repr) {
+        liveBlock._repr = { ...liveBlock._repr, front: editedFront }
       }
 
       setFrontDisplay(editedFront)
@@ -170,14 +174,13 @@ export default function SrsCardBlockRenderer({
         false
       )
 
-      const answerBlock = orca.state.blocks?.[answerId] as any
-      if (answerBlock) {
-        answerBlock.text = editedBack
-      }
+      // 答案子块 content/text 由宿主 setBlocksContent 同步（不手写 store）；写后失效其块缓存
+      invalidateBlockCache(answerId)
 
-      const liveBlock = orca.state.blocks?.[targetBlockId] as any
-      if (liveBlock && liveBlock._repr) {
-        liveBlock._repr.back = editedBack
+      // _repr.back 是插件维护的展示元数据，按仓库惯例整体重赋值刷新
+      const liveBlock = orca.state.blocks?.[targetBlockId] as BlockWithRepr | undefined
+      if (liveBlock?._repr) {
+        liveBlock._repr = { ...liveBlock._repr, back: editedBack }
       }
 
       setBackDisplay(editedBack)

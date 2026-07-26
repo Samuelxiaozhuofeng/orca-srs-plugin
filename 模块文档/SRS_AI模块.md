@@ -1,7 +1,8 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-07-24
-> 变更说明：Quick AI 提示词新增 `resultTags`（结果自动打标）与 `reuseSameResultBlock`（同源块合并到同一结果根）；`directWriteBelow` 与属性写失败可见。
+> 文档同步日期：2026-07-26
+> 变更说明：`aiQuickInteract.ts`（原 1317 行）按职责拆为 **`aiQuickPrompt.ts`**（选区/prompt/纯文本请求）+ **`aiQuickResultBlocks.ts`**（结果块状态机 + 串行锁），`aiQuickInteract.ts` 缩为稳定入口（151 行，纯 re-export，函数体逐字节一致）；**外部消费方一律仍从 `aiQuickInteract.ts` 导入**（`aiQuickInteractJobs` / `AIQuickInteractMount` / `commands.ts` 零改动）。`aiQuickInteract.test.ts` 未随拆分（仍测入口面）。
+> 2026-07-24：Quick AI 提示词新增 `resultTags`（结果自动打标）与 `reuseSameResultBlock`（同源块合并到同一结果根）；`directWriteBelow` 与属性写失败可见。
 > **未宣称**：真机多选预览操作栏、跨层级批量移动顺序与多 model 路由的端到端验收；`insertTag` 在宿主对未知标签名的创建行为以 Orca 真机为准。
 
 ## 概述
@@ -44,7 +45,9 @@ src/srs/ai/
 ├── aiDialogState.ts
 ├── aiFlashcardFlow.ts       # readBlockText + 制卡入口
 ├── aiToolbarPromptStore.ts  # 工具栏提示词库（独立存储键）
-├── aiQuickInteract.ts       # 选区提取 / 请求 / 插入 after|lastChild
+├── aiQuickInteract.ts       # Quick AI 稳定入口（re-export；外部一律从这里导入）
+├── aiQuickPrompt.ts         # Quick AI：选区提取 / prompt 组装 / 纯文本请求
+├── aiQuickResultBlocks.ts   # Quick AI：结果块状态机 + 串行锁（插入 after|lastChild、打标/合并/候选选择）
 ├── aiQuickInteractJobs.ts   # 后台插入任务队列
 ├── aiQuickInteractState.ts  # 弹窗态
 └── aiPromptManagerState.ts  # 提示词库面板态

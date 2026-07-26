@@ -85,11 +85,26 @@ export function mergeBreakpointSave(
 }
 
 /**
+ * 模块级活动通道注册表（WeakRef，避免已卸载组件的通道被注册表钉住）。
+ *
+ * 断点保存通道生存在 React hook 内部（useIRReadingBreakpoint 的 useRef），
+ * unload 序列无法直接触达；通道在构造时自注册，插件卸载通过
+ * flushPendingBreakpointSaves 在 Orca 数据 API 仍可用时排空所有在途写入
+ * （AGENTS.md 契约：unload flush 阅读断点）。
+ * 局限：仍在 debounce、尚未 capture 的断点需要组件 DOM 才能生成，模块层无法代为捕获。
+ */
+const activeSaveChannels = new Set<WeakRef<BreakpointSaveChannel>>()
+
+/**
  * 单通道保存队列：保证同一 card 的保存按提交顺序串行执行
  */
 export class BreakpointSaveChannel {
   private tail: Promise<void> = Promise.resolve()
   private versions = new Map<DbId, number>()
+
+  constructor() {
+    activeSaveChannels.add(new WeakRef(this))
+  }
 
   getVersion(cardId: DbId): number {
     return this.versions.get(cardId) ?? 0
@@ -109,6 +124,44 @@ export class BreakpointSaveChannel {
     )
     return run
   }
+
+  /**
+   * 等待当前已入队的写入全部结束（不生成新断点任务）。
+   * 队列任务自身的失败由入队方报告（persist 的 onSaveError 路径），
+   * drain 只保证时序，不重复抛出已上报的写入错误。
+   */
+  drain(): Promise<void> {
+    return this.enqueue(async () => undefined)
+  }
+}
+
+export type PendingBreakpointFlushResult = {
+  /** 本次排空的存活通道数；已被 GC 回收的引用会顺带从注册表清除 */
+  drainedChannels: number
+}
+
+/**
+ * 排空所有存活通道的在途断点写入。
+ * 插件 unload 的 flush 阶段调用（Orca 数据 API 仍可用时）；
+ * 注册表内部异常向上抛出，由卸载序列记录，不在此处吞错。
+ */
+export async function flushPendingBreakpointSaves(): Promise<PendingBreakpointFlushResult> {
+  const drains: Array<Promise<void>> = []
+  for (const ref of activeSaveChannels) {
+    const channel = ref.deref()
+    if (!channel) {
+      activeSaveChannels.delete(ref)
+      continue
+    }
+    drains.push(channel.drain())
+  }
+  await Promise.all(drains)
+  return { drainedChannels: drains.length }
+}
+
+/** 仅测试用：清空通道注册表，保证用例间的确定性 */
+export function resetBreakpointSaveChannelRegistryForTests(): void {
+  activeSaveChannels.clear()
 }
 
 /** 从可见块候选中选择最接近阅读基准线的块 */

@@ -4,11 +4,9 @@
  * 新逻辑位于 `src/srs/book-ir/*`。本文件保留：
  * - 章节引用发现（遗留 UI / 右键菜单）
  * - 分散到期计算
- * - setupBookIR → initializeBookIR(distributed) 薄封装
  */
 
 import type { Block, DbId } from "../orca.d.ts"
-import { initializeBookIR } from "./book-ir/bookIRService"
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -128,74 +126,3 @@ export function calculateChapterDueDates(chapterCount: number, totalDays: number
   return dates
 }
 
-type SetupBookIROptions = {
-  pluginName?: string
-  sourceBookId?: DbId | null
-  sourceBookTitle?: string | null
-  /** 新路径：distributed | sequential，默认 distributed */
-  mode?: "distributed" | "sequential"
-}
-
-/**
- * 批量为章节块初始化渐进阅读（兼容门面 → bookIRService）。
- */
-export async function setupBookIR(
-  chapterIds: DbId[],
-  priority: number,
-  totalDays: number,
-  options: SetupBookIROptions = {}
-): Promise<{ success: DbId[]; failed: DbId[] }> {
-  if (!Array.isArray(chapterIds) || chapterIds.length === 0) {
-    return { success: [], failed: [] }
-  }
-
-  const sourceBookId = typeof options.sourceBookId === "number" ? options.sourceBookId : null
-  const sourceBookTitle = typeof options.sourceBookTitle === "string"
-    ? (options.sourceBookTitle.trim() || null)
-    : null
-  const pluginName = options.pluginName || "orca-srs"
-  const mode = options.mode ?? "distributed"
-
-  // 无稳定 book id 时仍走 distributed 初始化但不写 plan（兼容旧右键入口）
-  if (sourceBookId == null) {
-    const { initializeChapterAsTopicIR } = await import("./book-ir/bookIRChapterInit")
-    const dueDates = calculateChapterDueDates(chapterIds.length, totalDays)
-    const success: DbId[] = []
-    const failed: DbId[] = []
-    const positionBase = Date.now()
-    for (let i = 0; i < chapterIds.length; i++) {
-      try {
-        await initializeChapterAsTopicIR(chapterIds[i], {
-          pluginName,
-          sourceBookId: null,
-          sourceBookTitle,
-          priority,
-          due: dueDates[i] ?? new Date(),
-          position: positionBase + i,
-          batchId: `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-          batchCreatedAt: new Date()
-        })
-        success.push(chapterIds[i])
-      } catch (error) {
-        console.error("[BookIR] 初始化章节失败:", chapterIds[i], error)
-        failed.push(chapterIds[i])
-      }
-    }
-    return { success, failed }
-  }
-
-  const result = await initializeBookIR({
-    bookBlockId: sourceBookId,
-    bookTitle: sourceBookTitle ?? "",
-    chapterIds,
-    mode,
-    priority,
-    totalDays,
-    pluginName
-  })
-
-  return {
-    success: result.success,
-    failed: result.failed.map((f) => f.chapterId)
-  }
-}

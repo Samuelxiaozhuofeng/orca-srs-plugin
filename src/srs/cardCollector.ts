@@ -124,10 +124,13 @@ export async function collectSrsBlocks(pluginName: string = "srs-plugin"): Promi
   // 尝试直接查询 #card 标签（同时查询多种大小写变体）
   const possibleTags = ["card", "Card"] // 支持 #card 和 #Card
   let tagged: BlockWithRepr[] = []
-  
+  // 记录标签查询是否成功：只要任一变体成功返回（含成功返回空结果）即为成功
+  let tagQuerySucceeded = false
+
   for (const tag of possibleTags) {
     try {
       const result = await orca.invokeBackend("get-blocks-with-tags", [tag]) as BlockWithRepr[] | undefined
+      tagQuerySucceeded = true
       if (result && result.length > 0) {
         tagged = [...tagged, ...result]
       }
@@ -135,17 +138,19 @@ export async function collectSrsBlocks(pluginName: string = "srs-plugin"): Promi
       console.log(`[${pluginName}] collectSrsBlocks: 查询标签 "${tag}" 失败:`, e)
     }
   }
-  
+
   // 去重（同一个块可能被多次查询到）
   const uniqueTagged = new Map<number, BlockWithRepr>()
   for (const block of tagged) {
     uniqueTagged.set(block.id, block)
   }
   tagged = Array.from(uniqueTagged.values())
-  
-  // 如果直接查询无结果，使用备用方案获取所有块并过滤
-  if (tagged.length === 0) {
-    console.log(`[${pluginName}] collectSrsBlocks: 直接查询无结果，使用备用方案`)
+
+  // 仅当标签查询全部失败时才走 get-all-blocks 全库扫描兜底；
+  // 查询成功且为空说明仓库确实没有带 #card 标签的块，直接跳过兜底
+  // （避免零卡片仓库每轮收集都触发无界全库读取），后续仍合并 state 中的 _repr 块。
+  if (!tagQuerySucceeded) {
+    console.log(`[${pluginName}] collectSrsBlocks: 标签查询全部失败，使用备用方案`)
     try {
       // 备用方案：尝试获取所有块并手动过滤
       const allBlocks = await orca.invokeBackend("get-all-blocks") as Block[] || []

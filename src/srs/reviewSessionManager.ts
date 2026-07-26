@@ -33,7 +33,7 @@ export async function createReviewSessionBlockWithDescriptor(
           ? "custom"
           : "all"
 
-  const blockId = (await orca.commands.invokeEditorCommand(
+  const rawBlockId = (await orca.commands.invokeEditorCommand(
     "core.editor.insertBlock",
     null,
     null,
@@ -45,7 +45,19 @@ export async function createReviewSessionBlockWithDescriptor(
       }
     ],
     repr
-  )) as DbId
+  )) as DbId | null | undefined
+
+  // 低危#24：insertBlock 未承诺非空返回；坏 ID 绝不能继续写属性/持久化。
+  if (
+    typeof rawBlockId !== "number" ||
+    !Number.isFinite(rawBlockId) ||
+    rawBlockId <= 0
+  ) {
+    throw new Error(
+      `[${pluginName}] 创建复习会话块失败：insertBlock 未返回有效块 ID（${String(rawBlockId)}），sessionId=${descriptor.sessionId} kind=${descriptor.kind} deck=${deckLabel}`
+    )
+  }
+  const blockId: DbId = rawBlockId
 
   await orca.commands.invokeEditorCommand(
     "core.editor.setProperties",

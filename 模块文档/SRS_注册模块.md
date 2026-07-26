@@ -136,7 +136,10 @@ Cloze 创建：先 `CustomEvent("orca-srs:ir-session-action", { action: "itemize
 ```typescript
 // uiComponents.tsx
 export function registerUIComponents(pluginName: string): void
-export function unregisterUIComponents(pluginName: string): void
+export async function unregisterUIComponents(
+  pluginName: string,
+  options?: { aiCancelTimeoutMs?: number }  // 默认 AI_BACKGROUND_CANCEL_TIMEOUT_MS = 3000
+): Promise<void>
 
 // headbarButtons.ts（纯数据配置，便于测试）
 export const VISIBLE_HEADBAR_BUTTONS: readonly HeadbarVisibleButtonSpec[]
@@ -173,7 +176,7 @@ export function listUnregisterHeadbarButtonIds(pluginName): string[]  // mount �
 
 `reviewButton` / `flashHomeButton` / `incrementalReadingButton` / `aiPromptLibraryButton` / `aiServiceSettingsButton`
 
-`unregisterUIComponents` 还会先中止后台 AI 快捷任务（`cancelAllBackgroundQuickJobs`，失败仅 warn）。
+`unregisterUIComponents` 已 **async**（2026-07-26，低危#17）：先启动后台 AI 快捷任务取消（`cancelAllBackgroundQuickJobs`，与同步注销并行），函数末尾 `Promise.race` **有界等待**其完成（默认 `AI_BACKGROUND_CANCEL_TIMEOUT_MS = 3000`）——unload 序列真正 await 到该清理；超时/失败向上抛出，由 `runPluginUnloadSequence` 记入 `cleanupErrors`（可见不吞错）；超时后迟到的失败仍有 `console.error`。回归：`uiComponents.unload.test.ts`。
 
 ### 工具栏
 

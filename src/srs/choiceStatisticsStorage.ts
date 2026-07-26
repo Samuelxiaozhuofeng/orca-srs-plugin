@@ -25,6 +25,7 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
+import { invalidateBlockCache } from "./storage"
 import type { ChoiceStatisticsEntry, ChoiceStatisticsStorage } from "./types"
 
 /** 存储版本号 */
@@ -256,6 +257,10 @@ async function saveChoiceStatisticsUnlocked(
   if (result instanceof Error) {
     throw result
   }
+
+  // 硬规则：srs.choice.statistics 写入成功后立即失效块缓存，
+  // 保证后续经 blockCache 的读取拿到最新属性（与 reviewCardGrading 的评分写入语义一致）
+  invalidateBlockCache(blockId)
 }
 
 /**
@@ -347,4 +352,7 @@ export async function clearChoiceStatistics(blockId: DbId): Promise<void> {
   if (result instanceof Error) {
     throw result
   }
+
+  // 硬规则：属性删除成功后失效块缓存，防止缓存条目继续持有已删除的统计属性
+  invalidateBlockCache(blockId)
 }

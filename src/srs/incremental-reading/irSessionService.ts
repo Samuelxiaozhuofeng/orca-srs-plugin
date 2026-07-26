@@ -12,7 +12,7 @@ import {
   type IRState
 } from "../incrementalReadingStorage"
 import { completeIRCard } from "../irSessionActions"
-import { advanceIRStage, type StageTriggerAction } from "./irStageTransitions"
+import { advanceIRStage } from "./irStageTransitions"
 import { parseOptionalNumber } from "./irPropertyCodec"
 import type { NextChapterSchedule } from "../../importers/epub/types"
 
@@ -261,28 +261,3 @@ export async function performPriorityAdjust(
   return updatePriority(blockId, newPriority)
 }
 
-export async function performStageAction(
-  blockId: DbId,
-  action: StageTriggerAction
-): Promise<IRState | null> {
-  if (action === "archive" || action === "complete" || action === "itemize") {
-    const transition = advanceIRStage((await loadIRState(blockId)).stage, action)
-    if (transition.clearIR) {
-      await completeIRCard(blockId)
-      return null
-    }
-  }
-  const prev = await loadIRState(blockId)
-  const transition = advanceIRStage(prev.stage, action)
-  if (transition.clearIR) {
-    await completeIRCard(blockId)
-    return null
-  }
-  const next: IRState = {
-    ...prev,
-    stage: transition.nextStage ?? prev.stage,
-    lastAction: transition.lastAction as any
-  }
-  await saveIRState(blockId, next)
-  return next
-}

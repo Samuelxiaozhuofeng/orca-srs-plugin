@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import {
+  BreakpointSaveChannel,
+  flushPendingBreakpointSaves,
   mergeBreakpointSave,
   nextBreakpointVersion,
-  pickVisibleResumeBlockId
+  pickVisibleResumeBlockId,
+  resetBreakpointSaveChannelRegistryForTests
 } from "./irBreakpointStorage"
 
 describe("irBreakpointStorage", () => {
@@ -115,5 +118,58 @@ describe("irBreakpointStorage", () => {
       expect(result.breakpoint.viewportAnchor?.topOffsetPx).toBe(80)
       expect(result.breakpoint.schemaVersion).toBe(2)
     }
+  })
+})
+
+describe("BreakpointSaveChannel unload flush registry", () => {
+  afterEach(() => {
+    resetBreakpointSaveChannelRegistryForTests()
+  })
+
+  it("drain 在已入队写入（含失败任务）全部结束后才 resolve，且不重复抛错", async () => {
+    const order: string[] = []
+    const channel = new BreakpointSaveChannel()
+
+    const ok = channel.enqueue(async () => {
+      order.push("write-1")
+    })
+    const failing = channel.enqueue(async () => {
+      order.push("write-2-fail")
+      throw new Error("write boom")
+    })
+    // 失败由入队方感知（persist 的 onSaveError 路径）；drain 不重复抛出
+    await expect(failing).rejects.toThrow("write boom")
+
+    await channel.drain()
+    order.push("drained")
+    await ok
+
+    expect(order).toEqual(["write-1", "write-2-fail", "drained"])
+  })
+
+  it("flushPendingBreakpointSaves 排空所有存活通道的在途写入", async () => {
+    resetBreakpointSaveChannelRegistryForTests()
+    const done: string[] = []
+    const a = new BreakpointSaveChannel()
+    const b = new BreakpointSaveChannel()
+
+    void a.enqueue(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      done.push("a")
+    })
+    void b.enqueue(async () => {
+      done.push("b")
+    })
+
+    const result = await flushPendingBreakpointSaves()
+
+    expect(result.drainedChannels).toBe(2)
+    expect([...done].sort()).toEqual(["a", "b"])
+  })
+
+  it("注册表清空后无可排空通道", async () => {
+    resetBreakpointSaveChannelRegistryForTests()
+    const result = await flushPendingBreakpointSaves()
+    expect(result.drainedChannels).toBe(0)
   })
 })

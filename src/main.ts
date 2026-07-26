@@ -60,6 +60,8 @@ let pluginName: string
 let reviewDeckFilter: string | null = null
 let reviewHostPanelId: string | null = null
 const PLUGIN_UI_STYLE_ROLE = "orca-srs-ui"
+/** load 延迟调度的已删除卡片清理定时器句柄；unload 时取消，防止卸载后执行批量块读写 */
+let deletedCardCleanupTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
  * 插件加载函数
@@ -137,8 +139,9 @@ export async function load(_name: string) {
     console.warn(`[${pluginName}] 读取渐进阅读设置失败，按默认关闭处理:`, error)
   }
 
-  // 延迟执行已删除卡片清理（避免阻塞启动）
-  setTimeout(async () => {
+  // 延迟执行已删除卡片清理（避免阻塞启动）；句柄保存供 unload 取消
+  deletedCardCleanupTimer = setTimeout(async () => {
+    deletedCardCleanupTimer = null
     try {
       const report = await cleanupDeletedCards(pluginName)
       if (report.errors.length > 0) {
@@ -160,6 +163,11 @@ export async function load(_name: string) {
  */
 export async function unload() {
   const name = pluginName
+  // 先取消 load 延迟调度的已删除卡片清理，避免卸载期间/之后再触发批量块读写
+  if (deletedCardCleanupTimer != null) {
+    clearTimeout(deletedCardCleanupTimer)
+    deletedCardCleanupTimer = null
+  }
   const result = await runPluginUnloadSequence({
     pluginName: name,
     flush: flushReviewLogs,

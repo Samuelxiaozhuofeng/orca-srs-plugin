@@ -54,10 +54,11 @@
 ```typescript
 getDifficultCards(pluginName: string, deckName?: string): Promise<DifficultCardInfo[]>
 getDifficultCardsStats(pluginName: string): Promise<DifficultCardsStats>
-getDifficultCardsForReview(pluginName: string, deckName?: string, limit?: number): Promise<ReviewCard[]>
 getDifficultReasonText(reason: DifficultReason): string
 // + 颜色等展示辅助（manager 内导出）
 ```
+
+> 2026-07-26：零引用门面 `getDifficultCardsForReview` 已从 `difficultCardsManager.ts` 删除（低危#7）；复习入口由 `DifficultCardsView` 拿 `getDifficultCards` 结果后走 fixed repeat 会话。
 
 ### 数据结构
 

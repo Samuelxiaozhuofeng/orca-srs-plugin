@@ -1,7 +1,8 @@
 # SRS 快捷键（搜索 / 复习 / 渐进阅读）
 
-> 文档同步日期：2026-07-13  
-> 变更说明：由「卡组搜索去掉 Ctrl+F」的变更记录扩展为现行快捷键实现说明；覆盖卡组搜索、复习会话（`useReviewShortcuts`）、渐进阅读会话（`useIRShortcuts` + registry）。
+> 文档同步日期：2026-07-26  
+> 变更说明：IR 默认快捷键改一次性播种（`ir.defaultShortcutsSeeded`，用户解绑不被覆盖）；默认键表补 `alt+r`。  
+> 2026-07-13：由「卡组搜索去掉 Ctrl+F」的变更记录扩展为现行快捷键实现说明；覆盖卡组搜索、复习会话（`useReviewShortcuts`）、渐进阅读会话（`useIRShortcuts` + registry）。
 
 ## 概述
 
@@ -130,8 +131,10 @@
 | ---------- | ------------ | ---- |
 | `alt+x` | `${pluginName}.createExtract` | 创建摘录；可用户重绑 |
 | `alt+z` | `${pluginName}.createCloze` | 创建填空 |
+| `alt+r` | `${pluginName}.irToggleViewMode` | 阅读/编辑模式切换 |
 
-- 若命令已绑定到其它键，或默认键已被占用，则跳过 assign。
+- **一次性播种（2026-07-26，低危#18）**：默认键只在首次加载 assign；完成后写 plugin data 标记 `ir.defaultShortcutsSeeded`（`IR_SHORTCUT_DEFAULTS_SEEDED_DATA_KEY`），后续启动读到标记直接跳过——**用户解绑/改绑永不被覆盖**；个别键被占用而跳过也视为已播种；标记读取失败则保守跳过本次播种。`unload` 不回收绑定（归用户在原生快捷键设置管理）。详见 [渐进阅读.md](渐进阅读.md) 快捷键节；回归 `irShortcutsRegistry` 测试。
+- 播种当轮内：若命令已绑定到其它键，或默认键已被占用，则跳过 assign。
 - **Alt+X / Alt+Z** 由编辑器命令路径处理，**不**在 `useIRShortcuts` 内再触发一次，避免双重执行。
 
 ---

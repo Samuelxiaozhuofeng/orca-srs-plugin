@@ -8,6 +8,8 @@
  * - Direction 卡片：属性前缀为 "srs.forward." 或 "srs.backward."
  */
 
+import { State } from "ts-fsrs"
+
 import type { Block, DbId } from "../orca.d.ts"
 import { createInitialSrsState, nextReviewState } from "./algorithm"
 import type { Grade, SrsState } from "./types"
@@ -303,6 +305,38 @@ const parseDate = (value: any, fallback: Date | null): Date | null => {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed
 }
 
+/** ts-fsrs State 枚举的合法取值（0=New, 1=Learning, 2=Review, 3=Relearning） */
+const FSRS_STATE_VALUES: ReadonlySet<number> = new Set([
+  State.New,
+  State.Learning,
+  State.Review,
+  State.Relearning
+])
+
+/**
+ * 解析 FSRS state 枚举值。
+ * 块属性是可被外部改写的持久化数据：越界/非整数的 state（如 7、"abc"）若原样
+ * 流入 ts-fsrs，评分时会在调度器内部失败，导致该卡永远无法评分。
+ * 此处按枚举白名单校验：非法值回退 State.New 并 console.warn（错误可见但不中断读取）；
+ * 缺失值（undefined/null）视为未初始化，静默回退，不告警。
+ */
+const parseFsrsState = (value: any, blockId: DbId, propertyName: string): State => {
+  if (value === undefined || value === null) return State.New
+  const num =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN
+  if (Number.isInteger(num) && FSRS_STATE_VALUES.has(num)) {
+    return num as State
+  }
+  console.warn(
+    `[storage] 块 ${blockId} 的 ${propertyName} 值非法（${JSON.stringify(value)}），已回退为 State.New（合法值：0-3）`
+  )
+  return State.New
+}
+
 // ============================================================================
 // 核心内部函数（统一的加载/保存逻辑）
 // ============================================================================
@@ -339,8 +373,12 @@ const loadSrsStateInternal = async (
     lastReviewed: parseDate(getPropValue("lastReviewed"), initial.lastReviewed),
     reps: parseNumber(getPropValue("reps"), initial.reps),
     lapses: parseNumber(getPropValue("lapses"), initial.lapses),
-    // 读取保存的 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）
-    state: parseNumber(getPropValue("state"), initial.state ?? 0),
+    // 读取保存的 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）；脏值回退 State.New
+    state: parseFsrsState(
+      getPropValue("state"),
+      blockId,
+      buildPropertyName("state", clozeNumber)
+    ),
     resets: parseNumber(getPropValue("resets"), 0)
   }
 }
@@ -536,8 +574,12 @@ export const loadDirectionSrsState = async (
     lastReviewed: parseDate(getPropValue("lastReviewed"), initial.lastReviewed),
     reps: parseNumber(getPropValue("reps"), initial.reps),
     lapses: parseNumber(getPropValue("lapses"), initial.lapses),
-    // 读取保存的 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）
-    state: parseNumber(getPropValue("state"), initial.state ?? 0),
+    // 读取保存的 FSRS 状态（0=New, 1=Learning, 2=Review, 3=Relearning）；脏值回退 State.New
+    state: parseFsrsState(
+      getPropValue("state"),
+      blockId,
+      buildDirectionPropertyName("state", directionType)
+    ),
     resets: parseNumber(getPropValue("resets"), 0)
   }
 }

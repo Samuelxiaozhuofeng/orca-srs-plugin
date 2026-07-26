@@ -9,6 +9,7 @@
  * 4. 按前缀删除：deleteClozeCardSrsData 只删对应 srs.cN.* 前缀
  * 5. loadSrsStateInternal 的 parseNumber/parseDate 解析回退
  * 6. ensureClozeSrsState 的"已有不覆盖、缺失写初始"语义
+ * 7. srs.state 枚举白名单（improvements/低危问题.md 第 22 条）：脏值回退 State.New 并 warn
  *
  * mock 方式参照 src/srs/listCard.test.ts：invokeEditorCommand 的 setProperties /
  * deleteProperties 真实落盘到 mockBlocks，invokeBackend 的 get-block 从 mockBlocks 读取。
@@ -627,6 +628,104 @@ describe("storage 核心持久层", () => {
       expect(missing.due.getTime()).toBe(FIXED_NOW.getTime())
       expect(missing.reps).toBe(0)
       expect(missing.lastReviewed).toBeNull()
+    })
+
+    it("srs.state 脏值（越界 7 / 'abc' / 非整数 2.5）回退 State.New 并 warn（含块 id、属性名、脏值）", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+      try {
+        // 越界数字：ts-fsrs State 枚举只有 0-3
+        const id = 505 as DbId
+        mockBlocks[id] = makeBlock({
+          id,
+          properties: [{ name: "srs.state", type: 3, value: 7 }] as any,
+        })
+        const outOfRange = await loadCardSrsState(id)
+        expect(outOfRange.state).toBe(State.New)
+        expect(warnSpy).toHaveBeenCalledTimes(1)
+        expect(warnSpy.mock.calls[0][0]).toContain("505")
+        expect(warnSpy.mock.calls[0][0]).toContain("srs.state")
+        expect(warnSpy.mock.calls[0][0]).toContain("7")
+
+        // 非数字字符串
+        const id2 = 506 as DbId
+        mockBlocks[id2] = makeBlock({
+          id: id2,
+          properties: [{ name: "srs.state", type: 3, value: "abc" }] as any,
+        })
+        const nonNumeric = await loadCardSrsState(id2)
+        expect(nonNumeric.state).toBe(State.New)
+        expect(warnSpy).toHaveBeenCalledTimes(2)
+        expect(warnSpy.mock.calls[1][0]).toContain("abc")
+
+        // 非整数
+        const id3 = 507 as DbId
+        mockBlocks[id3] = makeBlock({
+          id: id3,
+          properties: [{ name: "srs.state", type: 3, value: 2.5 }] as any,
+        })
+        const nonInteger = await loadCardSrsState(id3)
+        expect(nonInteger.state).toBe(State.New)
+        expect(warnSpy).toHaveBeenCalledTimes(3)
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it("srs.state 合法值透传：数字 3 → Relearning、字符串 '2' → Review；缺失静默回退 New，均不 warn", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+      try {
+        const id = 508 as DbId
+        mockBlocks[id] = makeBlock({
+          id,
+          properties: [{ name: "srs.state", type: 3, value: 3 }] as any,
+        })
+        expect((await loadCardSrsState(id)).state).toBe(State.Relearning)
+
+        // 维持 parseNumber 既有的字符串数字容忍
+        const id2 = 509 as DbId
+        mockBlocks[id2] = makeBlock({
+          id: id2,
+          properties: [{ name: "srs.state", type: 3, value: "2" }] as any,
+        })
+        expect((await loadCardSrsState(id2)).state).toBe(State.Review)
+
+        // 属性缺失：未初始化，静默回退 State.New
+        const id3 = 510 as DbId
+        mockBlocks[id3] = makeBlock({ id: id3, properties: [] })
+        expect((await loadCardSrsState(id3)).state).toBe(State.New)
+
+        expect(warnSpy).not.toHaveBeenCalled()
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it("cloze / 方向卡的 state 脏值同样回退 State.New，warn 中带各自的属性名前缀", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+      try {
+        const id = 511 as DbId
+        mockBlocks[id] = makeBlock({
+          id,
+          properties: [
+            { name: "srs.c1.state", type: 3, value: 42 },
+            { name: "srs.forward.state", type: 3, value: -1 },
+          ] as any,
+        })
+
+        const cloze = await loadClozeSrsState(id, 1)
+        expect(cloze.state).toBe(State.New)
+        expect(warnSpy).toHaveBeenCalledTimes(1)
+        expect(warnSpy.mock.calls[0][0]).toContain("srs.c1.state")
+        expect(warnSpy.mock.calls[0][0]).toContain("42")
+
+        const forward = await loadDirectionSrsState(id, "forward")
+        expect(forward.state).toBe(State.New)
+        expect(warnSpy).toHaveBeenCalledTimes(2)
+        expect(warnSpy.mock.calls[1][0]).toContain("srs.forward.state")
+        expect(warnSpy.mock.calls[1][0]).toContain("-1")
+      } finally {
+        warnSpy.mockRestore()
+      }
     })
   })
 

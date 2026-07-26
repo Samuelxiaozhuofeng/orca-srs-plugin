@@ -187,8 +187,11 @@ async function collectTaggedBlocks(pluginName: string): Promise<Block[]> {
   }
   tagged = Array.from(unique.values())
 
-  if (tagged.length === 0) {
-    console.log(`[${pluginName}] collectTaggedBlocks: 直接查询无结果，使用备用方案`)
+  // 仅当两个标签查询变体全部抛错（querySucceeded 为 false）时才走 get-all-blocks
+  // 全库扫描兜底；查询成功且为空说明仓库确实没有带 #card 的块，直接返回空结果，
+  // 避免零卡片仓库每轮收集都触发无界全库读取。
+  if (!querySucceeded) {
+    console.log(`[${pluginName}] collectTaggedBlocks: 标签查询全部失败，使用备用方案`)
     try {
       const allBlocks = await orca.invokeBackend("get-all-blocks") as Block[] || []
       querySucceeded = true
@@ -284,6 +287,13 @@ async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
     ) {
       const ids = [...index.topicIds, ...index.extractIds]
       const { blocks, missing } = await fetchIndexedBlocksBatched(pluginName, ids)
+      // 缺失即使未达回退阈值也要可见，便于排查“卡片为何缺席队列”
+      if (missing > 0) {
+        console.warn(
+          `[${pluginName}] IR 索引路径 ${missing}/${ids.length} 个块读取缺失（已删除或读取失败），`
+          + `未达 30% 阈值时这些卡片将缺席本次收集`
+        )
+      }
       // 索引大量失效时回退全量
       if (missing > ids.length * 0.3) {
         const full = await collectTaggedBlocks(pluginName)
@@ -318,8 +328,9 @@ async function collectCandidateBlocks(pluginName: string): Promise<Block[]> {
         })
         .filter((x): x is { id: DbId; cardType: "topic" | "extracts" } => x != null)
     )
-  } catch {
-    // 索引写入失败不影响收集
+  } catch (error) {
+    // 索引写入失败不影响收集，但必须可见，便于排查索引长期缺失
+    console.warn(`[${pluginName}] IR 索引重建失败（不影响本次收集结果）:`, error)
   }
   return full
 }

@@ -35,6 +35,12 @@ const processedBlocks = new Set<DbId>()
 // Valtio订阅取消函数
 let unsubscribe: (() => void) | null = null
 
+// 500ms 防抖定时器（模块级，stop 时必须 clearTimeout，避免 stop 后残留回调触发扫描写入）
+let debounceTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+// 世代计数：stop 时自增，使在途异步扫描/标记在下一个检查点中止，保证 stop 后零扫描零写入
+let watcherGeneration = 0
+
 /**
  * 检查块是否已标记为Extract
  */
@@ -61,7 +67,16 @@ function getParentTopic(block: Block): Block | null {
 /**
  * 自动标记块为Extract
  */
-async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<void> {
+async function autoMarkAsExtract(
+  blockId: DbId,
+  pluginName: string,
+  generation: number
+): Promise<void> {
+  // stop 后（世代已变）不再处理，保证零写入
+  if (generation !== watcherGeneration) {
+    return
+  }
+
   const { enableAutoExtractMark } = getIncrementalReadingSettings(pluginName)
   if (!enableAutoExtractMark) {
     return
@@ -96,6 +111,12 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
     inheritedPriority = (await loadIRState(parentTopic.id)).priority
   } catch {
     inheritedPriority = DEFAULT_IR_PRIORITY
+  }
+
+  // await 之后再次检查：若期间已 stop，则在任何写入开始前中止；
+  // 一旦下方写入组开始则整组完成，避免留下打了标签却无 SRS/IR 状态的半成品卡片
+  if (generation !== watcherGeneration) {
+    return
   }
   console.log(`[${pluginName}] 自动标记 Extract: 块 ${blockId}`)
 
@@ -152,7 +173,10 @@ async function autoMarkAsExtract(blockId: DbId, pluginName: string): Promise<voi
  *
  * Complexity: O(N) over current blocks.
  */
-async function scanAndMarkEligibleExtracts(pluginName: string): Promise<void> {
+async function scanAndMarkEligibleExtracts(
+  pluginName: string,
+  generation: number
+): Promise<void> {
   const { enableAutoExtractMark } = getIncrementalReadingSettings(pluginName)
   if (!enableAutoExtractMark) {
     return
@@ -161,10 +185,12 @@ async function scanAndMarkEligibleExtracts(pluginName: string): Promise<void> {
   const allBlocks = orca.state.blocks as Record<number, Block | undefined>
 
   for (const block of Object.values(allBlocks)) {
+    // stop 后中止在途扫描，保证零扫描零写入
+    if (generation !== watcherGeneration) return
     if (!block) continue
     const parentTopic = getParentTopic(block)
     if (!parentTopic) continue
-    await autoMarkAsExtract(block.id, pluginName)
+    await autoMarkAsExtract(block.id, pluginName, generation)
   }
 }
 
@@ -175,23 +201,36 @@ async function scanAndMarkEligibleExtracts(pluginName: string): Promise<void> {
  * 当检测到新块时，检查是否是Topic的子块，如果是则自动标记
  */
 export function startAutoMarkExtract(pluginName: string): void {
+  // 重入守卫：已启动则直接返回（与 recentDeckManager 同款语义）。
+  // 三个调用方（main.ts load、toggle 命令、IR 设置面板）都表达「确保运行中」，
+  // 重复 start 视为幂等 no-op，避免覆盖旧订阅句柄造成 valtio 订阅泄漏
+  if (unsubscribe) {
+    console.log(`[${pluginName}] 渐进阅读自动标记已在运行，跳过重复启动`)
+    return
+  }
+
   console.log(`[${pluginName}] 启动渐进阅读自动标记`)
 
+  const generation = watcherGeneration
+
   // 首次扫描现有的Topic子块
-  scanAndMarkEligibleExtracts(pluginName).catch(error => {
+  scanAndMarkEligibleExtracts(pluginName, generation).catch(error => {
     console.error(`[${pluginName}] 初始扫描失败:`, error)
   })
 
   // 监听blocks变化
-  // 使用setTimeout延迟处理，避免频繁触发
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-
+  // 使用setTimeout延迟处理，避免频繁触发（定时器为模块级，stop 时统一清除）
   unsubscribe = (window as any).Valtio.subscribe(orca.state.blocks, (ops?: any) => {
-    if (timeoutId) {
-      clearTimeout(timeoutId)
+    if (debounceTimeoutId) {
+      clearTimeout(debounceTimeoutId)
     }
 
-    timeoutId = setTimeout(() => {
+    debounceTimeoutId = setTimeout(() => {
+      debounceTimeoutId = null
+      // stop 后（世代已变）不再扫描
+      if (generation !== watcherGeneration) {
+        return
+      }
       // Prefer op-based incremental handling if Valtio provides `ops`.
       // Fallback to O(N) scan if `ops` is unavailable.
       if (Array.isArray(ops)) {
@@ -206,7 +245,7 @@ export function startAutoMarkExtract(pluginName: string): void {
         }
 
         if (candidateIds.length > 0) {
-          Promise.allSettled(candidateIds.map(id => autoMarkAsExtract(id, pluginName)))
+          Promise.allSettled(candidateIds.map(id => autoMarkAsExtract(id, pluginName, generation)))
             .catch(error => {
               console.error(`[${pluginName}] 自动标记失败:`, error)
             })
@@ -214,7 +253,7 @@ export function startAutoMarkExtract(pluginName: string): void {
         }
       }
 
-      scanAndMarkEligibleExtracts(pluginName).catch(error => {
+      scanAndMarkEligibleExtracts(pluginName, generation).catch(error => {
         console.error(`[${pluginName}] 自动标记失败:`, error)
       })
     }, 500) // 500ms防抖
@@ -227,6 +266,15 @@ export function startAutoMarkExtract(pluginName: string): void {
  * 停止自动标记监听器
  */
 export function stopAutoMarkExtract(pluginName: string): void {
+  // 世代自增：使在途的防抖回调与异步扫描/标记在下一个检查点中止（停止标志）
+  watcherGeneration++
+
+  // 清除残留的防抖定时器，保证 stop 后零扫描零写入
+  if (debounceTimeoutId) {
+    clearTimeout(debounceTimeoutId)
+    debounceTimeoutId = null
+  }
+
   if (unsubscribe) {
     unsubscribe()
     unsubscribe = null

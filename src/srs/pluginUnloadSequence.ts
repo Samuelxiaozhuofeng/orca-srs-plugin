@@ -1,14 +1,19 @@
 /**
  * 插件卸载顺序 helper（FC-03）
  *
- * 在 Orca 插件数据 API 仍可用时、注销/清理前 flush 复习日志。
- * 失败 console.error + 可选 notify，继续卸载；不宣称日志已落盘。
+ * 在 Orca 插件数据 API 仍可用时、注销/清理前 flush 复习日志与渐进阅读断点
+ * 在途写入（AGENTS.md 契约：unload flush review logs / reading breakpoints）。
+ * 失败 console.error + 可选 notify，继续卸载；不宣称已落盘。
  */
 
 import { flushReviewLogs } from "./reviewLogStorage"
+import { flushPendingBreakpointSaves } from "./incremental-reading/irBreakpointStorage"
 
 export const UNLOAD_LOG_FLUSH_PENDING_MESSAGE =
   "插件卸载时统计日志仍待重试，请尽快重新加载插件以完成写入"
+
+export const UNLOAD_BREAKPOINT_FLUSH_PENDING_MESSAGE =
+  "插件卸载时渐进阅读断点写入未全部确认，最近的阅读位置可能未保存"
 
 export type UnloadSequenceStep = {
   name: string
@@ -21,6 +26,8 @@ export type RunPluginUnloadSequenceOptions = {
   cleanupSteps: UnloadSequenceStep[]
   /** 可注入以便测试 */
   flush?: (pluginName: string) => Promise<void>
+  /** 排空渐进阅读断点在途写入；可注入以便测试 */
+  flushBreakpoints?: () => Promise<unknown>
   /** flush 失败时通知（若 unload 时 notify 仍可用） */
   notifyFlushFailure?: (message: string, error: unknown) => void
   /** 每步 cleanup 失败时的处理；默认 console.error 并继续 */
@@ -30,12 +37,14 @@ export type RunPluginUnloadSequenceOptions = {
 export type PluginUnloadSequenceResult = {
   flushOk: boolean
   flushError?: unknown
+  breakpointFlushOk: boolean
+  breakpointFlushError?: unknown
   cleanupErrors: Array<{ name: string; error: unknown }>
 }
 
 /**
- * 执行卸载顺序：flush 日志 → 再跑 cleanup 步骤。
- * flush 失败不中断卸载；cleanup 单步失败默认记录后继续。
+ * 执行卸载顺序：flush 复习日志 → flush 渐进阅读断点在途写入 → 再跑 cleanup 步骤。
+ * 任一 flush 失败不中断卸载但保持可见；cleanup 单步失败默认记录后继续。
  */
 export async function runPluginUnloadSequence(
   options: RunPluginUnloadSequenceOptions
@@ -44,6 +53,7 @@ export async function runPluginUnloadSequence(
     pluginName,
     cleanupSteps,
     flush = flushReviewLogs,
+    flushBreakpoints = flushPendingBreakpointSaves,
     notifyFlushFailure,
     onCleanupError
   } = options
@@ -67,6 +77,25 @@ export async function runPluginUnloadSequence(
     }
   }
 
+  let breakpointFlushOk = true
+  let breakpointFlushError: unknown
+
+  try {
+    await flushBreakpoints()
+  } catch (error) {
+    breakpointFlushOk = false
+    breakpointFlushError = error
+    console.error(
+      `[${pluginName}] 卸载前排空渐进阅读断点写入失败（最近阅读位置不宣称已落盘）:`,
+      error
+    )
+    try {
+      notifyFlushFailure?.(UNLOAD_BREAKPOINT_FLUSH_PENDING_MESSAGE, error)
+    } catch (notifyError) {
+      console.error(`[${pluginName}] unload 时 notify 失败:`, notifyError)
+    }
+  }
+
   const cleanupErrors: Array<{ name: string; error: unknown }> = []
 
   for (const step of cleanupSteps) {
@@ -82,5 +111,5 @@ export async function runPluginUnloadSequence(
     }
   }
 
-  return { flushOk, flushError, cleanupErrors }
+  return { flushOk, flushError, breakpointFlushOk, breakpointFlushError, cleanupErrors }
 }

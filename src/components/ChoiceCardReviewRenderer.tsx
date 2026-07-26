@@ -12,7 +12,6 @@
  */
 
 const { useState, useMemo, useCallback, useRef, useEffect } = window.React
-const { useSnapshot } = window.Valtio
 const { Button } = orca.components
 
 import type { DbId } from "../orca.d.ts"
@@ -55,7 +54,6 @@ interface ChoiceCardReviewRendererProps {
   panelId?: string
   /** F2-08：预览间隔读取同一插件 FSRS 设置 */
   pluginName: string
-  suggestedGrade?: Grade | null              // 自动评分建议
   /** FC-06 只读回看：展示正确答案，禁止选择/提交/评分 */
   readOnly?: boolean
   readOnlyStatusText?: string
@@ -79,7 +77,6 @@ export default function ChoiceCardReviewRenderer({
   inSidePanel = false,
   panelId,
   pluginName,
-  suggestedGrade,
   readOnly = false,
   readOnlyStatusText,
 }: ChoiceCardReviewRendererProps) {
@@ -138,9 +135,6 @@ export default function ChoiceCardReviewRenderer({
     gateRef.current = enterReadOnlyGate(gateRef.current)
     setIsAnswerRevealed(true)
   }, [readOnly, clearPendingTimeout])
-
-  // 订阅 orca.state
-  const snapshot = useSnapshot(orca.state)
 
   // 获取正确选项 IDs
   const correctIds = useMemo(() => {

@@ -1,6 +1,6 @@
 # 渐进阅读 Book IR（建书 / 顺序 / 退出）
 
-> **文档同步日期：2026-07-19**  
+> **文档同步日期：2026-07-26**（删除 `setupBookIR` 死门面；补每轮 reconcile 每章单次 strict 读）  
 > 以 `src/srs/book-ir/*`、`src/srs/bookIRCreator.ts`、会话内顺序推进与右键/命令入口为实现真相。  
 > 通用 IR 会话与工作区见 [`渐进阅读.md`](渐进阅读.md)。EPUB 纯笔记导入见 [`EPUB导入.md`](EPUB导入.md)。  
 > 排期写回细节见 [`记忆排期推送.md`](记忆排期推送.md)。  
@@ -72,11 +72,14 @@
 | `bookIRRemovalService.removeChaptersFromIR` | 章节批量移出；顺序激活章被移出时**暂停**（`sequentialPaused`），**不**静默推进 |
 | `bookIRRemovalService.retryRemoveChaptersFromIR` | 仅重试失败章节 ID |
 | `bookIRRemovalConfirm` | 确认文案与调用封装（UI） |
-| `bookIRCreator.setupBookIR` | 兼容门面 → `initializeBookIR({ mode: "distributed", ... })` |
 | `bookIRCreator.calculateChapterDueDates` | 分散 due 计算 |
 | `bookIRCreator.getChapterBlockIds(Async)` | 从书籍块 inline refs 发现章节（遗留 UI / 右键） |
 
 请求/结果类型：`InitializeBookIRRequest`、`AdvanceSequentialBookRequest`、`BookIRMutationResult`（`kind`: `initialized` \| `advanced` \| `removed` \| `partial`）。
+
+> 2026-07-26：零引用兼容门面 `bookIRCreator.setupBookIR` 已删除（低危#7）；建书统一走 `bookIRService.initializeBookIR`。
+
+**每轮 reconcile 单次 strict 读（2026-07-26，`bookIRProgression.scanSequentialChapters`，低危#2）**：每轮 reconcile 对每个 selected 章节**恰好一次** strict 后端 `get-block`，两个判定谓词（fully-active / due-only 等）复用同一轮读取结果（谓词改为同步薄包装，导出签名不变）；`activateSequentialChapter` 支持 `preloaded` 复用同轮读取。`activeChapterId` 落在 selection 之外的边界情形才多一次读。回归：`bookIRService.test.ts` 新增 2 个读取次数回归测试。
 
 ## 章节初始化（`initializeChapterAsTopicIR`）
 

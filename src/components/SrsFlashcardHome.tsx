@@ -316,15 +316,14 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       suspended: handleCardSuspended
     }
 
-    if (!orca.broadcasts.isHandlerRegistered(SRS_EVENTS.CARD_GRADED)) {
-      orca.broadcasts.registerHandler(SRS_EVENTS.CARD_GRADED, handleCardGraded)
-    }
-    if (!orca.broadcasts.isHandlerRegistered(SRS_EVENTS.CARD_POSTPONED)) {
-      orca.broadcasts.registerHandler(SRS_EVENTS.CARD_POSTPONED, handleCardPostponed)
-    }
-    if (!orca.broadcasts.isHandlerRegistered(SRS_EVENTS.CARD_SUSPENDED)) {
-      orca.broadcasts.registerHandler(SRS_EVENTS.CARD_SUSPENDED, handleCardSuspended)
-    }
+    // 对称注册/注销：每个实例无条件注册自己的 handler，cleanup 注销同一引用。
+    // 不能用 isHandlerRegistered 做守卫——它只按事件名判断是否存在任意 handler
+    // （见 plugin-docs/types/orca.md broadcasts 节），多实例下会让第二个实例永不注册，
+    // 而先卸载的实例会把仍存活实例的 handler 注销掉，静默失去广播刷新。
+    // registerHandler/unregisterHandler 按 (type, handler) 对管理，支持多 handler 共存。
+    orca.broadcasts.registerHandler(SRS_EVENTS.CARD_GRADED, handleCardGraded)
+    orca.broadcasts.registerHandler(SRS_EVENTS.CARD_POSTPONED, handleCardPostponed)
+    orca.broadcasts.registerHandler(SRS_EVENTS.CARD_SUSPENDED, handleCardSuspended)
 
     return () => {
       const handlers = handlersRef.current

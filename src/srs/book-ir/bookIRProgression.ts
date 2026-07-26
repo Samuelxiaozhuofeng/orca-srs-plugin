@@ -24,6 +24,8 @@
  * - Promotes the intended next chapter, strips obsolete dual-live chapters
  * - Never silently wipes unrelated cards (different sourceBookId or non-selected)
  * - Plan-save / checkpoint failures stay visible and retryable
+ * - Each reconcile round takes exactly one strict get-block per chapter; all
+ *   predicates of that round reuse the same read (no same-block repeat reads)
  */
 
 import type { Block, DbId } from "../../orca.d.ts"
@@ -315,12 +317,9 @@ export async function retrySequentialActivation(
     )
   }
 
-  const liveByOrder = await listLiveSequentialChapters(plan.selectedChapterIds, bookBlockId)
-  const partialByOrder = await listPartialSequentialChapters(
-    plan.selectedChapterIds,
-    bookBlockId,
-    liveByOrder
-  )
+  // Round 1: one strict read per selected chapter, reused by both predicates.
+  const scan = await scanSequentialChapters(plan.selectedChapterIds, bookBlockId)
+  const { liveByOrder, partialByOrder } = scan
 
   // Prefer the last chapter in plan order that already has any IR for this book
   // (fully active or partial). Activate-before-strip leaves current then next; the
@@ -363,9 +362,14 @@ export async function retrySequentialActivation(
 
   // Complete target to fully active if needed
   try {
-    if (!(await isChapterFullyActive(targetId, bookBlockId))) {
-      if (await hasConflictingCard(targetId, bookBlockId)) {
-        const reason = await describeCardConflict(targetId, bookBlockId)
+    // Reuse this round's scan read when the target was part of it; only the
+    // activeChapterId-outside-selection edge case takes one extra strict read.
+    const targetBlock = scan.blocksById.has(targetId)
+      ? scan.blocksById.get(targetId)
+      : await loadBackendBlockStrict(targetId)
+    if (!isBlockFullyActive(targetBlock, bookBlockId)) {
+      if (blockHasConflictingCard(targetBlock, bookBlockId)) {
+        const reason = describeCardConflictForBlock(targetBlock, targetId, bookBlockId)
         return {
           kind: "partial",
           bookBlockId,
@@ -382,14 +386,18 @@ export async function retrySequentialActivation(
       }
       const due = resolveNextChapterDue("today")
       const sourceBookTitle = await resolveSequentialBookTitle(bookBlockId, null)
-      await activateSequentialChapter(targetId, {
-        pluginName,
-        sourceBookId: bookBlockId,
-        sourceBookTitle,
-        priority: plan.priority,
-        due,
-        position: Date.now()
-      })
+      await activateSequentialChapter(
+        targetId,
+        {
+          pluginName,
+          sourceBookId: bookBlockId,
+          sourceBookTitle,
+          priority: plan.priority,
+          due,
+          position: Date.now()
+        },
+        { block: targetBlock }
+      )
     } else {
       await ensureChapterFullyActive(targetId, bookBlockId, pluginName)
     }
@@ -426,13 +434,16 @@ export async function retrySequentialActivation(
     }
   }
 
-  // Strip other selected chapters that still hold this book's sequential IR
+  // Strip other selected chapters that still hold this book's sequential IR.
+  // Fresh round after target activation: one strict read per chapter, shared
+  // by both predicates (previously two back-to-back reads of the same block).
   const stripFailed: BookIRMutationResult["failed"] = []
   const stripped: DbId[] = []
   for (const chapterId of plan.selectedChapterIds) {
     if (chapterId === targetId) continue
-    const live = await isChapterFullyActive(chapterId, bookBlockId)
-    const partial = await chapterHasAnyBookIR(chapterId, bookBlockId)
+    const chapterBlock = await loadBackendBlockStrict(chapterId)
+    const live = isBlockFullyActive(chapterBlock, bookBlockId)
+    const partial = blockHasAnyBookIR(chapterBlock, bookBlockId)
     if (!live && !partial) continue
     try {
       await completeIRCard(chapterId, pluginName)
@@ -444,7 +455,9 @@ export async function retrySequentialActivation(
   }
 
   // Re-scan: must be at most one fully active sequential card after strip
-  const remainingLive = await listLiveSequentialChapters(plan.selectedChapterIds, bookBlockId)
+  // (fresh round — one strict read per chapter)
+  const remainingLive =
+    (await scanSequentialChapters(plan.selectedChapterIds, bookBlockId)).liveByOrder
   if (remainingLive.length > 1 || (remainingLive.length === 1 && remainingLive[0] !== targetId)) {
     const message =
       `顺序书 #${bookBlockId} 无法收敛到单卡：目标 #${targetId}，仍存活 ` +
@@ -547,18 +560,22 @@ export async function retrySequentialActivation(
 
 /**
  * Activate a pending chapter as sequential Topic IR without wiping a compatible card.
+ * Pass `preloaded` to reuse a strict backend read taken earlier in the same round;
+ * otherwise a single strict read serves both predicates below.
  */
 async function activateSequentialChapter(
   chapterId: DbId,
-  options: InitChapterIROptions & { sourceBookId: DbId }
+  options: InitChapterIROptions & { sourceBookId: DbId },
+  preloaded?: { block: Block | undefined }
 ): Promise<void> {
   const bookId = options.sourceBookId
-  if (await isChapterFullyActive(chapterId, bookId)) {
+  const block = preloaded ? preloaded.block : await loadBackendBlockStrict(chapterId)
+  if (isBlockFullyActive(block, bookId)) {
     await ensureChapterFullyActive(chapterId, bookId, options.pluginName || "orca-srs")
     return
   }
-  if (await hasConflictingCard(chapterId, bookId)) {
-    throw new Error(await describeCardConflict(chapterId, bookId))
+  if (blockHasConflictingCard(block, bookId)) {
+    throw new Error(describeCardConflictForBlock(block, chapterId, bookId))
   }
   await initializeChapterAsTopicIR(chapterId, options)
 }
@@ -574,6 +591,11 @@ export async function isChapterFullyActive(
   bookBlockId: DbId
 ): Promise<boolean> {
   const block = await loadBackendBlockStrict(chapterId)
+  return isBlockFullyActive(block, bookBlockId)
+}
+
+/** Synchronous form of isChapterFullyActive over an already-loaded strict read. */
+function isBlockFullyActive(block: Block | undefined, bookBlockId: DbId): boolean {
   if (!block) return false
   if (!hasCardTag(block)) return false
   if (!hasValidIrDue(block)) return false
@@ -591,6 +613,11 @@ export async function chapterHasAnyBookIR(
   bookBlockId: DbId
 ): Promise<boolean> {
   const block = await loadBackendBlockStrict(chapterId)
+  return blockHasAnyBookIR(block, bookBlockId)
+}
+
+/** Synchronous form of chapterHasAnyBookIR over an already-loaded strict read. */
+function blockHasAnyBookIR(block: Block | undefined, bookBlockId: DbId): boolean {
   if (!block) return false
   const source = readSourceBookIdProp(block)
   if (source !== bookBlockId) return false
@@ -612,33 +639,35 @@ async function ensureChapterFullyActive(
   }
 }
 
-async function listLiveSequentialChapters(
-  selectedChapterIds: DbId[],
-  bookBlockId: DbId
-): Promise<DbId[]> {
-  const live: DbId[] = []
-  for (const id of selectedChapterIds) {
-    if (await isChapterFullyActive(id, bookBlockId)) {
-      live.push(id)
-    }
-  }
-  return live
+type SequentialChapterScan = {
+  /** One strict backend read per chapter for this round, reused by all predicates. */
+  blocksById: Map<DbId, Block | undefined>
+  liveByOrder: DbId[]
+  partialByOrder: DbId[]
 }
 
-async function listPartialSequentialChapters(
+/**
+ * Scan all selected chapters with exactly one strict backend read each,
+ * classifying fully-active (live) vs partial same-book IR in plan order.
+ * Read failures propagate visibly (loadBackendBlockStrict semantics).
+ */
+async function scanSequentialChapters(
   selectedChapterIds: DbId[],
-  bookBlockId: DbId,
-  excludeFullyActive: DbId[]
-): Promise<DbId[]> {
-  const exclude = new Set(excludeFullyActive)
-  const partial: DbId[] = []
+  bookBlockId: DbId
+): Promise<SequentialChapterScan> {
+  const blocksById = new Map<DbId, Block | undefined>()
+  const liveByOrder: DbId[] = []
+  const partialByOrder: DbId[] = []
   for (const id of selectedChapterIds) {
-    if (exclude.has(id)) continue
-    if (await chapterHasAnyBookIR(id, bookBlockId)) {
-      partial.push(id)
+    const block = await loadBackendBlockStrict(id)
+    blocksById.set(id, block)
+    if (isBlockFullyActive(block, bookBlockId)) {
+      liveByOrder.push(id)
+    } else if (blockHasAnyBookIR(block, bookBlockId)) {
+      partialByOrder.push(id)
     }
   }
-  return partial
+  return { blocksById, liveByOrder, partialByOrder }
 }
 
 /**
@@ -648,8 +677,7 @@ async function listPartialSequentialChapters(
  * - Same-book sourceBookId (fully active or partial) → not conflict; caller reuses or completes
  * - No #card → not conflict (safe to init)
  */
-async function hasConflictingCard(chapterId: DbId, bookBlockId: DbId): Promise<boolean> {
-  const block = await loadBackendBlockStrict(chapterId)
+function blockHasConflictingCard(block: Block | undefined, bookBlockId: DbId): boolean {
   if (!block) return false
   const source = readSourceBookIdProp(block)
   if (source != null && source !== bookBlockId) return true
@@ -660,8 +688,11 @@ async function hasConflictingCard(chapterId: DbId, bookBlockId: DbId): Promise<b
   return false
 }
 
-async function describeCardConflict(chapterId: DbId, bookBlockId: DbId): Promise<string> {
-  const block = await loadBackendBlockStrict(chapterId)
+function describeCardConflictForBlock(
+  block: Block | undefined,
+  chapterId: DbId,
+  bookBlockId: DbId
+): string {
   const source = block ? readSourceBookIdProp(block) : null
   if (source != null && source !== bookBlockId) {
     return (

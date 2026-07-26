@@ -1,7 +1,8 @@
 # SRS 块渲染器模块
 
-> 文档同步日期：2026-07-13  
-> 变更说明：对齐 `registry/renderers.ts` 注册表；区分编辑器内块渲染（`SrsCardBlockRenderer` / `ChoiceCardBlockRenderer`）与复习会话内卡种渲染器；修正路径；SRS 详情已隐藏。
+> 文档同步日期：2026-07-26  
+> 变更说明：内联编辑保存链路——`setBlocksContent` 由宿主同步 content/text（不手写 store）、写后 `invalidateBlockCache`、`_repr.front/back` 为插件维护元数据整体重赋值（低危#12）；`ChoiceCardReviewRenderer` 死订阅 `useSnapshot(orca.state)` 与未用 `suggestedGrade` prop 已删（低危#11，属复习渲染器侧，此处一并记录）。  
+> 2026-07-13：对齐 `registry/renderers.ts` 注册表；区分编辑器内块渲染（`SrsCardBlockRenderer` / `ChoiceCardBlockRenderer`）与复习会话内卡种渲染器；修正路径；SRS 详情已隐藏。
 
 ## 概述
 
@@ -69,6 +70,8 @@ Inline 渲染器（非块级）：
 
 1. **答案揭示**：有子块时先「显示答案」再展示答案与评分；无子块时直接可评（摘录类场景）。
 2. **内联编辑**：题目/答案 textarea；保存走 `core.editor.setBlocksContent`；答案写第一个子块。
+   - **保存链路（2026-07-26，低危#12）**：块的 `content`/`text` 由宿主 `setBlocksContent` 自行同步到 `orca.state`——**不手写 store**（此前直接改 `.text` 的写法已删）；写成功后 `invalidateBlockCache(targetBlockId)`。
+   - `_repr.front` / `_repr.back` 是**插件维护的展示元数据**（宿主不感知、不同步；remount 与复习端依赖），保存后按仓库惯例对 `_repr` **整体重赋值**（`liveBlock._repr = { ...liveBlock._repr, front: … }`，`BlockWithRepr` 类型）——这是有据保留的承重代码，非手写宿主状态。
 3. **快速评分**：Again / Hard / Good / Easy → `updateSrsState(blockId, grade, "orca-srs")`；成功后 `showNotification`（简化日期 `M-D` + 间隔天数）。
 4. **SRS 详细信息**：**已隐藏**（不在 UI 显示完整 due/stability/reps 等）。
 5. **BlockShell**：`contentAttrs={{ contentEditable: false }}`，内容由自定义 JSX 承担；子块仍由 `BlockChildren` 渲染。

@@ -1,5 +1,14 @@
 /**
  * 渐进阅读块读取缓存（backend-first get-block，避免 orca.state 旧快照）
+ *
+ * ⚠️ 与 SRS 侧 `src/srs/storage.ts` 的 blockCache 是**有意分开的两套缓存**，不要合并：
+ * - 语义分歧：本文件的 getBlockCached 在后端 get-block miss 时回退 orca.state.blocks
+ *   （见下方注释：IR 状态高频写读回，state 旧快照会读回旧值，故 backend-first + 兜底回退）；
+ *   storage.ts 版不回退 state，miss 即记忆 null。
+ * - 失效入口分域（AGENTS.md 契约）：SRS 写走 invalidateBlockCache，IR 写走
+ *   invalidateIrBlockCache，两个 Map 独立、互不误伤。
+ * 若要消除实现重复，只能抽显式参数化工厂（如 fallbackToState 开关），
+ * 且必须保留两个独立缓存实例与两个失效入口；直接共用一个缓存属回归。
  */
 
 import type { Block, DbId } from "../../orca.d.ts"
@@ -62,7 +71,9 @@ export const invalidateIrBlockCache = (blockId: DbId): void => {
   blockCache.delete(blockId)
 }
 
-/** 强制丢弃指定块缓存（用于 parent children 时间敏感读取） */
-export const dropIrBlockCacheEntry = (blockId: DbId): void => {
-  blockCache.delete(blockId)
-}
+/**
+ * 强制丢弃指定块缓存（用于 parent children 时间敏感读取）。
+ * 实现与 invalidateIrBlockCache 完全相同，保留独立导出名以表达调用意图：
+ * invalidate 用于写后失效（AGENTS.md 契约路径），drop 用于读前强制刷新。
+ */
+export const dropIrBlockCacheEntry: (blockId: DbId) => void = invalidateIrBlockCache

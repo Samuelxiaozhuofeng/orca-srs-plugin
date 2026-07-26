@@ -50,7 +50,9 @@ export function loadIRIndex(pluginName: string): IRIndexSnapshot | null {
       return null
     }
     return parsed
-  } catch {
+  } catch (error) {
+    // 读取/解析失败按“无索引”处理（调用方回退全量收集），但必须可见
+    console.warn(`[${pluginName}] 读取 IR 索引失败，按无索引处理:`, error)
     return null
   }
 }

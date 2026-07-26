@@ -265,31 +265,6 @@ export async function getDifficultCardsStats(
 }
 
 /**
- * 获取困难卡片用于复习
- * 返回 ReviewCard 数组，可直接用于复习会话
- * 
- * @param pluginName - 插件名称
- * @param deckName - 可选的牌组名称过滤
- * @param limit - 可选的数量限制
- * @returns ReviewCard 数组
- */
-export async function getDifficultCardsForReview(
-  pluginName: string,
-  deckName?: string,
-  limit?: number
-): Promise<ReviewCard[]> {
-  const difficultCards = await getDifficultCards(pluginName, deckName)
-  
-  let cards = difficultCards.map(info => info.card)
-  
-  if (limit && limit > 0) {
-    cards = cards.slice(0, limit)
-  }
-
-  return cards
-}
-
-/**
  * 获取困难原因的显示文本
  */
 export function getDifficultReasonText(reason: DifficultReason): string {

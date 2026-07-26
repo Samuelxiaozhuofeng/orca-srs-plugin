@@ -61,8 +61,8 @@
 
 ### Flash Home 订阅
 
-- `useEffect` 内注册，先 `isHandlerRegistered` 再 `registerHandler`，避免重复注册报错。
-- 卸载时 `unregisterHandler`（使用 ref 保存的 handler 引用）。
+- `useEffect` 内**每实例对称注册/注销**（2026-07-26，低危#16）：直接 `registerHandler`，卸载时 `unregisterHandler`（使用 ref 保存的 handler 引用）。
+- **不再用 `isHandlerRegistered` 做注册守卫**——它只按事件名判断是否存在**任意** handler，多实例场景会让后挂载的实例静默失去刷新；`registerHandler` / `unregisterHandler` 按 `(type, handler)` 对管理，支持多 handler 共存（plugin-docs 已确认），对称注销只摘掉自己的 handler，多个 Flash Home 实例可并存。
 - 三事件 handler 均：`void loadDataRef.current()`（静默刷新）。
 
 ### 数据流

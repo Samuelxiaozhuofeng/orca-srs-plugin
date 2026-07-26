@@ -9,6 +9,7 @@
  */
 
 import type { Block, DbId } from "../orca.d.ts"
+import { invalidateBlockCache } from "./storage"
 
 /**
  * 获取 block 上所有 srs. 前缀的属性名称
@@ -43,4 +44,8 @@ export async function cleanupSrsProperties(blockId: DbId, pluginName: string): P
     [blockId],
     propertyNames
   )
+
+  // 硬规则：块属性删除后立即失效块缓存，防止后续读取（如 ensureCardSrsState）
+  // 从长期存活的 blockCache 拿到已删除的旧 srs.* 属性（与 deleteCardSrsData 语义一致）
+  invalidateBlockCache(blockId)
 }

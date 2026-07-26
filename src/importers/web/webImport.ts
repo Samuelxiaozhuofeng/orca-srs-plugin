@@ -619,33 +619,3 @@ async function collectDescendantIds(rootBlockId: DbId): Promise<DbId[]> {
 
   return result
 }
-
-/**
- * End-to-end convenience for callers that scrape then import in one step.
- * Dialog uses scrape + import separately so preview never writes Orca.
- */
-export async function importWebArticle(options: {
-  url: string
-  pluginName: string
-  joinIncrementalReading?: boolean
-  scheduleToday?: boolean
-  signal?: AbortSignal
-  apiKey?: string
-  apiUrl?: string
-  fetchImpl?: typeof fetch
-}): Promise<ImportWebArticleResult> {
-  const article = await scrapeWebArticle({
-    url: options.url,
-    pluginName: options.pluginName,
-    signal: options.signal,
-    apiKey: options.apiKey,
-    apiUrl: options.apiUrl,
-    fetchImpl: options.fetchImpl
-  })
-  return importScrapedArticle({
-    article,
-    pluginName: options.pluginName,
-    joinIncrementalReading: options.joinIncrementalReading,
-    scheduleToday: options.scheduleToday
-  })
-}

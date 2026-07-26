@@ -1,10 +1,9 @@
 # SRS 工具函数模块文档
 
-> **文档同步日期**：2026-07-19  
+> **文档同步日期**：2026-07-26  
 > **变更说明**：  
-> - **删除不存在的 `src/srs/cardBrowser.ts`**（旧弹窗浏览器已废弃；现用 Flashcard Home：`flashcardHomeManager.ts` + `SrsFlashcardHome*.tsx`）  
-> - Flash Home 学习统计页 / `statisticsManager` 主路径已移除；时长规则仍在 `sessionProgressTracker`  
-> - 相关文件改为仓库内相对路径
+> - **`src/srs/panelUtils.ts` 已从仓库删除**（108 行零引用死代码，低危#6）；面板树相关逻辑现行入口是 `src/srs/registry/panelTreeUtils.ts`（见 [SRS_注册模块.md](SRS_注册模块.md)）  
+> - 2026-07-19：删除不存在的 `src/srs/cardBrowser.ts`（旧弹窗浏览器已废弃；现用 Flashcard Home：`flashcardHomeManager.ts` + `SrsFlashcardHome*.tsx`）；Flash Home 学习统计页 / `statisticsManager` 主路径已移除；时长规则仍在 `sessionProgressTracker`；相关文件改为仓库内相对路径
 
 本文档描述 SRS 核心工具层（创建/收集/牌组/面板/会话时长等）。卡种专项见对应文档。
 
@@ -14,7 +13,6 @@
 
 | 模块 | 文件路径 | 职责 |
 | ---- | -------- | ---- |
-| 面板工具 | `src/srs/panelUtils.ts` | 查找/调整 Orca 编辑器面板 |
 | 块工具 | `src/srs/blockUtils.ts` | 块类型判断、正反面解析 |
 | 卡片收集 | `src/srs/cardCollector.ts` | 收集 SRS 块、构建复习队列 |
 | Deck 工具 | `src/srs/deckUtils.ts` | 卡型/牌组名/Deck 统计/预取 |
@@ -25,20 +23,6 @@
 | 摘录工具 | `src/srs/extractUtils.ts` | IR Extract 创建 |
 
 > **历史**：曾存在/文档记载的 `cardBrowser.ts` + `SrsCardBrowser` 弹窗路径**当前仓库不存在**。打开浏览器请走 `openFlashcardHome` / `srs.flashcard-home`（见 `SRS_卡片浏览器.md`）。
-
----
-
-## panelUtils.ts
-
-**职责**：Orca 编辑器面板树操作。
-
-| 函数 | 说明 |
-| ---- | ---- |
-| `findRightPanel(node, currentPanelId)` | 查找当前面板右侧面板 |
-| `findLeftPanel(node, currentPanelId)` | 查找左侧面板 |
-| `containsPanel(node, panelId)` | 树是否包含面板 |
-| `extractPanelId(node)` | 提取树中第一个面板 ID |
-| `schedulePanelResize(basePanelId, pluginName)` | 延迟调整面板尺寸 |
 
 ---
 
@@ -209,7 +193,6 @@ Flash Home **不再**挂载学习统计页（原 `StatisticsView` / `components/
 
 | 文件 | 说明 |
 | ---- | ---- |
-| `src/srs/panelUtils.ts` | 面板工具 |
 | `src/srs/blockUtils.ts` | 块工具 |
 | `src/srs/cardCollector.ts` | 卡片收集 |
 | `src/srs/deckUtils.ts` | Deck / 卡型 |

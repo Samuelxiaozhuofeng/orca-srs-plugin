@@ -75,6 +75,7 @@ import {
   saveChoiceStatistics,
   serializeStatistics
 } from "./choiceStatisticsStorage"
+import { clearBlockCache, hasBlockCacheEntry, preheatBlockCache } from "./storage"
 
 function makeBlock(
   id: DbId,
@@ -610,5 +611,61 @@ describe("clearChoiceStatistics", () => {
     )
     await clearChoiceStatistics(40)
     await expect(loadChoiceStatistics(40)).resolves.toEqual([])
+  })
+})
+
+describe("缓存失效（低危#4：srs.choice.statistics 写入/清除后必须失效 blockCache）", () => {
+  beforeEach(() => {
+    clearBlockCache()
+  })
+
+  it("saveChoiceStatistics 成功后失效该块的 blockCache", async () => {
+    const block = makeBlock(50)
+    blockStore.set(50, block)
+    preheatBlockCache([block])
+    expect(hasBlockCacheEntry(50)).toBe(true)
+
+    await saveChoiceStatistics(
+      50,
+      entry({ selectedBlockIds: [1], correctBlockIds: [1], isCorrect: true })
+    )
+
+    expect(hasBlockCacheEntry(50)).toBe(false)
+  })
+
+  it("clearChoiceStatistics 成功后失效该块的 blockCache", async () => {
+    const block = makeBlock(51, [
+      {
+        name: CHOICE_STATISTICS_PROPERTY_NAME,
+        value: serializeStatistics({ version: 1, entries: [] }),
+        type: 1
+      }
+    ])
+    blockStore.set(51, block)
+    preheatBlockCache([block])
+    expect(hasBlockCacheEntry(51)).toBe(true)
+
+    await clearChoiceStatistics(51)
+
+    expect(hasBlockCacheEntry(51)).toBe(false)
+  })
+
+  it("写入失败（返回 Error）时向上抛出且不失效缓存（后端未变更）", async () => {
+    const block = makeBlock(52)
+    blockStore.set(52, block)
+    preheatBlockCache([block])
+    // mock 实现的返回类型被推断为 Promise<undefined>，此处按运行时语义返回 Error
+    mockOrca.commands.invokeEditorCommand.mockImplementationOnce(
+      async () => new Error("setProperties failed") as unknown as undefined
+    )
+
+    await expect(
+      saveChoiceStatistics(
+        52,
+        entry({ selectedBlockIds: [1], correctBlockIds: [], isCorrect: false })
+      )
+    ).rejects.toThrow("setProperties failed")
+
+    expect(hasBlockCacheEntry(52)).toBe(true)
   })
 })

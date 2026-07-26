@@ -12,6 +12,11 @@ const FOCUS_CARD_KEY = "incrementalReadingSessionFocusCardId"
 export const IR_SESSION_STORAGE_KEY = STORAGE_KEY
 export const IR_SESSION_FOCUS_CARD_KEY = FOCUS_CARD_KEY
 
+/** 测试用：重置进程内会话块指针（参照 resetReviewSessionBlockManagerForTests） */
+export function resetIncrementalReadingSessionManagerForTests(): void {
+  irSessionBlockId = null
+}
+
 export async function getStoredIncrementalReadingSessionBlockId(pluginName: string): Promise<DbId | null> {
   const storedId = await orca.plugins.getData(pluginName, STORAGE_KEY)
   return typeof storedId === "number" ? storedId : null
@@ -120,6 +125,14 @@ export async function popNextIRSessionFocusCardId(
   }
 }
 
+/**
+ * 解析会话块：state 命中或后端返回即为存在；后端明确返回 null/undefined
+ * 才视为「确实不存在」（允许上层走新建路径）。
+ *
+ * 低危#20：后端 throw 是「读取失败」而非「不存在」，必须向上抛出
+ * （与 reviewSessionManager.resolveReviewSessionBlock 对齐）；否则瞬时故障
+ * 会被当作块已删除，静默新建会话块并覆盖存储指针，旧会话块成孤儿。
+ */
 async function resolveBlock(blockId: DbId) {
   const fromState = orca.state.blocks?.[blockId]
   if (fromState) return fromState
@@ -128,6 +141,8 @@ async function resolveBlock(blockId: DbId) {
     return fetched
   } catch (error) {
     console.warn("[ir] 无法从后端获取渐进阅读会话块:", error)
-    return null
+    throw error instanceof Error
+      ? error
+      : new Error(`无法从后端获取渐进阅读会话块 #${blockId}: ${String(error)}`)
   }
 }

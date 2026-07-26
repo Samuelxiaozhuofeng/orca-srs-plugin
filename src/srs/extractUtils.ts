@@ -410,8 +410,9 @@ async function createExtractFromText(args: {
     try {
       const { upsertIRIndexId } = await import("./incremental-reading/irIndex")
       upsertIRIndexId(pluginName, extractBlockId, "extracts")
-    } catch {
-      // 索引失败不影响主流程
+    } catch (indexError) {
+      // 索引失败不影响主流程，但保持可见；下次收集会全量重建索引
+      console.warn(`[${pluginName}] 摘录写入 IR 索引失败:`, indexError)
     }
   } catch (error) {
     console.error(`[${pluginName}] 初始化渐进阅读状态失败:`, error)

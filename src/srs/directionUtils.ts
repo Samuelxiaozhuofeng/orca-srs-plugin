@@ -22,6 +22,13 @@ import { buildCardTagData } from "./cardTagDataBuilder"
  */
 export type DirectionType = "forward" | "backward" | "bidirectional"
 
+/** direction 值白名单（块内容是可被外部改写的持久化数据，读取时必须校验） */
+const VALID_DIRECTIONS: ReadonlySet<string> = new Set([
+  "forward",
+  "backward",
+  "bidirectional"
+])
+
 /**
  * 方向符号映射
  */
@@ -301,8 +308,24 @@ export function extractDirectionInfo(
     .join("")
     .trim()
 
+  // fragment 来自持久化块内容（不可信）：direction 必须落在白名单内。
+  // 缺失（falsy）沿用既有回退 "forward"，不告警；契约外的脏值告警后回退 "forward"，
+  // 确保下游属性写入只会收到合法方向字面量。
+  const rawDirection = dirFragment.direction
+  let direction: DirectionType
+  if (typeof rawDirection === "string" && VALID_DIRECTIONS.has(rawDirection)) {
+    direction = rawDirection as DirectionType
+  } else {
+    if (rawDirection) {
+      console.warn(
+        `[srs] direction fragment 含非法方向值（${JSON.stringify(rawDirection)}），已回退为 "forward"（合法值：forward/backward/bidirectional）`
+      )
+    }
+    direction = "forward"
+  }
+
   return {
-    direction: dirFragment.direction || "forward",
+    direction,
     leftText,
     rightText
   }
@@ -323,5 +346,14 @@ export function getDirectionList(
   if (direction === "bidirectional") {
     return ["forward", "backward"]
   }
-  return [direction as "forward" | "backward"]
+  if (direction === "forward" || direction === "backward") {
+    return [direction]
+  }
+  // 返回值会流入 srs.<dir>.* 属性名构建（storage.ts buildDirectionPropertyName），
+  // 契约要求命名空间只能是 srs.forward.* / srs.backward.*：
+  // 白名单外的脏值（运行时可能来自持久化数据）告警后跳过，绝不进入属性写入。
+  console.warn(
+    `[srs] 非法方向值（${JSON.stringify(direction)}），已跳过该方向（合法值：forward/backward/bidirectional）`
+  )
+  return []
 }

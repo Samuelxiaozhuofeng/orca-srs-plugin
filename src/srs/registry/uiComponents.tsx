@@ -236,13 +236,31 @@ export function registerUIComponents(pluginName: string): void {
   })
 }
 
-export function unregisterUIComponents(pluginName: string): void {
-  // 中止后台 AI 快捷任务；未「保留」的 ready 预览默认删除（离开/卸载不保存）
-  void import("../ai/aiQuickInteractJobs")
-    .then((m) => m.cancelAllBackgroundQuickJobs())
-    .catch((error) => {
-      console.warn(`[${pluginName}] 清理 AI 后台任务失败:`, error)
-    })
+/** AI 后台任务取消的有界等待上限；超时后卸载继续，错误保持可见 */
+export const AI_BACKGROUND_CANCEL_TIMEOUT_MS = 3000
+
+export async function unregisterUIComponents(
+  pluginName: string,
+  options?: { aiCancelTimeoutMs?: number }
+): Promise<void> {
+  const aiCancelTimeoutMs =
+    options?.aiCancelTimeoutMs ?? AI_BACKGROUND_CANCEL_TIMEOUT_MS
+
+  // 中止后台 AI 快捷任务；未「保留」的 ready 预览默认删除（离开/卸载不保存）。
+  // 先启动取消（与下方同步注销并行），函数末尾有界等待其完成，
+  // 使 unload 序列真正 await 到该清理；失败/超时抛出进入 cleanupErrors。
+  let cancelTimedOut = false
+  const cancelAIJobs = import("../ai/aiQuickInteractJobs").then((m) =>
+    m.cancelAllBackgroundQuickJobs()
+  )
+  cancelAIJobs.catch((error) => {
+    // 未超时的失败已由下方 await 抛给 unload 序列记录；这里只兜底超时后的迟到失败
+    if (!cancelTimedOut) return
+    console.error(
+      `[${pluginName}] AI 后台任务取消在卸载超时放弃等待后失败:`,
+      error
+    )
+  })
 
   for (const suffix of HEADBAR_MOUNT_SUFFIXES) {
     orca.headbar.unregisterHeadbarButton(headbarButtonId(pluginName, suffix))
@@ -281,4 +299,25 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.todayLearning`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importEpub`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importWeb`)
+
+  // 有界等待 AI 后台任务取消：卸载时序确定；超时/失败向上抛出，
+  // 由 unload 序列记入 cleanupErrors（默认 console.error，可见不吞错）
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      cancelAIJobs,
+      new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          cancelTimedOut = true
+          reject(
+            new Error(
+              `取消 AI 后台任务超时（>${aiCancelTimeoutMs}ms），任务可能仍在后台执行`
+            )
+          )
+        }, aiCancelTimeoutMs)
+      })
+    ])
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
+  }
 }

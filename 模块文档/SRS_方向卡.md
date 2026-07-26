@@ -1,7 +1,8 @@
 # SRS 方向卡（Direction Card）
 
-> **文档同步日期**：2026-07-13  
-> **变更说明**：原「实现计划」长文（含大段未落地草稿代码）改为以当前仓库代码为准的实现文档。历史设计决策中与代码一致的部分保留为说明；过时计划删除。
+> **文档同步日期**：2026-07-26  
+> **变更说明**：补 direction 值白名单双层防御（`extractDirectionInfo` 回退 forward+warn；`getDirectionList` 硬门禁脏值返回 `[]`）。  
+> 2026-07-13：原「实现计划」长文（含大段未落地草稿代码）改为以当前仓库代码为准的实现文档。历史设计决策中与代码一致的部分保留为说明；过时计划删除。
 
 ---
 
@@ -88,6 +89,13 @@
 
 - 解析左右文本与方向
 - `getDirectionList`：bidirectional → `["forward","backward"]`，否则单元素数组
+
+**direction 白名单双层防御（2026-07-26，低危#23）**——fragment 来自持久化块内容，属**不可信输入**（可被外部改写）：
+
+1. **读取层** `extractDirectionInfo`：`direction` 必须落在白名单 `VALID_DIRECTIONS`（forward/backward/bidirectional）；缺失（falsy）沿用既有回退 `"forward"` **不告警**；契约外脏值 `console.warn` 后回退 `"forward"`。
+2. **属性名门禁** `getDirectionList`：返回值会流入 `srs.<dir>.*` 属性名构建（`storage.ts buildDirectionPropertyName`），命名空间契约只允许 `srs.forward.*` / `srs.backward.*`——白名单外脏值 warn 后**返回 `[]`**，绝不进入属性写入（不生成 `srs.<garbage>.*` 契约外属性）。
+
+回归：`src/srs/directionUtils.test.ts`（7 用例）。
 
 ---
 

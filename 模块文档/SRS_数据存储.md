@@ -1,7 +1,8 @@
 # SRS 数据存储模块
 
-> **文档同步日期：2026-07-13**  
-> 变更说明：以代码为准校正块属性表（含 Direction / `state` / `resets`）、相关文件路径；补充会话进度 `sessionStorage`（FC-09）、三态存在性与日志/选择题统计要点。
+> **文档同步日期：2026-07-26**  
+> 变更说明：`srs.state` 读取补枚举白名单（`parseFsrsState`，脏值回退 `State.New` + warn，缺失静默）；`cleanupSrsProperties`（`tagCleanup.ts`）与 `srs.choice.statistics` 写/删后已 `invalidateBlockCache`（低危#3/#4）；核心持久层直测见 `src/srs/storage.test.ts`。  
+> 2026-07-13：以代码为准校正块属性表（含 Direction / `state` / `resets`）、相关文件路径；补充会话进度 `sessionStorage`（FC-09）、三态存在性与日志/选择题统计要点。
 
 ## 概述
 
@@ -63,7 +64,7 @@ SRS 状态通过 Orca 的块属性（`block.properties`）存储。命名规则�
 | `reps` | Number (3) | 复习次数 |
 | `lapses` | Number (3) | 遗忘次数 |
 | `resets` | Number (3) | 用户主动重置次数（评分后继承） |
-| `state` | Number (3) | FSRS 内部状态：0=New, 1=Learning, 2=Review, 3=Relearning |
+| `state` | Number (3) | FSRS 内部状态：0=New, 1=Learning, 2=Review, 3=Relearning。**读取经白名单校验**（`parseFsrsState`，2026-07-26 低危#22）：仅接受整数 0–3（字符串数字先 `Number` 转换）；越界/非整数/非数字**回退 `State.New` 并 `console.warn`**（含块 id / 属性名 / 脏值）；缺失（undefined/null）静默回退 `State.New` 不告警。普通 / cloze / 方向卡三处读取共用。脏属性只 warn 不改写（评分保存后自愈） |
 
 ### 属性类型编码（本项目实际写入值）
 
@@ -338,6 +339,7 @@ JSON 形态：
 
 - **同一 blockId**：`saveChoiceStatistics` 内部 Promise 链串行读-改-写；调用者仍收到真实 rejection。
 - **不同 blockId**：互不阻塞。
+- **缓存一致性（2026-07-26，低危#4）**：`srs.choice.statistics` 写入成功与属性删除成功后均立即 `invalidateBlockCache(blockId)`，防止长期存活的 blockCache 继续持有旧统计属性。同理 **`cleanupSrsProperties`**（`src/srs/tagCleanup.ts`，低危#3）在 `deleteProperties` 全部 `srs.*` 属性后也立即失效块缓存——否则失败路径重打 `#card` 时可能从缓存"复活"已删除的复习进度。回归：`tagCleanup.test.ts`、`choiceStatisticsStorage.test.ts`。
 - **复习层**（`recordChoiceAnswerStatistics` / UI）：保存失败 notify warn，**不阻断** FSRS 评分。
 - **防重复**：同一次提交只 save 一次，依赖 `choiceSubmitGate`。
 
