@@ -299,9 +299,45 @@
 
 .srs-today-learning__hero {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+}
+
+.srs-today-learning__hero-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
+}
+
+/* ---- 环形进度 ---- */
+.srs-today-progress-ring {
+  position: relative;
+  flex: 0 0 auto;
+  width: 84px;
+  height: 84px;
+}
+
+.srs-today-progress-ring__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.srs-today-progress-ring__pct {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--orca-color-text-1);
+}
+
+.srs-today-progress-ring__check {
+  font-size: 26px;
+  color: var(--orca-color-success-6);
 }
 
 .srs-today-learning__remaining {
@@ -327,6 +363,37 @@
 .srs-today-learning__completed {
   font-size: 13px;
   color: var(--orca-color-text-2);
+}
+
+.srs-today-learning__breakdown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.srs-today-learning__breakdown-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.srs-today-learning__breakdown-item--srs {
+  color: var(--orca-color-primary-6);
+}
+
+.srs-today-learning__breakdown-item--ir {
+  color: var(--orca-color-warning-6, #b78103);
+}
+
+.srs-today-learning__breakdown-sep {
+  color: var(--orca-color-text-3);
+}
+
+.srs-today-learning__eta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--orca-color-text-3);
 }
 
 .srs-today-learning__done {
@@ -390,29 +457,63 @@
   justify-content: center;
 }
 
-.srs-home-summary__secondary {
+/* ---- 卡库概览细带 ---- */
+.srs-home-summary__strip {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
   align-items: center;
-}
-
-.srs-home-summary__secondary-label {
-  font-size: 12px;
-  color: var(--orca-color-text-3);
-  align-self: flex-start;
-}
-
-.srs-home-summary__stats {
-  display: flex;
-  gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 13px;
 }
 
-.srs-home-summary__total {
-  font-size: 13px;
+.srs-home-summary__strip-sep {
+  color: var(--orca-color-text-3);
+  opacity: 0.6;
+}
+
+.srs-home-summary__strip-total {
+  color: var(--orca-color-text-3);
+}
+
+.srs-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--orca-color-text-2);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.srs-stat-chip__label {
+  color: var(--orca-color-text-3);
+}
+
+.srs-stat-chip__value {
+  font-weight: 600;
+}
+
+.srs-stat-chip--clickable {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.srs-stat-chip--clickable:hover {
+  background: var(--orca-color-bg-2);
+  border-color: var(--orca-color-border-1);
+}
+
+.srs-stat-chip--clickable:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
 }
 
 .srs-home-summary__actions {
@@ -423,54 +524,16 @@
   justify-content: center;
 }
 
-.srs-stat-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 16px;
-  background-color: var(--orca-color-bg-2);
-  border-radius: 8px;
-  min-width: 80px;
-  border: 1px solid transparent;
-  box-sizing: border-box;
-}
+/* 窄屏：hero 回落为纵向居中 */
+@media (max-width: 420px) {
+  .srs-today-learning__hero {
+    flex-direction: column;
+    gap: 8px;
+  }
 
-.srs-stat-card__value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--orca-color-text-1);
-}
-
-.srs-stat-card__label {
-  font-size: 12px;
-  color: var(--orca-color-text-3);
-  margin-top: 4px;
-}
-
-button.srs-stat-card {
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  appearance: none;
-  -webkit-appearance: none;
-}
-
-.srs-stat-card--clickable {
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
-}
-
-.srs-stat-card--clickable:hover {
-  border-color: var(--orca-color-border-1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transform: translateY(-1px);
-}
-
-.srs-stat-card--clickable:focus-visible {
-  outline: 2px solid var(--orca-color-primary-5);
-  outline-offset: 2px;
+  .srs-today-learning__hero-main {
+    align-items: center;
+  }
 }
 
 /* ---------- Card list view chrome ---------- */

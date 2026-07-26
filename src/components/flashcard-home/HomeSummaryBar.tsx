@@ -2,7 +2,7 @@ import type { TodayStats } from "../../srs/types"
 import type { TodayLearningSummary } from "../../srs/todayLearning/todayLearningSummary"
 import type { TodayLearningTimeBudget } from "../../srs/todayLearning/todayLearningResumeStorage"
 import type { HomeStatKind } from "./homeStatNav"
-import StatCard from "./StatCard"
+import TodayProgressRing from "./TodayProgressRing"
 
 const { Button } = orca.components
 
@@ -61,6 +61,21 @@ export default function HomeSummaryBar({
       (todayLearning.loadStatus === "ok" && todayLearning.remainingTotal === 0))
 
   const hasExactTotal = todayLearning?.remainingTotal != null
+
+  // 环形进度状态：只有已完成/剩余均可信时才画真实进度，否则占位（不把 lower-bound 当真实进度）
+  const ringState = isDone
+    ? ({ kind: "done", completed: todayLearning?.completedUnified ?? 0 } as const)
+    : todayLearning != null &&
+        todayLearning.loadStatus === "ok" &&
+        todayLearning.completedUnified != null &&
+        todayLearning.remainingTotal != null
+      ? ({
+          kind: "ok",
+          completed: todayLearning.completedUnified,
+          remaining: todayLearning.remainingTotal
+        } as const)
+      : ({ kind: "unknown" } as const)
+
   const primaryLabel = actionBusy
     ? "启动中…"
     : canContinue
@@ -112,49 +127,69 @@ export default function HomeSummaryBar({
             ) : null}
 
             <div className="srs-today-learning__hero">
-              {isDone ? (
-                <div className="srs-today-learning__done">今天已完成</div>
-              ) : hasExactTotal ? (
-                <>
-                  <div className="srs-today-learning__remaining">
-                    <span className="srs-today-learning__remaining-value">
-                      {formatExactCount(todayLearning!.remainingTotal)}
-                    </span>
-                    <span className="srs-today-learning__remaining-label">
-                      还剩
-                    </span>
-                  </div>
-                  <div className="srs-today-learning__breakdown">
-                    复习 {formatExactCount(todayLearning?.srsRemaining)}
-                    {" · "}
-                    阅读 {formatExactCount(todayLearning?.irRemaining)}
-                  </div>
-                  <div className="srs-today-learning__eta">
-                    预计约{" "}
-                    {formatExactCount(todayLearning?.estimatedMinutes)} 分钟
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="srs-today-learning__remaining-label">
-                    今日剩余（部分未确认）
-                  </div>
-                  <div className="srs-today-learning__breakdown">
-                    复习{" "}
-                    {todayLearning?.srsRemaining == null
-                      ? "暂不可用"
-                      : todayLearning.srsRemaining}
-                    {" · "}
-                    阅读{" "}
-                    {todayLearning?.irRemaining == null
-                      ? "暂不可用"
-                      : todayLearning.irRemaining}
-                  </div>
-                  <div className="srs-today-learning__eta">
-                    预计总时长暂不可用
-                  </div>
-                </>
-              )}
+              <TodayProgressRing state={ringState} />
+              <div className="srs-today-learning__hero-main">
+                {isDone ? (
+                  <div className="srs-today-learning__done">今天已完成</div>
+                ) : hasExactTotal ? (
+                  <>
+                    <div className="srs-today-learning__remaining">
+                      <span className="srs-today-learning__remaining-value">
+                        {formatExactCount(todayLearning!.remainingTotal)}
+                      </span>
+                      <span className="srs-today-learning__remaining-label">
+                        还剩
+                      </span>
+                    </div>
+                    <div className="srs-today-learning__breakdown">
+                      <span className="srs-today-learning__breakdown-item srs-today-learning__breakdown-item--srs">
+                        <i className="ti ti-cards" />
+                        复习 {formatExactCount(todayLearning?.srsRemaining)}
+                      </span>
+                      <span className="srs-today-learning__breakdown-sep">
+                        ·
+                      </span>
+                      <span className="srs-today-learning__breakdown-item srs-today-learning__breakdown-item--ir">
+                        <i className="ti ti-book-2" />
+                        阅读 {formatExactCount(todayLearning?.irRemaining)}
+                      </span>
+                    </div>
+                    <div className="srs-today-learning__eta">
+                      <i className="ti ti-clock-hour-4" />
+                      预计约{" "}
+                      {formatExactCount(todayLearning?.estimatedMinutes)} 分钟
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="srs-today-learning__remaining-label">
+                      今日剩余（部分未确认）
+                    </div>
+                    <div className="srs-today-learning__breakdown">
+                      <span className="srs-today-learning__breakdown-item srs-today-learning__breakdown-item--srs">
+                        <i className="ti ti-cards" />
+                        复习{" "}
+                        {todayLearning?.srsRemaining == null
+                          ? "暂不可用"
+                          : todayLearning.srsRemaining}
+                      </span>
+                      <span className="srs-today-learning__breakdown-sep">
+                        ·
+                      </span>
+                      <span className="srs-today-learning__breakdown-item srs-today-learning__breakdown-item--ir">
+                        <i className="ti ti-book-2" />
+                        阅读{" "}
+                        {todayLearning?.irRemaining == null
+                          ? "暂不可用"
+                          : todayLearning.irRemaining}
+                      </span>
+                    </div>
+                    <div className="srs-today-learning__eta">
+                      预计总时长暂不可用
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {todayLearning?.completedUnified != null ? (
@@ -314,35 +349,79 @@ export default function HomeSummaryBar({
         )}
       </div>
 
-      <div className="srs-home-summary__secondary">
-        <div className="srs-home-summary__secondary-label">卡库概览</div>
-        <div className="srs-home-summary__stats">
-          <StatCard
-            label="新卡"
-            value={todayStats.newCount}
-            color="var(--orca-color-primary-6)"
-            onClick={onStatClick ? () => onStatClick("new") : undefined}
-            title="查看全部新卡"
-          />
-          <StatCard
-            label="今日到期"
-            value={todayStats.todayCount}
-            color="var(--orca-color-danger-6)"
-            onClick={onStatClick ? () => onStatClick("today") : undefined}
-            title="查看今日到期记忆卡"
-          />
-          <StatCard
-            label="积压"
-            value={backlogCount}
-            color="var(--orca-color-success-6)"
-            onClick={onStatClick ? () => onStatClick("backlog") : undefined}
-            title="查看积压记忆卡"
-          />
-        </div>
-        <div className="srs-home-summary__total">
-          共 {todayStats.totalCount} 张记忆卡
-        </div>
+      <div
+        className="srs-home-summary__strip"
+        aria-label="卡库概览"
+      >
+        <StatChip
+          icon="ti-sparkles"
+          label="新卡"
+          value={todayStats.newCount}
+          color="var(--orca-color-primary-6)"
+          onClick={onStatClick ? () => onStatClick("new") : undefined}
+          title="查看全部新卡"
+        />
+        <span className="srs-home-summary__strip-sep">·</span>
+        <StatChip
+          icon="ti-clock"
+          label="今日到期"
+          value={todayStats.todayCount}
+          color="var(--orca-color-danger-6)"
+          onClick={onStatClick ? () => onStatClick("today") : undefined}
+          title="查看今日到期记忆卡"
+        />
+        <span className="srs-home-summary__strip-sep">·</span>
+        <StatChip
+          icon="ti-inbox"
+          label="积压"
+          value={backlogCount}
+          color="var(--orca-color-success-6)"
+          onClick={onStatClick ? () => onStatClick("backlog") : undefined}
+          title="查看积压记忆卡"
+        />
+        <span className="srs-home-summary__strip-sep">·</span>
+        <span className="srs-home-summary__strip-total">
+          共 {todayStats.totalCount} 张
+        </span>
       </div>
     </div>
+  )
+}
+
+type StatChipProps = {
+  icon: string
+  label: string
+  value: number
+  color: string
+  onClick?: () => void
+  title?: string
+}
+
+function StatChip({ icon, label, value, color, onClick, title }: StatChipProps) {
+  const content = (
+    <>
+      <i className={`ti ${icon}`} style={{ color }} />
+      <span className="srs-stat-chip__label">{label}</span>
+      <span className="srs-stat-chip__value" style={{ color }}>
+        {value}
+      </span>
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className="srs-stat-chip srs-stat-chip--clickable"
+        onClick={onClick}
+        title={title}
+      >
+        {content}
+      </button>
+    )
+  }
+  return (
+    <span className="srs-stat-chip" title={title}>
+      {content}
+    </span>
   )
 }
