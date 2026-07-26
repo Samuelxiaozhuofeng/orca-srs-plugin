@@ -21,9 +21,9 @@ import {
 } from "../../../srs/incremental-reading/irQueuePolicy"
 import {
   buildMixedSessionQueue,
-  filterEligibleReviewCards,
   type IRSessionEntry
 } from "../../../srs/incremental-reading/irMixedQueuePolicy"
+import { loadMixedEligibleReviewCards } from "../../../srs/incremental-reading/irMixedDailyBudget"
 import { estimateCardCostSecondsCalibrated } from "../../../srs/incremental-reading/irCostCalibration"
 import { buildCollectError, buildCollectOk } from "../../../srs/incremental-reading/irCollectResult"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
@@ -34,6 +34,7 @@ import {
   resolveEffectiveIRDailyLimit,
   resolveOrcaRepo
 } from "../../../srs/incremental-reading/irDailyStatsStorage"
+import { requireIRDailyStatsForSession } from "../../../srs/todayLearning/todayLearningSummary"
 import { assembleSessionReadingQueue } from "./assembleSessionReadingQueue"
 import {
   buildMixedDegradedNotice,
@@ -121,26 +122,77 @@ export function useIRWorkspaceSession(
       const seed = formatLocalDateKey(sessionStartedAt)
 
       // 跨会话日额度：用今日累计 completedCount 扣减配置 dailyLimit（0=不限制）
+      // 读取失败 fail-closed：不得按 0 已用额度继续装配，更不能假装「今日学习完毕」
       const dailyStats = loadIRDailyStats({
         repo: resolveOrcaRepo(),
         pluginName: name,
         dateKey: seed
       })
-      if (!dailyStats.ok) {
-        console.error("[IR Workspace] 读取今日 IR 日统计失败，按 0 已用额度装配:", dailyStats.error)
+      const dailyGate = requireIRDailyStatsForSession(dailyStats)
+      if (!dailyGate.ok) {
+        console.error(
+          "[IR Workspace] 读取今日 IR 日统计失败，停止装配:",
+          dailyGate.error
+        )
+        const statsError = buildCollectError(dailyGate.error)
+        setSession((prev: IRWorkspaceSessionState) => ({
+          ...prev,
+          ready: true,
+          loading: false,
+          entries: [],
+          collectResult: {
+            ...statsError,
+            errorMessage: `今日学习额度读取失败：${statsError.errorMessage ?? dailyGate.error.message}`
+          },
+          sessionLaunchMode: launchMode,
+          mixedDegradedNotice: null,
+          generation: prev.generation + 1
+        }))
+        orca.notify("error", "今日学习额度读取失败，已停止装配队列", {
+          title: "今日学习"
+        })
+        return
       }
       const effectiveLimit = resolveEffectiveIRDailyLimit(
         settings.dailyLimit,
-        dailyStats.record.totals.completedCount
+        dailyGate.usedCompletedCount
       )
       const sessionDailyLimit = effectiveDailyLimitForQueue(effectiveLimit)
 
-      let reviewCards: import("../../../srs/types").ReviewCard[] = []
+      // mixed：复用 SRS 今日额度路径；日志读取失败必须 fail-closed
+      let eligibleReviewCards: import("../../../srs/types").ReviewCard[] = []
       if (mixedEnabledForSession) {
-        const { collectReviewCards } = await import("../../../srs/cardCollector")
-        reviewCards = await collectReviewCards(name)
+        try {
+          const mixedBudget = await loadMixedEligibleReviewCards(
+            name,
+            sessionStartedAt
+          )
+          eligibleReviewCards = mixedBudget.eligibleReviewCards
+        } catch (logError) {
+          console.error(
+            "[IR Workspace] 读取今日 SRS 复习日志/额度失败，停止混合装配:",
+            logError
+          )
+          const errResult = buildCollectError(logError)
+          setSession((prev: IRWorkspaceSessionState) => ({
+            ...prev,
+            ready: true,
+            loading: false,
+            entries: [],
+            collectResult: {
+              ...errResult,
+              errorMessage: `今日复习额度读取失败：${errResult.errorMessage ?? String(logError)}`
+            },
+            sessionLaunchMode: launchMode,
+            mixedDegradedNotice: null,
+            generation: prev.generation + 1
+          }))
+          orca.notify("error", "今日复习额度读取失败，已停止装配队列", {
+            title: "今日学习"
+          })
+          return
+        }
       }
-      const eligibleReviewCards = filterEligibleReviewCards(reviewCards, sessionStartedAt)
       const readingBudgetMinutes = eligibleReviewCards.length > 0
         ? options.timeBudgetMinutes * (1 - settings.mixedLearningReviewRatio / 100)
         : options.timeBudgetMinutes

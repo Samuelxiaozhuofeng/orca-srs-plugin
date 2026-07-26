@@ -241,13 +241,166 @@
   color: var(--orca-color-danger-5);
 }
 
-/* ---------- Home summary + clickable stats ---------- */
+/* ---------- Home summary + 今日学习 ---------- */
 
 .srs-home-summary {
   display: flex;
   flex-direction: column;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.srs-today-learning {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   align-items: center;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--orca-color-border-1);
+  background: var(--orca-color-bg-2);
+  box-sizing: border-box;
+}
+
+.srs-today-learning__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+}
+
+.srs-today-learning__loading {
+  font-size: 13px;
+  color: var(--orca-color-text-3);
+  padding: 12px 0;
+}
+
+.srs-today-learning__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--orca-color-danger-5);
+  font-size: 14px;
+  text-align: center;
+}
+
+.srs-today-learning__error-detail {
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+  max-width: 360px;
+}
+
+.srs-today-learning__partial {
+  font-size: 12px;
+  color: var(--orca-color-warning-6, #b78103);
+  text-align: center;
+  max-width: 420px;
+}
+
+.srs-today-learning__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.srs-today-learning__remaining {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.srs-today-learning__remaining-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--orca-color-text-1);
+  line-height: 1.1;
+}
+
+.srs-today-learning__remaining-label {
+  font-size: 14px;
+  color: var(--orca-color-text-3);
+}
+
+.srs-today-learning__breakdown,
+.srs-today-learning__eta,
+.srs-today-learning__completed {
+  font-size: 13px;
+  color: var(--orca-color-text-2);
+}
+
+.srs-today-learning__done {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--orca-color-success-6);
+  padding: 8px 0;
+}
+
+.srs-today-learning__recommendation {
+  font-size: 13px;
+  color: var(--orca-color-text-2);
+  text-align: center;
+  max-width: 420px;
+}
+
+.srs-today-learning__timebox {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.srs-today-learning__timebox-btn {
+  border: 1px solid var(--orca-color-border-1);
+  background: var(--orca-color-bg-1);
+  color: var(--orca-color-text-2);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.srs-today-learning__timebox-btn--selected {
+  border-color: var(--orca-color-primary-6);
+  color: var(--orca-color-primary-6);
+  background: var(--orca-color-bg-1);
+  font-weight: 600;
+}
+
+.srs-today-learning__timebox-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.srs-today-learning__resume-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--orca-color-danger-5);
+  text-align: center;
+  max-width: 420px;
+}
+
+.srs-today-learning__resume-error-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.srs-home-summary__secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.srs-home-summary__secondary-label {
+  font-size: 12px;
+  color: var(--orca-color-text-3);
+  align-self: flex-start;
 }
 
 .srs-home-summary__stats {

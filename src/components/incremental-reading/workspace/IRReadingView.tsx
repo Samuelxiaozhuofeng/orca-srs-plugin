@@ -61,9 +61,38 @@ export default function IRReadingView({
   onClose,
   onCloseHandlerChange
 }: Props) {
-  /** 启动页本次模式；默认只读（保守，不替老用户自动开混合），不写回全局设置 */
-  const [launchMode, setLaunchMode] = useState<IRSessionLaunchMode>("read-only")
+  /** 今日学习入口默认混合；启动页不再暴露只读/混合选择 */
   const [reviewStarting, setReviewStarting] = useState(false)
+  const [startingMinutes, setStartingMinutes] = useState<number | null>(null)
+
+  const handleStartWithMinutes = useCallback(
+    async (mins: number) => {
+      if (startingMinutes != null) return
+      setStartingMinutes(mins)
+      try {
+        const {
+          writeIrTodayLearningResume,
+          reportTodayLearningResumeWriteFailure
+        } = await import(
+          "../../../srs/todayLearning/todayLearningResumeStorage"
+        )
+        const writeResult = await writeIrTodayLearningResume({
+          pluginName,
+          timeBudgetMinutes: mins
+        })
+        if (!writeResult.ok) {
+          reportTodayLearningResumeWriteFailure(pluginName, writeResult.error)
+        }
+        onStartSession(mins, "mixed")
+      } catch (error) {
+        console.error("[IR Workspace] 启动阅读会话失败:", error)
+        const message = error instanceof Error ? error.message : String(error)
+        orca.notify("error", `启动失败：${message}`, { title: "今日学习" })
+        setStartingMinutes(null)
+      }
+    },
+    [onStartSession, pluginName, startingMinutes]
+  )
 
   const handleStartReviewSession = useCallback(async () => {
     if (reviewStarting) return
@@ -74,7 +103,7 @@ export default function IRReadingView({
     } catch (error) {
       console.error("[IR Workspace] 启动独立复习会话失败:", error)
       const message = error instanceof Error ? error.message : String(error)
-      orca.notify("error", `启动复习失败：${message}`, { title: "渐进阅读" })
+      orca.notify("error", `启动复习失败：${message}`, { title: "今日学习" })
     } finally {
       setReviewStarting(false)
     }
@@ -88,7 +117,7 @@ export default function IRReadingView({
         role="tabpanel"
         aria-labelledby={`${workspaceId}-mode-reading`}
       >
-        <div className="ir-reading__launch" role="status">加载阅读队列中…</div>
+        <div className="ir-reading__launch" role="status">加载学习队列中…</div>
       </div>
     )
   }
@@ -102,64 +131,35 @@ export default function IRReadingView({
         aria-labelledby={`${workspaceId}-mode-reading`}
       >
         <div className="ir-reading__launch">
-          <div className="ir-reading__launch-title">开始专注阅读</div>
-          <div className="ir-reading__launch-hint">选择本次会话模式与时间盒，系统将生成有限队列</div>
+          <div className="ir-reading__launch-title">开始今日学习</div>
+          <div className="ir-reading__launch-hint">
+            选择时间盒即可开始（默认阅读 + 记忆卡混合）
+          </div>
 
           <div className="ir-reading__today-summary" aria-live="polite">
             {todayReadingSummaryLoading ? (
-              <div className="ir-reading__today-summary-loading">正在准备今天的阅读内容…</div>
+              <div className="ir-reading__today-summary-loading">正在准备今天的学习内容…</div>
             ) : !todayReadingSummaryAvailable ? (
               <>
                 <div className="ir-reading__today-summary-main">暂时无法读取今日数量</div>
-                <div className="ir-reading__today-summary-reassurance">仍然可以选择时间开始阅读</div>
+                <div className="ir-reading__today-summary-reassurance">仍然可以选择时间开始</div>
               </>
             ) : todayReadingSummary.total === 0 ? (
               <>
-                <div className="ir-reading__today-summary-main">今天没有需要优先阅读的卡片</div>
-                <div className="ir-reading__today-summary-reassurance">也可以从资料库选择想读的内容</div>
+                <div className="ir-reading__today-summary-main">今天没有需要优先阅读的材料</div>
+                <div className="ir-reading__today-summary-reassurance">也可以从资料库选择，或去复习记忆卡</div>
               </>
             ) : (
               <>
                 <div className="ir-reading__today-summary-main">
-                  今天为你准备了 <strong>{todayReadingSummary.total}</strong> 张
+                  今天为你准备了 <strong>{todayReadingSummary.total}</strong> 份阅读材料
                 </div>
                 <div className="ir-reading__today-summary-breakdown">
                   主题 {todayReadingSummary.topics} · 摘录 {todayReadingSummary.extracts}
                 </div>
-                <div className="ir-reading__today-summary-reassurance">按自己的节奏，读多少都可以</div>
+                <div className="ir-reading__today-summary-reassurance">按自己的节奏，学多少都可以</div>
               </>
             )}
-          </div>
-
-          <div className="ir-reading__launch-field">
-            <div className="ir-reading__launch-label" id={`${workspaceId}-session-mode-label`}>
-              本次模式
-            </div>
-            <div
-              className="ir-session-mode"
-              role="radiogroup"
-              aria-labelledby={`${workspaceId}-session-mode-label`}
-            >
-              <button
-                type="button"
-                role="radio"
-                className="ir-session-mode__btn"
-                aria-checked={launchMode === "read-only"}
-                onClick={() => setLaunchMode("read-only")}
-              >
-                只读
-              </button>
-              <button
-                type="button"
-                role="radio"
-                className="ir-session-mode__btn"
-                aria-checked={launchMode === "mixed"}
-                onClick={() => setLaunchMode("mixed")}
-              >
-                混合
-                <span className="ir-session-mode__badge">推荐</span>
-              </button>
-            </div>
           </div>
 
           <div className="ir-reading__launch-actions">
@@ -168,9 +168,10 @@ export default function IRReadingView({
                 type="button"
                 key={mins}
                 className={`ir-timebox-btn${mins === 20 ? " ir-timebox-btn--recommended" : ""}`}
-                onClick={() => onStartSession(mins, launchMode)}
+                disabled={startingMinutes != null}
+                onClick={() => void handleStartWithMinutes(mins)}
               >
-                <span>{mins}</span>
+                <span>{startingMinutes === mins ? "…" : mins}</span>
                 <small>分钟</small>
               </button>
             ))}
@@ -179,11 +180,11 @@ export default function IRReadingView({
           <button
             type="button"
             className="ir-text-btn ir-text-btn--command"
-            disabled={reviewStarting}
+            disabled={reviewStarting || startingMinutes != null}
             onClick={() => void handleStartReviewSession()}
           >
             <i className="ti ti-cards" aria-hidden="true" />
-            {reviewStarting ? "正在打开复习…" : "去复习到期卡"}
+            {reviewStarting ? "正在打开复习…" : "只复习记忆卡"}
           </button>
 
           <button type="button" className="ir-text-btn" onClick={onBackToLibrary}>

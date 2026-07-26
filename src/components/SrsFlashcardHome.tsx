@@ -1,4 +1,4 @@
-/** Flash Home 主容器：拥有数据、事件订阅、导航与业务动作。 */
+/** 今日学习主页：统一摘要、可恢复入口、卡组与困难卡次级区。 */
 
 import type { DbId } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../srs/types"
@@ -9,6 +9,17 @@ import {
   invalidateFlashHomeDataCache,
   loadFlashHomeData
 } from "../srs/flashHomeDataLoader"
+import {
+  invalidateTodayLearningSummaryCache,
+  loadTodayLearningSummaryCached,
+  type TodayLearningSummary
+} from "../srs/todayLearning/todayLearningSummary"
+import {
+  loadTodayLearningResume,
+  resumeMarkerHasTrustedTasks,
+  type TodayLearningResumeMarker,
+  type TodayLearningTimeBudget
+} from "../srs/todayLearning/todayLearningResumeStorage"
 import FlashHomePage from "./flashcard-home/FlashHomePage"
 import CardListView from "./flashcard-home/CardListView"
 import DifficultCardsView from "./DifficultCardsView"
@@ -61,9 +72,77 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     newCount: 0,
     totalCount: 0
   })
+  const [todayLearning, setTodayLearning] = useState<TodayLearningSummary | null>(null)
+  const [todayLearningLoading, setTodayLearningLoading] = useState(true)
+  const [resumeMarker, setResumeMarker] = useState<TodayLearningResumeMarker | null>(null)
+  const [resumeLoadError, setResumeLoadError] = useState<string | null>(null)
+  const [resumeActionError, setResumeActionError] = useState<string | null>(null)
+  const [selectedMinutes, setSelectedMinutes] = useState<TodayLearningTimeBudget>(20)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentFilter, setCurrentFilter] = useState<FilterType>("all")
+  const [actionBusy, setActionBusy] = useState(false)
+  const actionBusyRef = useRef(false)
+
+  const loadResume = useCallback(async () => {
+    try {
+      const result = await loadTodayLearningResume({ pluginName })
+      if (result.status === "ok") {
+        setResumeMarker(result.marker)
+        setResumeLoadError(null)
+        if (result.marker.kind === "ir") {
+          setSelectedMinutes(result.marker.timeBudgetMinutes)
+        }
+      } else if (result.status === "stale" || result.status === "absent") {
+        setResumeMarker(null)
+        setResumeLoadError(null)
+      } else {
+        setResumeMarker(null)
+        setResumeLoadError(result.error.message)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[${pluginName}] 读取今日学习 resume 失败:`, error)
+      setResumeMarker(null)
+      setResumeLoadError(message)
+    }
+  }, [pluginName])
+
+  const loadTodayLearning = useCallback(
+    async (force: boolean) => {
+      setTodayLearningLoading(true)
+      try {
+        if (force) invalidateTodayLearningSummaryCache()
+        const summary = await loadTodayLearningSummaryCached(pluginName, {
+          force
+        })
+        setTodayLearning(summary)
+      } catch (error) {
+        console.error(`[${pluginName}] 加载今日学习摘要失败:`, error)
+        const message = error instanceof Error ? error.message : String(error)
+        setTodayLearning({
+          loadStatus: "error",
+          srsRemaining: null,
+          irRemaining: null,
+          remainingTotal: null,
+          estimatedMinutes: null,
+          srsCompleted: null,
+          irReadingCompleted: null,
+          completedUnified: null,
+          srsCostSeconds: null,
+          irCostSeconds: null,
+          recommendation: "暂时无法读取今日学习，请重试。",
+          errorMessage: message,
+          warnings: Object.freeze([message]),
+          dateKey: "",
+          fetchedAt: Date.now()
+        })
+      } finally {
+        setTodayLearningLoading(false)
+      }
+    },
+    [pluginName]
+  )
 
   const applyLoaded = useCallback(
     async (force: boolean, showSpinner: boolean) => {
@@ -76,8 +155,11 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         setAllCards(data.cards)
         setTodayStats(data.todayStats)
         setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
+        // 首页 mount / 强制刷新：绕过 45s 缓存拉今日剩余
+        await loadTodayLearning(true)
+        await loadResume()
       } catch (error) {
-        console.error(`[${pluginName}] Flash Home 加载数据失败:`, error)
+        console.error(`[${pluginName}] 今日学习主页加载数据失败:`, error)
         if (showSpinner) {
           setErrorMessage(error instanceof Error ? error.message : String(error))
         }
@@ -85,11 +167,12 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         if (showSpinner) setIsLoading(false)
       }
     },
-    [pluginName]
+    [pluginName, loadTodayLearning, loadResume]
   )
 
   const loadData = useCallback(async () => {
     invalidateFlashHomeDataCache()
+    invalidateTodayLearningSummaryCache()
     await applyLoaded(true, true)
   }, [applyLoaded])
 
@@ -97,7 +180,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     void applyLoaded(false, true)
   }, [applyLoaded])
 
-  // 120s 兜底：强制刷新，绕过 TTL
+  // 120s 兜底：强制刷新
   useEffect(() => {
     const autoRefresh = async () => {
       try {
@@ -105,13 +188,15 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         setAllCards(data.cards)
         setTodayStats(data.todayStats)
         setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
+        await loadTodayLearning(true)
+        await loadResume()
       } catch (error) {
-        console.warn(`[${pluginName}] Flash Home 自动刷新失败:`, error)
+        console.warn(`[${pluginName}] 今日学习自动刷新失败:`, error)
       }
     }
     const interval = setInterval(autoRefresh, 120000)
     return () => clearInterval(interval)
-  }, [pluginName])
+  }, [pluginName, loadTodayLearning, loadResume])
 
   const loadDataRef = useRef(loadData)
   loadDataRef.current = loadData
@@ -125,18 +210,19 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   useEffect(() => {
     const silentReload = () => {
       invalidateFlashHomeDataCache()
+      invalidateTodayLearningSummaryCache()
       void loadDataRef.current()
     }
     const handleCardGraded = () => {
-      console.log(`[${pluginName}] Flash Home: 收到 CARD_GRADED 事件，静默刷新`)
+      console.log(`[${pluginName}] 今日学习: 收到 CARD_GRADED，刷新`)
       silentReload()
     }
     const handleCardPostponed = () => {
-      console.log(`[${pluginName}] Flash Home: 收到 CARD_POSTPONED 事件，静默刷新`)
+      console.log(`[${pluginName}] 今日学习: 收到 CARD_POSTPONED，刷新`)
       silentReload()
     }
     const handleCardSuspended = () => {
-      console.log(`[${pluginName}] Flash Home: 收到 CARD_SUSPENDED 事件，静默刷新`)
+      console.log(`[${pluginName}] 今日学习: 收到 CARD_SUSPENDED，刷新`)
       silentReload()
     }
 
@@ -180,6 +266,169 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     return filterCards(deckCards, currentFilter)
   }, [deckCards, currentFilter])
 
+  // 仅精确 ok 侧数字可启动；partial lower-bound 不可信
+  const trustedIrRemaining = todayLearning?.irRemaining
+  const trustedSrsRemaining = todayLearning?.srsRemaining
+  const hasTrustedTasks =
+    (trustedIrRemaining != null && trustedIrRemaining > 0) ||
+    (trustedSrsRemaining != null && trustedSrsRemaining > 0)
+  const resumeHasTrustedTasks = resumeMarkerHasTrustedTasks(resumeMarker, {
+    srs: trustedSrsRemaining,
+    ir: trustedIrRemaining
+  })
+
+  const canContinue =
+    resumeMarker != null &&
+    resumeHasTrustedTasks &&
+    resumeLoadError == null &&
+    resumeActionError == null
+
+  const canStart = hasTrustedTasks
+
+  const startFreshLearning = useCallback(async () => {
+    if (actionBusyRef.current) return
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setResumeActionError(null)
+    try {
+      const irRem = todayLearning?.irRemaining
+      const srsRem = todayLearning?.srsRemaining
+
+      // 优先启动精确可读的 IR；否则精确 SRS；禁止用 partial 假数字
+      if (irRem != null && irRem > 0) {
+        const { openIRWorkspace } = await import(
+          "../srs/incremental-reading/irWorkspacePanelLaunch"
+        )
+        // 不预写 resume；autoStart 成功处理时再写
+        await openIRWorkspace({
+          pluginName,
+          mode: "reading",
+          autoStart: true,
+          timeBudgetMinutes: selectedMinutes,
+          sessionLaunchMode: "mixed"
+        })
+        return
+      }
+
+      if (srsRem != null && srsRem > 0) {
+        const { startReviewSession } = await import("../main")
+        await startReviewSession()
+        return
+      }
+
+      orca.notify("info", "今天已完成，没有可开始的内容", { title: "今日学习" })
+    } catch (error) {
+      console.error(`[${pluginName}] 开始今日学习失败:`, error)
+      const message = error instanceof Error ? error.message : String(error)
+      setResumeActionError(message)
+      orca.notify("error", `开始失败：${message}`, { title: "今日学习" })
+    } finally {
+      actionBusyRef.current = false
+      setActionBusy(false)
+      void loadResume()
+      void loadTodayLearning(true)
+    }
+  }, [
+    pluginName,
+    selectedMinutes,
+    todayLearning,
+    loadResume,
+    loadTodayLearning
+  ])
+
+  const continueLearning = useCallback(async () => {
+    if (actionBusyRef.current) return
+    if (!resumeMarker) {
+      setResumeActionError("没有可继续的恢复点")
+      return
+    }
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setResumeActionError(null)
+    try {
+      if (resumeMarker.kind === "srs") {
+        const { resolveReviewSessionBlock } = await import(
+          "../srs/reviewSessionManager"
+        )
+        const { readReviewSessionDescriptorFromBlock } = await import(
+          "../srs/reviewSessionDescriptor"
+        )
+        const {
+          assertResumeSessionIdMatches
+        } = await import("../srs/todayLearning/todayLearningResumeStorage")
+        const blockId = resumeMarker.sessionBlockId as DbId
+        let block: unknown
+        try {
+          block = await resolveReviewSessionBlock(blockId)
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error)
+          throw new Error(`上次复习会话块不可用：${message}`)
+        }
+        if (!block) {
+          throw new Error("上次复习会话块不存在")
+        }
+        let descriptor
+        try {
+          descriptor = readReviewSessionDescriptorFromBlock(block)
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error)
+          throw new Error(`上次复习会话描述不可读：${message}`)
+        }
+        if (descriptor.kind !== "normal") {
+          throw new Error(
+            `上次会话类型为 ${descriptor.kind}，今日学习不支持从该类型继续（请开始新会话）`
+          )
+        }
+        const idMatch = assertResumeSessionIdMatches(
+          resumeMarker.sessionId,
+          descriptor.sessionId
+        )
+        if (!idMatch.ok) {
+          throw idMatch.error
+        }
+        orca.nav.openInLastPanel("block", { blockId })
+        orca.notify("success", "已回到上次复习", { title: "今日学习" })
+        return
+      }
+
+      // ir / mixed：autoStart 时再写 resume
+      const { openIRWorkspace } = await import(
+        "../srs/incremental-reading/irWorkspacePanelLaunch"
+      )
+      await openIRWorkspace({
+        pluginName,
+        mode: "reading",
+        autoStart: true,
+        timeBudgetMinutes: resumeMarker.timeBudgetMinutes,
+        sessionLaunchMode: "mixed"
+      })
+    } catch (error) {
+      console.error(`[${pluginName}] 继续今日学习失败:`, error)
+      const message = error instanceof Error ? error.message : String(error)
+      setResumeActionError(message)
+      orca.notify("error", `无法继续上次学习：${message}`, { title: "今日学习" })
+    } finally {
+      actionBusyRef.current = false
+      setActionBusy(false)
+    }
+  }, [resumeMarker, pluginName])
+
+  const handleRetryResumeLoad = useCallback(() => {
+    setResumeLoadError(null)
+    setResumeActionError(null)
+    void loadResume()
+  }, [loadResume])
+
+  const handlePrimaryAction = useCallback(() => {
+    if (canContinue) {
+      void continueLearning()
+    } else {
+      void startFreshLearning()
+    }
+  }, [canContinue, continueLearning, startFreshLearning])
+
   const handleViewDeck = useCallback((deckName: string) => {
     setSelectedDeck(deckName)
     setCurrentFilter("all")
@@ -199,17 +448,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       await startReviewSession(deckName)
     } catch (error) {
       console.error(`[${pluginName}] 启动牌组复习失败:`, error)
-      orca.notify("error", "启动复习失败", { title: "SRS 复习" })
-    }
-  }, [pluginName])
-
-  const handleStartTodayReview = useCallback(async () => {
-    try {
-      const { startReviewSession } = await import("../main")
-      await startReviewSession()
-    } catch (error) {
-      console.error(`[${pluginName}] 启动今日复习失败:`, error)
-      orca.notify("error", "启动复习失败", { title: "SRS 复习" })
+      orca.notify("error", "启动复习失败", { title: "今日学习" })
     }
   }, [pluginName])
 
@@ -247,12 +486,14 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         return next
       })
       invalidateFlashHomeDataCache()
+      invalidateTodayLearningSummaryCache()
+      void loadTodayLearning(true)
       orca.notify("success", "卡片已重置为新卡", { title: "SRS" })
     } catch (error) {
       console.error(`[${pluginName}] 重置卡片失败:`, error)
       orca.notify("error", "重置卡片失败", { title: "SRS" })
     }
-  }, [pluginName, recomputeSummaries])
+  }, [pluginName, recomputeSummaries, loadTodayLearning])
 
   const handleCardDelete = useCallback(async (card: ReviewCard) => {
     setAllCards((prev: ReviewCard[]) => {
@@ -292,12 +533,14 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       )
 
       invalidateFlashHomeDataCache()
+      invalidateTodayLearningSummaryCache()
+      void loadTodayLearning(true)
       orca.notify("success", "卡片已删除", { title: "SRS" })
     } catch (error) {
       console.error(`[${pluginName}] 删除卡片失败:`, error)
       orca.notify("error", "删除卡片失败", { title: "SRS" })
     }
-  }, [pluginName, recomputeSummaries])
+  }, [pluginName, recomputeSummaries, loadTodayLearning])
 
   const handleCardClick = useCallback((cardId: DbId) => {
     orca.nav.openInLastPanel("block", { blockId: cardId })
@@ -343,15 +586,17 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         descriptor
       )
 
+      // fixed 会话不写今日 resume，避免错误回退 all
       orca.nav.openInLastPanel("block", { blockId: reviewBlockId })
-      orca.notify("success", `已开始复习 ${cards.length} 张困难卡片`, { title: "SRS 复习" })
+      orca.notify("success", `已开始复习 ${cards.length} 张困难卡`, { title: "今日学习" })
     } catch (error) {
-      console.error(`[${pluginName}] 启动困难卡片复习失败:`, error)
-      orca.notify("error", "启动复习失败", { title: "SRS 复习" })
+      console.error(`[${pluginName}] 启动困难卡复习失败:`, error)
+      orca.notify("error", "启动复习失败", { title: "今日学习" })
     }
   }, [pluginName])
 
   const handleRefresh = useCallback(() => {
+    setResumeActionError(null)
     void loadData()
   }, [loadData])
 
@@ -392,11 +637,23 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
           <FlashHomePage
             deckStats={deckStats}
             todayStats={todayStats}
+            todayLearning={todayLearning}
+            todayLearningLoading={todayLearningLoading}
+            selectedMinutes={selectedMinutes}
+            onSelectMinutes={setSelectedMinutes}
+            canContinue={canContinue}
+            canStart={canStart}
+            actionBusy={actionBusy}
+            resumeLoadError={resumeLoadError}
+            resumeActionError={resumeActionError}
+            onPrimaryAction={handlePrimaryAction}
+            onRetryResumeLoad={handleRetryResumeLoad}
+            onRetryContinue={() => void continueLearning()}
+            onStartFresh={() => void startFreshLearning()}
             panelId={panelId}
             pluginName={pluginName}
             onViewDeck={handleViewDeck}
             onReviewDeck={handleReviewDeck}
-            onStartTodayReview={handleStartTodayReview}
             onRefresh={handleRefresh}
             onNoteChange={handleNoteChange}
             onShowDifficultCards={handleShowDifficultCards}

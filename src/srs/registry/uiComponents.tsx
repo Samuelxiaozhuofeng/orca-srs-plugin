@@ -16,6 +16,12 @@ import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDi
 import { WebImportDialogMount } from "../../components/web-import/WebImportDialogMount"
 import SrsErrorBoundary from "../../components/SrsErrorBoundary"
 import { getToolbarAIPrompts } from "../ai/aiToolbarPromptStore"
+import {
+  HEADBAR_MOUNT_SUFFIXES,
+  LEGACY_VISIBLE_HEADBAR_BUTTON_SUFFIXES,
+  VISIBLE_HEADBAR_BUTTONS,
+  headbarButtonId
+} from "./headbarButtons"
 
 const React = window.React
 
@@ -62,68 +68,21 @@ export function registerUIComponents(pluginName: string): void {
     </SrsErrorBoundary>
   ))
 
-  // 复习按钮 - 开始复习会话
-  orca.headbar.registerHeadbarButton(`${pluginName}.reviewButton`, () => (
-    <orca.components.Button
-      variant="plain"
-      tabIndex={-1}
-      onClick={() => orca.commands.invokeCommand(`${pluginName}.openOldReviewPanel`)}
-      title="开始闪卡复习"
-    >
-      <i className="ti ti-brain orca-headbar-icon" />
-    </orca.components.Button>
-  ))
-
-  // Flash Home 按钮 - 打开闪卡主页
-  orca.headbar.registerHeadbarButton(`${pluginName}.flashHomeButton`, () => (
-    <orca.components.Button
-      variant="plain"
-      tabIndex={-1}
-      onClick={() => orca.commands.invokeCommand(`${pluginName}.openFlashcardHome`)}
-      title="打开 Flash Home"
-    >
-      <i className="ti ti-home orca-headbar-icon" />
-    </orca.components.Button>
-  ))
-
-  // 渐进阅读按钮 - 打开渐进阅读面板
-  orca.headbar.registerHeadbarButton(`${pluginName}.incrementalReadingButton`, () => (
-    <orca.components.Button
-      variant="plain"
-      tabIndex={-1}
-      onClick={() => orca.commands.invokeCommand(`${pluginName}.startIncrementalReadingSession`)}
-      title="打开渐进阅读"
-    >
-      <i className="ti ti-book-2 orca-headbar-icon" />
-    </orca.components.Button>
-  ))
-
-  // AI 提示词库面板（独立于原生设置页）
-  orca.headbar.registerHeadbarButton(`${pluginName}.aiPromptLibraryButton`, () => (
-    <orca.components.Button
-      variant="plain"
-      tabIndex={-1}
-      onClick={() => orca.commands.invokeCommand(`${pluginName}.manageAIToolbarPrompts`)}
-      title="打开 AI 提示词库"
-    >
-      <i className="ti ti-books orca-headbar-icon" />
-    </orca.components.Button>
-  ))
-
-  // AI / Firecrawl 服务设置（独立于原生设置页）
-  orca.headbar.registerHeadbarButton(`${pluginName}.aiServiceSettingsButton`, () => (
-    <orca.components.Button
-      variant="plain"
-      tabIndex={-1}
-      onClick={() =>
-        orca.commands.invokeCommand(`${pluginName}.openAIServiceSettings`)
-      }
-      title="AI / Firecrawl 服务设置"
-    >
-      <i className="ti ti-plug-connected orca-headbar-icon" />
-    </orca.components.Button>
-  ))
-
+  // 唯一可见业务入口：今日学习（命令 ID 仍为 openFlashcardHome，兼容旧调用）
+  for (const btn of VISIBLE_HEADBAR_BUTTONS) {
+    const buttonId = headbarButtonId(pluginName, btn.idSuffix)
+    const commandId = `${pluginName}.${btn.commandSuffix}`
+    orca.headbar.registerHeadbarButton(buttonId, () => (
+      <orca.components.Button
+        variant="plain"
+        tabIndex={-1}
+        onClick={() => orca.commands.invokeCommand(commandId)}
+        title={btn.title}
+      >
+        <i className={`${btn.iconClass} orca-headbar-icon`} />
+      </orca.components.Button>
+    ))
+  }
   // ============ 工具栏按钮 ============
 
   orca.toolbar.registerToolbarButton(`${pluginName}.clozeButton`, {
@@ -184,7 +143,7 @@ export function registerUIComponents(pluginName: string): void {
   orca.slashCommands.registerSlashCommand(`${pluginName}.makeCard`, {
     icon: "ti ti-card-plus",
     group: "SRS",
-    title: "转换为记忆卡片",
+    title: "转换为记忆卡",
     command: `${pluginName}.makeCardFromBlock`
   })
 
@@ -214,7 +173,7 @@ export function registerUIComponents(pluginName: string): void {
   orca.slashCommands.registerSlashCommand(`${pluginName}.aiCard`, {
     icon: "ti ti-cards",
     group: "SRS",
-    title: "AI 生成闪卡",
+    title: "AI 生成记忆卡",
     command: `${pluginName}.makeAICard`
   })
 
@@ -232,27 +191,34 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.openAIServiceSettings`
   })
 
-  // ============ 渐进阅读斜杠命令 ============
+  // ============ 阅读 / 今日学习斜杠命令 ============
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.ir`, {
     icon: "ti ti-book-2",
     group: "SRS",
-    title: "IR：创建 Topic 卡片",
+    title: "创建阅读材料（主题）",
     command: `${pluginName}.createTopicCard`
   })
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.incrementalReading`, {
     icon: "ti ti-book-2",
     group: "SRS",
-    title: "渐进阅读",
+    title: "打开阅读工作区",
     command: `${pluginName}.startIncrementalReadingSession`
   })
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.ir_record`, {
     icon: "ti ti-bookmark",
     group: "SRS",
-    title: "ir_record",
+    title: "记录阅读进度",
     command: `${pluginName}.irRecordProgress`
+  })
+
+  orca.slashCommands.registerSlashCommand(`${pluginName}.todayLearning`, {
+    icon: "ti ti-calendar-check",
+    group: "SRS",
+    title: "今日学习",
+    command: `${pluginName}.openFlashcardHome`
   })
 
   orca.slashCommands.registerSlashCommand(`${pluginName}.importEpub`, {
@@ -278,19 +244,18 @@ export function unregisterUIComponents(pluginName: string): void {
       console.warn(`[${pluginName}] 清理 AI 后台任务失败:`, error)
     })
 
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiDialogMount`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiQuickInteractMount`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiPromptManagerMount`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiServiceSettingsMount`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.irBookDialogMount`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.epubImportDialogMount`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.webImportDialogMount`)
-
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.reviewButton`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.flashHomeButton`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.incrementalReadingButton`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiPromptLibraryButton`)
-  orca.headbar.unregisterHeadbarButton(`${pluginName}.aiServiceSettingsButton`)
+  for (const suffix of HEADBAR_MOUNT_SUFFIXES) {
+    orca.headbar.unregisterHeadbarButton(headbarButtonId(pluginName, suffix))
+  }
+  for (const btn of VISIBLE_HEADBAR_BUTTONS) {
+    orca.headbar.unregisterHeadbarButton(
+      headbarButtonId(pluginName, btn.idSuffix)
+    )
+  }
+  // 兼容旧版本卸载：清理历史可见 Headbar 按钮 id
+  for (const suffix of LEGACY_VISIBLE_HEADBAR_BUTTON_SUFFIXES) {
+    orca.headbar.unregisterHeadbarButton(headbarButtonId(pluginName, suffix))
+  }
 
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
@@ -313,6 +278,7 @@ export function unregisterUIComponents(pluginName: string): void {
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.todayLearning`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importEpub`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.importWeb`)
 }

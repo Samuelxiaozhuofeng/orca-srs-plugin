@@ -8,7 +8,7 @@
 
 - **生命周期**：`load` 注入样式与设置、注册能力、可选启动自动标记与延迟清理；`unload` 经 `runPluginUnloadSequence` 先 flush 日志再逐步清理
 - **委托注册**：具体 register/unregister 见 [SRS_注册模块.md](./SRS_注册模块.md)
-- **会话入口**：普通复习、重复复习、Flash Home、渐进阅读工作区等函数定义在 `main.ts` 并 export，命令侧通过动态 `import("../../main")` 调用
+- **会话入口**：普通复习、重复复习、今日学习主页、阅读工作区等函数定义在 `main.ts` 并 export，命令侧通过动态 `import("../../main")` 调用
 
 ## 技术实现
 
@@ -69,11 +69,11 @@ Orca 启用插件
 
 | 导出 | 说明 |
 |------|------|
-| `startReviewSession(deckName?, openInCurrentPanel?)` | 普通复习：`createNormalSessionDescriptor` + `createReviewSessionBlockWithDescriptor`（F2-01 每次新会话块） |
-| `openFlashcardHome(openInCurrentPanel?)` | Flash Home；已有同 block 面板则聚焦 |
-| `startRepeatReviewSession(blockId, openInCurrentPanel?)` | 查询块 / 子树固定队列复习 |
-| `startIncrementalReadingSession(openInCurrentPanel?, workspaceMode?)` | 打开 IR 工作区（`openIRWorkspace`） |
-| `openIRManager()` | 管理入口：`workspaceMode = "library"` |
+| `startReviewSession(deckName?, openInCurrentPanel?)` | 普通复习：新会话块；**导航成功后**写 srs resume（失败 notify，不阻断学习） |
+| `openFlashcardHome(openInCurrentPanel?)` | **今日学习**主页；命令 ID 兼容；已有同 block 面板则聚焦 |
+| `startRepeatReviewSession(blockId, openInCurrentPanel?)` | 查询块 / 子树固定队列复习（**不**写今日 resume） |
+| `startIncrementalReadingSession(openInCurrentPanel?, workspaceMode?)` | 仅打开阅读工作区；**不**预写 resume |
+| `openIRManager()` | 资料库入口：`workspaceMode = "library"` |
 | `getPluginName()` / `getReviewHostPanelId()` | 全局辅助 |
 | `getReviewDeckFilter()` | **@deprecated** F2-01：scope 以会话块 descriptor 为准 |
 | `collectReviewCards` / `buildReviewQueue` / `buildReviewQueueWithChildren` 等 | 队列与统计 re-export |
@@ -83,6 +83,7 @@ Orca 启用插件
 
 - 诊断用写入 `reviewDeckFilter`，**Renderer 不得**以此为 scope 来源。
 - F2-01：每次启动 `createNormalSessionDescriptor(deckName)`，再 `createReviewSessionBlockWithDescriptor`（禁止复用单例块覆盖 scope）。
+- **导航成功后**写入 `todayLearningResumeStorage`（kind=`srs`）；创建块后导航失败则不写。
 - `openInCurrentPanel === true`：当前面板 `goTo`；否则优先复用右侧 panel，否则 `nav.addTo(..., "right", ...)`。
 
 ### 命令一览（注册于 `commands.ts`）
@@ -92,10 +93,10 @@ Orca 启用插件
 | 命令 ID 后缀 | Label | 行为要点 |
 |--------------|-------|----------|
 | `scanCardsFromTags` | SRS: 扫描带标签的卡片 | `scanCardsFromTags` |
-| `openFlashcardHome` | SRS: 打开 Flash Home | 动态 import `openFlashcardHome` |
-| `openOldReviewPanel` | SRS: 打开旧复习面板 | 动态 import `startReviewSession` |
-| `startIncrementalReadingSession` | SRS: 打开渐进阅读面板 | 动态 import |
-| `openIRManager` | SRS: 渐进阅读（资料库） | 动态 import `openIRManager` |
+| `openFlashcardHome` | SRS: 今日学习 | 动态 import `openFlashcardHome` |
+| `openOldReviewPanel` | SRS: 开始复习 | 动态 import `startReviewSession`（次级入口） |
+| `startIncrementalReadingSession` | SRS: 打开阅读材料 | 动态 import（次级入口） |
+| `openIRManager` | SRS: 阅读资料库 | 动态 import `openIRManager` |
 | `toggleAutoExtractMark` | SRS: 切换渐进阅读自动标签 | 写设置并 start/stop 自动标记 |
 | `clearRecentDeckPreference` | SRS: 清除最近默认牌组 | `clearRecentDeckPreference` |
 | `resetFsrsSettings` | SRS: 恢复 FSRS 默认设置 | `resetFsrsSettingsToDefaults` + notify（F2-08） |
@@ -132,30 +133,31 @@ Orca 启用插件
 
 | 按钮 ID 后缀 | 说明 |
 |--------------|------|
-| `aiDialogMount` / `irBookDialogMount` / `epubImportDialogMount` / `webImportDialogMount` | 对话框挂载点（无可见图标业务按钮） |
-| `reviewButton` | 开始闪卡复习 → `openOldReviewPanel` |
-| `flashHomeButton` | 打开 Flash Home（图标 `ti-home`） |
-| `incrementalReadingButton` | 打开渐进阅读 |
+| `*Mount`（AI / BookIR / EPUB / 网页等） | 对话框挂载点（**不可见**业务按钮，必须保留） |
+| `todayLearningButton` | **唯一可见业务入口**：今日学习（图标 `ti-calendar-check`）→ `openFlashcardHome` |
+| 旧 id：`reviewButton` / `flashHomeButton` / `incrementalReadingButton` / `aiPromptLibraryButton` / `aiServiceSettingsButton` | **不再注册**；`unregister` 仍清理以兼容旧版本卸载 |
+
+配置与测试：`src/srs/registry/headbarButtons.ts`。
 
 #### 工具栏
 
 | ID 后缀 | 说明 |
 |---------|------|
 | `clozeButton` | 创建 Cloze 填空 |
-| `importEpubButton` | 导入 EPUB |
-| `importWebButton` | 导入网页 |
+| `aiQuickInteract` | AI 快捷交互 |
 
 #### 斜杠命令（group: SRS）
 
 | ID 后缀 | 标题 | 关联命令 |
 |---------|------|----------|
-| `makeCard` | 转换为记忆卡片 | `makeCardFromBlock` |
+| `makeCard` | 转换为记忆卡 | `makeCardFromBlock` |
 | `listCard` | 列表卡（子块作为条目） | `createListCard` |
 | `directionForward` / `directionBackward` | 方向卡 | 对应编辑器命令 |
-| `aiCard` | AI 生成闪卡 | `makeAICard`（`interactiveAICard` 仅为编辑器兼容别名，无重复斜杠） |
-| `ir` | IR：创建 Topic 卡片 | `createTopicCard` |
-| `incrementalReading` | 渐进阅读 | `startIncrementalReadingSession` |
-| `ir_record` | ir_record | `irRecordProgress` |
+| `aiCard` | AI 生成记忆卡 | `makeAICard` |
+| `todayLearning` | 今日学习 | `openFlashcardHome` |
+| `ir` | 创建阅读材料（主题） | `createTopicCard` |
+| `incrementalReading` | 打开阅读工作区 | `startIncrementalReadingSession` |
+| `ir_record` | 记录阅读进度 | `irRecordProgress` |
 | `importEpub` | 导入 EPUB | `importEpub` |
 | `importWeb` | 导入网页 | `importWeb` |
 
@@ -176,9 +178,9 @@ Orca 启用插件
 
 ## 用户交互
 
-1. 命令面板搜索「SRS」/「IR」/「EPUB」/「网页」
-2. 编辑器 `/` 斜杠、工具栏 Cloze / EPUB / 网页导入
-3. 顶部栏：复习、Flash Home、渐进阅读
+1. 命令面板搜索「今日学习」/「SRS」/「复习」/「阅读」
+2. 编辑器 `/` 斜杠、工具栏 Cloze / AI 快捷
+3. 顶部栏：**仅「今日学习」**一个可见业务按钮
 4. 块右键：查询/子树复习、书籍 IR、Topic 加入等
 
 ## 扩展点
@@ -196,6 +198,8 @@ Orca 启用插件
 | `src/srs/pluginUnloadSequence.ts` | 卸载顺序 |
 | `src/srs/registry/commands.ts` | 命令 |
 | `src/srs/registry/uiComponents.tsx` | Headbar / Toolbar / Slash |
+| `src/srs/registry/headbarButtons.ts` | 可见 Headbar 配置（单入口 + 卸载对称） |
+| `src/srs/todayLearning/*` | 今日摘要与 resume |
 | `src/srs/registry/renderers.ts` | 渲染器 |
 | `src/srs/registry/converters.ts` | 转换器 |
 | `src/srs/registry/contextMenuRegistry.tsx` | 块右键菜单 |

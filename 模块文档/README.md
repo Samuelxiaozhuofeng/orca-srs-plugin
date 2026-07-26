@@ -4,7 +4,7 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
-> **索引增补：2026-07-23**（新增统一注意力队列详细设计；仅为计划，不改变当前实现状态）。
+> **索引增补：2026-07-26**（「今日学习」统一主页与可恢复入口已落地；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) / [SRS_插件入口与命令.md](SRS_插件入口与命令.md)）。
 
 ## 文档分类
 
@@ -51,11 +51,11 @@
    - Basic 答案嵌入：CSS 精确隐藏卡根正文（无长期 MutationObserver）；显示答案后题目静态 `front`（单 live 卡根）；Tab/Enter 实例验证边界见该文档与 `问题经验.md`
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
 
-10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)**
-    - **即 Flashcard Home**（单页：上摘要三卡 + 下卡组列表；次级全页：卡片列表 / 困难卡）；**不存在** `SrsCardBrowser.tsx`
-    - 已删除学习统计页与 `FlashcardDashboard`；`ViewMode = home | card-list | difficult-cards`
-    - Deck 下钻列表：`CardFrame` 左色条 + `.srs-card-list-frame` 间距分离；`cardStatus.ts`（新卡/今日/积压/未来）；样式 `styles/flashcard-home.css`
-    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/FlashHomePage.tsx`、`flashcard-home/HomeSummaryBar.tsx`、`flashcard-home/DeckListView.tsx`、`flashcard-home/DeckRow.tsx`、`flashcard-home/StatCard.tsx`、`flashcard-home/CardListView.tsx`、`flashcard-home/CardListItem.tsx`、`flashcard-home/CardFrame.tsx`、`flashcard-home/cardStatus.ts`、`styles/flashcard-home.css`、`DifficultCardsView.tsx`、`SrsFlashcardHomeRenderer.tsx`、`panels/SrsFlashcardHomePanel.tsx`、`flashcardHomeManager.ts`
+10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-26 更新
+    - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
+    - 统一 remaining（SRS 日额度 + IR due）、预计分钟、10/20/30、开始/继续；resume 非队列快照
+    - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡
+    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`src/srs/todayLearning/*`、`styles/flashcard-home.css`
 
 11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** — 主页 `HomeSummaryBar` 三卡（新卡/今日到期/积压）与 `calculateHomeStats`
 12. **[SRS_困难卡片.md](SRS_困难卡片.md)** — 困难集合与 fixed repeat 专项复习
@@ -106,22 +106,20 @@
 
 28. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)** — **计划文档**（顶部有落地对照）
 29. **[渐进阅读_优化路线.md](渐进阅读_优化路线.md)** — **计划/路线**（顶部有状态对照）
-30. **[渐进阅读_统一注意力队列设计.md](渐进阅读_统一注意力队列设计.md)** ⭐ 2026-07-23 新增 — **产品目标 / 技术设计 / 分阶段开发计划，尚未落地**
-   - 定义“每天只需打开今日学习”的目标体验；逐项标记当前能力与差距
-   - 规划 frozen daily descriptor、真实跨会话日额度、Future Load Calendar、全局 Extract/章节削峰、adaptive selection、mixed SRS 权威预算、每日一次积压治理与动态 A-Factor 的实施顺序
-   - 关联：现行实现见 `渐进阅读.md` / `渐进阅读_BookIR.md` / `记忆排期推送.md`；算法候选见 `记忆算法优化.md`
+
+> **已移除错误索引**：原「渐进阅读_统一注意力队列设计.md」在仓库中**不存在**；其核心产品目标「今日学习统一入口」已在 2026-07-26 落地到 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) / [渐进阅读.md](渐进阅读.md)，勿再声称该文件存在。
 
 ### AI
 
-31. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-24 更新 — 制卡 + 块解释 + Quick AI 预览/直接写入/标签/合并结果块；提示词可绑 model；原生联网
-32. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
-33. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-24 更新 — 制卡 + 块解释 + Quick AI 预览/直接写入/标签/合并结果块；提示词可绑 model；原生联网
+31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
+32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
 
 ### 协作与历史
 
-34. **[仓库贡献指南.md](仓库贡献指南.md)** — 构建与模块文档同步规范
-35. **[React集成问题修复报告.md](React集成问题修复报告.md)** — 历史报告
-36. **[问题经验.md](问题经验.md)** — 经验摘录
+33. **[仓库贡献指南.md](仓库贡献指南.md)** — 构建与模块文档同步规范
+34. **[React集成问题修复报告.md](React集成问题修复报告.md)** — 历史报告
+35. **[问题经验.md](问题经验.md)** — 经验摘录
 
 ### 重复文档（勿当主文档）
 
@@ -146,8 +144,8 @@
 
 ## 更新记录
 
+- **2026-07-26**：「今日学习」统一主页 + 可恢复入口 + Headbar 单入口；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)、[SRS_插件入口与命令.md](SRS_插件入口与命令.md)、[SRS_数据存储.md](SRS_数据存储.md)、[渐进阅读.md](渐进阅读.md)；删除不存在的「统一注意力队列设计」错误索引
 - **2026-07-25**：IR 定位续读精度——折叠 caret 不再覆盖视口；`viewportAnchor.topOffsetPx`（schema v2）；恢复改确定性 scrollTop 对齐 + 几何稳定后释放抑制；`chapter_browse` 禁止捕获；见 [渐进阅读.md](渐进阅读.md)
-- **2026-07-23**：新增 [渐进阅读_统一注意力队列设计.md](渐进阅读_统一注意力队列设计.md)——记录“今日学习”统一注意力流、真实每日额度、冻结 descriptor、Future Load Calendar、全局削峰、等待补偿、mixed SRS 权威预算、积压治理和动态 A-Factor 的详细计划；**未改变当前实现状态**
 - 2025-12-08：创建模块文档结构
 - 2026-01-29：新增仓库贡献与文档维护指南
 - **2026-07-13**：按当前代码全量对照更新；新建选择题文档；Flash Home 取代不存在的 CardBrowser 表述；计划类文档加落地状态；压缩方向卡等过时「实现计划」长文；修正事件名、卸载顺序、队列 due 判定等偏差

@@ -1,23 +1,24 @@
 # SRS Flashcard Home（闪卡主页 / 卡片浏览器）
 
-> **文档同步日期：2026-07-19**  
-> 现状以代码为准。历史上称「卡片浏览器」；旧组件 `SrsCardBrowser.tsx` **已不存在**，统一为 Flashcard Home。  
-> 已简化为 **单页主页**：去掉 Dashboard / 学习统计全页与顶层 主页/卡组/统计 Tab。
+> **文档同步日期：2026-07-26**
+> 现状以代码为准。产品主入口称为 **「今日学习」**（块类型 / 命令 ID 仍为 `srs.flashcard-home` / `openFlashcardHome` 以兼容）。
+> 历史上称「卡片浏览器 / Flash Home」；旧组件 `SrsCardBrowser.tsx` **已不存在**。
 
 ## 概述
 
-Flashcard Home 是插件的闪卡管理主界面，以块类型 `srs.flashcard-home` 嵌入 Orca 面板，或通过 `SrsFlashcardHomePanel` 作为面板内容挂载。它聚合：
+「今日学习」主页是插件的统一学习入口，以块类型 `srs.flashcard-home` 嵌入 Orca 面板。它聚合：
 
-- **单页主页**（`FlashHomePage`：`HomeSummaryBar` 三统计 + 卡组列表）
+- **今日学习摘要**（统一 remaining：复习 + 阅读、预计分钟、建议动作、10/20/30 时间盒、开始/继续）
+- **卡库次级区**（新卡 / 今日到期 / 积压三卡 + 卡组列表）
 - **卡片列表**（按 Deck 筛选、重置/删除/跳转）
-- **困难卡片**（全页次级视图；`DifficultCardsView` + `difficultCardsManager`）
+- **困难卡**（全页次级视图；fixed 会话，**不**写今日 resume）
 
 ### 核心价值
 
-- 与 Orca 面板系统一致：分屏、聚焦、块历史。
-- 打开即见全局待办（新卡 / 今日到期 / 积压）与卡组表，一处完成 Deck 管理与专项复习入口。
-- 复习/埋藏/暂停后通过 `orca.broadcasts` 静默刷新（见 `SRS_事件通信.md`）。
-- 120s 低频全量兜底刷新（编辑/删除事件不完整时的补偿）。
+- 打开即见「今天还剩多少 / 约几分钟 / 现在做什么」，一键开始或继续。
+- 所有入口共享同一份今日 resume marker（见 `todayLearningResumeStorage`）。
+- 评分后通过 `orca.broadcasts` 刷新并失效 Flash Home / 今日摘要缓存（见 `SRS_事件通信.md`）。
+- 120s 低频全量兜底刷新。
 
 ---
 
@@ -25,9 +26,11 @@ Flashcard Home 是插件的闪卡管理主界面，以块类型 `srs.flashcard-h
 
 | 文件 | 职责 |
 | ---- | ---- |
-| `src/components/SrsFlashcardHome.tsx` | 主容器：视图路由、数据加载、事件订阅、业务动作 |
+| `src/components/SrsFlashcardHome.tsx` | 主容器：今日摘要、resume、启动/继续、视图路由 |
 | `src/components/flashcard-home/FlashHomePage.tsx` | 单页主页：HomeSummaryBar + DeckListView |
-| `src/components/flashcard-home/HomeSummaryBar.tsx` | 顶部三统计 + 开始今日复习 / 困难卡片 / 刷新 |
+| `src/components/flashcard-home/HomeSummaryBar.tsx` | 今日学习区 + 卡库次级三统计 + 困难卡 / 刷新 |
+| `src/srs/todayLearning/todayLearningSummary.ts` | 统一今日 remaining / 估时 / 完成数（防双算） |
+| `src/srs/todayLearning/todayLearningResumeStorage.ts` | 版本化 resume marker（srs block / ir 时长） |
 | `src/components/flashcard-home/DeckListView.tsx` | 卡组搜索与表格（新卡 / 今日到期 / 积压） |
 | `src/components/flashcard-home/DeckRow.tsx` | 单卡组行 |
 | `src/components/flashcard-home/CardListView.tsx` | 单 Deck 卡片列表（列表托盘 + 分页） |
@@ -125,9 +128,13 @@ flowchart TD
 
 ## FlashHomePage（单页主页）
 
-- 上半：`HomeSummaryBar` — 三 `StatCard`、「共 N 张卡片」、开始今日复习 / 困难卡片 / 刷新
-- 下半：`DeckListView` — 搜索 + 卡组表（无顶栏统计 CTA；CTA 在 HomeSummaryBar）
-- 「开始今日复习」在 `pendingCount > 0 || newCount > 0` 时可点
+- 上半：`HomeSummaryBar` — **今日学习**（统一 remaining、预计分钟、建议、10/20/30、开始/继续）+ 次级卡库三 `StatCard`
+- 下半：`DeckListView` — 搜索 + 卡组表
+- 主按钮：有有效当日 resume 且仍有任务 →「继续上次学习」；否则「开始今日学习」
+- 开始：有 IR 今日内容 → IR reading 自动 `mixed` + 所选时长；仅 SRS → 普通复习会话；都无 → 禁用并显示完成
+- 继续：SRS → 验证会话块 + 导航；IR → 打开工作区 autoStart 重装队列（断点靠既有 `ir.resumeBlockId` / breakpoint）
+- **恢复语义不是**字节级队列快照：SRS 用冻结 descriptor + 当前状态/日志重建；IR 用当日调度 + breakpoint 重建
+- loading 不显示临时 0；完整失败「暂时无法读取今日学习」+ 重试；partial 明示「部分内容暂时无法读取」
 - 卡组备注、搜索见权威文档
 
 ---

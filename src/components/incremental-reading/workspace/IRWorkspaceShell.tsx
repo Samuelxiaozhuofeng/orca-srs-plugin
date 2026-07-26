@@ -19,8 +19,10 @@ import { useIRWorkspaceLibrary } from "./useIRWorkspaceLibrary"
 import { useIRWorkspaceSession } from "./useIRWorkspaceSession"
 import {
   IR_WORKSPACE_MODE_EVENT,
+  type IRWorkspaceLaunchRequest,
   type IRWorkspaceModeEventDetail
 } from "./irWorkspaceLaunch"
+import { isTodayLearningTimeBudget } from "../../../srs/todayLearning/todayLearningResumeStorage"
 import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
@@ -34,6 +36,8 @@ export type IRWorkspaceShellProps = {
   blockId: DbId
   pluginName?: string
   initialMode?: IRWorkspaceMode
+  /** 一次性启动请求（autoStart + 时长 + mixed）；mount 时消费 */
+  initialLaunch?: IRWorkspaceLaunchRequest | null
   onClose?: () => void
 }
 
@@ -42,10 +46,13 @@ export default function IRWorkspaceShell({
   blockId,
   pluginName: pluginNameProp,
   initialMode = "library",
+  initialLaunch = null,
   onClose
 }: IRWorkspaceShellProps) {
   const [pluginName, setPluginName] = useState(pluginNameProp ?? "orca-srs")
-  const [mode, setMode] = useState<IRWorkspaceMode>(initialMode)
+  const [mode, setMode] = useState<IRWorkspaceMode>(
+    initialLaunch?.mode ?? initialMode
+  )
   const [drawer, setDrawer] = useState<IRWorkspaceDrawer>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -54,6 +61,8 @@ export default function IRWorkspaceShell({
   const sessionCloseHandlerRef = useRef<(() => Promise<void>) | null>(null)
   /** Prevents re-toggle when effect re-runs during the same mount. */
   const wideViewAttemptedRef = useRef(false)
+  /** 一次性 autoStart：仅消费 initialLaunch / 事件各一次 */
+  const autoStartConsumedRef = useRef(false)
   const workspaceId = `ir-workspace-${panelId.replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
   const loadPluginName = useCallback(async () => {
@@ -75,6 +84,78 @@ export default function IRWorkspaceShell({
   const library = useIRWorkspaceLibrary(loadPluginName, pluginName)
   const reading = useIRWorkspaceSession(loadPluginName, library.libraryCards)
 
+  const applyLaunchRequest = useCallback(
+    (request: IRWorkspaceLaunchRequest) => {
+      if (request.mode === "library") {
+        if (mode === "library") {
+          // stay
+        } else {
+          setDrawer(null)
+          setMode("library")
+        }
+      } else {
+        if (mode === "library") {
+          if (listRef.current) savedScrollTopRef.current = listRef.current.scrollTop
+        }
+        setDrawer(null)
+        setMode("reading")
+      }
+
+      if (request.autoStart === true) {
+        let minutes = request.timeBudgetMinutes ?? 20
+        if (!isTodayLearningTimeBudget(minutes)) {
+          console.error(
+            "[IR Workspace] autoStart 时长非法，拒绝装配:",
+            minutes
+          )
+          orca.notify(
+            "error",
+            `启动时长非法（${String(minutes)}），仅允许 10/20/30`,
+            { title: "今日学习" }
+          )
+          return
+        }
+        const sessionLaunchMode = request.sessionLaunchMode ?? "mixed"
+        // 真实 autoStart 时写 IR resume（失败可见，仍继续 load）
+        void (async () => {
+          try {
+            const {
+              writeIrTodayLearningResume,
+              reportTodayLearningResumeWriteFailure
+            } = await import(
+              "../../../srs/todayLearning/todayLearningResumeStorage"
+            )
+            const writeResult = await writeIrTodayLearningResume({
+              pluginName,
+              timeBudgetMinutes: minutes
+            })
+            if (!writeResult.ok) {
+              reportTodayLearningResumeWriteFailure(
+                pluginName,
+                writeResult.error
+              )
+            }
+          } catch (resumeError) {
+            console.error(
+              "[IR Workspace] autoStart 写 resume 失败:",
+              resumeError
+            )
+            orca.notify(
+              "error",
+              `学习可继续，但恢复点未保存：${resumeError instanceof Error ? resumeError.message : String(resumeError)}`,
+              { title: "今日学习" }
+            )
+          }
+          await reading.loadReadingQueue({
+            timeBudgetMinutes: minutes,
+            sessionLaunchMode
+          })
+        })()
+      }
+    },
+    [mode, reading, pluginName]
+  )
+
   useEffect(() => {
     if (mode !== "library") return
     const el = listRef.current
@@ -93,15 +174,30 @@ export default function IRWorkspaceShell({
     setMode(next)
   }, [mode, persistLibraryScroll])
 
+  // mount：一次性消费 initialLaunch.autoStart
+  useEffect(() => {
+    if (autoStartConsumedRef.current) return
+    if (!initialLaunch?.autoStart) return
+    autoStartConsumedRef.current = true
+    applyLaunchRequest(initialLaunch)
+    // 仅 mount 时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const handleModeRequest = (event: Event) => {
       const detail = (event as CustomEvent<IRWorkspaceModeEventDetail>).detail
       if (detail?.panelId !== panelId) return
-      handleModeChange(detail.mode)
+      const request = detail.request ?? { mode: detail.mode }
+      if (request.autoStart) {
+        applyLaunchRequest(request)
+      } else {
+        handleModeChange(request.mode)
+      }
     }
     window.addEventListener(IR_WORKSPACE_MODE_EVENT, handleModeRequest)
     return () => window.removeEventListener(IR_WORKSPACE_MODE_EVENT, handleModeRequest)
-  }, [handleModeChange, panelId])
+  }, [applyLaunchRequest, handleModeChange, panelId])
 
   /**
    * Orca inactive views keep `.orca-hideable-hidden` but may leave inline `display: flex`,

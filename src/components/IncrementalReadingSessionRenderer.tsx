@@ -6,7 +6,10 @@
 import type { DbId } from "../orca.d.ts"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 import IRWorkspaceShell from "./incremental-reading/workspace/IRWorkspaceShell"
-import { consumePendingIRWorkspaceMode } from "./incremental-reading/workspace/irWorkspaceLaunch"
+import {
+  consumePendingIRWorkspaceLaunch,
+  type IRWorkspaceLaunchRequest
+} from "./incremental-reading/workspace/irWorkspaceLaunch"
 
 const { useEffect, useState } = window.React
 const { BlockShell } = orca.components
@@ -35,7 +38,9 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
   } = props
 
   const [pluginName, setPluginName] = useState("orca-srs")
-  const [initialMode] = useState(() => consumePendingIRWorkspaceMode(panelId, blockId, "reading"))
+  const [initialLaunch] = useState<IRWorkspaceLaunchRequest>(() =>
+    consumePendingIRWorkspaceLaunch(panelId, blockId, "reading")
+  )
 
   useEffect(() => {
     void (async () => {
@@ -66,7 +71,8 @@ export default function IncrementalReadingSessionRenderer(props: RendererProps) 
             panelId={panelId}
             blockId={blockId}
             pluginName={pluginName}
-            initialMode={initialMode}
+            initialMode={initialLaunch.mode}
+            initialLaunch={initialLaunch}
             onClose={() => orca.nav.close(panelId)}
           />
         </SrsErrorBoundary>

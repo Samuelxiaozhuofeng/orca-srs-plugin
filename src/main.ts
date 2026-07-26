@@ -259,14 +259,39 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
       descriptor
     )
 
+    /** 仅在导航成功后写入 resume，避免「创建块失败/无面板」留下虚假可继续 */
+    const writeSrsResumeAfterLaunch = async () => {
+      try {
+        const {
+          writeSrsTodayLearningResume,
+          reportTodayLearningResumeWriteFailure
+        } = await import("./srs/todayLearning/todayLearningResumeStorage")
+        const writeResult = await writeSrsTodayLearningResume({
+          pluginName,
+          sessionBlockId: blockId as number,
+          sessionId: descriptor.sessionId
+        })
+        if (!writeResult.ok) {
+          reportTodayLearningResumeWriteFailure(pluginName, writeResult.error)
+        }
+      } catch (resumeError) {
+        console.error(`[${pluginName}] 写入今日学习 resume 异常:`, resumeError)
+        orca.notify(
+          "error",
+          `学习可继续，但恢复点未保存：${resumeError instanceof Error ? resumeError.message : String(resumeError)}`,
+          { title: "今日学习" }
+        )
+      }
+    }
+
     // 根据调用方式决定打开位置
     if (openInCurrentPanel) {
-      // 在当前面板打开
       orca.nav.goTo("block", { blockId }, activePanelId)
+      await writeSrsResumeAfterLaunch()
       const message = deckName
         ? `已打开 ${deckName} 复习会话`
         : "复习会话已打开"
-      orca.notify("success", message, { title: "SRS 复习" })
+      orca.notify("success", message, { title: "今日学习" })
       console.log(
         `[${pluginName}] 复习会话已在当前面板启动，sessionId=${descriptor.sessionId}, 面板ID: ${activePanelId}`
       )
@@ -277,7 +302,6 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
     const panels = orca.state.panels
     let rightPanelId: string | null = null
 
-    // 查找已存在的右侧面板
     for (const [panelId, panel] of Object.entries(panels)) {
       if (panel.parentId === activePanelId && panel.position === "right") {
         rightPanelId = panelId
@@ -286,7 +310,6 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
     }
 
     if (!rightPanelId) {
-      // 创建右侧面板
       rightPanelId = orca.nav.addTo(activePanelId, "right", {
         view: "block",
         viewArgs: { blockId },
@@ -294,15 +317,16 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
       })
 
       if (!rightPanelId) {
-        orca.notify("error", "无法创建侧边面板", { title: "SRS 复习" })
+        orca.notify("error", "无法创建侧边面板", { title: "今日学习" })
+        // 导航失败：不写 resume
         return
       }
     } else {
-      // 导航到现有右侧面板（新 blockId，新 descriptor）
       orca.nav.goTo("block", { blockId }, rightPanelId)
     }
 
-    // 聚焦到右侧面板
+    await writeSrsResumeAfterLaunch()
+
     if (rightPanelId) {
       setTimeout(() => {
         orca.nav.switchFocusTo(rightPanelId!)
@@ -313,13 +337,13 @@ async function startReviewSession(deckName?: string, openInCurrentPanel: boolean
       ? `已打开 ${deckName} 复习会话`
       : "复习会话已在右侧面板打开"
 
-    orca.notify("success", message, { title: "SRS 复习" })
+    orca.notify("success", message, { title: "今日学习" })
     console.log(
       `[${pluginName}] 复习会话已启动，sessionId=${descriptor.sessionId}, 面板ID: ${rightPanelId}`
     )
   } catch (error) {
     console.error(`[${pluginName}] 启动复习失败:`, error)
-    orca.notify("error", `启动复习失败: ${error}`, { title: "SRS 复习" })
+    orca.notify("error", `启动复习失败: ${error}`, { title: "今日学习" })
   }
 }
 
@@ -362,14 +386,15 @@ async function startIncrementalReadingSession(
   workspaceMode: IRWorkspaceMode = "reading"
 ) {
   try {
+    // 仅打开工作区，不预写 resume；真实启动（autoStart / 点 10/20/30）时再写
     await openIRWorkspace({
       pluginName,
       mode: workspaceMode,
       openInCurrentPanel
     })
   } catch (error) {
-    console.error(`[${pluginName}] 启动渐进阅读失败:`, error)
-    orca.notify("error", `启动渐进阅读失败: ${error}`, { title: "渐进阅读" })
+    console.error(`[${pluginName}] 启动阅读材料失败:`, error)
+    orca.notify("error", `启动失败: ${error}`, { title: "今日学习" })
   }
 }
 
@@ -401,7 +426,7 @@ async function openFlashcardHome(openInCurrentPanel: boolean = false) {
     const activePanelId = orca.state.activePanel
 
     if (!activePanelId) {
-      orca.notify("warn", "当前没有可用的面板", { title: "Flash Home" })
+      orca.notify("warn", "当前没有可用的面板", { title: "今日学习" })
       return
     }
 
@@ -415,7 +440,7 @@ async function openFlashcardHome(openInCurrentPanel: boolean = false) {
       if (panel.viewArgs?.blockId === blockId) {
         // 已经打开了，直接聚焦
         orca.nav.switchFocusTo(panelId)
-        console.log(`[${pluginName}] Flash Home 已存在，聚焦到面板: ${panelId}`)
+        console.log(`[${pluginName}] 今日学习已存在，聚焦到面板: ${panelId}`)
         return
       }
     }
@@ -424,8 +449,8 @@ async function openFlashcardHome(openInCurrentPanel: boolean = false) {
     if (openInCurrentPanel) {
       // 在当前面板打开
       orca.nav.goTo("block", { blockId }, activePanelId)
-      orca.notify("success", "Flash Home 已打开", { title: "SRS" })
-      console.log(`[${pluginName}] Flash Home 已在当前面板打开，面板ID: ${activePanelId}`)
+      orca.notify("success", "今日学习已打开", { title: "今日学习" })
+      console.log(`[${pluginName}] 今日学习已在当前面板打开，面板ID: ${activePanelId}`)
       return
     }
 
@@ -449,7 +474,7 @@ async function openFlashcardHome(openInCurrentPanel: boolean = false) {
       })
 
       if (!rightPanelId) {
-        orca.notify("error", "无法创建侧边面板", { title: "Flash Home" })
+        orca.notify("error", "无法创建侧边面板", { title: "今日学习" })
         return
       }
     } else {
@@ -464,11 +489,11 @@ async function openFlashcardHome(openInCurrentPanel: boolean = false) {
       }, 100)
     }
 
-    orca.notify("success", "Flash Home 已在右侧面板打开", { title: "SRS" })
-    console.log(`[${pluginName}] Flash Home 已打开，面板ID: ${rightPanelId}`)
+    orca.notify("success", "今日学习已在右侧面板打开", { title: "今日学习" })
+    console.log(`[${pluginName}] 今日学习已打开，面板ID: ${rightPanelId}`)
   } catch (error) {
-    console.error(`[${pluginName}] 打开 Flash Home 失败:`, error)
-    orca.notify("error", `打开 Flash Home 失败: ${error}`, { title: "SRS" })
+    console.error(`[${pluginName}] 打开今日学习失败:`, error)
+    orca.notify("error", `打开今日学习失败: ${error}`, { title: "今日学习" })
   }
 }
 

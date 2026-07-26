@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+  consumePendingIRWorkspaceLaunch,
   consumePendingIRWorkspaceMode,
   setPendingIRWorkspaceMode,
   setPendingIRWorkspaceModeForBlock
@@ -40,8 +41,8 @@ describe("openIRWorkspaceWithDeps", () => {
     expect(consumePendingIRWorkspaceMode("panel-main", 42, "library")).toBe("reading")
     expect(deps.notify).toHaveBeenCalledWith(
       "success",
-      "渐进阅读面板已打开",
-      { title: "渐进阅读" }
+      "阅读工作区已打开",
+      { title: "今日学习" }
     )
   })
 
@@ -139,7 +140,7 @@ describe("openIRWorkspaceWithDeps", () => {
     expect(deps.notify).toHaveBeenCalledWith(
       "error",
       "无法创建侧边面板",
-      { title: "渐进阅读" }
+      { title: "今日学习" }
     )
   })
 
@@ -189,8 +190,12 @@ describe("openIRWorkspaceWithDeps", () => {
     expect(deps.nav.addTo).not.toHaveBeenCalled()
     expect(deps.nav.switchFocusTo).toHaveBeenCalledWith("panel-existing")
     expect(dispatchEvent).toHaveBeenCalledTimes(1)
-    expect((dispatchEvent.mock.calls[0][0] as { detail: { panelId: string; mode: string } }).detail)
-      .toEqual({ panelId: "panel-existing", mode: "library" })
+    expect((dispatchEvent.mock.calls[0][0] as { detail: { panelId: string; mode: string; request?: { mode: string } } }).detail)
+      .toEqual({
+        panelId: "panel-existing",
+        mode: "library",
+        request: { mode: "library" }
+      })
   })
 
   it("does not leak pending mode intent across different panel ids", async () => {
@@ -199,5 +204,43 @@ describe("openIRWorkspaceWithDeps", () => {
 
     expect(consumePendingIRWorkspaceMode("panel-a", 42, "library")).toBe("reading")
     expect(consumePendingIRWorkspaceMode("panel-b", 42, "reading")).toBe("reading")
+  })
+
+  it("opens with autoStart launch request (mixed + minutes) once", async () => {
+    const deps = createDeps()
+
+    await openIRWorkspaceWithDeps(deps, {
+      pluginName: "test-plugin",
+      mode: "reading",
+      openInCurrentPanel: true,
+      autoStart: true,
+      timeBudgetMinutes: 30,
+      sessionLaunchMode: "mixed"
+    })
+
+    const request = consumePendingIRWorkspaceLaunch("panel-main", 42, "library")
+    expect(request).toEqual({
+      mode: "reading",
+      autoStart: true,
+      timeBudgetMinutes: 30,
+      sessionLaunchMode: "mixed"
+    })
+    expect(
+      consumePendingIRWorkspaceLaunch("panel-main", 42, "library")
+    ).toEqual({ mode: "library" })
+  })
+
+  it("keeps legacy mode-only open compatible", async () => {
+    const deps = createDeps()
+
+    await openIRWorkspaceWithDeps(deps, {
+      pluginName: "test-plugin",
+      mode: "library",
+      openInCurrentPanel: true
+    })
+
+    const request = consumePendingIRWorkspaceLaunch("panel-main", 42, "reading")
+    expect(request).toEqual({ mode: "library" })
+    expect(request.autoStart).toBeUndefined()
   })
 })

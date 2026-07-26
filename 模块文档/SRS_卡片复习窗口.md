@@ -231,9 +231,16 @@ flowchart TD
 
 ---
 
+### 今日学习「继续」与会话进度（勿混淆）
+
+| 机制 | 用途 | 是否跨重启恢复队列 |
+|------|------|-------------------|
+| **今日 resume marker**（`todayLearningResumeStorage`，plugin data） | 记住「上次是普通 SRS 会话块」或「IR 时长」；主页「继续上次学习」 | **否**——不序列化 `ReviewCard[]`。SRS：导航回会话块后，Renderer 用 **冻结 descriptor + 当前卡状态 + 今日日志扣额度** 重建剩余。fixed/repeat **不**写此 marker |
+| **会话进度 sessionStorage**（FC-09） | 当前挂载会话内进度 UI / 诊断 | **否**——产品第一阶段不从 storage 恢复进度 |
+
 ### 会话进度（FC-09 / FC-10）
 
-**产品规则（第一阶段）**：**不支持断点恢复**。每次新会话从零开始。`sessionStorage` 仅当前挂载会话的 scoped 自动保存/诊断。
+**产品规则（第一阶段）**：**不支持从 sessionStorage 断点恢复进度 UI**。每次新会话进度从零开始。`sessionStorage` 仅当前挂载会话的 scoped 自动保存/诊断。
 
 #### Scope / storage key
 

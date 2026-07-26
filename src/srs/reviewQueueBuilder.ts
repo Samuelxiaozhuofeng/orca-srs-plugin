@@ -78,12 +78,14 @@ export function interleaveDueAndNew(
 
 /**
  * 构建只包含正式根卡的复习队列：分区 → 稳定排序 → 限额 → 2:1 交织。
+ * @param now 可选；注入后 due 判定使用该时刻（测试/摘要确定性）
  */
 export function buildReviewQueue(
   cards: readonly ReviewCard[],
-  limits?: ReviewQueueLimits | null
+  limits?: ReviewQueueLimits | null,
+  now: Date = new Date()
 ): ReviewCard[] {
-  const { dueCards, newCards } = partitionDueAndNewCards(cards)
+  const { dueCards, newCards } = partitionDueAndNewCards(cards, now)
   const sortedDue = sortCardsForReviewQueue(dueCards)
   const sortedNew = sortCardsForReviewQueue(newCards)
   const limited = applyDailyRootLimits(sortedDue, sortedNew, limits)

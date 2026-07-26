@@ -84,6 +84,12 @@ export async function loadFlashHomeData(
 
 export function invalidateFlashHomeDataCache(): void {
   cache = null
+  // 今日学习剩余与 Flash Home 同源事件失效，避免 45s TTL 展示旧剩余
+  void import("./todayLearning/todayLearningSummary")
+    .then((m) => m.invalidateTodayLearningSummaryCache())
+    .catch((error) => {
+      console.error("[srs] 失效今日学习摘要缓存失败:", error)
+    })
 }
 
 /** 测试 / 调试用 */

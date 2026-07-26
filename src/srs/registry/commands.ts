@@ -396,37 +396,37 @@ export function registerCommands(
     "SRS: AI / Firecrawl 服务设置"
   )
 
-  // 打开旧复习面板命令（块渲染器模式）
+  // 打开复习会话（次级入口 / 兼容旧命令 ID）
   orca.commands.registerCommand(
     `${pluginName}.openOldReviewPanel`,
     async () => {
-      console.log(`[${_pluginName}] 打开旧复习面板`)
+      console.log(`[${_pluginName}] 打开复习会话`)
       const { startReviewSession } = await import("../../main")
       await startReviewSession()
     },
-    "SRS: 打开旧复习面板"
+    "SRS: 开始复习"
   )
 
-  // 打开 Flash Home 命令
+  // 打开今日学习主页（命令 ID 保留 openFlashcardHome 兼容）
   orca.commands.registerCommand(
     `${pluginName}.openFlashcardHome`,
     async () => {
-      console.log(`[${_pluginName}] 打开 Flash Home`)
+      console.log(`[${_pluginName}] 打开今日学习`)
       const { openFlashcardHome } = await import("../../main")
       await openFlashcardHome()
     },
-    "SRS: 打开 Flash Home"
+    "SRS: 今日学习"
   )
 
-  // 打开渐进阅读面板命令
+  // 打开阅读工作区（次级入口）
   orca.commands.registerCommand(
     `${pluginName}.startIncrementalReadingSession`,
     async () => {
-      console.log(`[${_pluginName}] 打开渐进阅读面板`)
+      console.log(`[${_pluginName}] 打开阅读工作区`)
       const { startIncrementalReadingSession } = await import("../../main")
       await startIncrementalReadingSession()
     },
-    "SRS: 打开渐进阅读面板"
+    "SRS: 打开阅读材料"
   )
 
   // 打开渐进阅读管理面板命令

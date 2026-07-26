@@ -14,13 +14,15 @@
 | 已删除卡日志清理 | 启动扫描分片 + 块三态 | `src/srs/deletedCardCleanup.ts` + `src/srs/blockExistence.ts` |
 | 选择题答题统计 | 单块属性 `srs.choice.statistics` | `src/srs/choiceStatisticsStorage.ts` |
 | 会话进度（诊断/autosave） | `sessionStorage` 键 `srs-session-progress:v2:…` | `src/srs/sessionProgressStorage.ts` |
+| **今日学习 resume** | `orca.plugins` 键 `today-learning-resume`（JSON，version=1） | `src/srs/todayLearning/todayLearningResumeStorage.ts` |
 
 ### 核心价值
 
 - 将 SRS 状态与 Orca 块系统无缝集成
 - 支持普通卡 / Cloze 变体 / Direction 方向变体的独立状态
 - 复习日志可靠 pending/flush；启动时按三态清理无效日志
-- 会话进度**不**做跨重启断点恢复（FC-09 第一阶段）
+- 会话进度 sessionStorage **不**做跨重启断点恢复（FC-09 第一阶段）
+- **今日学习 resume** 可跨重启：仅存 srs 会话块 id / ir 时长，**不是**队列快照；损坏 JSON / 未知版本返回 `error`（与 `absent` 区分）；跨日为 `stale`（不作「继续」）
 
 ## 技术实现
 
@@ -350,6 +352,23 @@ JSON 形态：
 | `buildChoiceStatisticsEntry` / `recordChoiceAnswerStatistics` | 见 `choiceAnswerStatistics.ts` |
 
 ---
+
+## 3b. 今日学习 resume（plugin data）
+
+- **键**：`today-learning-resume`（`TODAY_LEARNING_RESUME_STORAGE_KEY`）
+- **版本**：`version: 1`；未知版本解析失败（error，不静默清空）
+- **隔离**：payload 含 `repo` + `pluginName` + 本地 `dateKey`；load 时校验
+- **kind**：
+  - `srs`：`sessionBlockId` + `sessionId`（普通会话；fixed 不写）
+  - `ir`：`timeBudgetMinutes` ∈ {10,20,30} + `sessionLaunchMode: "mixed"`
+- **写入点（仅真实启动成功后）**：
+  - SRS：`startReviewSession` 在成功 `goTo` / 创建右侧 panel 之后
+  - IR：`IRWorkspaceShell` 处理 `autoStart` 时；`IRReadingView` 用户点击 10/20/30 时
+  - **不**在仅打开 reading 工作区 / 主页 `openIRWorkspace` 导航前预写
+- **sessionBlockId**：仅有限正整数（DbId）；string/NaN/Infinity 解析失败
+- **继续 SRS**：marker.sessionId 必须与块 descriptor 一致，否则 fail-closed
+- **失败**：`console.error` + notify「学习可继续，但恢复点未保存」；不得宣称已保存
+- **测试**：`todayLearningResumeStorage.test.ts`
 
 ## 4. 会话进度 sessionStorage（FC-09）
 

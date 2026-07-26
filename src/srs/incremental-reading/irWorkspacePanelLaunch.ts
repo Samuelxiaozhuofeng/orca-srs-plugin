@@ -1,15 +1,22 @@
 import type { DbId } from "../../orca.d.ts"
 import type { IRWorkspaceMode } from "../../components/incremental-reading/workspace/irWorkspaceTypes"
+import type {
+  IRWorkspaceLaunchRequest
+} from "../../components/incremental-reading/workspace/irWorkspaceLaunch"
 import {
   clearPendingIRWorkspaceMode,
   clearPendingIRWorkspaceModeForBlock,
-  dispatchIRWorkspaceMode,
+  dispatchIRWorkspaceLaunch,
   movePendingIRWorkspaceModeToPanel,
-  setPendingIRWorkspaceMode,
-  setPendingIRWorkspaceModeForBlock
+  setPendingIRWorkspaceLaunch,
+  setPendingIRWorkspaceLaunchForBlock
 } from "../../components/incremental-reading/workspace/irWorkspaceLaunch"
 import { getOrCreateIncrementalReadingSessionBlock } from "../incrementalReadingSessionManager"
 import { findPanelIdByBlockView, type PanelTreeNode } from "../registry/panelTreeUtils"
+import {
+  isTodayLearningTimeBudget,
+  type TodayLearningTimeBudget
+} from "../todayLearning/todayLearningResumeStorage"
 
 export type IRWorkspaceNav = {
   goTo: (view: string, viewArgs: Record<string, unknown>, panelId: string) => void
@@ -25,6 +32,10 @@ export type OpenIRWorkspaceOptions = {
   pluginName: string
   mode: IRWorkspaceMode
   openInCurrentPanel?: boolean
+  /** 打开后自动以时间盒装配队列（今日学习 / 继续） */
+  autoStart?: boolean
+  timeBudgetMinutes?: TodayLearningTimeBudget
+  sessionLaunchMode?: "mixed" | "read-only"
 }
 
 export type OpenIRWorkspaceDeps = {
@@ -35,15 +46,45 @@ export type OpenIRWorkspaceDeps = {
   notify: (level: string, message: string, opts?: { title?: string }) => void
 }
 
+function buildLaunchRequest(options: OpenIRWorkspaceOptions): IRWorkspaceLaunchRequest {
+  const request: IRWorkspaceLaunchRequest = { mode: options.mode }
+  if (options.autoStart === true) {
+    request.autoStart = true
+    if (options.timeBudgetMinutes !== undefined) {
+      if (!isTodayLearningTimeBudget(options.timeBudgetMinutes)) {
+        throw new Error(
+          `IR 启动时长非法: ${String(options.timeBudgetMinutes)}（仅 10/20/30）`
+        )
+      }
+      request.timeBudgetMinutes = options.timeBudgetMinutes
+    } else {
+      request.timeBudgetMinutes = 20
+    }
+    request.sessionLaunchMode = options.sessionLaunchMode ?? "mixed"
+  } else if (options.timeBudgetMinutes !== undefined) {
+    if (!isTodayLearningTimeBudget(options.timeBudgetMinutes)) {
+      throw new Error(
+        `IR 启动时长非法: ${String(options.timeBudgetMinutes)}（仅 10/20/30）`
+      )
+    }
+    request.timeBudgetMinutes = options.timeBudgetMinutes
+  }
+  if (options.sessionLaunchMode !== undefined && !request.sessionLaunchMode) {
+    request.sessionLaunchMode = options.sessionLaunchMode
+  }
+  return request
+}
+
 export async function openIRWorkspaceWithDeps(
   deps: OpenIRWorkspaceDeps,
   options: OpenIRWorkspaceOptions
 ): Promise<void> {
-  const { pluginName, mode, openInCurrentPanel = false } = options
+  const { pluginName, openInCurrentPanel = false } = options
+  const launchRequest = buildLaunchRequest(options)
   const activePanelId = deps.getActivePanelId()
 
   if (!activePanelId) {
-    deps.notify("warn", "当前没有可用的面板", { title: "渐进阅读" })
+    deps.notify("warn", "当前没有可用的面板", { title: "阅读材料" })
     return
   }
 
@@ -52,24 +93,24 @@ export async function openIRWorkspaceWithDeps(
   const existingPanelId = findPanelIdByBlockView(panels, blockId)
 
   if (existingPanelId) {
-    dispatchIRWorkspaceMode(existingPanelId, mode)
+    dispatchIRWorkspaceLaunch(existingPanelId, launchRequest)
     deps.nav.switchFocusTo(existingPanelId)
     return
   }
 
   if (openInCurrentPanel) {
-    setPendingIRWorkspaceMode(activePanelId, mode)
+    setPendingIRWorkspaceLaunch(activePanelId, launchRequest)
     try {
       deps.nav.goTo("block", { blockId }, activePanelId)
     } catch (error) {
       clearPendingIRWorkspaceMode(activePanelId)
       throw error
     }
-    deps.notify("success", "渐进阅读面板已打开", { title: "渐进阅读" })
+    deps.notify("success", "阅读工作区已打开", { title: "今日学习" })
     return
   }
 
-  setPendingIRWorkspaceModeForBlock(blockId, mode)
+  setPendingIRWorkspaceLaunchForBlock(blockId, launchRequest)
   let rightPanelId: string | null
   try {
     rightPanelId = deps.nav.addTo(activePanelId, "right", {
@@ -84,13 +125,13 @@ export async function openIRWorkspaceWithDeps(
 
   if (!rightPanelId) {
     clearPendingIRWorkspaceModeForBlock(blockId)
-    deps.notify("error", "无法创建侧边面板", { title: "渐进阅读" })
+    deps.notify("error", "无法创建侧边面板", { title: "今日学习" })
     return
   }
 
   movePendingIRWorkspaceModeToPanel(blockId, rightPanelId)
   deps.nav.switchFocusTo(rightPanelId)
-  deps.notify("success", "渐进阅读面板已在右侧打开", { title: "渐进阅读" })
+  deps.notify("success", "阅读工作区已在右侧打开", { title: "今日学习" })
 }
 
 export async function openIRWorkspace(options: OpenIRWorkspaceOptions): Promise<void> {
