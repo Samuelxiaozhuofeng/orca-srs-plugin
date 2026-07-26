@@ -46,3 +46,6 @@ dist.zip
 .ccb/agents/grk/provider-state/grok/home/.grok/worktrees.db
 .codex/agents/fast_implementer.toml
 AGENTS.md
+
+# Claude Code worktrees (local session isolation)
+.claude/worktrees/
