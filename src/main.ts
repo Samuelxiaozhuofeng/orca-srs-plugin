@@ -7,6 +7,7 @@
  * - 管理复习会话
  */
 
+import "./styles/srs-design-tokens.css"
 import "./styles/srs-review.css"
 import "./styles/ai-card-dialog.css"
 import "./styles/ir-workspace.css"

@@ -1,0 +1,147 @@
+/**
+ * SRS 插件统一设计令牌（Design Tokens）
+ *
+ * 权威来源：Flash Home（`flashcard-home.css`）已落地的 Apple HIG 风格视觉体系。
+ * 所有 SRS / 渐进阅读面板样式必须消费本文件的令牌，禁止再硬编码圆角 / 阴影 /
+ * 间距 / 动效时长的裸数值。规范说明见 `模块文档/SRS_UI设计规范.md`。
+ *
+ * 令牌一律基于 Orca 主题变量（`--orca-color-*`）派生，保证明暗主题自适应。
+ */
+
+:root {
+  /* ---------- 圆角阶梯（Corner radius） ---------- */
+  --srs-radius-xs: 6px; /* 内联 chip / 微型控件 */
+  --srs-radius-sm: 8px; /* 内嵌预览块 / 安静按钮 */
+  --srs-radius-md: 10px; /* 次级按钮 / 列表行 */
+  --srs-radius-lg: 12px; /* 卡片 / 主按钮 / 分段控件轨道 */
+  --srs-radius-xl: 20px; /* 英雄卡 / 大面板容器 */
+  --srs-radius-pill: 999px; /* 徽章 / 胶囊标签 */
+
+  /* ---------- 间距阶梯（4pt grid） ---------- */
+  --srs-space-1: 4px;
+  --srs-space-2: 8px;
+  --srs-space-3: 12px;
+  --srs-space-4: 16px;
+  --srs-space-5: 20px;
+  --srs-space-6: 24px;
+  --srs-space-8: 32px;
+
+  /* ---------- 层次阴影（Elevation） ---------- */
+  /* 静置卡片 */
+  --srs-shadow-1:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.06);
+  /* 悬停抬升 */
+  --srs-shadow-2:
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.08);
+  /* 英雄卡 / 主容器 */
+  --srs-shadow-hero:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.06);
+  /* 浮层 / 抽屉 / 弹窗 */
+  --srs-shadow-overlay:
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    0 20px 50px rgba(0, 0, 0, 0.14);
+  /* 分段控件选中态药丸 */
+  --srs-shadow-pill: 0 1px 3px rgba(0, 0, 0, 0.14);
+
+  /* ---------- 动效（Motion） ---------- */
+  --srs-duration-fast: 0.1s; /* 按压反馈 */
+  --srs-duration-base: 0.15s; /* 悬停 / 颜色过渡 */
+  --srs-duration-slow: 0.18s; /* 分段控件 / 布局微动 */
+  --srs-duration-gauge: 0.4s; /* 进度环 / 进度条数值补间 */
+  --srs-ease: ease;
+
+  /* ---------- 排版（Typography） ---------- */
+  --srs-font-family: var(
+    --orca-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif
+  );
+  --srs-text-hero: 44px; /* 英雄数字 */
+  --srs-text-display: 26px; /* 完成态大字 / 状态大字形 */
+  --srs-text-title: 20px; /* 区块大标题 */
+  --srs-text-subtitle: 18px; /* 环内百分比 / 次级大字 */
+  --srs-text-heading: 16px; /* 视图标题 */
+  --srs-text-callout: 15px; /* 主 CTA / 强调正文 */
+  --srs-text-body: 14px; /* 正文 */
+  --srs-text-secondary: 13px; /* 次要说明 / 按钮 */
+  --srs-text-caption: 12px; /* 元信息 / 页脚 */
+  --srs-text-micro: 11px; /* 徽章 */
+
+  /* 图标尺寸（与字号阶梯分离：图标是几何量，不随正文缩放语义） */
+  --srs-icon-sm: 15px; /* 按钮内联图标 */
+  --srs-icon-md: 24px; /* 区块标识图标 */
+  --srs-icon-empty: 48px; /* 空状态插画级图标 */
+
+  --srs-weight-regular: 400;
+  --srs-weight-medium: 500;
+  --srs-weight-semibold: 600;
+  --srs-weight-bold: 700;
+
+  /* 大号数字统一收紧字距 + 等宽数字，避免跳动 */
+  --srs-tracking-tight: -0.02em;
+  --srs-tracking-wide: 0.04em; /* 小号全大写/分组标题 */
+
+  /* ---------- 内容测量（Measure） ---------- */
+  --srs-measure: 720px; /* 居中内容列最大宽度 */
+  --srs-measure-prose: 420px; /* 说明文字最大宽度 */
+  --srs-measure-narrow: 360px; /* 错误详情等窄栏文字 */
+
+  /* ---------- 语义色（派生自 Orca token） ---------- */
+  /*
+   * 命名歧义防御：Orca 官方主题文档（`plugin-docs/documents/Quick-Start.md`）示例写的是
+   * `--orca-color-dangerous-5`，而本仓库全域用 `--orca-color-danger-*`。两者只可能有一个
+   * 真实存在，且缺失时 `var()` 会静默失效（颜色变成继承值，不报错、不显眼）。
+   * 因此危险色一律走「danger → dangerous → 兜底字面量」的回退链，避免整条语义色静默塌掉。
+   */
+  --srs-accent-new: var(--orca-color-primary-6); /* 新卡 */
+  --srs-accent-due: var(
+    --orca-color-danger-6,
+    var(--orca-color-dangerous-5, #d0453f)
+  ); /* 今日到期 */
+  --srs-accent-backlog: var(--orca-color-success-6); /* 积压 */
+  --srs-accent-future: var(--orca-color-text-3); /* 未来 / 中性 */
+  --srs-accent-reading: var(--orca-color-warning-6, #b78103); /* 渐进阅读（域） */
+  --srs-accent-srs: var(--orca-color-primary-6); /* 记忆卡（域），reading 的对偶 */
+
+  /*
+   * 状态语义色。与上面的「域色」刻意分开：域色标识内容归属（记忆卡 / 渐进阅读），
+   * 状态色标识结果好坏。二者当前取值可能相同，但语义不同，不得互相复用——
+   * 否则将来调色板一变就会把「阅读」和「警告」绑死。
+   */
+  --srs-accent-warn: var(--orca-color-warning-6, #b78103); /* 警告 / 部分失败 */
+  --srs-accent-success: var(--orca-color-success-6); /* 完成 / 成功 */
+  --srs-accent-danger: var(
+    --orca-color-danger-5,
+    var(--orca-color-dangerous-5, #d0453f)
+  ); /* 错误 */
+
+  --srs-surface-base: var(--orca-color-bg-1); /* 卡片 / 页面底 */
+  --srs-surface-sunken: var(--orca-color-bg-2); /* 托盘 / 内嵌预览 */
+  --srs-hairline: var(--orca-color-border-1);
+  --srs-hairline-strong: var(--orca-color-border-2, var(--orca-color-border-1));
+}
+
+/* ---------- 通用可复用基元 ---------- */
+
+/* 键盘可达焦点环：所有自定义可点击元素必须继承此形态 */
+.srs-focusable:focus-visible,
+.srs-focus-ring:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+/* 尊重系统「减弱动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --srs-duration-fast: 0.01ms;
+    --srs-duration-base: 0.01ms;
+    --srs-duration-slow: 0.01ms;
+    --srs-duration-gauge: 0.01ms;
+  }
+}
