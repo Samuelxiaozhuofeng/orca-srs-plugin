@@ -5,6 +5,8 @@
  */
 
 import {
+  AI_CARD_TYPE_LABELS,
+  AI_CARD_TYPES,
   AI_CARD_LANGUAGE_LABELS,
   AI_CARD_LANGUAGES,
   AI_CUSTOM_INSTRUCTION_MAX,
@@ -25,7 +27,7 @@ export interface AICardGenerationDialogProps {
   visible: boolean
   phase: "config" | "review"
   sourceText: string
-  cardType: AICardType
+  cardTypes: AICardType[]
   detailLevel: AIDetailLevel
   cardLanguage: AICardLanguage
   customInstruction: string
@@ -37,7 +39,7 @@ export interface AICardGenerationDialogProps {
   isGeneratingMore: boolean
   isSaving: boolean
   onClose: () => void
-  onCardTypeChange: (type: AICardType) => void
+  onToggleCardType: (type: AICardType) => void
   onDetailLevelChange: (level: AIDetailLevel) => void
   onCardLanguageChange: (language: AICardLanguage) => void
   onCustomInstructionChange: (text: string) => void
@@ -61,7 +63,7 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     visible,
     phase,
     sourceText,
-    cardType,
+    cardTypes,
     detailLevel,
     cardLanguage,
     customInstruction,
@@ -73,7 +75,7 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     isGeneratingMore,
     isSaving,
     onClose,
-    onCardTypeChange,
+    onToggleCardType,
     onDetailLevelChange,
     onCardLanguageChange,
     onCustomInstructionChange,
@@ -152,12 +154,12 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
 
         {phase === "config" ? (
           <ConfigPhase
-            cardType={cardType}
+            cardTypes={cardTypes}
             detailLevel={detailLevel}
             cardLanguage={cardLanguage}
             customInstruction={customInstruction}
             isGenerating={isGenerating}
-            onCardTypeChange={onCardTypeChange}
+            onToggleCardType={onToggleCardType}
             onDetailLevelChange={onDetailLevelChange}
             onCardLanguageChange={onCardLanguageChange}
             onCustomInstructionChange={onCustomInstructionChange}
@@ -192,12 +194,12 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
 }
 
 function ConfigPhase(props: {
-  cardType: AICardType
+  cardTypes: AICardType[]
   detailLevel: AIDetailLevel
   cardLanguage: AICardLanguage
   customInstruction: string
   isGenerating: boolean
-  onCardTypeChange: (type: AICardType) => void
+  onToggleCardType: (type: AICardType) => void
   onDetailLevelChange: (level: AIDetailLevel) => void
   onCardLanguageChange: (language: AICardLanguage) => void
   onCustomInstructionChange: (text: string) => void
@@ -207,12 +209,12 @@ function ConfigPhase(props: {
 }) {
   const { Button } = orca.components
   const {
-    cardType,
+    cardTypes,
     detailLevel,
     cardLanguage,
     customInstruction,
     isGenerating,
-    onCardTypeChange,
+    onToggleCardType,
     onDetailLevelChange,
     onCardLanguageChange,
     onCustomInstructionChange,
@@ -224,7 +226,7 @@ function ConfigPhase(props: {
   const lockClass = isGenerating ? "srs-ui-locked" : undefined
 
   const guardType = (type: AICardType) => {
-    if (!isGenerating) onCardTypeChange(type)
+    if (!isGenerating) onToggleCardType(type)
   }
   const guardLevel = (level: AIDetailLevel) => {
     if (!isGenerating) onDetailLevelChange(level)
@@ -235,32 +237,34 @@ function ConfigPhase(props: {
       <section className="ai-card-dialog__controls">
         <div className="ai-card-dialog__field">
           <div className="ai-card-dialog__section-label" id="ai-card-type-label">
-            卡片类型
+            卡片类型（可多选）
           </div>
           <div
             className={`ai-card-dialog__segmented${
               lockClass ? ` ${lockClass}` : ""
             }`}
-            role="radiogroup"
+            role="group"
             aria-labelledby="ai-card-type-label"
           >
-            <Button
-              variant={cardType === "basic" ? "solid" : "outline"}
-              onClick={() => guardType("basic")}
-              aria-pressed={cardType === "basic"}
-              tabIndex={isGenerating ? -1 : 0}
-            >
-              Basic
-            </Button>
-            <Button
-              variant={cardType === "cloze" ? "solid" : "outline"}
-              onClick={() => guardType("cloze")}
-              aria-pressed={cardType === "cloze"}
-              tabIndex={isGenerating ? -1 : 0}
-            >
-              Cloze
-            </Button>
+            {AI_CARD_TYPES.map((type) => {
+              const on = cardTypes.includes(type)
+              return (
+                <Button
+                  key={type}
+                  variant={on ? "solid" : "outline"}
+                  onClick={() => guardType(type)}
+                  aria-pressed={on}
+                  tabIndex={isGenerating ? -1 : 0}
+                >
+                  {AI_CARD_TYPE_LABELS[type]}
+                </Button>
+              )
+            })}
           </div>
+          <p className="ai-card-dialog__field-hint">
+            选多种时由 AI 按内容特点分配：定义类走问答、术语密集段走填空、
+            有明确易混选项的走选择题。至少保留一种。
+          </p>
         </div>
 
         <div className="ai-card-dialog__field">

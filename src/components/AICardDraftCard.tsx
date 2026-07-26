@@ -1,5 +1,11 @@
-import type { AICardDraft } from "../srs/ai/aiDraftTypes"
-import { FIELD_LIMITS } from "../srs/ai/aiDraftTypes"
+import type {
+  AICardDraft,
+  ChoiceOptionDraft
+} from "../srs/ai/aiDraftTypes"
+import {
+  AI_CARD_TYPE_LABELS,
+  FIELD_LIMITS
+} from "../srs/ai/aiDraftTypes"
 
 interface AICardDraftCardProps {
   draft: AICardDraft
@@ -23,10 +29,19 @@ export function AICardDraftCard(props: AICardDraftCardProps) {
     onRemoveDraft
   } = props
 
-  const label =
-    draft.type === "basic"
-      ? `选择问答卡：${draft.question.slice(0, 40) || draft.id}`
-      : `选择填空卡：${draft.text.slice(0, 40) || draft.id}`
+  const preview =
+    draft.type === "cloze" ? draft.text : draft.question
+  const label = `选择${AI_CARD_TYPE_LABELS[draft.type]}：${
+    preview.slice(0, 40) || draft.id
+  }`
+
+  const patchOption = (index: number, patch: Partial<ChoiceOptionDraft>) => {
+    if (draft.type !== "choice") return
+    const next = draft.options.map((option, i) =>
+      i === index ? { ...option, ...patch } : option
+    )
+    onUpdateDraft(draft.id, { options: next } as Partial<AICardDraft>)
+  }
 
   return (
     <li
@@ -46,7 +61,7 @@ export function AICardDraftCard(props: AICardDraftCardProps) {
           />
         </span>
         <span className="ai-card-dialog__draft-type">
-          {draft.type === "basic" ? "Basic" : "Cloze"}
+          {AI_CARD_TYPE_LABELS[draft.type]}
         </span>
         <Button
           variant="plain"
@@ -95,6 +110,56 @@ export function AICardDraftCard(props: AICardDraftCardProps) {
               }
             />
           </label>
+        </>
+      ) : draft.type === "choice" ? (
+        <>
+          <label className="ai-card-dialog__field-label">
+            题干
+            <textarea
+              className="ai-card-dialog__textarea"
+              value={draft.question}
+              disabled={disabled}
+              maxLength={FIELD_LIMITS.question}
+              rows={2}
+              onChange={(e) =>
+                onUpdateDraft(draft.id, {
+                  question: e.target.value
+                } as Partial<AICardDraft>)
+              }
+            />
+          </label>
+          <div className="ai-card-dialog__field-label">
+            选项（勾选为正确答案）
+            <ul className="ai-card-dialog__options">
+              {draft.options.map((option, index) => (
+                <li
+                  key={index}
+                  className={`ai-card-dialog__option${
+                    option.correct ? " is-correct" : ""
+                  }`}
+                >
+                  <Checkbox
+                    checked={option.correct}
+                    disabled={disabled}
+                    aria-label={`选项 ${index + 1} 为正确答案`}
+                    onChange={({ checked }: { checked: boolean }) =>
+                      patchOption(index, { correct: checked })
+                    }
+                  />
+                  <input
+                    className="ai-card-dialog__input"
+                    type="text"
+                    value={option.text}
+                    disabled={disabled}
+                    maxLength={FIELD_LIMITS.optionText}
+                    onChange={(e) =>
+                      patchOption(index, { text: e.target.value })
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
         </>
       ) : (
         <>

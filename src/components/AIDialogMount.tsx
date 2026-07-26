@@ -19,6 +19,7 @@ import {
   updateDraft,
   removeDraft,
   setDraftSelected,
+  toggleCardType,
   backToConfig
 } from "../srs/ai/aiDialogState"
 import { AICardGenerationDialog } from "./AICardGenerationDialog"
@@ -82,7 +83,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       const result = await generateFlashcardDrafts({
         pluginName,
         sourceText: snap.sourceText,
-        cardType: snap.cardType,
+        cardTypes: snap.cardTypes as AICardType[],
         detailLevel: snap.detailLevel,
         cardLanguage: snap.cardLanguage,
         customInstruction: snap.customInstruction,
@@ -224,7 +225,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       visible={snap.isOpen}
       phase={snap.phase}
       sourceText={snap.sourceText}
-      cardType={snap.cardType}
+      cardTypes={snap.cardTypes as AICardType[]}
       detailLevel={snap.detailLevel}
       cardLanguage={snap.cardLanguage}
       customInstruction={snap.customInstruction}
@@ -243,9 +244,9 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
           closeAIDialog()
         }
       }}
-      onCardTypeChange={(type: AICardType) => {
+      onToggleCardType={(type: AICardType) => {
         if (!aiDialogState.isGenerating) {
-          aiDialogState.cardType = type
+          toggleCardType(type)
         }
       }}
       onDetailLevelChange={(level: AIDetailLevel) => {

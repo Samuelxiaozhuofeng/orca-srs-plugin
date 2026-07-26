@@ -82,7 +82,7 @@ describe("generateFlashcardDrafts", () => {
     const result = await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "key"
     })
 
@@ -119,7 +119,7 @@ describe("generateFlashcardDrafts", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "key"
     })
 
@@ -164,7 +164,7 @@ describe("generateFlashcardDrafts", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: clozeSource,
-      cardType: "cloze",
+      cardTypes: ["cloze"],
       detailLevel: "key"
     })
 
@@ -204,7 +204,7 @@ describe("generateFlashcardDrafts", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "exhaustive"
     })
 
@@ -212,7 +212,7 @@ describe("generateFlashcardDrafts", () => {
     const user = body.messages[1].content
     expect(body.messages[1].role).toBe("user")
 
-    expect(user).toContain("Card type: basic")
+    expect(user).toContain("Card types allowed: basic")
     // 上限现在按详细程度档位推出，且明确标注为上限而非目标
     expect(user).toContain("Hard ceiling: at most 12 cards")
     expect(user).toContain("This is a limit, not a target")
@@ -243,7 +243,7 @@ describe("generateFlashcardDrafts", () => {
     const pending = generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "key",
       signal: controller.signal
     })
@@ -274,7 +274,7 @@ describe("generateFlashcardDrafts", () => {
     const result = await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "key"
     })
 
@@ -344,7 +344,7 @@ describe("generateFlashcardDrafts source cap", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: long,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "key"
     })
 
@@ -406,7 +406,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
       await generateFlashcardDrafts({
         pluginName: PLUGIN,
         sourceText: SOURCE,
-        cardType: "basic",
+        cardTypes: ["basic"],
         detailLevel: level
       })
       const user = captureBody(fetchMock).messages.find(
@@ -424,7 +424,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic"
+      cardTypes: ["basic"]
     })
     const user = captureBody(fetchMock).messages.find(
       (m) => m.role === "user"
@@ -438,7 +438,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       detailLevel: "exhaustive"
     })
     // 12 张结构化卡在 2000 tokens 下会被截成半个 JSON
@@ -450,7 +450,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       customInstruction: "只做定义类"
     })
     const user = captureBody(fetchMock).messages.find(
@@ -475,7 +475,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       cardLanguage: "en"
     })
     const system = captureBody(fetchMock).messages.find(
@@ -492,7 +492,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       cardLanguage: "auto"
     })
     const system = captureBody(fetchMock).messages.find(
@@ -507,7 +507,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
+      cardTypes: ["basic"],
       excludeSummaries: ["已有问题一", "  ", "已有问题二"]
     })
     const user = captureBody(fetchMock).messages.find(
@@ -523,7 +523,7 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic"
+      cardTypes: ["basic"]
     })
     const user = captureBody(fetchMock).messages.find(
       (m) => m.role === "user"

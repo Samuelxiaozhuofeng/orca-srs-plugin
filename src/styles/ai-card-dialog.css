@@ -2140,3 +2140,32 @@
   min-height: 56px;
   line-height: 1.6;
 }
+
+/* 选择题草稿：选项列表 */
+.ai-card-dialog__options {
+  list-style: none;
+  margin: var(--srs-space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+}
+
+.ai-card-dialog__option {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-1) var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-2);
+}
+
+.ai-card-dialog__option.is-correct {
+  /* inset shadow 不占文档流，避免勾选时行高跳动 */
+  box-shadow: inset 2px 0 0 0 var(--srs-accent-success);
+}
+
+.ai-card-dialog__option .ai-card-dialog__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

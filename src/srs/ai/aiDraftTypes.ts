@@ -2,7 +2,16 @@
  * AI 闪卡草稿与生成结果类型（Plan B）
  */
 
-export type AICardType = "basic" | "cloze"
+export type AICardType = "basic" | "cloze" | "choice"
+
+/** 允许 AI 生成的卡型集合（UI 多选）。 */
+export const AI_CARD_TYPES: AICardType[] = ["basic", "cloze", "choice"]
+
+export const AI_CARD_TYPE_LABELS: Record<AICardType, string> = {
+  basic: "问答卡",
+  cloze: "填空卡",
+  choice: "选择题"
+}
 
 /** @deprecated 由 AIDetailLevel 取代；保留供旧调用点编译。 */
 export type MaxCardsOption = 1 | 3 | 5
@@ -79,6 +88,20 @@ export interface BasicCardDraft {
   sourceQuote: string
 }
 
+/** 选项：干扰项允许模型合成，正确项必须有源文本依据。 */
+export interface ChoiceOptionDraft {
+  text: string
+  correct: boolean
+}
+
+export interface ChoiceCardDraft {
+  id: string
+  type: "choice"
+  question: string
+  options: ChoiceOptionDraft[]
+  sourceQuote: string
+}
+
 export interface ClozeCardDraft {
   id: string
   type: "cloze"
@@ -87,7 +110,7 @@ export interface ClozeCardDraft {
   sourceQuote: string
 }
 
-export type AICardDraft = BasicCardDraft | ClozeCardDraft
+export type AICardDraft = BasicCardDraft | ClozeCardDraft | ChoiceCardDraft
 
 export interface RejectedDraftItem {
   index: number
@@ -124,7 +147,11 @@ export type AIDraftValidationResult =
 export interface GenerateDraftsOptions {
   pluginName: string
   sourceText: string
-  cardType: AICardType
+  /**
+   * 允许生成的卡型集合。模型按内容特点在其中自行分配：
+   * 定义类适合 basic、术语密集段适合 cloze、有明确对错的适合 choice。
+   */
+  cardTypes: AICardType[]
   /** 详细程度；决定深度与硬上限。 */
   detailLevel?: AIDetailLevel
   /** 用户自定义追加指令（在 SOURCE 分隔符之外，仍属受信指令）。 */
@@ -148,8 +175,13 @@ export const FIELD_LIMITS = {
   answer: 1000,
   text: 2000,
   clozeText: 200,
-  sourceQuote: 500
+  sourceQuote: 500,
+  optionText: 300
 } as const
+
+/** 选择题选项数量区间。少于 3 项没有测验价值，多于 6 项在复习界面不可读。 */
+export const CHOICE_OPTION_MIN = 3
+export const CHOICE_OPTION_MAX = 6
 
 /** Informative sourceQuote minimum: min(8, normalized source length) */
 export const SOURCE_QUOTE_MIN_TARGET = 8

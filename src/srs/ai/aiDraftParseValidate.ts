@@ -9,9 +9,13 @@ import {
   type AICardType,
   type AIDraftValidationResult,
   type BasicCardDraft,
+  type ChoiceCardDraft,
+  type ChoiceOptionDraft,
   type ClozeCardDraft,
   type MaxCardsOption,
   type RejectedDraftItem,
+  CHOICE_OPTION_MAX,
+  CHOICE_OPTION_MIN,
   FIELD_LIMITS,
   SOURCE_QUOTE_MIN_TARGET
 } from "./aiDraftTypes"
@@ -143,6 +147,10 @@ function draftDedupeKey(draft: AICardDraft): string {
   if (draft.type === "basic") {
     return `basic|${normalizeForContainment(draft.question).toLowerCase()}|${normalizeForContainment(draft.answer).toLowerCase()}`
   }
+  if (draft.type === "choice") {
+    // 题干相同即视为重复：同一考点换一组干扰项不算新卡
+    return `choice|${normalizeForContainment(draft.question).toLowerCase()}`
+  }
   return `cloze|${normalizeForContainment(draft.text).toLowerCase()}|${normalizeForContainment(draft.clozeText).toLowerCase()}`
 }
 
@@ -153,10 +161,10 @@ function draftDedupeKey(draft: AICardDraft): string {
 function validateBasicRaw(
   raw: Record<string, unknown>,
   sourceText: string,
-  expectedType: AICardType
+  allowedTypes: AICardType[]
 ): { ok: true; draft: Omit<BasicCardDraft, "id"> } | { ok: false; reason: string } {
-  if (expectedType !== "basic") {
-    return { ok: false, reason: `期望 cloze，收到 basic` }
+  if (!allowedTypes.includes("basic")) {
+    return { ok: false, reason: "未启用问答卡型" }
   }
   if (raw.type != null && raw.type !== "basic") {
     return { ok: false, reason: `type 应为 "basic"，收到 ${String(raw.type)}` }
@@ -204,10 +212,10 @@ function validateBasicRaw(
 function validateClozeRaw(
   raw: Record<string, unknown>,
   sourceText: string,
-  expectedType: AICardType
+  allowedTypes: AICardType[]
 ): { ok: true; draft: Omit<ClozeCardDraft, "id"> } | { ok: false; reason: string } {
-  if (expectedType !== "cloze") {
-    return { ok: false, reason: `期望 basic，收到 cloze` }
+  if (!allowedTypes.includes("cloze")) {
+    return { ok: false, reason: "未启用填空卡型" }
   }
   if (raw.type != null && raw.type !== "cloze") {
     return { ok: false, reason: `type 应为 "cloze"，收到 ${String(raw.type)}` }
@@ -257,6 +265,89 @@ function validateClozeRaw(
 }
 
 /**
+ * Model-output Choice validation.
+ *
+ * 干扰项**允许模型合成**——这正是 LLM 相对人工的优势，强求逐字摘录只会
+ * 让整批卡失败。接地要求落在 sourceQuote 上：这张卡必须有源文本依据。
+ */
+function validateChoiceRaw(
+  raw: Record<string, unknown>,
+  sourceText: string,
+  allowedTypes: AICardType[]
+): { ok: true; draft: Omit<ChoiceCardDraft, "id"> } | { ok: false; reason: string } {
+  if (!allowedTypes.includes("choice")) {
+    return { ok: false, reason: "未启用选择题卡型" }
+  }
+
+  const question = trimString(raw.question)
+  const sourceQuote = trimString(raw.sourceQuote)
+
+  if (!isNonEmptyString(question)) {
+    return { ok: false, reason: "question 为空" }
+  }
+  if (question.length > FIELD_LIMITS.question) {
+    return { ok: false, reason: `question 超过 ${FIELD_LIMITS.question} 字符` }
+  }
+  if (!isNonEmptyString(sourceQuote)) {
+    return { ok: false, reason: "sourceQuote 为空" }
+  }
+  if (sourceQuote.length > FIELD_LIMITS.sourceQuote) {
+    return { ok: false, reason: `sourceQuote 超过 ${FIELD_LIMITS.sourceQuote} 字符` }
+  }
+
+  const rawOptions = raw.options
+  if (!Array.isArray(rawOptions)) {
+    return { ok: false, reason: "options 不是数组" }
+  }
+  if (rawOptions.length < CHOICE_OPTION_MIN) {
+    return { ok: false, reason: `选项少于 ${CHOICE_OPTION_MIN} 项` }
+  }
+  if (rawOptions.length > CHOICE_OPTION_MAX) {
+    return { ok: false, reason: `选项多于 ${CHOICE_OPTION_MAX} 项` }
+  }
+
+  const options: ChoiceOptionDraft[] = []
+  const seen = new Set<string>()
+  for (const item of rawOptions) {
+    if (item == null || typeof item !== "object" || Array.isArray(item)) {
+      return { ok: false, reason: "选项项不是对象" }
+    }
+    const record = item as Record<string, unknown>
+    const text = trimString(record.text)
+    if (!isNonEmptyString(text)) {
+      return { ok: false, reason: "存在空选项" }
+    }
+    if (text.length > FIELD_LIMITS.optionText) {
+      return { ok: false, reason: `选项超过 ${FIELD_LIMITS.optionText} 字符` }
+    }
+    const key = normalizeForContainment(text).toLowerCase()
+    if (seen.has(key)) {
+      return { ok: false, reason: "存在重复选项" }
+    }
+    seen.add(key)
+    options.push({ text, correct: record.correct === true })
+  }
+
+  const correctCount = options.filter((o) => o.correct).length
+  if (correctCount === 0) {
+    return { ok: false, reason: "没有标记正确选项" }
+  }
+  // 全对等于没考点：复习时任选皆对，卡片没有区分度
+  if (correctCount === options.length) {
+    return { ok: false, reason: "所有选项都被标为正确" }
+  }
+
+  if (!isSourceQuoteGrounded(sourceText, sourceQuote)) {
+    return { ok: false, reason: "sourceQuote 未出现在源文本中" }
+  }
+  if (!isSourceQuoteInformative(sourceText, sourceQuote)) {
+    return { ok: false, reason: "sourceQuote 过短，信息量不足" }
+  }
+
+  return { ok: true, draft: { type: "choice", question, options, sourceQuote } }
+}
+
+/**
  * 解析并校验模型返回的卡片草稿列表。
  *
  * 部分合法卡可保留；零合法卡时返回 failure。
@@ -265,7 +356,8 @@ function validateClozeRaw(
 export function parseAndValidateDrafts(
   rawContent: string,
   sourceText: string,
-  expectedType: AICardType,
+  /** 允许的卡型集合；模型返回集合外的类型一律计入 rejected。 */
+  allowedTypes: AICardType[],
   /** 硬上限（由详细程度档位推出）；超出部分计入 truncatedCount。 */
   maxCards: number
 ): AIDraftValidationResult {
@@ -326,15 +418,30 @@ export function parseAndValidateDrafts(
 
     const raw = item as Record<string, unknown>
     const modelId = trimString(raw.id) || undefined
-    const typeHint =
-      raw.type === "cloze" || raw.type === "basic"
+    // 混合卡型下 type 字段是必需的路由依据；缺失时退回唯一允许的卡型，
+    // 允许多种卡型却不写 type 的项按无效处理，避免全部误判成 basic。
+    const declared =
+      raw.type === "cloze" || raw.type === "basic" || raw.type === "choice"
         ? (raw.type as AICardType)
-        : expectedType
+        : null
+    const typeHint =
+      declared ?? (allowedTypes.length === 1 ? allowedTypes[0] : null)
+
+    if (typeHint == null) {
+      rejected.push({
+        index,
+        reason: "卡片缺少 type 字段，无法判定卡型",
+        rawId: modelId
+      })
+      return
+    }
 
     const result =
       typeHint === "cloze"
-        ? validateClozeRaw(raw, sourceText, expectedType)
-        : validateBasicRaw(raw, sourceText, expectedType)
+        ? validateClozeRaw(raw, sourceText, allowedTypes)
+        : typeHint === "choice"
+          ? validateChoiceRaw(raw, sourceText, allowedTypes)
+          : validateBasicRaw(raw, sourceText, allowedTypes)
 
     if (!result.ok) {
       rejected.push({
@@ -406,6 +513,26 @@ export function validateEditableDraft(
     if (!draft.answer.trim()) return "答案不能为空"
     if (draft.question.length > FIELD_LIMITS.question) return "问题过长"
     if (draft.answer.length > FIELD_LIMITS.answer) return "答案过长"
+  } else if (draft.type === "choice") {
+    if (!draft.question.trim()) return "问题不能为空"
+    if (draft.question.length > FIELD_LIMITS.question) return "问题过长"
+    if (draft.options.length < CHOICE_OPTION_MIN) {
+      return `至少需要 ${CHOICE_OPTION_MIN} 个选项`
+    }
+    if (draft.options.length > CHOICE_OPTION_MAX) {
+      return `最多 ${CHOICE_OPTION_MAX} 个选项`
+    }
+    if (draft.options.some((o) => !o.text.trim())) return "选项不能为空"
+    if (draft.options.some((o) => o.text.length > FIELD_LIMITS.optionText)) {
+      return "选项过长"
+    }
+    const keys = draft.options.map((o) =>
+      normalizeForContainment(o.text).toLowerCase()
+    )
+    if (new Set(keys).size !== keys.length) return "选项重复"
+    const correct = draft.options.filter((o) => o.correct).length
+    if (correct === 0) return "至少标记一个正确选项"
+    if (correct === draft.options.length) return "不能所有选项都正确"
   } else {
     if (!draft.text.trim()) return "填空全文不能为空"
     if (!draft.clozeText.trim()) return "挖空文本不能为空"

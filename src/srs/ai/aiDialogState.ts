@@ -21,7 +21,7 @@ export interface AIDialogState {
   phase: AIDialogPhase
   sourceText: string
   sourceBlockId: number | null
-  cardType: AICardType
+  cardTypes: AICardType[]
   detailLevel: AIDetailLevel
   cardLanguage: AICardLanguage
   customInstruction: string
@@ -42,7 +42,7 @@ export const aiDialogState = proxy({
   phase: "config" as AIDialogPhase,
   sourceText: "",
   sourceBlockId: null as number | null,
-  cardType: "basic" as AICardType,
+  cardTypes: ["basic"] as AICardType[],
   detailLevel: DEFAULT_AI_DETAIL_LEVEL as AIDetailLevel,
   cardLanguage: DEFAULT_AI_CARD_LANGUAGE as AICardLanguage,
   customInstruction: "",
@@ -71,7 +71,7 @@ export function openAIDialog(sourceText: string, sourceBlockId: number): void {
   aiDialogState.sourceText = sourceText
   aiDialogState.sourceBlockId = sourceBlockId
   aiDialogState.phase = "config"
-  aiDialogState.cardType = "basic"
+  aiDialogState.cardTypes = ["basic"]
   aiDialogState.detailLevel = DEFAULT_AI_DETAIL_LEVEL
   aiDialogState.cardLanguage = DEFAULT_AI_CARD_LANGUAGE
   aiDialogState.customInstruction = ""
@@ -189,7 +189,7 @@ export function backToConfig(): void {
  * basic 用题干，cloze 用挖空目标 + 上下文首段。
  */
 export function draftExclusionSummary(draft: AICardDraft): string {
-  if (draft.type === "basic") return draft.question
+  if (draft.type === "basic" || draft.type === "choice") return draft.question
   return `${draft.clozeText}（出自：${draft.text.slice(0, 60)}）`
 }
 
@@ -254,4 +254,18 @@ export function appendGenerationSuccess(
   aiDialogState.infoMessage = parts.join("；")
 
   return { added: added.length, duplicates }
+}
+
+/**
+ * 切换某个卡型的启用状态。
+ * 至少保留一种：全部关掉会让「生成」变成必然失败的空请求。
+ */
+export function toggleCardType(type: AICardType): void {
+  const current = aiDialogState.cardTypes as AICardType[]
+  if (current.includes(type)) {
+    if (current.length === 1) return
+    aiDialogState.cardTypes = current.filter((t) => t !== type)
+    return
+  }
+  aiDialogState.cardTypes = [...current, type]
 }
