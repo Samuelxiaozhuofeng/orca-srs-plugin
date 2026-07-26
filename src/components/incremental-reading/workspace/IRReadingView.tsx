@@ -25,8 +25,10 @@ type Props = {
   todayReadingSummaryLoading: boolean
   todayReadingSummaryAvailable: boolean
   collectResult: IRCollectResult | null
-  /** 工作区会话启动不再自动顺延；固定 null，仅兼容 IRSessionShell 可选展示 */
+  /** 会话启动 auto-postpone banner 文案（无推迟为 null） */
   autoPostponeLabel: string | null
+  /** 撤销本次自动推迟（有可撤销批次时提供） */
+  onUndoAutoPostpone?: () => void
   mixedDegradedNotice: string | null
   sessionGeneration: number
   onStartSession: (minutes: number, mode: IRSessionLaunchMode) => void
@@ -51,6 +53,7 @@ export default function IRReadingView({
   todayReadingSummaryAvailable,
   collectResult,
   autoPostponeLabel,
+  onUndoAutoPostpone,
   mixedDegradedNotice,
   sessionGeneration,
   onStartSession,
@@ -215,6 +218,7 @@ export default function IRReadingView({
         loadErrorMessage={collectResult?.errorMessage ?? null}
         onRetryLoad={onRetryLoad}
         autoPostponeLabel={autoPostponeLabel}
+        onUndoAutoPostpone={onUndoAutoPostpone}
         sessionNotice={mixedDegradedNotice}
         embedded
         onBackToLibrary={onBackToLibrary}

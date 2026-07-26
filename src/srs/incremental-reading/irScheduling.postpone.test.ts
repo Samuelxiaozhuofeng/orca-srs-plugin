@@ -143,7 +143,7 @@ describe("B2 postpone due-only paths", () => {
     const now = new Date("2026-01-20T12:00:00")
     const result = await applyAutoPostpone(
       [card({ id: 11 as DbId, cardType: "extracts", due: new Date("2026-01-01"), priority: 20 })],
-      { now, protectedIds: new Set(), createBatchId: () => "b-due-only" }
+      { now, protectedIds: new Set(), keepTopN: 0, createBatchId: () => "b-due-only" }
     )
     expect(result.deferredCount).toBe(1)
     expect(result.committedIds).toEqual([11])
@@ -184,12 +184,14 @@ describe("B2 postpone due-only paths", () => {
     try {
       await applyAutoPostpone(
         [
-          card({ id: 31 as DbId, cardType: "extracts", due: new Date("2026-01-01"), priority: 20 }),
+          // 31 优先级更高 → keepTopN:0 下排序在前，先写入后 32 失败（committed=1）
+          card({ id: 31 as DbId, cardType: "extracts", due: new Date("2026-01-01"), priority: 30 }),
           card({ id: 32 as DbId, cardType: "extracts", due: new Date("2026-01-01"), priority: 20 })
         ],
         {
           now: new Date("2026-01-20T12:00:00"),
           protectedIds: new Set(),
+          keepTopN: 0,
           createBatchId: () => "batch-partial"
         }
       )

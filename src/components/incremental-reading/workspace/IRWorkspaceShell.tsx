@@ -84,6 +84,62 @@ export default function IRWorkspaceShell({
   const library = useIRWorkspaceLibrary(loadPluginName, pluginName)
   const reading = useIRWorkspaceSession(loadPluginName, library.libraryCards)
 
+  /**
+   * 会话启动 auto-postpone 结果（banner + 可撤销批次）。
+   * 仅用户显式启动会话时更新；刷新/重试不触发（保持只读装配）。
+   */
+  const [autoPostponeInfo, setAutoPostponeInfo] = useState<
+    { label: string | null; batchId: string | null } | null
+  >(null)
+
+  /**
+   * 独立的、先于队列装配的显式步骤：当日一次自动整理积压。
+   * 必须在调用 loadReadingQueue（只读装配）之前 await 完成，
+   * 使被推迟的旧积压以新 due 落盘后不再进入当日队列。
+   */
+  const runStartAutoPostpone = useCallback(async () => {
+    try {
+      const name = await loadPluginName()
+      const { runSessionStartAutoPostpone } = await import("./runSessionStartAutoPostpone")
+      const result = await runSessionStartAutoPostpone({ pluginName: name })
+      // banner/撤销仅在真正推迟的这次会话展示；无推迟或守卫跳过则清空
+      setAutoPostponeInfo(
+        result.batchId && result.deferredCount > 0
+          ? { label: result.label, batchId: result.batchId }
+          : null
+      )
+    } catch (error) {
+      // 兜底：helper 内部已对常规失败做可见处理；此处仅防御未预期异常，且不阻断会话
+      console.error("[IR Workspace] 自动整理积压异常:", error)
+      orca.notify(
+        "warn",
+        `自动整理积压异常：${error instanceof Error ? error.message : String(error)}`,
+        { title: "今日学习" }
+      )
+    }
+  }, [loadPluginName])
+
+  const handleAutoPostponeUndo = useCallback(async () => {
+    const batchId = autoPostponeInfo?.batchId
+    if (!batchId) return
+    try {
+      const { undoSessionStartAutoPostpone } = await import("./runSessionStartAutoPostpone")
+      await undoSessionStartAutoPostpone(batchId)
+      setAutoPostponeInfo(null)
+      if (reading.session.ready) {
+        // 撤销后重载只读队列，恢复的旧积压重新参与今日装配
+        void reading.loadReadingQueue({ timeBudgetMinutes: reading.session.timeBudgetMinutes })
+      }
+    } catch (error) {
+      console.error("[IR Workspace] 撤销自动推迟失败:", error)
+      orca.notify(
+        "error",
+        `撤销自动推迟失败：${error instanceof Error ? error.message : String(error)}`,
+        { title: "今日学习" }
+      )
+    }
+  }, [autoPostponeInfo, reading])
+
   const applyLaunchRequest = useCallback(
     (request: IRWorkspaceLaunchRequest) => {
       if (request.mode === "library") {
@@ -146,6 +202,8 @@ export default function IRWorkspaceShell({
               { title: "今日学习" }
             )
           }
+          // 先于队列装配的显式步骤：当日一次自动整理积压（写入允许）
+          await runStartAutoPostpone()
           await reading.loadReadingQueue({
             timeBudgetMinutes: minutes,
             sessionLaunchMode
@@ -153,7 +211,7 @@ export default function IRWorkspaceShell({
         })()
       }
     },
-    [mode, reading, pluginName]
+    [mode, reading, pluginName, runStartAutoPostpone]
   )
 
   useEffect(() => {
@@ -280,10 +338,12 @@ export default function IRWorkspaceShell({
     persistLibraryScroll()
     setMode("reading")
     setDrawer(null)
+    // 资料库选卡也是显式启动会话：先于装配做当日一次自动整理积压
+    await runStartAutoPostpone()
     await reading.startReadingWithCard(cardId, advanceFirst, () => {
       void library.loadLibrary()
     })
-  }, [persistLibraryScroll, reading, library])
+  }, [persistLibraryScroll, reading, library, runStartAutoPostpone])
 
   const statusLabel = useMemo(() => {
     if (mode === "library") {
@@ -417,11 +477,18 @@ export default function IRWorkspaceShell({
             todayReadingSummaryLoading={library.libraryLoading}
             todayReadingSummaryAvailable={!library.libraryError}
             collectResult={reading.session.collectResult}
-            autoPostponeLabel={reading.session.autoPostponeLabel}
+            autoPostponeLabel={autoPostponeInfo?.label ?? null}
+            onUndoAutoPostpone={
+              autoPostponeInfo?.batchId ? () => void handleAutoPostponeUndo() : undefined
+            }
             mixedDegradedNotice={reading.session.mixedDegradedNotice}
             sessionGeneration={reading.session.generation}
             onStartSession={(minutes, sessionLaunchMode) =>
-              void reading.loadReadingQueue({ timeBudgetMinutes: minutes, sessionLaunchMode })
+              void (async () => {
+                // 先于队列装配的显式步骤：当日一次自动整理积压
+                await runStartAutoPostpone()
+                await reading.loadReadingQueue({ timeBudgetMinutes: minutes, sessionLaunchMode })
+              })()
             }
             onRetryLoad={() => void reading.loadReadingQueue({
               timeBudgetMinutes: reading.session.timeBudgetMinutes
