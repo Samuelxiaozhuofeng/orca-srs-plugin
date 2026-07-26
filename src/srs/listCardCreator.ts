@@ -38,7 +38,13 @@ function hasAnySrsProps(block: Block | undefined): boolean {
 export async function createListCardFromBlock(
   cursor: CursorData,
   pluginName: string
-): Promise<{ blockId: DbId } | null> {
+): Promise<{
+  blockId: DbId
+  pluginName: string
+  addedCardTag: boolean
+  wroteRootIsCard: boolean
+  initializedItemIds: DbId[]
+} | null> {
   if (!cursor?.anchor?.blockId) {
     orca.notify("error", "无法获取光标位置")
     return null
@@ -56,6 +62,7 @@ export async function createListCardFromBlock(
 
   // 添加/更新 #card 标签，type=list
   const hasCardTag = block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias))
+  const addedCardTag = !hasCardTag
 
   try {
     if (!hasCardTag) {
@@ -85,6 +92,7 @@ export async function createListCardFromBlock(
   }
 
   // 标记为卡片（确保被收集）
+  let wroteRootIsCard = false
   try {
     await orca.commands.invokeEditorCommand(
       "core.editor.setProperties",
@@ -92,6 +100,7 @@ export async function createListCardFromBlock(
       [blockId],
       [{ name: "srs.isCard", value: true, type: 4 }]
     )
+    wroteRootIsCard = true
   } catch (error) {
     console.warn(`[${pluginName}] 设置 srs.isCard 失败（不影响主流程）:`, error)
   }
@@ -99,6 +108,7 @@ export async function createListCardFromBlock(
   // 初始化条目子块的 SRS 状态：1 今天，其余明天
   const todayMidnight = getTodayMidnight()
   const tomorrowMidnight = getTomorrowMidnight()
+  const initializedItemIds: DbId[] = []
 
   for (let i = 0; i < childIds.length; i++) {
     const itemId = childIds[i]
@@ -111,6 +121,7 @@ export async function createListCardFromBlock(
 
       if (!hasAnySrsProps(itemBlock)) {
         await writeInitialSrsState(itemId, initialDue)
+        initializedItemIds.push(itemId)
       }
     } catch (error) {
       console.warn(`[${pluginName}] 初始化列表条目 #${itemId} 失败（跳过）:`, error)
@@ -122,5 +133,11 @@ export async function createListCardFromBlock(
   } else {
     orca.notify("success", "已创建列表卡（评分将逐条解锁下一条）", { title: "列表卡" })
   }
-  return { blockId }
+  return {
+    blockId,
+    pluginName,
+    addedCardTag,
+    wroteRootIsCard,
+    initializedItemIds
+  }
 }

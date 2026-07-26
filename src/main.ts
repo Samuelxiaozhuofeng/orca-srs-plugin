@@ -181,6 +181,14 @@ export async function unload() {
     },
     cleanupSteps: [
       {
+        // 先摘掉广播总线底层 handler，避免热重载后 isHandlerRegistered 残留导致无法再注册
+        name: "teardownSrsBroadcastBus",
+        run: async () => {
+          const { teardownSrsBroadcastBus } = await import("./srs/srsBroadcastBus")
+          teardownSrsBroadcastBus()
+        }
+      },
+      {
         // FC-09：不支持断点恢复；卸载不依赖 progress 恢复。
         // 仅清理本进程已登记的 scoped keys，失败可见且不阻断后续 unload。
         name: "clearSessionProgressStorage",

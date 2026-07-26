@@ -5,13 +5,19 @@
  */
 
 import type { Block } from "../../orca.d.ts"
-import { BlockWithRepr } from "../blockUtils"
 import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
+import { createChoiceCardFromBlock } from "../choiceCardCreator"
 import { createClozeFromEditorCommand } from "../incremental-reading/irClozeCommandService"
 import { insertDirection } from "../directionUtils"
 import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
 import { createExtract } from "../extractUtils"
+import {
+  undoBasicCardCreation,
+  undoClozeCardCreation,
+  undoListCardCreation,
+  undoTopicCardCreation
+} from "./cardCreationUndo"
 import { testAIConfigWithDetails } from "../ai/aiConfigValidator"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../incrementalReadingAutoMark"
 import { loadIRState, updateReadingBreakpoint, updateResumeBlockId } from "../incrementalReadingStorage"
@@ -73,21 +79,31 @@ export function registerCommands(
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
-      if (!undoArgs || !undoArgs.blockId) return
-
-      const block = orca.state.blocks[undoArgs.blockId] as BlockWithRepr
-      if (!block) return
-
-      block._repr = undoArgs.originalRepr || { type: "text" }
-
-      if (undoArgs.originalText !== undefined) {
-        block.text = undoArgs.originalText
-      }
-
-      console.log(`[${_pluginName}] 已撤销：块 #${undoArgs.blockId} 已恢复`)
+      await undoBasicCardCreation(undoArgs)
     },
     {
       label: "SRS: 将块转换为记忆卡片",
+      hasArgs: false
+    }
+  )
+
+  // 选择题：#card type=choice + #choice
+  orca.commands.registerEditorCommand(
+    `${pluginName}.createChoiceCard`,
+    async (editor, ...args) => {
+      const [_panelId, _rootBlockId, cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置")
+        return null
+      }
+      const result = await createChoiceCardFromBlock(cursor, _pluginName)
+      return result ? { ret: result, undoArgs: result } : null
+    },
+    async undoArgs => {
+      await undoBasicCardCreation(undoArgs)
+    },
+    {
+      label: "SRS: 创建选择题",
       hasArgs: false
     }
   )
@@ -124,10 +140,8 @@ export function registerCommands(
       }
     },
     async undoArgs => {
-      // 由于使用虎鲸笔记原生命令（deleteSelection + insertFragments），
-      // 撤销操作由框架自动处理，这里只记录日志
-      if (!undoArgs || !undoArgs.blockId) return
-      console.log(`[${_pluginName}] Cloze 撤销：块 #${undoArgs.blockId}，编号 c${undoArgs.clozeNumber}`)
+      // 内容 fragment 的撤销由编辑器原生命令栈处理；这里对称清理本次 srs.cN.* / 可选 #card
+      await undoClozeCardCreation(undoArgs)
     },
     {
       label: "SRS: 创建 Cloze 填空",
@@ -148,8 +162,7 @@ export function registerCommands(
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
-      if (!undoArgs || !undoArgs.blockId) return
-      console.log(`[${_pluginName}] Topic 卡片撤销：块 #${undoArgs.blockId}`)
+      await undoTopicCardCreation(undoArgs)
     },
     {
       label: "SRS: 创建 Topic 卡片",
@@ -202,9 +215,7 @@ export function registerCommands(
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
-      // 列表卡涉及标签/属性/多个子块初始化，撤销交由编辑器原生命令栈处理，这里仅记录日志
-      if (!undoArgs || !undoArgs.blockId) return
-      console.log(`[${_pluginName}] 列表卡撤销：块 #${undoArgs.blockId}`)
+      await undoListCardCreation(undoArgs)
     },
     {
       label: "SRS: 创建列表卡",
@@ -741,6 +752,7 @@ export function registerCommands(
 export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterCommand(`${pluginName}.scanCardsFromTags`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeCardFromBlock`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.createChoiceCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createTopicCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createExtract`)

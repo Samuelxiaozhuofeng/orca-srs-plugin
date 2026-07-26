@@ -4,7 +4,7 @@ import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../srs/types"
 import type { FilterType } from "../srs/cardFilterUtils"
 import { filterCards } from "../srs/cardFilterUtils"
-import { SRS_EVENTS } from "../srs/srsEvents"
+import { subscribeSrsCardLifecycleEvents } from "../srs/srsBroadcastBus"
 import {
   invalidateFlashHomeDataCache,
   loadFlashHomeData
@@ -285,58 +285,27 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const loadDataRef = useRef(loadData)
   loadDataRef.current = loadData
 
-  const handlersRef = useRef<{
-    graded: ((data: unknown) => void) | null
-    postponed: ((data: unknown) => void) | null
-    suspended: ((data: unknown) => void) | null
-  }>({ graded: null, postponed: null, suspended: null })
-
   useEffect(() => {
     const silentReload = () => {
       invalidateFlashHomeDataCache()
       invalidateTodayLearningSummaryCache()
       void loadDataRef.current()
     }
-    const handleCardGraded = () => {
-      console.log(`[${pluginName}] 今日学习: 收到 CARD_GRADED，刷新`)
-      silentReload()
-    }
-    const handleCardPostponed = () => {
-      console.log(`[${pluginName}] 今日学习: 收到 CARD_POSTPONED，刷新`)
-      silentReload()
-    }
-    const handleCardSuspended = () => {
-      console.log(`[${pluginName}] 今日学习: 收到 CARD_SUSPENDED，刷新`)
-      silentReload()
-    }
-
-    handlersRef.current = {
-      graded: handleCardGraded,
-      postponed: handleCardPostponed,
-      suspended: handleCardSuspended
-    }
-
-    // 对称注册/注销：每个实例无条件注册自己的 handler，cleanup 注销同一引用。
-    // 不能用 isHandlerRegistered 做守卫——它只按事件名判断是否存在任意 handler
-    // （见 plugin-docs/types/orca.md broadcasts 节），多实例下会让第二个实例永不注册，
-    // 而先卸载的实例会把仍存活实例的 handler 注销掉，静默失去广播刷新。
-    // registerHandler/unregisterHandler 按 (type, handler) 对管理，支持多 handler 共存。
-    orca.broadcasts.registerHandler(SRS_EVENTS.CARD_GRADED, handleCardGraded)
-    orca.broadcasts.registerHandler(SRS_EVENTS.CARD_POSTPONED, handleCardPostponed)
-    orca.broadcasts.registerHandler(SRS_EVENTS.CARD_SUSPENDED, handleCardSuspended)
-
-    return () => {
-      const handlers = handlersRef.current
-      if (handlers.graded) {
-        orca.broadcasts.unregisterHandler(SRS_EVENTS.CARD_GRADED, handlers.graded)
+    // Orca broadcasts 每类型仅允许一个 handler；经模块级总线扇出到多实例订阅者
+    return subscribeSrsCardLifecycleEvents({
+      graded: () => {
+        console.log(`[${pluginName}] 今日学习: 收到 CARD_GRADED，刷新`)
+        silentReload()
+      },
+      postponed: () => {
+        console.log(`[${pluginName}] 今日学习: 收到 CARD_POSTPONED，刷新`)
+        silentReload()
+      },
+      suspended: () => {
+        console.log(`[${pluginName}] 今日学习: 收到 CARD_SUSPENDED，刷新`)
+        silentReload()
       }
-      if (handlers.postponed) {
-        orca.broadcasts.unregisterHandler(SRS_EVENTS.CARD_POSTPONED, handlers.postponed)
-      }
-      if (handlers.suspended) {
-        orca.broadcasts.unregisterHandler(SRS_EVENTS.CARD_SUSPENDED, handlers.suspended)
-      }
-    }
+    })
   }, [pluginName])
 
   const deckCards = useMemo(() => {

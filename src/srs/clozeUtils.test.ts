@@ -41,10 +41,18 @@ const invokeEditorCommand = vi.fn(async (command: string, _cursor: unknown, ...a
 globalThis.orca = {
   state: { blocks: { 1: block } },
   commands: { invokeEditorCommand },
-  notify: vi.fn()
+  notify: vi.fn(),
+  plugins: {
+    getData: vi.fn(async () => null)
+  }
 }
 
-import { createCloze, getAllClozeNumbers, getMaxClozeNumberFromContent } from "./clozeUtils"
+import {
+  cloneBlockContent,
+  createCloze,
+  getAllClozeNumbers,
+  getMaxClozeNumberFromContent
+} from "./clozeUtils"
 import { ensureClozeSrsState, writeInitialClozeSrsState } from "./storage"
 
 describe("getMaxClozeNumberFromContent", () => {
@@ -82,6 +90,7 @@ describe("createCloze", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     block.content = [{ t: "t", v: "remember this" }]
+    block.refs = [cardRef]
   })
 
   it("converts an existing Extract card tag to cloze", async () => {
@@ -93,7 +102,18 @@ describe("createCloze", () => {
       isForward: true
     }, "orca-srs")
 
-    expect(result).toEqual({ blockId: 1, clozeNumber: 1 })
+    expect(result).toMatchObject({
+      blockId: 1,
+      clozeNumber: 1,
+      pluginName: "orca-srs",
+      addedCardTag: false,
+      wroteInitialClozeSrs: true,
+      isFirstClozeCard: false
+    })
+    // 挖空前正文快照：撤销必须还原，避免残留 .cloze fragment
+    expect(result?.originalContent).toEqual([{ t: "t", v: "remember this" }])
+    // 快照与当前 content 解耦（深拷贝），防止 valtio 变异污染 undoArgs
+    expect(result?.originalContent).not.toBe(block.content)
     expect(invokeEditorCommand).toHaveBeenCalledWith(
       "core.editor.setRefData",
       null,
@@ -101,6 +121,36 @@ describe("createCloze", () => {
       [{ name: "type", value: "cloze" }]
     )
     expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 1, 0)
+  })
+
+  it("撤销后 originalContent 使 getMaxClozeNumber 归零，再挖空仍为 c1", async () => {
+    // 回归：Cmd+Z 不还原文 → 残留 c1 fragment → 再挖变成 c2 双卡
+    const result = await createCloze({
+      panelId: "p1",
+      rootBlockId: 1,
+      anchor: { blockId: 1, isInline: true, index: 0, offset: 0 },
+      focus: { blockId: 1, isInline: true, index: 0, offset: 8 },
+      isForward: true
+    }, "orca-srs")
+
+    expect(result?.clozeNumber).toBe(1)
+    expect(getMaxClozeNumberFromContent(block.content, "orca-srs")).toBe(1)
+
+    // 模拟 undo 用 originalContent 还原
+    const restored = cloneBlockContent(result!.originalContent!)!
+    block.content = restored
+    expect(getMaxClozeNumberFromContent(block.content, "orca-srs")).toBe(0)
+    expect(getAllClozeNumbers(block.content, "orca-srs")).toEqual([])
+
+    vi.clearAllMocks()
+    const again = await createCloze({
+      panelId: "p1",
+      rootBlockId: 1,
+      anchor: { blockId: 1, isInline: true, index: 0, offset: 0 },
+      focus: { blockId: 1, isInline: true, index: 0, offset: 8 },
+      isForward: true
+    }, "orca-srs")
+    expect(again?.clozeNumber).toBe(1)
   })
 
   it("assigns number 2 when a legacy-prefix cloze fragment already holds number 1", async () => {
@@ -119,7 +169,13 @@ describe("createCloze", () => {
       isForward: true
     }, "orca-srs")
 
-    expect(result).toEqual({ blockId: 1, clozeNumber: 2 })
+    expect(result).toMatchObject({
+      blockId: 1,
+      clozeNumber: 2,
+      addedCardTag: false,
+      isFirstClozeCard: false,
+      wroteInitialClozeSrs: true
+    })
     const newFragment = block.content.find(f => f.t === "orca-srs.cloze")
     expect(newFragment?.clozeNumber).toBe(2)
     // 新编号 c2 初始写入；旧前缀 c1 走 ensure，不覆盖
@@ -146,7 +202,13 @@ describe("createCloze", () => {
       isForward: true
     }, "orca-srs")
 
-    expect(result).toEqual({ blockId: 1, clozeNumber: 2 })
+    expect(result).toMatchObject({
+      blockId: 1,
+      clozeNumber: 2,
+      addedCardTag: false,
+      isFirstClozeCard: false,
+      wroteInitialClozeSrs: true
+    })
     // 已存在的 c1：仅 ensure（daysOffset = clozeNumber - 1 = 0），绝不初始重写
     expect(ensureClozeSrsState).toHaveBeenCalledTimes(1)
     expect(ensureClozeSrsState).toHaveBeenCalledWith(1, 1, 0)
@@ -154,5 +216,31 @@ describe("createCloze", () => {
     expect(writeInitialClozeSrsState).toHaveBeenCalledTimes(1)
     expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 2, 1)
     expect(writeInitialClozeSrsState).not.toHaveBeenCalledWith(1, 1, expect.anything())
+  })
+
+  it("无 #card 时首次 cloze 标记 addedCardTag/isFirstClozeCard", async () => {
+    block.refs = []
+    const result = await createCloze({
+      panelId: "p1",
+      rootBlockId: 1,
+      anchor: { blockId: 1, isInline: true, index: 0, offset: 0 },
+      focus: { blockId: 1, isInline: true, index: 0, offset: 8 },
+      isForward: true
+    }, "orca-srs")
+
+    expect(result).toMatchObject({
+      blockId: 1,
+      clozeNumber: 1,
+      addedCardTag: true,
+      isFirstClozeCard: true,
+      wroteInitialClozeSrs: true
+    })
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.insertTag",
+      null,
+      1,
+      "card",
+      expect.any(Array)
+    )
   })
 })

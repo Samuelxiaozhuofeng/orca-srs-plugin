@@ -22,7 +22,13 @@ import { upsertIRIndexId } from "./incremental-reading/irIndex"
 export async function createTopicCardByBlockId(
   blockId: DbId,
   pluginName: string
-): Promise<{ blockId: DbId } | null> {
+): Promise<{
+  blockId: DbId
+  pluginName: string
+  addedCardTag: boolean
+  createdFreshTopic: boolean
+  wroteIRState: true
+} | null> {
   let block =
     (orca.state.blocks?.[blockId] as Block | undefined)
     || ((await orca.invokeBackend("get-block", blockId)) as Block | undefined)
@@ -34,6 +40,8 @@ export async function createTopicCardByBlockId(
   }
 
   const hasCardTag = block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
+  // 仅「创建前无 #card」时 undo 才做完整 cleanup，避免误删用户原有卡/IR
+  const createdFreshTopic = !hasCardTag
 
   try {
     if (!hasCardTag) {
@@ -75,7 +83,13 @@ export async function createTopicCardByBlockId(
   }
 
   orca.notify("success", "已加入渐进阅读", { title: "渐进阅读" })
-  return { blockId }
+  return {
+    blockId,
+    pluginName,
+    addedCardTag: createdFreshTopic,
+    createdFreshTopic,
+    wroteIRState: true
+  }
 }
 
 /**
@@ -84,7 +98,13 @@ export async function createTopicCardByBlockId(
 export async function createTopicCard(
   cursor: CursorData,
   pluginName: string
-): Promise<{ blockId: DbId } | null> {
+): Promise<{
+  blockId: DbId
+  pluginName: string
+  addedCardTag: boolean
+  createdFreshTopic: boolean
+  wroteIRState: true
+} | null> {
   if (!cursor?.anchor?.blockId) {
     orca.notify("error", "无法获取光标位置")
     return null

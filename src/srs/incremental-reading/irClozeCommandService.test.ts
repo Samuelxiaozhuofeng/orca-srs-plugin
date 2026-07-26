@@ -40,6 +40,7 @@ describe("IR Cloze editor command routing", () => {
       ok: true as const,
       itemId: 10,
       clozeNumber: 2,
+      itemType: "cloze" as const,
       extractId: 10,
       source: {
         extractId: 10,
@@ -58,7 +59,12 @@ describe("IR Cloze editor command routing", () => {
       createRegularCloze
     })
 
-    expect(result).toEqual({ blockId: 10, clozeNumber: 2 })
+    expect(result).toMatchObject({
+      blockId: 10,
+      clozeNumber: 2,
+      originalContent: expect.any(Array),
+      wroteInitialClozeSrs: true
+    })
     expect(convertExtract).toHaveBeenCalledWith(expect.objectContaining({
       extractId: 10,
       strategy: "keep_extract"
@@ -83,6 +89,7 @@ describe("IR Cloze editor command routing", () => {
       ok: true as const,
       itemId: 10,
       clozeNumber: 3,
+      itemType: "cloze" as const,
       extractId: 10,
       source: {
         extractId: 10,
@@ -99,7 +106,11 @@ describe("IR Cloze editor command routing", () => {
       convertExtract,
       createRegularCloze
     })
-    expect(result).toEqual({ blockId: 10, clozeNumber: 3 })
+    expect(result).toMatchObject({
+      blockId: 10,
+      clozeNumber: 3,
+      originalContent: expect.any(Array)
+    })
     expect(convertExtract).toHaveBeenCalled()
     expect(createRegularCloze).not.toHaveBeenCalled()
   })

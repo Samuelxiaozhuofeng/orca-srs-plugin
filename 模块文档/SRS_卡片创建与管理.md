@@ -1,7 +1,8 @@
 # SRS 卡片创建与管理模块
 
-> **文档同步日期**：2026-07-13  
-> **变更说明**：按当前代码校正卡种、`_repr` 规则、最近牌组与相关文件路径；去掉失效的绝对 `file://` 链接。
+> **文档同步日期**：2026-07-26  
+> **变更说明**：制卡 undo 对称清理；选择题专用创建命令；`scanCardsFromTags` 兜底判空修复。  
+> 2026-07-26：`createCloze` 返回 `originalContent` 深拷贝；`undoClozeCardCreation` **必须先还原正文**再删 srs/标签（编辑器原生命令栈不会自动去掉 `.cloze` fragment）。
 
 ---
 
@@ -25,6 +26,7 @@
 | 文件 | 职责 |
 | ---- | ---- |
 | `src/srs/cardCreator.ts` | `scanCardsFromTags`、`makeCardFromBlock` |
+| `src/srs/choiceCardCreator.ts` | 选择题创建 `createChoiceCardFromBlock` |
 | `src/srs/clozeUtils.ts` | 填空创建 |
 | `src/srs/directionUtils.ts` | 方向标记插入 |
 | `src/srs/listCardCreator.ts` | 列表卡创建 |
@@ -39,6 +41,7 @@
 | `src/srs/deckUtils.ts` | `extractCardType` / `extractDeckName` |
 | `src/srs/cardIdentity.ts` | 稳定 `cardKey` |
 | `src/srs/storage.ts` | 初始 SRS 状态 |
+| `src/srs/registry/cardCreationUndo.ts` | 制卡对称撤销（只删本次新增） |
 | `src/srs/registry/commands.ts` / `uiComponents.tsx` | 命令与 UI 入口 |
 
 ---
@@ -51,7 +54,7 @@
 | **cloze** | `type=cloze` 或 cloze fragment 创建时写入 | 工具栏 Cloze / `createCloze` | `srs.cloze-card` |
 | **direction** | `type=direction` | 斜杠正向/反向方向卡 | **不**强制 `_repr`；扫描**跳过** |
 | **list** | `type=list` | 斜杠「列表卡」 | 扫描**跳过**；容器 + 子块 SRS |
-| **choice** | 须有 **`#card`**；类型上 `#choice` **优先**，或 `type=choice` | 无专用命令：`#card` + `#choice`（或 type）+ 子块选项 | `srs.choice-card`（扫描时写入；**仅** `_repr` 无 `#card` 仍进不了收集） |
+| **choice** | 须有 **`#card`**；类型上 `#choice` **优先**，或 `type=choice` | 斜杠「创建选择题」`createChoiceCard`；也可手动 `#card` + `#choice` + 子块选项 | `srs.choice-card`（扫描时写入；**仅** `_repr` 无 `#card` 仍进不了收集） |
 | **topic** | `type=topic` | 斜杠 IR Topic / 右键 | 扫描跳过；走 IR 状态 |
 | **extracts** | `type=extracts` | `createExtract` 等 | 扫描跳过；IR 摘录 |
 | **excerpt** | `type=excerpt` | 标签 type | 收集时无子块可当摘录展示 |
@@ -75,27 +78,49 @@
 
 ### `scanCardsFromTags(pluginName)`
 
-1. `get-blocks-with-tags(["card"])`，失败则备用全量过滤
-2. 对每块 `extractCardType`
-3. **跳过** conversion：`direction` / `list` / `extracts` / `topic`
-4. 其余：按类型设 `_repr`（cloze → `srs.cloze-card`，choice → `srs.choice-card`，else `srs.card`）
-5. `ensureCardSrsState`（不误重置已有进度）
+1. `get-blocks-with-tags(["card"])`，失败则备用全量过滤（结果写入 `allTaggedBlocks`）
+2. **判空使用 `allTaggedBlocks`**（勿用原始 `taggedBlocks`，否则兜底找到的块会被跳过）
+3. 对每块 `extractCardType`
+4. **跳过** conversion：`direction` / `list` / `extracts` / `topic`
+5. 其余：按类型设 `_repr`（cloze → `srs.cloze-card`，choice → `srs.choice-card`，else `srs.card`）
+6. `ensureCardSrsState`（不误重置已有进度）
 
 ### `makeCardFromBlock(cursor, pluginName)`
 
 1. 无 `#card`：`insertTag` + `buildCardTagData(..., "basic")` + `ensureCardTagProperties`
 2. `resolveFrontBack`；`extractCardType` 决定 repr
 3. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有标签：`ensureCardSrsState`
+4. 返回 undoArgs：`blockId, originalRepr, originalText, pluginName, addedCardTag, wroteInitialSrs`
+
+### `createChoiceCardFromBlock(cursor, pluginName)`
+
+1. 无 `#card`：`insertTag` + `buildCardTagData(..., "choice")`；已有则 `setRefData type=choice`
+2. 无 `#choice`：`insertTag "choice"`
+3. `_repr = { type: "srs.choice-card", ... }`
+4. 新卡 cleanup + 初始 SRS；已有卡 `ensureCardSrsState`
+5. 无 `#correct`/`#正确` 子选项时 `info` 提示（不阻断）
+6. undoArgs 另含 `addedChoiceTag`；撤销走 `undoBasicCardCreation`（可选摘 `#choice`）
 
 ### 其它创建
 
 | 函数 | 默认 type |
 | ---- | --------- |
-| `createCloze` | cloze + 分天 cloze SRS |
-| `insertDirection` | direction + 方向 SRS |
-| `createListCardFromBlock` | list + 子块初始 due |
-| `createTopicCard` / `createTopicCardByBlockId` | topic + IR 状态（默认优先级 50，不强制今天） |
+| `createCloze` | cloze + 分天 cloze SRS；undoArgs 含 `isFirstClozeCard` / `wroteInitialClozeSrs` |
+| `insertDirection` | direction + 方向 SRS（方向卡 undo 仍只还原 content） |
+| `createListCardFromBlock` | list + 子块初始 due；undoArgs 含 `initializedItemIds` / `wroteRootIsCard` |
+| `createTopicCard` / `createTopicCardByBlockId` | topic + IR 状态；`createdFreshTopic` 控制完整 undo |
 | `createExtract` | extracts 摘录子块 + IR |
+
+### 制卡对称撤销（`cardCreationUndo.ts`）
+
+原则：**只删本次新增**。命令 undo 回调调用：
+
+| Helper | 适用 | 行为摘要 |
+| ------ | ---- | -------- |
+| `undoBasicCardCreation` | makeCard / choice | `wroteInitialSrs` → cleanup；`addedCardTag` → removeTag card；`addedChoiceTag` → removeTag choice；还原 `_repr` |
+| `undoClozeCardCreation` | createCloze | **先**用 `originalContent` `setBlocksContent` 还原正文（首次/非首次都要，防残留 `.cloze` fragment 编号错乱）；再删 `srs.c{N}.*`；仅 `isFirstClozeCard` 时再摘 `#card`、顶层 srs、`_repr` |
+| `undoTopicCardCreation` | createTopicCard | 仅 `createdFreshTopic`：deleteIRState + removeTag + 删 `_repr` |
+| `undoListCardCreation` | createListCard | 清理 `initializedItemIds`；可选根 `srs.isCard` / `#card`；未写 `_repr` 不瞎删 |
 
 ### `buildCardTagData(pluginName, blockId, cardType)`
 
@@ -164,15 +189,15 @@
 ### 3. 专用卡种
 
 - Cloze 按钮 / 方向斜杠 / 列表斜杠 / IR Topic  
-- 选择题：标签 + 正确选项（见 `SRS_选择题卡.md`）
+- 选择题：斜杠「创建选择题」或标签约定（见 `SRS_选择题卡.md`）
 
 ---
 
 ## 扩展点
 
 1. 多答案子块策略（basic 目前首子块为 back）
-2. 选择题专用创建命令（当前靠标签约定）
-3. 模板系统
+2. 模板系统
+3. 方向卡制卡 undo 与 content 栈对齐（当前仍只还原 content）
 
 ---
 
@@ -181,6 +206,8 @@
 | 文件 | 说明 |
 | ---- | ---- |
 | `src/srs/cardCreator.ts` | 扫描与 basic 转换 |
+| `src/srs/choiceCardCreator.ts` | 选择题创建 |
+| `src/srs/registry/cardCreationUndo.ts` | 制卡对称撤销 |
 | `src/srs/cardTagDataBuilder.ts` | 标签 data |
 | `src/srs/cardTagRefData.ts` | ref 数据写入 |
 | `src/srs/cardIdentity.ts` | 身份键 |

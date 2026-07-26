@@ -17,11 +17,15 @@ const { Button } = orca.components
 export type IRSessionMorePanelProps = {
   open: boolean
   isWorking?: boolean
+  /** Extract 会话时显示问答/方向转化 */
+  isTopic?: boolean
   theme: IRReaderTheme
   contentWidth: number
   viewMode: "reading" | "edit"
   embedded?: boolean
   onPostpone: () => void
+  onConvertToQA?: () => void
+  onConvertToDirection?: () => void
   onThemeChange: (theme: IRReaderTheme) => void
   onContentWidthChange: (width: number) => void
   onToggleViewMode: () => void
@@ -31,11 +35,14 @@ export type IRSessionMorePanelProps = {
 export default function IRSessionMorePanel({
   open,
   isWorking,
+  isTopic = false,
   theme,
   contentWidth,
   viewMode,
   embedded,
   onPostpone,
+  onConvertToQA,
+  onConvertToDirection,
   onThemeChange,
   onContentWidthChange,
   onToggleViewMode,
@@ -76,6 +83,36 @@ export default function IRSessionMorePanel({
       >
         推后…
       </Button>
+      {!isTopic && onConvertToQA ? (
+        <Button
+          tabIndex={0}
+          variant="plain"
+          onClick={() => {
+            if (isWorking) return
+            onConvertToQA()
+          }}
+          style={busyStyle}
+          title="将摘录转为问答卡（正文为题、首个子块为答案）"
+          aria-label="转为问答卡"
+        >
+          问答
+        </Button>
+      ) : null}
+      {!isTopic && onConvertToDirection ? (
+        <Button
+          tabIndex={0}
+          variant="plain"
+          onClick={() => {
+            if (isWorking) return
+            onConvertToDirection()
+          }}
+          style={busyStyle}
+          title="在光标处分隔，转为正向方向卡"
+          aria-label="转为方向卡"
+        >
+          方向
+        </Button>
+      ) : null}
       <span className="ir-reading__more-label">主题模式</span>
       <Button
         tabIndex={0}

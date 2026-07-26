@@ -442,6 +442,8 @@ export default function IRSessionShell({
     handlePostpone,
     handleExtract,
     handleItemize,
+    handleConvertToQA,
+    handleConvertToDirection,
     handleArchive,
     handleCompleteRequest,
     handleSkipChapter,
@@ -722,6 +724,8 @@ export default function IRSessionShell({
         onNext={handleNext}
         onExtract={handleExtract}
         onItemize={handleItemize}
+        onConvertToQA={handleConvertToQA}
+        onConvertToDirection={handleConvertToDirection}
         onComplete={handleCompleteRequest}
         onImportance={openImportanceMenu}
         onMore={toggleMorePanel}

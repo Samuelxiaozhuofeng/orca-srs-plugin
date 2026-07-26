@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  convertExtractToDirection,
   convertExtractToItem,
+  convertExtractToQA,
+  isCollectableBasicBlock,
   isCollectableClozeBlock,
+  isCollectableDirectionBlock,
   shouldPreserveExtractOnFailure,
   type ConversionDeps
 } from "./irConversionService"
@@ -40,7 +44,8 @@ function makeDeps(overrides: Partial<ConversionDeps> = {}): ConversionDeps {
     content: [{ t: "t", v: "test text" }] as any,
     text: "test text",
     cardType: "extracts",
-    properties: [{ name: "srs.isCard", value: true, type: 4 }]
+    properties: [{ name: "srs.isCard", value: true, type: 4 }],
+    repr: null as Record<string, unknown> | null
   }
   return {
     loadState: vi.fn(async () => ({ ...state })),
@@ -59,6 +64,12 @@ function makeDeps(overrides: Partial<ConversionDeps> = {}): ConversionDeps {
     readBookMeta: vi.fn(async () => ({ sourceBookId: 99, sourceBookTitle: "Book" })),
     verifyItemCollectable: vi.fn(async () => true),
     writeSourceMeta: vi.fn(async () => undefined),
+    resolveQAContent: vi.fn(async () => ({ front: "question", back: "answer" })),
+    createQAOnBlock: vi.fn(async () => ({ blockId: 10 })),
+    initQASrs: vi.fn(async () => undefined),
+    verifyQACollectable: vi.fn(async () => true),
+    createDirectionOnBlock: vi.fn(async () => ({ blockId: 10 })),
+    verifyDirectionCollectable: vi.fn(async () => true),
     ...overrides
   }
 }
@@ -76,6 +87,7 @@ describe("convertExtractToItem", () => {
     if (result.ok) {
       expect(result.itemId).toBe(10)
       expect(result.clozeNumber).toBe(1)
+      expect(result.itemType).toBe("cloze")
       expect(result.source.topicId).toBe(1)
       expect(result.completedExtract).toBe(true)
     }
@@ -251,5 +263,196 @@ describe("convertExtractToItem", () => {
       refs: [{ type: 2, alias: "card", data: [{ name: "type", value: "extracts" }] }]
     }, 1)).toBe(false)
     expect(isCollectableClozeBlock({ ...base, properties: [{ name: "srs.isCard", value: true }] }, 1)).toBe(false)
+  })
+})
+
+describe("convertExtractToQA", () => {
+  it("succeeds complete_extract and finishes IR", async () => {
+    const deps = makeDeps()
+    const result = await convertExtractToQA({
+      extractId: 10,
+      pluginName: "orca-srs",
+      strategy: "complete_extract",
+      deps
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.itemType).toBe("qa")
+      expect(result.clozeNumber).toBe(0)
+      expect(result.itemId).toBe(10)
+      expect(result.completedExtract).toBe(true)
+      expect(result.source.selectedText).toBe("question")
+    }
+    expect(deps.createQAOnBlock).toHaveBeenCalled()
+    expect(deps.initQASrs).toHaveBeenCalledWith(10)
+    expect(deps.writeSourceMeta).toHaveBeenCalled()
+    expect(deps.deleteIrOnly).toHaveBeenCalledWith(10)
+  })
+
+  it("succeeds keep_extract without deleting IR", async () => {
+    const deps = makeDeps()
+    const result = await convertExtractToQA({
+      extractId: 10,
+      pluginName: "orca-srs",
+      strategy: "keep_extract",
+      deps
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.completedExtract).toBe(false)
+      expect(result.itemType).toBe("qa")
+    }
+    expect(deps.deleteIrOnly).not.toHaveBeenCalled()
+    expect(deps.saveState).toHaveBeenCalledWith(10, expect.objectContaining({
+      stage: "extract.item_candidate",
+      lastAction: "itemize"
+    }))
+  })
+
+  it("fails validate when no answer child", async () => {
+    const deps = makeDeps({
+      resolveQAContent: vi.fn(async () => null)
+    })
+    const result = await convertExtractToQA({
+      extractId: 10,
+      pluginName: "orca-srs",
+      deps
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.step).toBe("validate")
+      expect(result.error).toContain("Q&A 需要答案子块")
+    }
+    expect(deps.createQAOnBlock).not.toHaveBeenCalled()
+    expect(deps.initQASrs).not.toHaveBeenCalled()
+    expect(deps.restoreBlock).not.toHaveBeenCalled()
+  })
+
+  it("restores when initQASrs fails after create", async () => {
+    const snapshot = baseState({ intervalDays: 5, priority: 60 })
+    const deps = makeDeps({
+      loadState: vi.fn(async () => ({ ...snapshot })),
+      initQASrs: vi.fn(async () => {
+        throw new Error("qa srs boom")
+      })
+    })
+    const result = await convertExtractToQA({
+      extractId: 10,
+      pluginName: "orca-srs",
+      deps
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.step).toBe("init_srs")
+      expect(result.extractPreserved).toBe(true)
+    }
+    expect(deps.restoreBlock).toHaveBeenCalled()
+    expect(deps.saveState).toHaveBeenCalledWith(10, expect.objectContaining({
+      intervalDays: 5,
+      priority: 60
+    }))
+    expect(deps.deleteIrOnly).not.toHaveBeenCalled()
+  })
+
+  it("restores when verify fails after create", async () => {
+    const deps = makeDeps({
+      verifyQACollectable: vi.fn(async () => false)
+    })
+    const result = await convertExtractToQA({
+      extractId: 10,
+      pluginName: "orca-srs",
+      deps
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.step).toBe("verify_collectable")
+    expect(deps.restoreBlock).toHaveBeenCalled()
+    expect(deps.deleteIrOnly).not.toHaveBeenCalled()
+  })
+
+  it("isCollectableBasicBlock requires #card + type=basic + srs.*", () => {
+    const base = {
+      refs: [{ type: 2, alias: "card", data: [{ name: "type", value: "basic" }] }],
+      properties: [{ name: "srs.due", value: new Date(), type: 5 }]
+    }
+    expect(isCollectableBasicBlock(base)).toBe(true)
+    expect(isCollectableBasicBlock({
+      ...base,
+      refs: [{ type: 2, alias: "card", data: [{ name: "type", value: "extracts" }] }]
+    })).toBe(false)
+    expect(isCollectableBasicBlock({ ...base, properties: [] })).toBe(false)
+  })
+})
+
+describe("convertExtractToDirection", () => {
+  it("succeeds keep_extract with source meta", async () => {
+    const deps = makeDeps()
+    const result = await convertExtractToDirection({
+      extractId: 10,
+      cursor,
+      pluginName: "orca-srs",
+      strategy: "keep_extract",
+      direction: "forward",
+      deps
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.itemType).toBe("direction")
+      expect(result.clozeNumber).toBe(0)
+      expect(result.completedExtract).toBe(false)
+    }
+    expect(deps.createDirectionOnBlock).toHaveBeenCalled()
+    expect(deps.writeSourceMeta).toHaveBeenCalled()
+    expect(deps.deleteIrOnly).not.toHaveBeenCalled()
+  })
+
+  it("restores when create returns null (partial mutation)", async () => {
+    const deps = makeDeps({
+      createDirectionOnBlock: vi.fn(async () => null)
+    })
+    const result = await convertExtractToDirection({
+      extractId: 10,
+      cursor,
+      pluginName: "orca-srs",
+      deps
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.step).toBe("create_item")
+    expect(deps.restoreBlock).toHaveBeenCalledWith(10, expect.objectContaining({
+      cardType: "extracts"
+    }))
+    expect(deps.saveState).toHaveBeenCalled()
+  })
+
+  it("fails validate without cursor on extract", async () => {
+    const deps = makeDeps()
+    const badCursor = {
+      ...cursor,
+      anchor: { ...cursor.anchor, blockId: 999 },
+      focus: { ...cursor.focus, blockId: 999 }
+    }
+    const result = await convertExtractToDirection({
+      extractId: 10,
+      cursor: badCursor,
+      pluginName: "orca-srs",
+      deps
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.step).toBe("validate")
+      expect(result.error).toContain("当前摘录")
+    }
+    expect(deps.createDirectionOnBlock).not.toHaveBeenCalled()
+  })
+
+  it("isCollectableDirectionBlock requires direction type and srs.forward|backward", () => {
+    const base = {
+      refs: [{ type: 2, alias: "card", data: [{ name: "type", value: "direction" }] }],
+      properties: [{ name: "srs.forward.due", value: new Date(), type: 5 }]
+    }
+    expect(isCollectableDirectionBlock(base)).toBe(true)
+    expect(isCollectableDirectionBlock({
+      ...base,
+      properties: [{ name: "srs.due", value: new Date(), type: 5 }]
+    })).toBe(false)
   })
 })

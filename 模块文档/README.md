@@ -5,6 +5,11 @@
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
 > **索引增补：2026-07-26**（「今日学习」统一主页与可恢复入口已落地；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) / [SRS_插件入口与命令.md](SRS_插件入口与命令.md)）。
+>
+> **索引增补：2026-07-26（制卡 undo + 选择题命令 + IR Extract→Q&A/Direction）**：
+> - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`scanCardsFromTags` 兜底判空修；`cardCreationUndo` 对称撤销；`createChoiceCard`
+> - [SRS_选择题卡.md](SRS_选择题卡.md)：斜杠「创建选择题」一步合规制卡
+> - [渐进阅读.md](渐进阅读.md) / [渐进阅读_优化路线.md](渐进阅读_优化路线.md) / [渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)：Extract→Q&A/Direction 原子转化 landed
 
 ## 文档分类
 
@@ -29,9 +34,9 @@
    - 核心持久层已有直测：`src/srs/storage.test.ts`（三卡型 save→load 往返、属性名与 type code、缓存失效、reset、按前缀删除、解析回退、`ensureClozeSrsState` 守卫）
    - 关联：`src/srs/storage.ts`、`blockExistence.ts`、`deletedCardCleanup.ts`、`reviewLogStorage.ts`、`sessionProgressStorage.ts` 等
 
-3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)**
-   - 全卡种创建、标签、`_repr`、身份与转换入口
-   - 关联：`src/srs/cardCreator.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
+3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-07-26 更新
+   - 全卡种创建、标签、`_repr`、身份与转换入口；制卡对称撤销（只删本次新增）；选择题专用创建
+   - 关联：`src/srs/cardCreator.ts`、`choiceCardCreator.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
 
 4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-07-26 更新
    - 收集、卡组、块工具等横切模块（**无** `cardBrowser.ts`；浏览侧见 Flash Home；`panelUtils.ts` 已删除）
@@ -42,9 +47,9 @@
 5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-07-26 更新 — Cloze fragment / 分天 SRS / 复习渲染；`isClozeFragment` 共用谓词（兼容旧前缀）；创建仅新编号初始写入、已有编号 ensure 不覆盖
 6. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-07-26 更新 — Direction 左右向、入队条件、渲染；direction 白名单双层防御（脏值回退 forward / `getDirectionList` 返回 `[]`）
 7. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
-8. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-13 新建
-   - Choice 标签约定、乱序、提交门闩、选项统计
-   - 关联：`choiceUtils.ts`、`choiceSubmitGate.ts`、`choiceAnswerStatistics.ts`、`choiceStatisticsStorage.ts`、`Choice*Renderer.tsx`
+8. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-26 更新
+   - Choice 标签约定、乱序、提交门闩、选项统计；斜杠「创建选择题」`createChoiceCardFromBlock`
+   - 关联：`choiceCardCreator.ts`、`choiceUtils.ts`、`choiceSubmitGate.ts`、`choiceAnswerStatistics.ts`、`choiceStatisticsStorage.ts`、`Choice*Renderer.tsx`
 
 ### 用户界面
 
@@ -91,8 +96,8 @@
 21. **[SRS 动态复习队列.md](SRS%20动态复习队列.md)** — 动态队列与 resume 相关细节
 22. **[SRS_事件通信.md](SRS_事件通信.md)** ⭐ 2026-07-26 更新
     - `srs.cardGraded` / `srs.cardPostponed` / `srs.cardSuspended`；IR DOM 事件补充
-    - Flash Home 订阅改每实例对称注册/注销（去 `isHandlerRegistered` 守卫，多实例共存）
-    - 关联：`srsEvents.ts`、`reviewCardGrading.ts`
+    - **模块级总线** `srsBroadcastBus`：Orca 每类型单 handler + 订阅者扇出；Flash Home 经总线订阅；unload `teardown`
+    - 关联：`srsEvents.ts`、`srsBroadcastBus.ts`、`reviewCardGrading.ts`
 
 23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-26 更新 — IR 分散/排队、时间盒队列最终配额与诊断、本地日 seed、会话启动只读（B1）（含已落地 vs 计划状态说明）；§6.4 补混合会话 SRS 复习日额度扣减（`irMixedDailyBudget.ts`，日志失败 fail-closed 阻断装配）
 
@@ -100,6 +105,7 @@
 
 24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-26 更新
     - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话启动只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
+    - 2026-07-26：**Extract→Q&A / Direction 原子转化**（`convertExtractToQA` / `convertExtractToDirection`，与 Cloze 共用事务脚手架；会话 ⋯更多「问答」「方向」）
     - 2026-07-26：断点**交互捕获守卫**（`irBreakpointInteractiveCapture.ts`，切卡清交互 debounce、过期捕获丢弃）；收集索引路径批量 `get-blocks`（批 50/并发 4）、`preheatIrBlockCache` 仅后端块、`mapPool` 并发 8
     - 2026-07-26（低危批次）：兜底仅查询失败触发；索引失败可见告警；autoMark 重入守卫/世代计数；快捷键一次性播种（`ir.defaultShortcutsSeeded`）；卸载排空断点在途写入；会话块 `resolveBlock` 三态；`IncrementalReadingSessionDemo` 已删；两套块缓存不合并决策固化
     - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
@@ -118,8 +124,8 @@
     - Firecrawl 抓取、本地主文提取（Readability）、标题/链接/代码清洗、预览摘要与告警、去重原子写入、可选 Topic / 今天阅读
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
 
-28. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)** — **计划文档**（顶部有落地对照）
-29. **[渐进阅读_优化路线.md](渐进阅读_优化路线.md)** — **计划/路线**（顶部有状态对照）
+28. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)** ⭐ 2026-07-26 更新 — **计划文档**（顶部有落地对照；Extract→Q&A/Direction 已标 landed）
+29. **[渐进阅读_优化路线.md](渐进阅读_优化路线.md)** ⭐ 2026-07-26 更新 — **计划/路线**（P2 Extract→Q&A/Direction 已勾选 + 证据路径）
 
 > **已移除错误索引**：原「渐进阅读_统一注意力队列设计.md」在仓库中**不存在**；其核心产品目标「今日学习统一入口」已在 2026-07-26 落地到 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) / [渐进阅读.md](渐进阅读.md)，勿再声称该文件存在。
 
@@ -158,6 +164,8 @@
 
 ## 更新记录
 
+- **2026-07-26（cloze 撤销还原正文 + 广播总线）**：`createCloze` 快照 `originalContent`，`undoClozeCardCreation` 先 `setBlocksContent` 还原（防残留 fragment 编号错乱）；`srsBroadcastBus` 解决 Flash Home `already registered` 崩溃；见 [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)、[SRS_事件通信.md](SRS_事件通信.md)
+- **2026-07-26（制卡 undo + 选择题命令 + IR Extract→Q&A/Direction）**：`scanCardsFromTags` 兜底判空修；`cardCreationUndo` 对称撤销（make/cloze/topic/list/choice）；斜杠「创建选择题」；Extract→Q&A/Direction 原子转化与会话更多菜单；见 [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)、[SRS_选择题卡.md](SRS_选择题卡.md)、[渐进阅读.md](渐进阅读.md)、[渐进阅读_优化路线.md](渐进阅读_优化路线.md)、[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)
 - **2026-07-26（低危批次文档同步）**：全库扫描兜底仅失败触发 + `insertBlock` 校验（[SRS_复习队列管理.md](SRS_复习队列管理.md)）；`panelUtils.ts`/`IncrementalReadingSessionDemo.tsx`/`getDifficultCardsForReview`/`setupBookIR`/`importWebArticle` 等死代码删除同步（[SRS_工具函数模块.md](SRS_工具函数模块.md)、[SRS_困难卡片.md](SRS_困难卡片.md)、[渐进阅读.md](渐进阅读.md)、[渐进阅读_优化路线.md](渐进阅读_优化路线.md)、[渐进阅读_BookIR.md](渐进阅读_BookIR.md)）；autoMark 守卫/索引告警/快捷键一次性播种/`resolveBlock` 三态/断点卸载排空/缓存不合并决策（[渐进阅读.md](渐进阅读.md)）；广播对称注册（[SRS_事件通信.md](SRS_事件通信.md)）；两段 flush + async UI 注销（[SRS_插件入口与命令.md](SRS_插件入口与命令.md)、[SRS_注册模块.md](SRS_注册模块.md)）；`srs.state`/direction 白名单（[SRS_数据存储.md](SRS_数据存储.md)、[SRS_方向卡.md](SRS_方向卡.md)）；Quick AI 三文件拆分（[SRS_AI模块.md](SRS_AI模块.md)）；内联编辑保存链路（[SRS_块渲染器.md](SRS_块渲染器.md)）；[问题经验.md](问题经验.md) 追加「IR 会话块瞬时故障误判」
 - **2026-07-26（修复批文档同步）**：cloze 二次挖空/旧前缀（[SRS_填空卡.md](SRS_填空卡.md)）；IR 断点交互捕获守卫 + 收集批量化/预热（[渐进阅读.md](渐进阅读.md)）；epub repository backend-first（[EPUB导入.md](EPUB导入.md)）；查询块 `QueryExecutionError`（[SRS_复习队列管理.md](SRS_复习队列管理.md)、[SRS_插件入口与命令.md](SRS_插件入口与命令.md)）；删除变体感知 + 摘要复用 cards（[SRS_卡片浏览器.md](SRS_卡片浏览器.md)）；[SRS_注册模块.md](SRS_注册模块.md) 重写过时的 Headbar/命令/斜杠表；[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md) 收窄为 StatCard 计算口径；复习「卡片信息」面板统一 `CardInfoPanel`（[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)）；`storage.test.ts` 直测持久层；[问题经验.md](问题经验.md) 新增 6 条
 - **2026-07-26**：「今日学习」统一主页 + 可恢复入口 + Headbar 单入口；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)、[SRS_插件入口与命令.md](SRS_插件入口与命令.md)、[SRS_数据存储.md](SRS_数据存储.md)、[渐进阅读.md](渐进阅读.md)；删除不存在的「统一注意力队列设计」错误索引

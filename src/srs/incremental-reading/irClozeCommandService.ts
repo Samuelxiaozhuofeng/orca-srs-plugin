@@ -1,5 +1,5 @@
-import type { Block, CursorData, DbId } from "../../orca.d.ts"
-import { createCloze } from "../clozeUtils"
+import type { Block, ContentFragment, CursorData, DbId } from "../../orca.d.ts"
+import { cloneBlockContent, createCloze } from "../clozeUtils"
 import { extractCardType } from "../deckUtils"
 import { convertExtractToItem } from "./irConversionService"
 import { blockHasLiveIRScheduling } from "./irHybridExtract"
@@ -7,6 +7,12 @@ import { blockHasLiveIRScheduling } from "./irHybridExtract"
 export type ClozeCommandResult = {
   blockId: DbId
   clozeNumber: number
+  /** 挖空前 content 快照；经 commands undo 时还原正文 */
+  originalContent?: ContentFragment[]
+  pluginName?: string
+  addedCardTag?: boolean
+  wroteInitialClozeSrs?: boolean
+  isFirstClozeCard?: boolean
 }
 
 export type IRClozeCommandDeps = {
@@ -42,8 +48,12 @@ export async function createClozeFromEditorCommand(
     cardType === "extracts"
     || (cardType === "cloze" && blockHasLiveIRScheduling(block))
   if (!block || !useExtractConvert) {
+    // createCloze 返回含 originalContent 的 undoArgs，经 commands 原样透传
     return deps.createRegularCloze(cursor, pluginName)
   }
+
+  // Extract 路径：convert 前快照正文，确保 Cmd+Z 能去掉残留 .cloze fragment
+  const originalContent = cloneBlockContent(block.content)
 
   const result = await deps.convertExtract({
     extractId: blockId,
@@ -54,5 +64,14 @@ export async function createClozeFromEditorCommand(
   if (!result.ok) {
     throw new Error(`Extract 制卡失败（${result.step}）：${result.error}`)
   }
-  return { blockId: result.itemId, clozeNumber: result.clozeNumber }
+  return {
+    blockId: result.itemId,
+    clozeNumber: result.clozeNumber,
+    pluginName,
+    originalContent,
+    // Extract 转化通常已在块上保留/写入 cloze；撤销只还原正文 + 本次编号 SRS
+    wroteInitialClozeSrs: true,
+    isFirstClozeCard: false,
+    addedCardTag: false
+  }
 }

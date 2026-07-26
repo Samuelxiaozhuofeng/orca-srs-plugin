@@ -6,7 +6,11 @@
 import type { CursorData } from "../../orca.d.ts"
 import type { IRCard } from "../../srs/incrementalReadingCollector"
 import { createExtract } from "../../srs/extractUtils"
-import { convertExtractToItem } from "../../srs/incremental-reading/irConversionService"
+import {
+  convertExtractToDirection,
+  convertExtractToItem,
+  convertExtractToQA
+} from "../../srs/incremental-reading/irConversionService"
 import type { IRSessionMetrics } from "../../srs/incremental-reading/irMetrics"
 import {
   performArchive,
@@ -23,10 +27,15 @@ import {
 } from "../../srs/incremental-reading/irImportance"
 import { recordDwellSample } from "../../srs/incremental-reading/irCostCalibration"
 import {
+  formatDirectionNeedCursor,
+  formatDirectionNeedInExtract,
+  formatDirectionStaySuccess,
   formatItemizeNeedInExtract,
   formatItemizeNeedSelection,
   formatItemizeStaySuccess,
-  formatNonSequentialCompleteSuccess
+  formatNonSequentialCompleteSuccess,
+  formatQANeedAnswerChild,
+  formatQAStaySuccess
 } from "../../srs/incremental-reading/irSessionCompleteCopy"
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import type { IRSessionEntry } from "../../srs/incremental-reading/irMixedQueuePolicy"
@@ -57,6 +66,8 @@ export type IRSessionCardActions = {
   handlePostpone: (choice?: PostponeChoice) => void
   handleExtract: () => void
   handleItemize: () => void
+  handleConvertToQA: () => void
+  handleConvertToDirection: () => void
   handleArchive: (options?: { nextChapterSchedule?: NextChapterSchedule }) => void
   handleCompleteRequest: () => void
   handleSkipChapter: () => void
@@ -196,6 +207,70 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     }
   })
 
+  const handleConvertToQA = () => withWork(async () => {
+    if (!currentCard || isTopic) return
+    try {
+      await breakpoint.flush()
+      setMoreOpen(false)
+      const result = await convertExtractToQA({
+        extractId: currentCard.id,
+        pluginName,
+        strategy: "keep_extract"
+      })
+      if (!result.ok) {
+        metricsRef.current.record("action.failure", undefined, { kind: "qa" })
+        if (result.step === "validate" && result.error.includes("答案子块")) {
+          orca.notify("warn", formatQANeedAnswerChild(), { title: "渐进阅读" })
+        } else {
+          orca.notify("error", `问答失败（${result.step}）：${result.error}`, { title: "渐进阅读" })
+        }
+        return
+      }
+      metricsRef.current.record("action.itemize", undefined, { kind: "qa" })
+      orca.notify("success", formatQAStaySuccess(), { title: "渐进阅读" })
+    } catch (error) {
+      metricsRef.current.record("action.failure", undefined, { kind: "qa" })
+      console.error("[IR Session] 问答转化失败:", error)
+      orca.notify("error", "问答转化失败，摘录已保留", { title: "渐进阅读" })
+    }
+  })
+
+  const handleConvertToDirection = () => withWork(async () => {
+    if (!currentCard || isTopic) return
+    const selection = window.getSelection()
+    const cursor = orca.utils.getCursorDataFromSelection(selection) as CursorData | null
+    if (!cursor) {
+      orca.notify("warn", formatDirectionNeedCursor(), { title: "渐进阅读" })
+      return
+    }
+    if (cursor.anchor.blockId !== currentCard.id && cursor.rootBlockId !== currentCard.id) {
+      orca.notify("warn", formatDirectionNeedInExtract(), { title: "渐进阅读" })
+      return
+    }
+    try {
+      await breakpoint.flush()
+      setMoreOpen(false)
+      const result = await convertExtractToDirection({
+        extractId: currentCard.id,
+        cursor,
+        pluginName,
+        strategy: "keep_extract",
+        direction: "forward"
+      })
+      if (!result.ok) {
+        metricsRef.current.record("action.failure", undefined, { kind: "direction" })
+        orca.notify("error", `方向卡失败（${result.step}）：${result.error}`, { title: "渐进阅读" })
+        return
+      }
+      metricsRef.current.record("action.itemize", undefined, { kind: "direction" })
+      orca.notify("success", formatDirectionStaySuccess(), { title: "渐进阅读" })
+    } catch (error) {
+      metricsRef.current.record("action.failure", undefined, { kind: "direction" })
+      console.error("[IR Session] 方向卡转化失败:", error)
+      orca.notify("error", "方向卡转化失败，摘录已保留", { title: "渐进阅读" })
+    }
+  })
+
   const handleArchive = (options?: { nextChapterSchedule?: NextChapterSchedule }) => withWork(async () => {
     if (!currentCard) return
     try {
@@ -298,6 +373,8 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     handlePostpone,
     handleExtract,
     handleItemize,
+    handleConvertToQA,
+    handleConvertToDirection,
     handleArchive,
     handleCompleteRequest,
     handleSkipChapter,

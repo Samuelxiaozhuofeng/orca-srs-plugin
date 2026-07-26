@@ -85,7 +85,7 @@ export async function scanCardsFromTags(pluginName: string) {
       }
     }
 
-    if (!taggedBlocks || taggedBlocks.length === 0) {
+    if (!allTaggedBlocks || allTaggedBlocks.length === 0) {
       orca.notify("info", "没有找到带 #card 标签的块", { title: "SRS 扫描" })
       console.log(`[${pluginName}] 未找到任何带 #card 标签的块`)
       return
@@ -269,6 +269,13 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
     { title: "SRS" }
   )
 
-  // 返回结果供 undo 使用
-  return { blockId, originalRepr, originalText }
+  // 返回结果供 undo 使用（仅回滚本次新增：标签 / 初始 SRS / _repr）
+  return {
+    blockId,
+    originalRepr,
+    originalText,
+    pluginName,
+    addedCardTag: !hasCardTag,
+    wroteInitialSrs: !hasCardTag
+  }
 }

@@ -16,6 +16,8 @@ export type BlockContentSnapshot = {
   text: string
   cardType: string
   properties: BlockProperty[]
+  /** 进程内 _repr（Valtio state）；null 表示原先无 _repr */
+  repr: Record<string, unknown> | null
 }
 
 export type PropertyRestorePlan = {
@@ -62,13 +64,17 @@ export function buildPropertyRestorePlan(
 export async function snapshotConversionBlock(id: DbId): Promise<BlockContentSnapshot | null> {
   const block = (await orca.invokeBackend("get-block", id)) as Block | undefined
   if (!block) return null
+  // _repr 通常只在 orca.state 中；后端块可能没有
+  const stateBlock = orca.state.blocks?.[id] as { _repr?: Record<string, unknown> } | undefined
+  const rawRepr = stateBlock?._repr ?? (block as { _repr?: Record<string, unknown> })._repr
   return {
     content: Array.isArray(block.content) ? cloneValue(block.content) : [],
     text: typeof block.text === "string" ? block.text : "",
     cardType: extractCardType(block),
     properties: (block.properties ?? [])
       .filter(property => isConversionProperty(property.name))
-      .map(cloneProperty)
+      .map(cloneProperty),
+    repr: rawRepr ? cloneValue(rawRepr) : null
   }
 }
 
@@ -114,5 +120,16 @@ export async function restoreConversionBlock(
       plan.restore
     )
   }
+
+  // 恢复进程内 _repr（Q&A/Cloze 会改写；失败回滚需对齐）
+  const stateBlock = orca.state.blocks?.[id] as { _repr?: Record<string, unknown> } | undefined
+  if (stateBlock) {
+    if (snapshot.repr) {
+      stateBlock._repr = cloneValue(snapshot.repr)
+    } else {
+      delete stateBlock._repr
+    }
+  }
+
   invalidateBlockCache(id)
 }

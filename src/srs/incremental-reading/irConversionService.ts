@@ -1,13 +1,24 @@
 /**
  * Extract → Item 原子转化服务
  *
- * 顺序：校验 → 快照 → 创建 Cloze → 初始化 SRS → 来源 → 真实验证 → 结束 Extract IR
- * 任一步失败：恢复正文/标签类型/IR，若产生独立 Item 则删除。
+ * 通用事务：校验 → 快照 → 创建 Item → 初始化 SRS → 来源 → 真实验证 → finish/keep
+ * 任一步失败：safeCleanup 恢复正文/标签类型/IR，若产生独立 Item 则删除。
+ *
+ * 入口：
+ * - convertExtractToItem（默认 Cloze，兼容旧调用）
+ * - convertExtractToQA（basic 问答卡）
+ * - convertExtractToDirection（方向卡）
  */
 
 import type { CursorData, DbId } from "../../orca.d.ts"
+import type { BlockWithRepr } from "../blockUtils"
+import { buildCardTagData } from "../cardTagDataBuilder"
 import { createCloze } from "../clozeUtils"
 import { extractCardType } from "../deckUtils"
+import {
+  insertDirection,
+  type DirectionType
+} from "../directionUtils"
 import {
   deleteIRSchedulingState,
   ensureIRState,
@@ -15,7 +26,13 @@ import {
   saveIRState,
   type IRState
 } from "../incrementalReadingStorage"
-import { ensureClozeSrsState, invalidateBlockCache } from "../storage"
+import {
+  ensureCardSrsState,
+  ensureClozeSrsState,
+  invalidateBlockCache,
+  writeInitialSrsState
+} from "../storage"
+import { ensureCardTagProperties } from "../tagPropertyInit"
 import { isCardTag } from "../tagUtils"
 import {
   restoreConversionBlock,
@@ -27,6 +44,9 @@ import { blockHasLiveIRScheduling, isConvertExtractTarget } from "./irHybridExtr
 import type { IRConversionStrategy, IRItemSourceMeta } from "./irTypes"
 
 export type { BlockContentSnapshot } from "./irConversionBlockState"
+
+/** 转化产物类型；默认 cloze 保持旧调用点行为 */
+export type ConversionItemType = "cloze" | "qa" | "direction"
 
 export type ConversionStep =
   | "validate"
@@ -42,13 +62,36 @@ export type ConvertExtractToItemInput = {
   cursor: CursorData
   pluginName: string
   strategy?: IRConversionStrategy
+  /** 默认 cloze；也可直接走 convertExtractToQA / convertExtractToDirection */
+  itemType?: ConversionItemType
+  direction?: DirectionType
+  deps?: Partial<ConversionDeps>
+}
+
+export type ConvertExtractToQAInput = {
+  extractId: DbId
+  pluginName: string
+  strategy?: IRConversionStrategy
+  /** Q&A 不依赖选区；可选 cursor 仅为对称/扩展 */
+  cursor?: CursorData
+  deps?: Partial<ConversionDeps>
+}
+
+export type ConvertExtractToDirectionInput = {
+  extractId: DbId
+  cursor: CursorData
+  pluginName: string
+  strategy?: IRConversionStrategy
+  direction?: DirectionType
   deps?: Partial<ConversionDeps>
 }
 
 export type ConvertExtractToItemSuccess = {
   ok: true
   itemId: DbId
+  /** Cloze 编号；Q&A / Direction 固定为 0 */
   clozeNumber: number
+  itemType: ConversionItemType
   extractId: DbId
   source: IRItemSourceMeta
   completedExtract: boolean
@@ -87,6 +130,21 @@ export type ConversionDeps = {
   readBookMeta: (extractId: DbId) => Promise<{ sourceBookId: DbId | null; sourceBookTitle: string | null }>
   verifyItemCollectable: (itemId: DbId, clozeNumber: number) => Promise<boolean>
   writeSourceMeta: (itemId: DbId, source: IRItemSourceMeta) => Promise<void>
+  /** Q&A：解析题面/答案；无可用答案子块时返回 null */
+  resolveQAContent: (extractId: DbId) => Promise<{ front: string; back: string } | null>
+  createQAOnBlock: (
+    extractId: DbId,
+    pluginName: string,
+    content: { front: string; back: string }
+  ) => Promise<{ blockId: number } | null>
+  initQASrs: (blockId: DbId) => Promise<void>
+  verifyQACollectable: (itemId: DbId) => Promise<boolean>
+  createDirectionOnBlock: (
+    cursor: CursorData,
+    pluginName: string,
+    direction: DirectionType
+  ) => Promise<{ blockId: number } | null>
+  verifyDirectionCollectable: (itemId: DbId) => Promise<boolean>
 }
 
 const SOURCE_PROP_EXTRACT = "ir.sourceExtractId"
@@ -108,6 +166,67 @@ function fail(
     extractId,
     extractPreserved
   }
+}
+
+type CleanupResult = {
+  extractPreserved: boolean
+  errors: string[]
+}
+
+function failAfterCleanup(
+  extractId: DbId,
+  step: ConversionStep,
+  error: unknown,
+  cleanup: CleanupResult
+): ConvertExtractToItemFailure {
+  const primary = error instanceof Error ? error.message : String(error)
+  const message = cleanup.errors.length > 0
+    ? `${primary}；回滚未完整完成：${cleanup.errors.join("；")}`
+    : primary
+  return fail(extractId, step, message, cleanup.extractPreserved)
+}
+
+async function safeCleanup(
+  deps: ConversionDeps,
+  itemId: DbId | null,
+  extractId: DbId,
+  irSnapshot: IRState | null,
+  contentSnapshot: BlockContentSnapshot | null,
+  mutatedSameBlock: boolean
+): Promise<CleanupResult> {
+  const errors: string[] = []
+  let extractPreserved = Boolean(irSnapshot && (!mutatedSameBlock || contentSnapshot))
+
+  if (itemId != null && itemId !== extractId) {
+    try {
+      await deps.deleteIncompleteItem(itemId)
+    } catch (error) {
+      console.error("[IR Conversion] cleanup item failed:", error)
+      errors.push(`半成品 Item 删除失败：${String(error)}`)
+    }
+  }
+
+  if (mutatedSameBlock && contentSnapshot) {
+    try {
+      await deps.restoreBlock(extractId, contentSnapshot)
+    } catch (error) {
+      console.error("[IR Conversion] restore content failed:", error)
+      extractPreserved = false
+      errors.push(`Extract 内容恢复失败：${String(error)}`)
+    }
+  }
+
+  if (irSnapshot) {
+    try {
+      await deps.saveState(extractId, irSnapshot)
+    } catch (error) {
+      console.error("[IR Conversion] restore extract IR state failed:", error)
+      extractPreserved = false
+      errors.push(`Extract 调度恢复失败：${String(error)}`)
+    }
+  }
+
+  return { extractPreserved, errors }
 }
 
 async function defaultDeleteIncompleteItem(blockId: DbId): Promise<void> {
@@ -189,9 +308,7 @@ async function writeSourceProperties(itemId: DbId, source: IRItemSourceMeta): Pr
   )
 }
 
-/**
- * 真实验证：块存在、type=cloze、有 #card，且对应 cloze SRS 属性可读。
- */
+/** 真实验证：type=cloze + #card + 对应 cloze SRS 属性 */
 export function isCollectableClozeBlock(block: any, clozeNumber: number): boolean {
   if (!block) return false
   const type = extractCardType(block)
@@ -204,6 +321,34 @@ export function isCollectableClozeBlock(block: any, clozeNumber: number): boolea
   return Boolean(hasCardTag && type === "cloze" && hasClozeSrs)
 }
 
+/** 真实验证：#card + type=basic + 任意 srs.* */
+export function isCollectableBasicBlock(block: any): boolean {
+  if (!block) return false
+  const type = extractCardType(block)
+  const props = block.properties ?? []
+  const hasSrs = props.some((property: any) =>
+    typeof property.name === "string" && property.name.startsWith("srs.")
+  )
+  const hasCardTag = block.refs?.some((ref: any) => ref.type === 2 && isCardTag(ref.alias))
+  return Boolean(hasCardTag && type === "basic" && hasSrs)
+}
+
+/** 真实验证：#card + type=direction + 方向 SRS 前缀 */
+export function isCollectableDirectionBlock(block: any): boolean {
+  if (!block) return false
+  const type = extractCardType(block)
+  const props = block.properties ?? []
+  const hasDirectionSrs = props.some((property: any) =>
+    typeof property.name === "string"
+    && (
+      property.name.startsWith("srs.forward.")
+      || property.name.startsWith("srs.backward.")
+    )
+  )
+  const hasCardTag = block.refs?.some((ref: any) => ref.type === 2 && isCardTag(ref.alias))
+  return Boolean(hasCardTag && type === "direction" && hasDirectionSrs)
+}
+
 export async function defaultVerifyItemCollectable(
   itemId: DbId,
   clozeNumber: number
@@ -211,6 +356,141 @@ export async function defaultVerifyItemCollectable(
   invalidateBlockCache(itemId)
   const block = (await orca.invokeBackend("get-block", itemId)) as any
   return isCollectableClozeBlock(block, clozeNumber)
+}
+
+export async function defaultVerifyQACollectable(itemId: DbId): Promise<boolean> {
+  invalidateBlockCache(itemId)
+  const block = (await orca.invokeBackend("get-block", itemId)) as any
+  return isCollectableBasicBlock(block)
+}
+
+export async function defaultVerifyDirectionCollectable(itemId: DbId): Promise<boolean> {
+  invalidateBlockCache(itemId)
+  const block = (await orca.invokeBackend("get-block", itemId)) as any
+  return isCollectableDirectionBlock(block)
+}
+
+/**
+ * 从后端解析 Q&A 题面/答案。首个子块为答案；无可用答案文本则 null。
+ */
+export async function defaultResolveQAContent(
+  extractId: DbId
+): Promise<{ front: string; back: string } | null> {
+  const block = (await orca.invokeBackend("get-block", extractId)) as any
+  if (!block) return null
+  const front = typeof block.text === "string" ? block.text.trim() : ""
+  const children: DbId[] = Array.isArray(block.children) ? block.children : []
+  if (children.length === 0) return null
+
+  let back = ""
+  const stateChild = orca.state.blocks?.[children[0]] as BlockWithRepr | undefined
+  if (stateChild && typeof stateChild.text === "string" && stateChild.text.trim()) {
+    back = stateChild.text.trim()
+  } else {
+    const child = (await orca.invokeBackend("get-block", children[0])) as any
+    back = typeof child?.text === "string" ? child.text.trim() : ""
+  }
+  if (!back) return null
+  if (!front) return null
+  return { front, back }
+}
+
+/**
+ * 同块转 basic 问答卡：#card type=basic + _repr=srs.card + srs.isCard。
+ * SRS 初始化由 initQASrs 单独执行，便于失败回滚。
+ */
+export async function defaultCreateQAOnBlock(
+  extractId: DbId,
+  pluginName: string,
+  content: { front: string; back: string }
+): Promise<{ blockId: number } | null> {
+  const block = (await orca.invokeBackend("get-block", extractId)) as any
+  if (!block) return null
+
+  const hasCardTag = block.refs?.some(
+    (ref: any) => ref.type === 2 && isCardTag(ref.alias)
+  )
+
+  if (!hasCardTag) {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.insertTag",
+      null,
+      extractId,
+      "card",
+      await buildCardTagData(pluginName, extractId, "basic")
+    )
+    await ensureCardTagProperties(pluginName)
+  } else {
+    const cardRef = block.refs?.find(
+      (ref: any) => ref.type === 2 && isCardTag(ref.alias)
+    )
+    if (!cardRef) {
+      throw new Error("已有 #card 标签但无法读取其引用数据")
+    }
+    await orca.commands.invokeEditorCommand(
+      "core.editor.setRefData",
+      null,
+      cardRef,
+      [{ name: "type", value: "basic" }]
+    )
+  }
+
+  const stateBlock = orca.state.blocks?.[extractId] as BlockWithRepr | undefined
+  if (stateBlock) {
+    stateBlock._repr = {
+      type: "srs.card",
+      front: content.front,
+      back: content.back,
+      cardType: "basic"
+    }
+  }
+
+  await orca.commands.invokeEditorCommand(
+    "core.editor.setProperties",
+    null,
+    [extractId],
+    [{ name: "srs.isCard", value: true, type: 4 }]
+  )
+  invalidateBlockCache(extractId)
+  return { blockId: extractId as number }
+}
+
+export async function defaultInitQASrs(blockId: DbId): Promise<void> {
+  const block = (await orca.invokeBackend("get-block", blockId)) as any
+  const props = block?.properties ?? []
+  const hasScheduling = props.some((p: any) =>
+    typeof p.name === "string"
+    && p.name.startsWith("srs.")
+    && p.name !== "srs.isCard"
+  )
+  if (!hasScheduling) {
+    await writeInitialSrsState(blockId)
+  } else {
+    await ensureCardSrsState(blockId)
+  }
+}
+
+async function defaultCreateDirectionOnBlock(
+  cursor: CursorData,
+  pluginName: string,
+  direction: DirectionType
+): Promise<{ blockId: number } | null> {
+  const result = await insertDirection(cursor, direction, pluginName)
+  if (!result) return null
+  return { blockId: result.blockId as number }
+}
+
+/**
+ * Q&A / Direction 目标：type=extracts，或仍有 live IR 的非 Topic 块。
+ */
+export function isConvertQAOrDirectionTarget(
+  cardType: string,
+  hasLiveIR: boolean
+): boolean {
+  if (cardType === "topic") return false
+  if (cardType === "extracts") return true
+  if (hasLiveIR) return true
+  return false
 }
 
 function resolveDeps(partial?: Partial<ConversionDeps>): ConversionDeps {
@@ -232,73 +512,61 @@ function resolveDeps(partial?: Partial<ConversionDeps>): ConversionDeps {
     findTopicId: partial?.findTopicId ?? defaultFindTopicId,
     readBookMeta: partial?.readBookMeta ?? defaultReadBookMeta,
     verifyItemCollectable: partial?.verifyItemCollectable ?? defaultVerifyItemCollectable,
-    writeSourceMeta: partial?.writeSourceMeta ?? writeSourceProperties
+    writeSourceMeta: partial?.writeSourceMeta ?? writeSourceProperties,
+    resolveQAContent: partial?.resolveQAContent ?? defaultResolveQAContent,
+    createQAOnBlock: partial?.createQAOnBlock ?? defaultCreateQAOnBlock,
+    initQASrs: partial?.initQASrs ?? defaultInitQASrs,
+    verifyQACollectable: partial?.verifyQACollectable ?? defaultVerifyQACollectable,
+    createDirectionOnBlock: partial?.createDirectionOnBlock ?? defaultCreateDirectionOnBlock,
+    verifyDirectionCollectable:
+      partial?.verifyDirectionCollectable ?? defaultVerifyDirectionCollectable
   }
 }
 
-export async function convertExtractToItem(
-  input: ConvertExtractToItemInput
-): Promise<ConvertExtractToItemResult> {
+type CreatePhaseResult = {
+  itemId: DbId
+  clozeNumber: number
+  mutatedSameBlock: boolean
+  selectedText: string
+}
+
+/**
+ * 事务运行器：创建之后的 init / 来源 / 验证 / finish|keep 共用脚手架。
+ * 调用方负责校验与 create，并在 create 失败时自行 safeCleanup（因同块/独立块语义不同）。
+ */
+async function finishConversionAfterCreate(params: {
+  extractId: DbId
+  pluginName: string
+  strategy: IRConversionStrategy
+  itemType: ConversionItemType
+  deps: ConversionDeps
+  extractSnapshot: IRState
+  contentSnapshot: BlockContentSnapshot
+  created: CreatePhaseResult
+  initSrsStep: (itemId: DbId, clozeNumber: number) => Promise<void>
+  verifyStep: (itemId: DbId, clozeNumber: number) => Promise<boolean>
+}): Promise<ConvertExtractToItemResult> {
   const {
     extractId,
-    cursor,
     pluginName,
-    strategy = "complete_extract",
-    deps: partialDeps
-  } = input
-  const deps = resolveDeps(partialDeps)
-
-  let createdItemId: DbId | null = null
-  let clozeNumber = 1
-  let mutatedSameBlock = false
-  let extractSnapshot: IRState | null = null
-  let contentSnapshot: BlockContentSnapshot | null = null
-
-  try {
-    extractSnapshot = await deps.loadState(extractId)
-    contentSnapshot = await deps.snapshotBlock(extractId)
-  } catch (error) {
-    return fail(extractId, "validate", error, false)
-  }
+    strategy,
+    itemType,
+    deps,
+    extractSnapshot,
+    contentSnapshot,
+    created,
+    initSrsStep,
+    verifyStep
+  } = params
+  const { itemId: createdItemId, clozeNumber, mutatedSameBlock, selectedText } = created
 
   try {
-    const cardType = await deps.getCardType(extractId)
-    const hasLiveIR = await deps.hasLiveIR(extractId)
-    // First dig: type=extracts. Subsequent keep_extract digs: type=cloze but IR still live.
-    if (!isConvertExtractTarget(cardType, hasLiveIR)) {
-      return fail(
-        extractId,
-        "validate",
-        hasLiveIR
-          ? `目标不是可挖空的摘录（type=${cardType}）`
-          : `目标不是 Extract（type=${cardType}）`
-      )
-    }
-    if (!cursor?.anchor?.blockId) {
-      return fail(extractId, "validate", "缺少有效选区")
-    }
-    const selectedText = deps.readSelectedText(cursor)
-    if (!selectedText.trim()) {
-      return fail(extractId, "validate", "选区文本为空")
-    }
-    if (!contentSnapshot || !extractSnapshot) {
-      return fail(extractId, "validate", "无法快照 Extract 状态")
-    }
-
-    const clozeResult = await deps.createClozeOnBlock(cursor, pluginName)
-    if (!clozeResult) {
-      // createCloze 可能已改写正文后才失败；按同块变异回滚才具备原子性。
-      const cleanup = await safeCleanup(deps, null, extractId, extractSnapshot, contentSnapshot, true)
-      return failAfterCleanup(extractId, "create_item", "创建 Cloze 失败", cleanup)
-    }
-    createdItemId = clozeResult.blockId
-    clozeNumber = clozeResult.clozeNumber
-    mutatedSameBlock = createdItemId === extractId
-
     try {
-      await deps.initSrs(createdItemId, clozeNumber)
+      await initSrsStep(createdItemId, clozeNumber)
     } catch (error) {
-      const cleanup = await safeCleanup(deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock)
+      const cleanup = await safeCleanup(
+        deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock
+      )
       return failAfterCleanup(extractId, "init_srs", error, cleanup)
     }
 
@@ -315,13 +583,17 @@ export async function convertExtractToItem(
     try {
       await deps.writeSourceMeta(createdItemId, source)
     } catch (error) {
-      const cleanup = await safeCleanup(deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock)
+      const cleanup = await safeCleanup(
+        deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock
+      )
       return failAfterCleanup(extractId, "write_source", error, cleanup)
     }
 
-    const collectable = await deps.verifyItemCollectable(createdItemId, clozeNumber)
+    const collectable = await verifyStep(createdItemId, clozeNumber)
     if (!collectable) {
-      const cleanup = await safeCleanup(deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock)
+      const cleanup = await safeCleanup(
+        deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock
+      )
       return failAfterCleanup(
         extractId,
         "verify_collectable",
@@ -333,12 +605,13 @@ export async function convertExtractToItem(
     let completedExtract = false
     if (strategy === "complete_extract") {
       try {
-        // 结束 Extract 的 IR 身份，但保留 #card + SRS（同块转化时不能 completeIRCard）
         await deps.deleteIrOnly(extractId)
         removeIRIndexId(pluginName, extractId)
         completedExtract = true
       } catch (error) {
-        const cleanup = await safeCleanup(deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock)
+        const cleanup = await safeCleanup(
+          deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock
+        )
         return failAfterCleanup(extractId, "finish_extract", error, cleanup)
       }
     } else {
@@ -354,10 +627,178 @@ export async function convertExtractToItem(
       ok: true,
       itemId: createdItemId,
       clozeNumber,
+      itemType,
       extractId,
       source,
       completedExtract
     }
+  } catch (error) {
+    const cleanup = await safeCleanup(
+      deps, createdItemId, extractId, extractSnapshot, contentSnapshot, mutatedSameBlock
+    )
+    return failAfterCleanup(extractId, "create_item", error, cleanup)
+  }
+}
+
+async function loadSnapshots(
+  deps: ConversionDeps,
+  extractId: DbId
+): Promise<
+  | { ok: true; extractSnapshot: IRState; contentSnapshot: BlockContentSnapshot }
+  | ConvertExtractToItemFailure
+> {
+  let extractSnapshot: IRState | null = null
+  let contentSnapshot: BlockContentSnapshot | null = null
+  try {
+    extractSnapshot = await deps.loadState(extractId)
+    contentSnapshot = await deps.snapshotBlock(extractId)
+  } catch (error) {
+    return fail(extractId, "validate", error, false)
+  }
+  if (!contentSnapshot || !extractSnapshot) {
+    return fail(extractId, "validate", "无法快照 Extract 状态")
+  }
+  return { ok: true, extractSnapshot, contentSnapshot }
+}
+
+/**
+ * Extract → Cloze 原子转化（历史主路径，create null 时强制同块回滚）。
+ */
+export async function convertExtractToCloze(
+  input: ConvertExtractToItemInput
+): Promise<ConvertExtractToItemResult> {
+  const {
+    extractId,
+    cursor,
+    pluginName,
+    strategy = "complete_extract",
+    deps: partialDeps
+  } = input
+  const deps = resolveDeps(partialDeps)
+
+  const snaps = await loadSnapshots(deps, extractId)
+  if (!("extractSnapshot" in snaps)) return snaps
+  const { extractSnapshot, contentSnapshot } = snaps
+
+  try {
+    const cardType = await deps.getCardType(extractId)
+    const hasLiveIR = await deps.hasLiveIR(extractId)
+    if (!isConvertExtractTarget(cardType, hasLiveIR)) {
+      return fail(
+        extractId,
+        "validate",
+        hasLiveIR
+          ? `目标不是可挖空的摘录（type=${cardType}）`
+          : `目标不是 Extract（type=${cardType}）`
+      )
+    }
+    if (!cursor?.anchor?.blockId) {
+      return fail(extractId, "validate", "缺少有效选区")
+    }
+    const selectedText = deps.readSelectedText(cursor)
+    if (!selectedText.trim()) {
+      return fail(extractId, "validate", "选区文本为空")
+    }
+
+    const clozeResult = await deps.createClozeOnBlock(cursor, pluginName)
+    if (!clozeResult) {
+      const cleanup = await safeCleanup(
+        deps, null, extractId, extractSnapshot, contentSnapshot, true
+      )
+      return failAfterCleanup(extractId, "create_item", "创建 Cloze 失败", cleanup)
+    }
+
+    return finishConversionAfterCreate({
+      extractId,
+      pluginName,
+      strategy,
+      itemType: "cloze",
+      deps,
+      extractSnapshot,
+      contentSnapshot,
+      created: {
+        itemId: clozeResult.blockId,
+        clozeNumber: clozeResult.clozeNumber,
+        mutatedSameBlock: clozeResult.blockId === extractId,
+        selectedText
+      },
+      initSrsStep: (itemId, n) => deps.initSrs(itemId, n),
+      verifyStep: (itemId, n) => deps.verifyItemCollectable(itemId, n)
+    })
+  } catch (error) {
+    const cleanup = await safeCleanup(
+      deps, null, extractId, extractSnapshot, contentSnapshot, true
+    )
+    return failAfterCleanup(extractId, "create_item", error, cleanup)
+  }
+}
+
+/**
+ * Extract → Q&A（basic 问答卡）。
+ * 题面=Extract 正文，答案=首个子块；无答案子块 → validate 失败，不落半成品。
+ */
+export async function convertExtractToQA(
+  input: ConvertExtractToQAInput
+): Promise<ConvertExtractToItemResult> {
+  const {
+    extractId,
+    pluginName,
+    strategy = "complete_extract",
+    deps: partialDeps
+  } = input
+  const deps = resolveDeps(partialDeps)
+
+  const snaps = await loadSnapshots(deps, extractId)
+  if (!("extractSnapshot" in snaps)) return snaps
+  const { extractSnapshot, contentSnapshot } = snaps
+
+  let createdItemId: DbId | null = null
+  try {
+    const cardType = await deps.getCardType(extractId)
+    const hasLiveIR = await deps.hasLiveIR(extractId)
+    if (!isConvertQAOrDirectionTarget(cardType, hasLiveIR)) {
+      return fail(
+        extractId,
+        "validate",
+        hasLiveIR
+          ? `目标不是可转问答的摘录（type=${cardType}）`
+          : `目标不是 Extract（type=${cardType}）`
+      )
+    }
+
+    const qaContent = await deps.resolveQAContent(extractId)
+    if (!qaContent) {
+      return fail(extractId, "validate", "Q&A 需要答案子块")
+    }
+
+    const qaResult = await deps.createQAOnBlock(extractId, pluginName, qaContent)
+    if (!qaResult) {
+      const cleanup = await safeCleanup(
+        deps, null, extractId, extractSnapshot, contentSnapshot, true
+      )
+      return failAfterCleanup(extractId, "create_item", "创建 Q&A 卡片失败", cleanup)
+    }
+    createdItemId = qaResult.blockId
+
+    return finishConversionAfterCreate({
+      extractId,
+      pluginName,
+      strategy,
+      itemType: "qa",
+      deps,
+      extractSnapshot,
+      contentSnapshot,
+      created: {
+        itemId: qaResult.blockId,
+        clozeNumber: 0,
+        mutatedSameBlock: qaResult.blockId === extractId,
+        selectedText: qaContent.front.slice(0, 500)
+      },
+      initSrsStep: async (itemId) => {
+        await deps.initQASrs(itemId)
+      },
+      verifyStep: async (itemId) => deps.verifyQACollectable(itemId)
+    })
   } catch (error) {
     const cleanup = await safeCleanup(
       deps,
@@ -365,73 +806,133 @@ export async function convertExtractToItem(
       extractId,
       extractSnapshot,
       contentSnapshot,
-      mutatedSameBlock
+      true
     )
     return failAfterCleanup(extractId, "create_item", error, cleanup)
   }
 }
 
-type CleanupResult = {
-  extractPreserved: boolean
-  errors: string[]
+/**
+ * Extract → Direction。需要 cursor 在摘录正文处分隔左右。
+ * insertDirection 内已写方向 SRS；本路径补来源元数据并验证可收集。
+ */
+export async function convertExtractToDirection(
+  input: ConvertExtractToDirectionInput
+): Promise<ConvertExtractToItemResult> {
+  const {
+    extractId,
+    cursor,
+    pluginName,
+    strategy = "complete_extract",
+    direction = "forward",
+    deps: partialDeps
+  } = input
+  const deps = resolveDeps(partialDeps)
+
+  const snaps = await loadSnapshots(deps, extractId)
+  if (!("extractSnapshot" in snaps)) return snaps
+  const { extractSnapshot, contentSnapshot } = snaps
+
+  let createdItemId: DbId | null = null
+  try {
+    const cardType = await deps.getCardType(extractId)
+    const hasLiveIR = await deps.hasLiveIR(extractId)
+    if (!isConvertQAOrDirectionTarget(cardType, hasLiveIR)) {
+      return fail(
+        extractId,
+        "validate",
+        hasLiveIR
+          ? `目标不是可转方向卡的摘录（type=${cardType}）`
+          : `目标不是 Extract（type=${cardType}）`
+      )
+    }
+    if (!cursor?.anchor?.blockId) {
+      return fail(extractId, "validate", "缺少有效光标位置")
+    }
+    if (cursor.anchor.blockId !== extractId) {
+      return fail(extractId, "validate", "请在当前摘录正文中放置光标")
+    }
+
+    const selectedText = (() => {
+      try {
+        const block = orca.state.blocks?.[extractId] as any
+        const text = typeof block?.text === "string" ? block.text : ""
+        const offset = cursor.anchor.offset ?? 0
+        const left = text.substring(0, offset).trim()
+        return left || text.trim() || deps.readSelectedText(cursor)
+      } catch {
+        return deps.readSelectedText(cursor)
+      }
+    })()
+
+    const dirResult = await deps.createDirectionOnBlock(cursor, pluginName, direction)
+    if (!dirResult) {
+      // insertDirection 可能已改正文；强制同块回滚
+      const cleanup = await safeCleanup(
+        deps, null, extractId, extractSnapshot, contentSnapshot, true
+      )
+      return failAfterCleanup(extractId, "create_item", "创建方向卡失败", cleanup)
+    }
+    createdItemId = dirResult.blockId
+
+    return finishConversionAfterCreate({
+      extractId,
+      pluginName,
+      strategy,
+      itemType: "direction",
+      deps,
+      extractSnapshot,
+      contentSnapshot,
+      created: {
+        itemId: dirResult.blockId,
+        clozeNumber: 0,
+        mutatedSameBlock: dirResult.blockId === extractId,
+        selectedText: selectedText.slice(0, 500)
+      },
+      // insertDirection 已写入方向 SRS
+      initSrsStep: async () => undefined,
+      verifyStep: async (itemId) => deps.verifyDirectionCollectable(itemId)
+    })
+  } catch (error) {
+    const cleanup = await safeCleanup(
+      deps,
+      createdItemId,
+      extractId,
+      extractSnapshot,
+      contentSnapshot,
+      true
+    )
+    return failAfterCleanup(extractId, "create_item", error, cleanup)
+  }
 }
 
-function failAfterCleanup(
-  extractId: DbId,
-  step: ConversionStep,
-  error: unknown,
-  cleanup: CleanupResult
-): ConvertExtractToItemFailure {
-  const primary = error instanceof Error ? error.message : String(error)
-  const message = cleanup.errors.length > 0
-    ? `${primary}；回滚未完整完成：${cleanup.errors.join("；")}`
-    : primary
-  return fail(extractId, step, message, cleanup.extractPreserved)
-}
-
-async function safeCleanup(
-  deps: ConversionDeps,
-  itemId: DbId | null,
-  extractId: DbId,
-  irSnapshot: IRState | null,
-  contentSnapshot: BlockContentSnapshot | null,
-  mutatedSameBlock: boolean
-): Promise<CleanupResult> {
-  const errors: string[] = []
-  let extractPreserved = Boolean(irSnapshot && (!mutatedSameBlock || contentSnapshot))
-
-  // 独立新块：删除半成品 Item
-  if (itemId != null && itemId !== extractId) {
-    try {
-      await deps.deleteIncompleteItem(itemId)
-    } catch (error) {
-      console.error("[IR Conversion] cleanup item failed:", error)
-      errors.push(`半成品 Item 删除失败：${String(error)}`)
-    }
+/**
+ * 统一入口：按 itemType 分发，默认 cloze（兼容旧调用点）。
+ */
+export async function convertExtractToItem(
+  input: ConvertExtractToItemInput
+): Promise<ConvertExtractToItemResult> {
+  const itemType = input.itemType ?? "cloze"
+  if (itemType === "qa") {
+    return convertExtractToQA({
+      extractId: input.extractId,
+      pluginName: input.pluginName,
+      strategy: input.strategy,
+      cursor: input.cursor,
+      deps: input.deps
+    })
   }
-
-  // 同块变异：必须恢复正文与标签类型
-  if (mutatedSameBlock && contentSnapshot) {
-    try {
-      await deps.restoreBlock(extractId, contentSnapshot)
-    } catch (error) {
-      console.error("[IR Conversion] restore content failed:", error)
-      extractPreserved = false
-      errors.push(`Extract 内容恢复失败：${String(error)}`)
-    }
+  if (itemType === "direction") {
+    return convertExtractToDirection({
+      extractId: input.extractId,
+      cursor: input.cursor,
+      pluginName: input.pluginName,
+      strategy: input.strategy,
+      direction: input.direction,
+      deps: input.deps
+    })
   }
-
-  if (irSnapshot) {
-    try {
-      await deps.saveState(extractId, irSnapshot)
-    } catch (error) {
-      console.error("[IR Conversion] restore extract IR state failed:", error)
-      extractPreserved = false
-      errors.push(`Extract 调度恢复失败：${String(error)}`)
-    }
-  }
-
-  return { extractPreserved, errors }
+  return convertExtractToCloze(input)
 }
 
 export function shouldPreserveExtractOnFailure(result: ConvertExtractToItemResult): boolean {

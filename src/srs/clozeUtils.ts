@@ -19,6 +19,27 @@ import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
 
 /**
+ * 深拷贝 content 快照，供 undo 在 valtio 变异后仍还原挖空前正文。
+ * 优先 structuredClone；失败时 JSON 兜底（ContentFragment 为可序列化结构）。
+ */
+export function cloneBlockContent(
+  content: ContentFragment[] | undefined | null
+): ContentFragment[] | undefined {
+  if (!content) return undefined
+  try {
+    return structuredClone(content)
+  } catch {
+    try {
+      return JSON.parse(JSON.stringify(content)) as ContentFragment[]
+    } catch (error) {
+      console.error("[clozeUtils] cloneBlockContent 失败:", error)
+      // 最后兜底：浅拷贝数组 + 浅拷贝各 fragment，至少避免直接引用被原地改写
+      return content.map(fragment => ({ ...fragment }))
+    }
+  }
+}
+
+/**
  * 判断一个 fragment 是否为 cloze fragment
  *
  * 首选精确匹配 `${pluginName}.cloze`，同时宽松匹配任何 `xxx.cloze` 后缀，
@@ -190,9 +211,16 @@ function buildNewContent(
 export async function createCloze(
   cursor: CursorData,
   pluginName: string
-): Promise<{ 
+): Promise<{
   blockId: number
   clozeNumber: number
+  /** 以下字段供对称撤销；旧调用方/ mock 可不填 */
+  pluginName?: string
+  addedCardTag?: boolean
+  wroteInitialClozeSrs?: true
+  isFirstClozeCard?: boolean
+  /** 改写正文前的 content 深拷贝；undo 必须还原，否则残留 .cloze fragment */
+  originalContent?: ContentFragment[]
 } | null> {
   // 验证光标数据
   if (!cursor || !cursor.anchor || !cursor.anchor.blockId) {
@@ -209,6 +237,10 @@ export async function createCloze(
     console.error(`[${pluginName}] 错误：未找到块 #${blockId}`)
     return null
   }
+
+  // 创建前读取标签状态，供对称撤销判断（不得在改 content 后才推断）
+  const hasCardTagBefore =
+    block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
 
   // 检查是否在同一块内选择
   if (cursor.anchor.blockId !== cursor.focus.blockId) {
@@ -256,6 +288,9 @@ export async function createCloze(
   // 从 block.content 中获取当前最大的 cloze 编号
   const maxClozeNumber = getMaxClozeNumberFromContent(block.content, pluginName)
   const nextClozeNumber = maxClozeNumber + 1
+
+  // 改写正文前深拷贝：编辑器原生命令栈不会在插件 undo 里还原 fragment
+  const originalContent = cloneBlockContent(block.content)
 
   try {
     // 构建新的 content 数组
@@ -359,7 +394,16 @@ export async function createCloze(
       { title: "Cloze" }
     )
 
-    return { blockId, clozeNumber: nextClozeNumber }
+    // 撤销只能回滚本次新增：首次成为 cloze 才摘 #card / 顶层 srs；正文靠 originalContent
+    return {
+      blockId,
+      clozeNumber: nextClozeNumber,
+      pluginName,
+      addedCardTag: !hasCardTagBefore,
+      wroteInitialClozeSrs: true,
+      isFirstClozeCard: !hasCardTagBefore,
+      originalContent
+    }
   } catch (error) {
     console.error(`[${pluginName}] 创建 cloze 失败:`, error)
     orca.notify("error", `创建 cloze 失败: ${error}`, { title: "Cloze" })

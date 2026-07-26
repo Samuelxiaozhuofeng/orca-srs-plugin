@@ -35,6 +35,8 @@ export type IRSessionChromeProps = {
   onNext: () => void
   onExtract: () => void
   onItemize: () => void
+  onConvertToQA?: () => void
+  onConvertToDirection?: () => void
   onComplete: () => void
   onImportance: () => void
   onMore: () => void
@@ -74,6 +76,8 @@ export default function IRSessionChrome({
   onNext,
   onExtract,
   onItemize,
+  onConvertToQA,
+  onConvertToDirection,
   onComplete,
   onImportance,
   onMore,
@@ -113,11 +117,14 @@ export default function IRSessionChrome({
       <IRSessionMorePanel
         open={moreOpen}
         isWorking={isWorking}
+        isTopic={isTopic}
         theme={theme}
         contentWidth={contentWidth}
         viewMode={viewMode}
         embedded={embedded}
         onPostpone={onOpenPostpone}
+        onConvertToQA={onConvertToQA}
+        onConvertToDirection={onConvertToDirection}
         onThemeChange={onThemeChange}
         onContentWidthChange={onContentWidthChange}
         onToggleViewMode={onToggleViewMode}

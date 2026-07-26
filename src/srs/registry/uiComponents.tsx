@@ -147,6 +147,13 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.makeCardFromBlock`
   })
 
+  orca.slashCommands.registerSlashCommand(`${pluginName}.choiceCard`, {
+    icon: "ti ti-list-check",
+    group: "SRS",
+    title: "创建选择题",
+    command: `${pluginName}.createChoiceCard`
+  })
+
   orca.slashCommands.registerSlashCommand(`${pluginName}.listCard`, {
     icon: "ti ti-list-details",
     group: "SRS",
@@ -281,6 +288,7 @@ export async function unregisterUIComponents(
 
   // 斜杠命令
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.choiceCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.listCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionForward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionBackward`)

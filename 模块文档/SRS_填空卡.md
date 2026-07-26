@@ -2,6 +2,7 @@
 
 > **文档同步日期**：2026-07-26  
 > **变更说明**：新增导出谓词 `isClozeFragment`（生成/读取侧共用宽松匹配，兼容旧前缀 `*.cloze`）；创建流程第 8 步改为「仅新建编号初始写入、已存在编号 ensure 不覆盖」，`srs.isCard` 写后补 `invalidateBlockCache`。  
+> 2026-07-26：撤销必须还原正文——`createCloze` 在 `setBlocksContent` 前深拷贝 `originalContent`；`undoClozeCardCreation` 先还原 content 再删 `srs.cN.*`（编辑器栈不会自动去掉 `.cloze` fragment，残留会导致再挖空编号变成 c2）。  
 > 2026-07-13：由「实现过程/阶段计划」改写为以当前代码为准的实现文档；删除过时的 `{c1::}` 纯文本方案描述，统一为 ContentFragment 机制。
 
 ---
@@ -67,12 +68,20 @@
 
 1. 校验光标：同一块、同一 fragment 内有非空选区（不支持跨 fragment/跨样式选区）
 2. `getMaxClozeNumberFromContent` → 下一编号（与读取侧共用 `isClozeFragment` 宽松判定，块内含旧前缀 `*.cloze` fragment 时不会重复分配其编号）
-3. `buildNewContent`：在 fragment 内按 offset 拆分并插入 cloze fragment
-4. `core.editor.setBlocksContent` 更新内容
-5. 无 `#card` 则 `insertTag` + `buildCardTagData(..., "cloze")`；已有则 `setRefData` 将 `type` 设为 `cloze`
-6. `ensureCardTagProperties` 初始化标签属性定义
-7. 设置 `_repr`、`srs.isCard`；`srs.isCard` 写入后 `invalidateBlockCache(blockId)`，保证下一步 ensure 读到最新属性
-8. 遍历 `getAllClozeNumbers` 的全部编号：**仅新建编号**走 `writeInitialClozeSrsState`（避免复用已删除编号时继承孤儿 `srs.cN.*` 旧状态），**已存在编号**走 `ensureClozeSrsState`（缺属性才初始化，不覆盖已有进度）；`daysOffset = clozeNumber - 1` 不变
+3. **`cloneBlockContent(block.content)` → `originalContent`**（深拷贝，供 undo；优先 `structuredClone`）
+4. `buildNewContent`：在 fragment 内按 offset 拆分并插入 cloze fragment
+5. `core.editor.setBlocksContent` 更新内容
+6. 无 `#card` 则 `insertTag` + `buildCardTagData(..., "cloze")`；已有则 `setRefData` 将 `type` 设为 `cloze`
+7. `ensureCardTagProperties` 初始化标签属性定义
+8. 设置 `_repr`、`srs.isCard`；`srs.isCard` 写入后 `invalidateBlockCache(blockId)`，保证下一步 ensure 读到最新属性
+9. 遍历 `getAllClozeNumbers` 的全部编号：**仅新建编号**走 `writeInitialClozeSrsState`（避免复用已删除编号时继承孤儿 `srs.cN.*` 旧状态），**已存在编号**走 `ensureClozeSrsState`（缺属性才初始化，不覆盖已有进度）；`daysOffset = clozeNumber - 1` 不变
+10. 返回 undoArgs（含 `originalContent`、`clozeNumber`、`isFirstClozeCard` 等）
+
+### 撤销（`undoClozeCardCreation`）
+
+1. 若有 `originalContent`：`setBlocksContent` 还原正文 + `invalidateBlockCache`（**首次与非首次都要**）
+2. 删本次 `srs.c{N}.*`
+3. 仅 `isFirstClozeCard`：`cleanupSrsProperties` + `removeTag card` + 删 `_repr`
 
 ### 工具函数
 
@@ -81,6 +90,7 @@
 | `isClozeFragment` | **共用谓词**（导出）：精确匹配 `${pluginName}.cloze`，同时宽松匹配任意 `*.cloze` 后缀（兼容历史插件名如 `srs-plugin`）。生成侧与读取侧必须共用它——若生成侧只认新前缀，旧前缀 c1 存在时会重复分配编号 1，导致 cardKey / `srs.cN.*` 状态混叠 |
 | `getMaxClozeNumberFromContent` | 当前最大编号（经 `isClozeFragment` 宽松判定，含旧前缀 fragment） |
 | `getAllClozeNumbers` | 全部编号（去重排序；同样经 `isClozeFragment`） |
+| `cloneBlockContent` | 挖空前 content 深拷贝（undo 用） |
 | `createCloze` | 创建填空 |
 
 ---

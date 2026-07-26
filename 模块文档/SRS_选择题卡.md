@@ -1,7 +1,7 @@
 # SRS 选择题卡（Choice）
 
-> **文档同步日期**：2026-07-13（审核修订：发现前提须 `#card`）  
-> **变更说明**：新建后据代码校正。代码侧已有完整实现（`choiceUtils` / 提交门闩 / 统计存储 / 渲染器）。
+> **文档同步日期**：2026-07-26  
+> **变更说明**：增加专用创建命令 `createChoiceCard` / `choiceCardCreator`；对称撤销支持 `addedChoiceTag`。
 
 ---
 
@@ -20,21 +20,34 @@
 > **错误做法**：只打 `#choice`、不打 `#card` → 通常**不会**出现在 Flash Home 或普通复习队列。  
 > **正确做法**：父块同时具备 `#card`，并用 `#choice` 或 `type=choice` 标明选择题。
 
-### 创建方式（无独立 createChoice 命令）
+### 创建方式
 
-类型识别（在已有 `#card` 的前提下）：
+#### 推荐：斜杠命令「创建选择题」
+
+- 命令：`${pluginName}.createChoiceCard`（`src/srs/choiceCardCreator.ts` → `createChoiceCardFromBlock`）
+- 斜杠：`choiceCard`，group `SRS`，icon `ti ti-list-check`
+- 行为：
+  1. 无 `#card` → `insertTag` + `buildCardTagData(..., "choice")` + `ensureCardTagProperties`；已有则 `setRefData type=choice`
+  2. 无 `#choice` → `insertTag "choice"`
+  3. `_repr = { type: "srs.choice-card", front, back, cardType: "choice" }`
+  4. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有 `#card`：`ensureCardSrsState`
+  5. 直接子块均无 `#correct`/`#正确` 时 `info` 提示（**不阻断**）
+- undoArgs：`blockId, originalRepr, originalText, pluginName, addedCardTag, addedChoiceTag, wroteInitialSrs`
+- 撤销：`undoBasicCardCreation`（按标志 cleanup / removeTag `card` / `choice` / 还原 `_repr`）
+
+#### 类型识别（在已有 `#card` 的前提下）
 
 1. **优先**：块上存在 `#choice` 标签（`isChoiceTag`，大小写不敏感）
 2. 或 `#card` 的 `type` 属性为 `choice`
 
-常见工作流：
+#### 手动标签工作流（仍有效）
 
 1. 写好题干（父块）
 2. 在下方添加若干子块作为选项
 3. 在正确选项上打 `#correct` 或 `#正确`
 4. 父块打 **`#card`**，并打 **`#choice`**（或设置 `#card` 的 `type=choice`）
 5. 可选：父块打 `#ordered` 禁用选项乱序
-6. 扫描或复习收集时写入/确保 `srs.*`；`scanCardsFromTags` / `makeCardFromBlock` 会将 `_repr.type` 设为 `srs.choice-card`
+6. 扫描或复习收集时写入/确保 `srs.*`；`scanCardsFromTags` / `makeCardFromBlock` 也会将 `_repr.type` 设为 `srs.choice-card`
 
 ---
 

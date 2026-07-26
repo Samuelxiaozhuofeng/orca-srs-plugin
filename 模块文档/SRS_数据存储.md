@@ -2,6 +2,7 @@
 
 > **文档同步日期：2026-07-26**  
 > 变更说明：`srs.state` 读取补枚举白名单（`parseFsrsState`，脏值回退 `State.New` + warn，缺失静默）；`cleanupSrsProperties`（`tagCleanup.ts`）与 `srs.choice.statistics` 写/删后已 `invalidateBlockCache`（低危#3/#4）；核心持久层直测见 `src/srs/storage.test.ts`。  
+> 2026-07-26：制卡对称撤销（`registry/cardCreationUndo.ts`）复用本层删除 API——全量 `cleanupSrsProperties`、按编号 `deleteClozeCardSrsData`、Topic 的 `deleteIRState`；**仅当本次创建新增**才调用，避免误删用户已有进度。  
 > 2026-07-13：以代码为准校正块属性表（含 Direction / `state` / `resets`）、相关文件路径；补充会话进度 `sessionStorage`（FC-09）、三态存在性与日志/选择题统计要点。
 
 ## 概述
@@ -340,6 +341,7 @@ JSON 形态：
 - **同一 blockId**：`saveChoiceStatistics` 内部 Promise 链串行读-改-写；调用者仍收到真实 rejection。
 - **不同 blockId**：互不阻塞。
 - **缓存一致性（2026-07-26，低危#4）**：`srs.choice.statistics` 写入成功与属性删除成功后均立即 `invalidateBlockCache(blockId)`，防止长期存活的 blockCache 继续持有旧统计属性。同理 **`cleanupSrsProperties`**（`src/srs/tagCleanup.ts`，低危#3）在 `deleteProperties` 全部 `srs.*` 属性后也立即失效块缓存——否则失败路径重打 `#card` 时可能从缓存"复活"已删除的复习进度。回归：`tagCleanup.test.ts`、`choiceStatisticsStorage.test.ts`。
+- **制卡撤销与删除 API（2026-07-26）**：`src/srs/registry/cardCreationUndo.ts` 在 undo 时按标志位调用 `cleanupSrsProperties` / `deleteClozeCardSrsData`（写后同样失效缓存）。约束见 [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：新卡路径才全量清理；二次 cloze 只删本次 `srs.cN.*`。
 - **复习层**（`recordChoiceAnswerStatistics` / UI）：保存失败 notify warn，**不阻断** FSRS 评分。
 - **防重复**：同一次提交只 save 一次，依赖 `choiceSubmitGate`。
 
