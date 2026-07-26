@@ -1,7 +1,8 @@
 # SRS 记忆算法模块
 
-> **文档同步日期：2026-07-13**  
-> 变更说明：校正 `nextReviewState` / 预览函数的 `pluginName` 参数位置；对齐 F2-08 校验与运行时 cache；修正相关文件路径。
+> **文档同步日期：2026-07-26**  
+> 变更说明：新增「FSRS Fuzz」小节——运行时实例创建启用 `enable_fuzz: true`，削峰分散到期，确定性播种保证「预览=正式」一致性。  
+> 2026-07-13：校正 `nextReviewState` / 预览函数的 `pluginName` 参数位置；对齐 F2-08 校验与运行时 cache；修正相关文件路径。
 
 ## 概述
 
@@ -106,6 +107,15 @@ flowchart TD
     F --> G
     G --> H[更新 due / interval / reps 等]
 ```
+
+### FSRS Fuzz（削峰分散到期，2026-07-26 落地）
+
+运行时 FSRS 实例创建时启用 `enable_fuzz: true`（`createFsrsInstanceFromValidated`，`src/srs/algorithm.ts`）：
+
+- **作用范围**：仅对 **≥2.5 天** 的天级间隔叠加抖动；分钟级学习步/重学步（Learning/Relearning）不受影响。
+- **确定性播种**：ts-fsrs 用 `DefaultInitSeedStrategy`（`${reviewTime}_${reps}_${difficulty*stability}`）为每次 `apply_fuzz` 重建 alea 生成器，无跨调用状态——因此同一份 `SrsState` + 同一个 `now` 无论调用几次（预览四档评分 vs 正式评分）结果必然一致，`previewIntervals`/`previewDueDates` 与 `nextReviewState` 仍保持"预览=正式"一致（回归覆盖：`algorithm.test.ts`、`fsrsPreviewPluginName.harness.test.ts`）。
+- **目的**：避免同一天集中大量到期卡"雪崩式"堆积，削峰分散复习负载。
+- **不可配置**：`enable_fuzz` 硬编码为 true，不经 `review.fsrs*` 设置项开放；F2-08 校验规则（weights/retention/maximumInterval）不变。
 
 ### 评分影响（产品语义摘要）
 

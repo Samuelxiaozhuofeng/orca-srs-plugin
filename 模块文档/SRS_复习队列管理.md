@@ -1,7 +1,8 @@
 # SRS 复习队列管理模块
 
 > **文档同步日期：2026-07-26**  
-> 变更说明：新增「查询块收集」小节——`getQueryResults` 对后端 `query` 返回做 DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不再静默返回空数组）。低危批次：`collectSrsBlocks` 的 `get-all-blocks` 兜底改**仅标签查询失败时触发**；会话块创建补 `insertBlock` 返回值校验与 `reviewSessionManager.test.ts` 回归。  
+> 变更说明：P0 低压调度优化——`SHORT_RELEARN_WINDOW_MS` 5 分钟 → 15 分钟（详见 `SRS 动态复习队列.md`）。  
+> 同日另一批次：新增「查询块收集」小节——`getQueryResults` 对后端 `query` 返回做 DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不再静默返回空数组）。低危批次：`collectSrsBlocks` 的 `get-all-blocks` 兜底改**仅标签查询失败时触发**；会话块创建补 `insertBlock` 返回值校验与 `reviewSessionManager.test.ts` 回归。  
 > 2026-07-13：收集/建队入口改为 `cardCollector.ts`；到期判定统一为精确时间（删除过时的「仅比日期」段落）；补全 descriptor / scope / budget / pending / 子卡展开相关文件。
 
 ## 概述
@@ -78,7 +79,7 @@
 5. **测试开关**：`disableOptimizations: true` 仅 A/B；生产不得关闭
 6. **失效**：评分/写入仍走 `invalidateBlockCache`
 7. **轮询策略（评估结论）**：
-   - 会话 60s 全库扫描：**保留**（pending 只覆盖正式 Again/Hard 5 分钟窗口；新到期/他处编辑仍依赖扫描）
+   - 会话 60s 全库扫描：**保留**（pending 只覆盖正式 Again/Hard 15 分钟窗口；新到期/他处编辑仍依赖扫描）
    - fixed/repeat：**禁止**全库扫描
    - 首页 120s 兜底刷新：**保留**
 

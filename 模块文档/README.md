@@ -24,8 +24,8 @@
 
 ### 核心功能
 
-1. **[SRS_记忆算法.md](SRS_记忆算法.md)**
-   - FSRS 算法、状态、设置严格校验与统一运行时参数（F2-08）
+1. **[SRS_记忆算法.md](SRS_记忆算法.md)** ⭐ 2026-07-26 更新
+   - FSRS 算法、状态、设置严格校验与统一运行时参数（F2-08）；运行时实例启用 `enable_fuzz`（削峰分散到期，确定性播种保证预览=正式一致）
    - 关联：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/types.ts`
 
 2. **[SRS_数据存储.md](SRS_数据存储.md)** ⭐ 2026-07-26 更新
@@ -93,18 +93,19 @@
     - `get-all-blocks` 兜底仅标签查询失败时触发；会话块创建校验 `insertBlock` 返回值（坏 ID 零落盘）
     - 关联：`cardCollector.ts`、`blockCardCollector.ts`、`reviewSessionDescriptor.ts`、`reviewSessionManager.ts`、`repeatReviewManager.ts` 等
 
-21. **[SRS 动态复习队列.md](SRS%20动态复习队列.md)** — 动态队列与 resume 相关细节
+21. **[SRS 动态复习队列.md](SRS%20动态复习队列.md)** ⭐ 2026-07-26 更新 — 动态队列与 resume 相关细节；短期重学窗口 5→15 分钟；已评分卡到期后允许回流本会话（去重范围收窄为未处理部分 + pending 身份）
 22. **[SRS_事件通信.md](SRS_事件通信.md)** ⭐ 2026-07-26 更新
     - `srs.cardGraded` / `srs.cardPostponed` / `srs.cardSuspended`；IR DOM 事件补充
     - **模块级总线** `srsBroadcastBus`：Orca 每类型单 handler + 订阅者扇出；Flash Home 经总线订阅；unload `teardown`
     - 关联：`srsEvents.ts`、`srsBroadcastBus.ts`、`reviewCardGrading.ts`
 
-23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-26 更新 — IR 分散/排队、时间盒队列最终配额与诊断、本地日 seed、会话启动只读（B1）（含已落地 vs 计划状态说明）；§6.4 补混合会话 SRS 复习日额度扣减（`irMixedDailyBudget.ts`，日志失败 fail-closed 阻断装配）
+23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-26 更新 — IR 分散/排队、时间盒队列最终配额与诊断、本地日 seed、会话装配只读（B1，装配阶段本身）+ **会话启动 auto-postpone 接回主路径**（当日一次、反复推迟降权）、迟到补偿、队列排序改老化 + 探索真随机（含已落地 vs 计划状态说明）；§6.4 补混合会话 SRS 复习日额度扣减（`irMixedDailyBudget.ts`，日志失败 fail-closed 阻断装配）
 
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-26 更新
-    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话启动只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
+    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话装配只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
+    - 2026-07-26（P0 低压调度优化）：已读间隔**迟到补偿**（`computeLatenessEffectiveBase`）；队列排序改**加性得分老化**（终结低优先级饥饿）+ 探索改**真随机采样**；`applyAutoPostpone` **接回主路径**（用户显式启动会话触发、当日一次守卫、反复推迟降权、会话头部 banner + 撤销，`runSessionStartAutoPostpone.ts`）
     - 2026-07-26：**Extract→Q&A / Direction 原子转化**（`convertExtractToQA` / `convertExtractToDirection`，与 Cloze 共用事务脚手架；会话 ⋯更多「问答」「方向」）
     - 2026-07-26：断点**交互捕获守卫**（`irBreakpointInteractiveCapture.ts`，切卡清交互 debounce、过期捕获丢弃）；收集索引路径批量 `get-blocks`（批 50/并发 4）、`preheatIrBlockCache` 仅后端块、`mapPool` 并发 8
     - 2026-07-26（低危批次）：兜底仅查询失败触发；索引失败可见告警；autoMark 重入守卫/世代计数；快捷键一次性播种（`ir.defaultShortcutsSeeded`）；卸载排空断点在途写入；会话块 `resolveBlock` 三态；`IncrementalReadingSessionDemo` 已删；两套块缓存不合并决策固化
@@ -164,6 +165,7 @@
 
 ## 更新记录
 
+- **2026-07-27（P0 低压调度优化）**：① SRS FSRS 启用 `enable_fuzz`（≥2.5 天间隔削峰分散，确定性播种保证预览=正式一致）；② SRS `SHORT_RELEARN_WINDOW_MS` 5→15 分钟 + `selectNewDueCardsForSession` 去重收窄为未处理部分 + pending 身份，修复「Review 卡评 Again 后本会话内永不回流」；③ IR 已读间隔增长补迟到补偿（`computeLatenessEffectiveBase`，仅普通路径非 SAC）；④ IR 时间盒队列排序从字典序改为加性得分老化（终结低优先级饥饿）+ 探索改真随机采样；⑤ IR `applyAutoPostpone` 接回主路径（用户显式启动会话触发、当日一次守卫、反复推迟降权、会话头部 banner + 撤销）。见 [SRS_记忆算法.md](SRS_记忆算法.md)、[SRS 动态复习队列.md](SRS%20动态复习队列.md)、[SRS_复习队列管理.md](SRS_复习队列管理.md)、[渐进阅读.md](渐进阅读.md)、[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)、[记忆排期推送.md](记忆排期推送.md)
 - **2026-07-27（今日学习面板块 UI/UX 重塑）**：块渲染器 `SrsFlashcardHomeRenderer` 新增宿主 chrome 清理（`srs-flash-home-host-chrome-managed`：隐藏 bullet/handle/查询 Tab 引用·同标签·候选引用/查询视图）+ 默认 Wide View（均 fail-closed 于面板主视图）；`HomeSummaryBar` 动作区分主 CTA / 次级入口两行并新增「阅读资料库」入口（`openIRWorkspace({ mode:"library" })`）；`flashcard-home.css` 按 Apple 标准重做（居中最大宽度列、今日学习主卡片、iOS 分段时长控件、按钮层级）；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)
 - **2026-07-26（cloze 撤销还原正文 + 广播总线）**：`createCloze` 快照 `originalContent`，`undoClozeCardCreation` 先 `setBlocksContent` 还原（防残留 fragment 编号错乱）；`srsBroadcastBus` 解决 Flash Home `already registered` 崩溃；见 [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)、[SRS_事件通信.md](SRS_事件通信.md)
 - **2026-07-26（制卡 undo + 选择题命令 + IR Extract→Q&A/Direction）**：`scanCardsFromTags` 兜底判空修；`cardCreationUndo` 对称撤销（make/cloze/topic/list/choice）；斜杠「创建选择题」；Extract→Q&A/Direction 原子转化与会话更多菜单；见 [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)、[SRS_选择题卡.md](SRS_选择题卡.md)、[渐进阅读.md](渐进阅读.md)、[渐进阅读_优化路线.md](渐进阅读_优化路线.md)、[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)

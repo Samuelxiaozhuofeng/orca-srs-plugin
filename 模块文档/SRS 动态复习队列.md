@@ -1,7 +1,8 @@
 # 动态复习队列更新功能
 
-> **文档同步日期：2026-07-13**  
-> 变更说明：与 `reviewSessionScope` / `reviewSessionBudget` / `pendingDueRequeue` 实现对齐；补全相关测试与组件路径。
+> **文档同步日期：2026-07-26**  
+> 变更说明：P0 低压调度优化——`SHORT_RELEARN_WINDOW_MS` 5 分钟 → **15 分钟**（覆盖 ts-fsrs 默认 relearning 10m / 新卡 Hard 6m）；`selectNewDueCardsForSession` 去重语义收窄为「未处理部分 + pending 身份」，修复「Review 卡评 Again 后本会话内永不回流」。  
+> 2026-07-13：与 `reviewSessionScope` / `reviewSessionBudget` / `pendingDueRequeue` 实现对齐；补全相关测试与组件路径。
 
 ## 功能概述
 
@@ -12,6 +13,8 @@
 **FC-01 起**：动态追加还必须遵守会话启动时冻结的正式根卡每日额度（`sessionDailyLimits` + `SessionRootCardBudget`）；先 scope，再剩余额度。
 
 **F2-01 起**：scope 来自块上 `ReviewSessionDescriptor`（经 Renderer 解析），Demo **不**依赖可变全局 deck filter。
+
+**P0 起**：动态追加的去重范围从「整个已构建队列」收窄为「会话中**尚未处理**的部分」——已评分（历史）卡到期后允许通过动态扫描/pending 定时器回流本会话。此前 Review 卡评 Again 后，其 cardKey 永远留在去重集合中，本会话内到期也不会再出现；现在只有 `[currentIndex..end]`（未处理部分，含当前卡）与 pending 短期重学跟踪身份会被排除。
 
 ## 主要特性
 
@@ -65,9 +68,22 @@ const newCards = selectNewDueCardsForSession(
   candidates,
   prevQueue,
   sessionScope,
-  sessionBudget // null = fixed 不限额
+  sessionBudget, // null = fixed 不限额
+  {
+    currentIndex: currentIndexRef.current, // 只排除 [currentIndex..end] 未处理部分
+    pendingKeys: getPendingKeys()          // 排除已在短期重学 pending 跟踪中的身份
+  }
 )
 ```
+
+`SelectNewDueCardsOptions`（`reviewSessionScope.ts`）：
+
+| 字段 | 说明 |
+|------|------|
+| `currentIndex` | 当前正在复习的卡索引；省略默认 0（等价旧的「排除整个队列」）。只有 `index >= currentIndex` 的队列项被排除，之前的已评分卡到期后可回流 |
+| `pendingKeys` | 已在 F2-04 短期重学 pending 跟踪中的身份（`usePendingDueQueue.getPendingKeys()`），避免与 pending 定时器双重入队 |
+
+回流的已评分卡其 cardKey 早已在 `budget.accepted*Keys` 中，`acceptFormalRoot` 返回 true 但不重复扣额度，故回流不会二次消耗每日额度。导出的 `collectUnprocessedQueueCardKeys(queue, currentIndex)` 计算 `[max(0,currentIndex)..end]` 的身份集合，供 `selectNewDueCardsForSession` 内部与测试复用。
 
 ## 技术实现
 
@@ -76,7 +92,8 @@ const newCards = selectNewDueCardsForSession(
 - `createAllScope` / `createDeckScope` / `createFixedScope` / `createScopeFromDeckFilter`
 - `isCardInSessionScope` / `filterCardsBySessionScope`
 - `allowsFullLibraryDynamicScan`
-- `selectNewDueCardsForSession`（自动+手动；可选 budget）
+- `selectNewDueCardsForSession`（自动+手动；可选 budget + `currentIndex`/`pendingKeys` 去重范围）
+- `collectUnprocessedQueueCardKeys`（`[currentIndex..end]` 未处理身份集合，P0 新增导出）
 - `selectPendingDueCardsForRequeue`（短期重学；已接纳身份不重复消耗）
 - `prepareNormalSessionQueueInput` / `prepareFixedSessionScope`（Renderer 用纯函数）
 
@@ -90,7 +107,7 @@ const newCards = selectNewDueCardsForSession(
 
 ### 短期重学 pending（F2-04，`src/srs/pendingDueRequeue.ts`）
 
-Again/Hard 后若 FSRS `due` 落在 **5 分钟窗口**内（`SHORT_RELEARN_WINDOW_MS`），卡片进入会话内 pending，到期后追加到**队尾**。
+Again/Hard 后若 FSRS `due` 落在 **15 分钟窗口**内（`SHORT_RELEARN_WINDOW_MS`，P0 起由 5 分钟调宽），卡片进入会话内 pending，到期后追加到**队尾**。窗口须覆盖 ts-fsrs@5.2.3 默认步长下 Again/Hard 产生的最短到期间隔——Review 卡评 Again 走 relearning step（`due = now + 10m`）、新卡/学习中卡评 Hard（`getHardInterval ≈ 6m`）；15 分钟在覆盖两者之余留有缓冲，仍远小于任何天级正式间隔，不会误纳常规复习卡。
 
 | 规则 | 说明 |
 |------|------|
@@ -112,9 +129,9 @@ Renderer 快速切换/重试时：`createLoadGenerationGate` + `decideLoadCommit
 ### 复习会话组件 (`SrsReviewSessionDemo.tsx`)
 
 - prop：`sessionScope`、`sessionDailyLimits`、`sessionFormalRootCards`（均由 Renderer 启动时冻结）
-- 60s 定时器：先判断 `allowsFullLibraryDynamicScan`，再 collect + 共用过滤（含额度）
-- 手动检查：fixed 直接提示，不 collect
-- pending due（F2-04）：`pendingDueStateRef` + `pendingDueRequeue` 纯逻辑；评分成功且 action token 有效后 track pending
+- 60s 定时器：先判断 `allowsFullLibraryDynamicScan`，再 collect + 共用过滤（含额度）；调用 `selectNewDueCardsForSession` 时传入 `currentIndexRef.current` 与 `usePendingDueQueue.getPendingKeys()`
+- 手动检查：fixed 直接提示，不 collect；同样传入 `currentIndex`/`pendingKeys`
+- pending due（F2-04）：`pendingDueStateRef` + `pendingDueRequeue` 纯逻辑；评分成功且 action token 有效后 track pending；`usePendingDueQueue` 新增 `getPendingKeys()` 供上述两处扫描排除 pending 中身份，避免与定时器双重入队
 - List 动态下一条/辅助预览：`isCardInSessionScope`（fixed 同根允许）；显式 `cardType: "list"`
 
 ### Flash Home (`SrsFlashcardHome.tsx`)
