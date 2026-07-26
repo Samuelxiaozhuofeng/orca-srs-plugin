@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { generateFlashcardDrafts } from "./aiService"
+import { clipCardSource, generateFlashcardDrafts } from "./aiService"
+import { AI_CARD_SOURCE_MAX } from "./aiDraftTypes"
 
 const PLUGIN = "test-ai-service"
 const SOURCE = "使役形（～させる）表示让某人做某事。"
@@ -47,7 +48,7 @@ describe("generateFlashcardDrafts", () => {
   }
 
   function parseRequestBody(fetchMock: ReturnType<typeof vi.fn>) {
-    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     return JSON.parse(String(init.body)) as {
       model: string
       temperature: number
@@ -275,5 +276,76 @@ describe("generateFlashcardDrafts", () => {
         message: "quota exceeded for this account"
       }
     })
+  })
+})
+
+describe("clipCardSource", () => {
+  it("leaves sources within the limit untouched", () => {
+    const { text, truncated } = clipCardSource("  短文本  ", 100)
+    expect(text).toBe("短文本")
+    expect(truncated).toBe(false)
+  })
+
+  it("clips over-long sources without injecting a marker", () => {
+    const long = "あ".repeat(50)
+    const { text, truncated } = clipCardSource(long, 10)
+    expect(truncated).toBe(true)
+    expect(text).toHaveLength(10)
+    // 标记会成为模型可引用的伪源文本，接地校验就是拿这段文本做的
+    expect(text).not.toContain("truncated")
+    expect(long.startsWith(text)).toBe(true)
+  })
+
+  it("defaults to AI_CARD_SOURCE_MAX", () => {
+    const long = "x".repeat(AI_CARD_SOURCE_MAX + 500)
+    const { text, truncated } = clipCardSource(long)
+    expect(truncated).toBe(true)
+    expect(text).toHaveLength(AI_CARD_SOURCE_MAX)
+  })
+})
+
+describe("generateFlashcardDrafts source cap", () => {
+  beforeEach(() => {
+    installSettings()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("caps the prompt source and tells the model it was truncated", async () => {
+    const long = "使役形の説明。".repeat(3000)
+    const payload = JSON.stringify({
+      choices: [{ message: { content: '{"cards":[]}' } }]
+    })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(
+              new TextEncoder().encode(payload).byteLength
+            )
+          }
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: long,
+      cardType: "basic",
+      maxCards: 3
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userMsg = body.messages.find((m) => m.role === "user")!.content
+    expect(userMsg).toContain("was truncated")
+    // 整块 21000 字符不应原样进请求体
+    expect(userMsg.length).toBeLessThan(long.length)
   })
 })

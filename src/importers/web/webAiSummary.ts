@@ -6,21 +6,9 @@
 
 import type { Block, DbId } from "../../orca.d.ts"
 import { getAISettings } from "../../srs/ai/aiSettingsSchema"
-import { buildChatCompletionsBody } from "../../srs/ai/aiChatRequest"
-import {
-  AI_MAX_RESPONSE_BYTES,
-  GENERATION_TIMEOUT_MS
-} from "../../srs/ai/aiDraftTypes"
-import {
-  classifyAiFetchCatchError,
-  readHttpErrorMessage
-} from "../../srs/ai/aiHttpErrors"
+import { callChatCompletions } from "../../srs/ai/aiChatClient"
 import { sanitizeAiTextForOrcaInsert } from "../../srs/ai/aiQuickInteractMd"
 import { sanitizePublicError } from "../../srs/http/redactSecrets"
-import {
-  readResponseJsonLimited,
-  ResponseTooLargeError
-} from "../../srs/http/safeResponse"
 import { parseHtml } from "../epub/epubHtml"
 import { measurePlainText } from "./webChromeStrip"
 
@@ -97,118 +85,39 @@ export async function generateWebArticleSummary(options: {
     }
   }
 
-  const timeoutController = new AbortController()
-  const timeoutId = setTimeout(
-    () => timeoutController.abort(),
-    GENERATION_TIMEOUT_MS
-  )
-  const external = options.signal
-  const onExternalAbort = () => timeoutController.abort()
-  if (external) {
-    if (external.aborted) {
-      clearTimeout(timeoutId)
-      return { ok: false, code: "CANCELLED", error: "已取消 AI 分析" }
-    }
-    external.addEventListener("abort", onExternalAbort, { once: true })
+  const chat = await callChatCompletions({
+    pluginName: options.pluginName,
+    signal: options.signal,
+    fetchImpl: options.fetchImpl,
+    temperature: 0.3,
+    maxTokens: WEB_AI_SUMMARY_MAX_TOKENS,
+    // Web import summary should not spend tokens on native web_search.
+    allowWebSearch: false,
+    timeoutLabel: "AI 分析超时",
+    cancelledMessage: "已取消 AI 分析",
+    messages: [
+      { role: "system", content: buildWebSummarySystemPrompt() },
+      {
+        role: "user",
+        content: buildWebSummaryUserPrompt(options.title, plain)
+      }
+    ]
+  })
+
+  if (!chat.success) {
+    return { ok: false, code: chat.error.code, error: chat.error.message }
   }
 
-  const fetchImpl = options.fetchImpl ?? fetch
-
-  try {
-    const response = await fetchImpl(settings.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify(
-        buildChatCompletionsBody({
-          settings,
-          // Web import summary should not spend tokens on native web_search.
-          allowWebSearch: false,
-          temperature: 0.3,
-          maxTokens: WEB_AI_SUMMARY_MAX_TOKENS,
-          messages: [
-            { role: "system", content: buildWebSummarySystemPrompt() },
-            {
-              role: "user",
-              content: buildWebSummaryUserPrompt(options.title, plain)
-            }
-          ]
-        })
-      ),
-      signal: timeoutController.signal
-    })
-
-    if (!response.ok) {
-      const fallback = `AI 请求失败: ${response.status}`
-      const errorMessage = await readHttpErrorMessage(
-        response,
-        fallback,
-        settings.apiKey
-      )
-      return {
-        ok: false,
-        code: `HTTP_${response.status}`,
-        error: errorMessage
-      }
-    }
-
-    let data: { choices?: Array<{ message?: { content?: string } }> }
-    try {
-      data = await readResponseJsonLimited(response, AI_MAX_RESPONSE_BYTES)
-    } catch (error) {
-      if (error instanceof ResponseTooLargeError) {
-        return {
-          ok: false,
-          code: "RESPONSE_TOO_LARGE",
-          error: sanitizePublicError(
-            `AI 响应过大（上限 ${AI_MAX_RESPONSE_BYTES} 字节）`,
-            settings.apiKey
-          )
-        }
-      }
-      throw error
-    }
-
-    const raw = data.choices?.[0]?.message?.content
-    if (!raw || typeof raw !== "string" || !raw.trim()) {
-      return { ok: false, code: "EMPTY_RESPONSE", error: "AI 返回内容为空" }
-    }
-
-    const markdown = normalizeSummaryMarkdown(raw)
-    if (!markdown) {
-      return {
-        ok: false,
-        code: "EMPTY_SUMMARY",
-        error: "AI 总结解析后为空"
-      }
-    }
-
-    return { ok: true, markdown, model: settings.model }
-  } catch (error) {
-    if (isAbortError(error)) {
-      const byUser = external?.aborted === true
-      return {
-        ok: false,
-        code: byUser ? "CANCELLED" : "TIMEOUT",
-        error: byUser
-          ? "已取消 AI 分析"
-          : `AI 分析超时（${Math.round(GENERATION_TIMEOUT_MS / 1000)} 秒）`
-      }
-    }
-    const classified = classifyAiFetchCatchError(error)
+  const markdown = normalizeSummaryMarkdown(chat.content)
+  if (!markdown) {
     return {
       ok: false,
-      code: classified.code,
-      error: sanitizePublicError(classified.message, settings.apiKey)
-    }
-  } finally {
-    clearTimeout(timeoutId)
-    if (external) {
-      external.removeEventListener("abort", onExternalAbort)
+      code: "EMPTY_SUMMARY",
+      error: "AI 总结解析后为空"
     }
   }
+
+  return { ok: true, markdown, model: settings.model }
 }
 
 /**

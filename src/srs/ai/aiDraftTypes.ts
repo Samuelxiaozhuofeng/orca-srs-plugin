@@ -81,6 +81,15 @@ export const SOURCE_QUOTE_MIN_TARGET = 8
 
 export const GENERATION_TIMEOUT_MS = 40_000
 
+/**
+ * 制卡请求的源文本字符上限。
+ *
+ * 块解释（BLOCK_EXPLAIN_SOURCE_MAX）与快捷交互（QUICK_SELECTION_MAX）一直有上限，
+ * 唯独制卡把整块正文直接塞进 prompt：超长块会撞上游 context limit，
+ * 用户只看到一个裸的 HTTP 400 而不是可理解的提示。
+ */
+export const AI_CARD_SOURCE_MAX = 6_000
+
 /** Connection test timeout (registered test command) */
 export const CONNECTION_TEST_TIMEOUT_MS = 15_000
 
