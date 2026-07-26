@@ -53,8 +53,13 @@
 
 ### 用户界面
 
-9. **[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)**
+> ⭐ **[SRS_UI设计规范.md](SRS_UI设计规范.md)** — 2026-07-27 新增，**全插件 UI 的唯一设计基准**（Apple HIG）。
+> 基准来自 Flash Home，令牌实现在 `src/styles/srs-design-tokens.css`（由 `src/main.ts` 最先导入）。
+> 改动本节任何面板的样式前必须先读它：禁止硬编码圆角/间距/阴影/动效裸值，禁止用 React 内联样式做视觉表现（运行时动态几何量除外）。
+
+9. **[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)** ⭐ 2026-07-27 更新
    - 会话 UI、块加载三态、评分门控、宿主 chrome、会话进度
+   - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**：269 处内联样式迁移到 `srs-review.css` 的 `srs-review-*` / `srs-grade-*` 类，仅保留 7 处运行时几何量；评分按钮语义色 Again=danger / Hard=warning / Good=primary / Easy=success；`srs-review.css` 顶部宿主 DOM 兼容选择器原样保留
    - Basic 答案嵌入：CSS 精确隐藏卡根正文（无长期 MutationObserver）；显示答案后题目静态 `front`（单 live 卡根）；Tab/Enter 实例验证边界见该文档与 `问题经验.md`
    - 「卡片信息」面板统一为 `review-card/CardInfoPanel.tsx`（五渲染器共用；`showSchedulingDetails` prop）
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
@@ -103,7 +108,9 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-26 更新
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-27 更新
+    - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：新增「视觉规范（Apple HIG 基线）」小节；`ir-workspace.css` 全面令牌化——52 处裸圆角（4/5/6/7/8/9/10/12/14/16px 十档）归一到 `--srs-radius-*` 六档阶梯、18 处自定义阴影收敛为 `--srs-shadow-1/2/hero/overlay/pill`、37 处裸秒数动效改 `--srs-duration-*`；排版走 `--srs-text-*` / `--srs-weight-*` 且统计数字统一 `tabular-nums`；徽章/筛选 chip/次级按钮/托盘/空态按规范统一；IR 组件 ~150 处视觉内联样式迁移到 CSS 类（仅保留动作栏与正文宽度等运行时几何量）。**边界**：专注阅读保持块宿主（面板宿主深树死循环，见 [问题经验.md](问题经验.md)）；`*-host-chrome-managed` 作用域选择器原样保留；正文宽度仍是用户偏好（`irReaderWidthStorage`），未被 `--srs-measure` 覆盖；阅读纸张主题（mint/sepia/academic）改为每主题一份 `--ir-paper-*` 调色板（无法由 Orca 主题变量派生）
+    - 2026-07-27（死代码清理）：`IRCardList.tsx` / `IRStatistics.tsx`（零引用旧平面列表/统计 UI）已删，随之删除 `incrementalReadingManagerUtils.ts` 中仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats`，以及 `ir-workspace.css` 中仅服务于它们的 `.ir-cardlist-*` / `.ir-stats-card-*`（41 条规则）；资料库分组由 `workspace/irLibraryFilters.ts` 承担，`getIRDateGroup` / `IR_GROUP_ORDER` / `IRCardGroup` 仍在使用
     - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话装配只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
     - 2026-07-26（P0 低压调度优化）：已读间隔**迟到补偿**（`computeLatenessEffectiveBase`）；队列排序改**加性得分老化**（终结低优先级饥饿）+ 探索改**真随机采样**；`applyAutoPostpone` **接回主路径**（用户显式启动会话触发、当日一次守卫、反复推迟降权、会话头部 banner + 撤销，`runSessionStartAutoPostpone.ts`）
     - 2026-07-26：**Extract→Q&A / Direction 原子转化**（`convertExtractToQA` / `convertExtractToDirection`，与 Cloze 共用事务脚手架；会话 ⋯更多「问答」「方向」）
@@ -119,10 +126,12 @@
 26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-26 更新（repository backend-first）
     - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界；同 XHTML 多 fragment 逻辑章节展开与 DOM 切片
     - `epubBookRepository.getBlock` backend-first：manifest 写后读可信，resume 不再误判已导入章节
+    - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：向导 47 处内联样式迁移到 `ai-card-dialog.css` 尾部的 `.srs-import-dialog*` / `.srs-chapter-selector*` / `.srs-import-progress*` / `.srs-import-result*` 类，仅保留进度条宽度 1 处运行时几何量
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
 27. **[网页导入.md](网页导入.md)** ⭐ 2026-07-24 更新（可选 AI 总结）
     - Firecrawl 抓取、本地主文提取（Readability）、标题/链接/代码清洗、预览摘要与告警、去重原子写入、可选 Topic / 今天阅读
+    - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：对话框 23 处内联样式迁移到 `.srs-import-dialog*` / `.srs-web-preview*` 类
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
 
 28. **[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)** ⭐ 2026-07-26 更新 — **计划文档**（顶部有落地对照；Extract→Q&A/Direction 已标 landed）
@@ -132,7 +141,8 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-26 更新 — 制卡 + 块解释 + Quick AI 预览/直接写入/标签/合并结果块；提示词可绑 model；原生联网；`aiQuickInteract.ts` 拆为 `aiQuickPrompt.ts` + `aiQuickResultBlocks.ts` + 稳定入口 re-export
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-27 更新 — 制卡 + 块解释 + Quick AI 预览/直接写入/标签/合并结果块；提示词可绑 model；原生联网；`aiQuickInteract.ts` 拆为 `aiQuickPrompt.ts` + `aiQuickResultBlocks.ts` + 稳定入口 re-export
+    - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
 
@@ -165,6 +175,16 @@
 
 ## 更新记录
 
+- **2026-07-27（死代码清理）**：删除零引用的 `src/components/IRCardList.tsx` / `IRStatistics.tsx`，以及仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats` 与 `.ir-cardlist-*` / `.ir-stats-card-*` 样式；`IR_GROUP_DEFAULT_EXPANDED` 同为零引用但早于本次改动即已死，未在本次范围内处理。见 [渐进阅读.md](渐进阅读.md)
+- **2026-07-27（全插件 UI 设计基线落地 · 整合收口）**：新增 [SRS_UI设计规范.md](SRS_UI设计规范.md)（Apple HIG 基准，反推自 Flash Home）与令牌层 `src/styles/srs-design-tokens.css`（`src/main.ts` **最先**导入，含 `prefers-reduced-motion` 统一降级）。四个面板并行对齐后由整合方收口：
+  - **令牌层补档**：`--srs-text-display/subtitle/callout`、图标阶梯 `--srs-icon-sm/md/empty`（图标是几何量，与字号阶梯**刻意分离**）、`--srs-measure-narrow`、`--srs-duration-gauge`、状态色 `--srs-accent-warn/success/danger`
+  - **域色 vs 状态色分离**（写入规范硬性规则）：`--srs-accent-srs`/`-reading` 标识内容归属，`-warn`/`-success`/`-danger` 标识结果好坏。取值可能相同但**不得互相复用**，否则调色板变更会把「阅读」与「警告」绑死。收口时已把 IR 中 12 处误用域色表达调度状态的声明改回状态色（零视觉变化）
+  - **幽灵变量清理**：全域清除不存在的 Orca 变量。除 AI 对话框那批外，另修 `IRBookDialogMount.tsx`（`--orca-bg-primary, #ffffff` + `--orca-text-primary, #333`，暗色主题下浅底深字）与 `CardInfoPanel.tsx`（`--orca-color-success/warning/primary` 无数字后缀且无 fallback，卡片状态色实际从未生效；其回归测试曾把该 bug 固化为契约，已一并更新）
+  - **`danger` / `dangerous` 命名歧义**：官方主题文档示例写 `--orca-color-dangerous-5`，本仓库全域用 `--orca-color-danger-*`。缺失时 `var()` 静默失效，故令牌层危险色改走「danger → dangerous → 兜底字面量」回退链
+  - 验证：`tsc` 通过 · `npm test` 177 文件 / 1757 用例全绿 · `npm run build` 成功（`dist/style.css` 195.62 kB）
+  - **未做**：Orca 实例内运行时渲染验证（四条线共同盲区，建议集中验一次明暗主题）；困难卡列表项无 `tabIndex`，键盘不可达（已确认为可接受，`:focus-visible` 规则保留待用）
+- **2026-07-27（渐进阅读双面板视觉对齐）**：`ir-workspace.css`（2934→3600+ 行）全面令牌化并对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)——圆角十档收敛为六档阶梯、阴影统一为 `--srs-shadow-*` 五级、动效统一为 `--srs-duration-*` 三级、排版统一 `--srs-text-*`/`--srs-weight-*` 且统计数字加 `tabular-nums`；资料库概览细带改 Flash Home StatChip 形态、列表行改卡片基线（hover 升 `shadow-1` + `hairline-strong`）、时间导航带改筛选 Chip、`.ir-tag` 与来源/章节徽标统一徽章规格、工具栏统一次级按钮四态；专注阅读会话总结卡升英雄卡（`radius-xl` + `shadow-hero`）、动作栏/抽屉/次级浮层统一 `shadow-overlay` + `radius-lg`、启动页用 `--srs-measure` 收行长；三套阅读纸张主题改为「每主题一份 `--ir-paper-*` 调色板」（刻意纸色，无法由 Orca 主题派生），其余全表零裸十六进制；IR 组件视觉内联样式迁移到 CSS 类。**未动**：宿主挂载 / 渲染宿主 / 虚拟化 / 事件 / 数据流；专注阅读仍为块宿主（面板宿主深树同步死循环，见 [问题经验.md](问题经验.md)）；`*-host-chrome-managed` 作用域选择器原样保留。见 [渐进阅读.md](渐进阅读.md)
+- **2026-07-27（AI 对话框 / 导入向导视觉对齐）**：`ai-card-dialog.css`、`ai-quick-interact.css` 全面令牌化并对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `@media (prefers-color-scheme: dark)` / `.theme-dark` 硬编码分支——这两张表历史上引用了并不存在的 Orca 变量（`--orca-bg-primary`/`--orca-border`/`--orca-text-primary`/`--orca-color-primary`/`--orca-color-dangerous`/`--orca-accent-color`），实际永远落到十六进制 fallback，Orca 主题与系统主题不一致时会出现浅底深字；草稿卡/提示词卡/后台任务卡改为 Flash Home 卡片基线 + 左侧 4px 语义色条；按钮体系统一（主 CTA / 次级 / 安静，四态 + `primary-5` 焦点环）；EPUB 与网页导入向导的 70 处内联样式迁移为 `.srs-import-dialog*` 等 CSS 类，仅保留进度条宽度 1 处运行时几何量。见 [SRS_AI模块.md](SRS_AI模块.md)、[EPUB导入.md](EPUB导入.md)、[网页导入.md](网页导入.md)
 - **2026-07-27（P0 低压调度优化）**：① SRS FSRS 启用 `enable_fuzz`（≥2.5 天间隔削峰分散，确定性播种保证预览=正式一致）；② SRS `SHORT_RELEARN_WINDOW_MS` 5→15 分钟 + `selectNewDueCardsForSession` 去重收窄为未处理部分 + pending 身份，修复「Review 卡评 Again 后本会话内永不回流」；③ IR 已读间隔增长补迟到补偿（`computeLatenessEffectiveBase`，仅普通路径非 SAC）；④ IR 时间盒队列排序从字典序改为加性得分老化（终结低优先级饥饿）+ 探索改真随机采样；⑤ IR `applyAutoPostpone` 接回主路径（用户显式启动会话触发、当日一次守卫、反复推迟降权、会话头部 banner + 撤销）。见 [SRS_记忆算法.md](SRS_记忆算法.md)、[SRS 动态复习队列.md](SRS%20动态复习队列.md)、[SRS_复习队列管理.md](SRS_复习队列管理.md)、[渐进阅读.md](渐进阅读.md)、[渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)、[记忆排期推送.md](记忆排期推送.md)
 - **2026-07-27（今日学习面板块 UI/UX 重塑）**：块渲染器 `SrsFlashcardHomeRenderer` 新增宿主 chrome 清理（`srs-flash-home-host-chrome-managed`：隐藏 bullet/handle/查询 Tab 引用·同标签·候选引用/查询视图）+ 默认 Wide View（均 fail-closed 于面板主视图）；`HomeSummaryBar` 动作区分主 CTA / 次级入口两行并新增「阅读资料库」入口（`openIRWorkspace({ mode:"library" })`）；`flashcard-home.css` 按 Apple 标准重做（居中最大宽度列、今日学习主卡片、iOS 分段时长控件、按钮层级）；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md)
 - **2026-07-26（cloze 撤销还原正文 + 广播总线）**：`createCloze` 快照 `originalContent`，`undoClozeCardCreation` 先 `setBlocksContent` 还原（防残留 fragment 编号错乱）；`srsBroadcastBus` 解决 Flash Home `already registered` 崩溃；见 [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)、[SRS_事件通信.md](SRS_事件通信.md)

@@ -35,14 +35,6 @@ export type IRCardGroup = {
   cards: IRCard[]
 }
 
-export type IRCardStats = {
-  total: number
-  newCount: number
-  overdueCount: number
-  todayCount: number
-  upcoming7Count: number
-}
-
 function toStartOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
@@ -61,58 +53,6 @@ export function getIRDateGroup(card: IRCard, now: Date = new Date()): IRDateGrou
   if (diffDays === 1) return "明天"
   if (diffDays <= 7) return "未来7天"
   return "7天后"
-}
-
-export function groupIRCardsByDate(cards: IRCard[], now: Date = new Date()): IRCardGroup[] {
-  const groups = new Map<IRDateGroupKey, IRCard[]>(IR_GROUP_ORDER.map(key => [key, []]))
-
-  for (const card of cards) {
-    const key = getIRDateGroup(card, now)
-    const target = groups.get(key)
-    if (target) {
-      target.push(card)
-    }
-  }
-
-  return IR_GROUP_ORDER
-    .map(key => {
-      const groupCards = groups.get(key) ?? []
-      groupCards.sort((a, b) => a.due.getTime() - b.due.getTime())
-      return {
-        key,
-        title: key,
-        cards: groupCards
-      }
-    })
-    .filter(group => group.cards.length > 0)
-}
-
-export function calculateIRStats(cards: IRCard[], now: Date = new Date()): IRCardStats {
-  let newCount = 0
-  let overdueCount = 0
-  let todayCount = 0
-  let upcoming7Count = 0
-
-  for (const card of cards) {
-    const group = getIRDateGroup(card, now)
-    if (group === "新卡") {
-      newCount += 1
-    } else if (group === "已逾期") {
-      overdueCount += 1
-    } else if (group === "今天") {
-      todayCount += 1
-    } else if (group === "明天" || group === "未来7天") {
-      upcoming7Count += 1
-    }
-  }
-
-  return {
-    total: cards.length,
-    newCount,
-    overdueCount,
-    todayCount,
-    upcoming7Count
-  }
 }
 
 // ======================================================================
