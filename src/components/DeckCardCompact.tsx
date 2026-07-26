@@ -21,102 +21,36 @@ export default function DeckCardCompact({ deck, onViewDeck, onReviewDeck }: Deck
   }
 
   return (
-    <div
-      onClick={handleClick}
-      style={{
-        border: "1px solid var(--orca-color-border-1)",
-        borderRadius: "8px",
-        padding: "16px",
-        backgroundColor: "var(--orca-color-bg-1)",
-        cursor: "pointer",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-        transition: "all 0.2s ease"
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--orca-color-bg-2)"
-        e.currentTarget.style.borderColor = "var(--orca-color-primary-4)"
-        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--orca-color-bg-1)"
-        e.currentTarget.style.borderColor = "var(--orca-color-border-1)"
-        e.currentTarget.style.boxShadow = "none"
-      }}
-    >
+    <div className="srs-deck-card-compact" onClick={handleClick}>
       {/* 卡组名称 */}
-      <div style={{ 
-        fontSize: "16px", 
-        fontWeight: 600, 
-        color: "var(--orca-color-text-1)",
-        marginBottom: "4px"
-      }}>
+      <div className="srs-deck-card-compact__name">
         {deck.name}
       </div>
 
       {/* 统计信息 */}
-      <div style={{ 
-        display: "flex", 
-        gap: "12px",
-        fontSize: "13px",
-        color: "var(--orca-color-text-2)"
-      }}>
+      <div className="srs-deck-card-compact__stats">
         {dueCount > 0 && (
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center",
-            gap: "4px"
-          }}>
-            <span style={{ 
-              width: "6px", 
-              height: "6px", 
-              borderRadius: "50%", 
-              backgroundColor: "var(--orca-color-warning-5)" 
-            }} />
+          <div className="srs-deck-card-compact__stat">
+            <span className="srs-deck-card-compact__dot srs-deck-card-compact__dot--due" />
             <span>{dueCount} 待复习</span>
           </div>
         )}
         {deck.newCount > 0 && (
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center",
-            gap: "4px"
-          }}>
-            <span style={{ 
-              width: "6px", 
-              height: "6px", 
-              borderRadius: "50%", 
-              backgroundColor: "var(--orca-color-primary-5)" 
-            }} />
+          <div className="srs-deck-card-compact__stat">
+            <span className="srs-deck-card-compact__dot srs-deck-card-compact__dot--new" />
             <span>{deck.newCount} 新卡</span>
           </div>
         )}
         {dueCount === 0 && deck.newCount === 0 && (
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center",
-            gap: "4px",
-            color: "var(--orca-color-success-6)"
-          }}>
-            <span style={{ 
-              width: "6px", 
-              height: "6px", 
-              borderRadius: "50%", 
-              backgroundColor: "var(--orca-color-success-5)" 
-            }} />
+          <div className="srs-deck-card-compact__stat srs-deck-card-compact__stat--done">
+            <span className="srs-deck-card-compact__dot srs-deck-card-compact__dot--done" />
             <span>已完成</span>
           </div>
         )}
       </div>
 
       {/* 总数 */}
-      <div style={{ 
-        fontSize: "12px", 
-        color: "var(--orca-color-text-3)",
-        paddingTop: "8px",
-        borderTop: "1px solid var(--orca-color-border-1)"
-      }}>
+      <div className="srs-deck-card-compact__total">
         共 {deck.totalCount} 张卡片
       </div>
 
@@ -125,12 +59,7 @@ export default function DeckCardCompact({ deck, onViewDeck, onReviewDeck }: Deck
         <Button
           variant="solid"
           onClick={handleReview}
-          style={{
-            width: "100%",
-            padding: "8px",
-            fontSize: "13px",
-            marginTop: "4px"
-          }}
+          className="srs-deck-card-compact__review"
         >
           开始复习
         </Button>

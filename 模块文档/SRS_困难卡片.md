@@ -108,6 +108,35 @@ interface DifficultCardsStats {
 
 列表 key 含 `id / clozeNumber / directionType / listItemId`，避免变体冲突。
 
+## 视觉规范
+
+> **唯一验收标准**：[SRS_UI设计规范.md](SRS_UI设计规范.md)（令牌真源 `src/styles/srs-design-tokens.css`，基准实现 `src/styles/flashcard-home.css`）。
+
+2026-07-27 起 `DifficultCardsView.tsx` **不再使用内联样式做视觉表现**，全部迁移到 `flashcard-home.css` 的 `/* ---------- Difficult cards view ---------- */` 小节，类名前缀 `.srs-difficult-*`：
+
+| 元素 | 类名 | 基线（规范第四节） |
+| ---- | ---- | ------------------ |
+| 根容器 | `.srs-difficult-cards` | 纵向列，`gap: --srs-space-4`；外层宽度由 `.srs-difficult-cards-view`（`--srs-measure`）约束 |
+| 头部 | `.srs-difficult-cards__header` / `__back` / `__title` / `__title-icon` / `__count` / `__review` | 与 `CardListView` 面包屑同形（`heading/600` 标题 + 次级按钮） |
+| 说明托盘 | `.srs-difficult-cards__intro` / `__intro-lead` / `__intro-list` | 托盘 Tray：`--srs-surface-sunken` + hairline + `--srs-radius-lg` |
+| 筛选 Chip | 复用 `.srs-filter-chip` / `.srs-filter-chip--active` | 与 Deck 卡片列表同一形态（pill + primary 选中态）；不再按原因分色 |
+| 列表托盘 | 复用 `.srs-card-list-frame` | 与 Deck 下钻列表一致 |
+| 单卡 | `.srs-difficult-card` + `__header` / `__deck` / `__preview` / `__footer` / `__stat` | 卡片基线：`surface-base` + hairline + `radius-lg` + `shadow-1`，hover 升 `shadow-2` |
+| 原因徽章 | `.srs-difficult-badge` + `--again/--lapses/--difficulty/--multiple` | 徽章 Badge：`radius-pill`、`2px 8px`、`micro/500` |
+| Cloze / 方向标记 | 复用 `.srs-card-badge srs-card-badge--meta` | 与 `CardListItem` 一致 |
+| 空 / 加载 / 上限 | `.srs-difficult-cards__empty(-icon/-title/-hint)`、`.srs-flash-home-state`、`.srs-card-list-loader`、`.srs-difficult-cards__cap` | 托盘内居中，`min-height 120`，灰字 |
+
+原因语义色（`getDifficultReasonTone` → 类名后缀，**不再返回十六进制**）：
+
+| 原因 | tone | 颜色令牌 |
+| ---- | ---- | -------- |
+| `high_again_rate` | `again` | `--srs-accent-due`（danger） |
+| `high_lapses` | `lapses` | `--orca-color-warning-6` |
+| `high_difficulty` | `difficulty` | `--orca-color-primary-6`（Orca 调色板无紫色档） |
+| `multiple` | `multiple` | `--srs-accent-due` + `--srs-weight-semibold` |
+
+单卡 hover 由 CSS `:hover` 承担（原 `onMouseEnter/onMouseLeave` 内联改色已删除，交互行为不变）；`:active` / `:focus-visible` 已按规范补齐。
+
 ## 专项复习流程
 
 `SrsFlashcardHome.handleDifficultCardsReview`：

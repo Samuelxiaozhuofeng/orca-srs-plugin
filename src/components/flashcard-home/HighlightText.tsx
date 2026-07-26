@@ -14,13 +14,7 @@ export default function HighlightText({ text, query }: HighlightTextProps) {
   while (matchIndex !== -1) {
     if (matchIndex > cursor) parts.push(text.slice(cursor, matchIndex))
     parts.push(
-      <span key={matchIndex} style={{
-        backgroundColor: "var(--orca-color-warning-2)",
-        color: "var(--orca-color-warning-7)",
-        fontWeight: 600,
-        padding: "0 2px",
-        borderRadius: "2px"
-      }}>
+      <span key={matchIndex} className="srs-highlight">
         {text.slice(matchIndex, matchIndex + normalizedQuery.length)}
       </span>
     )

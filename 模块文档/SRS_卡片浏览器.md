@@ -210,6 +210,24 @@ CardListView
 
 实现：`homeStatNav.ts`、`HomeSummaryBar` → `handleStatClick`。
 
+## 视觉规范
+
+> **唯一验收标准**：[SRS_UI设计规范.md](SRS_UI设计规范.md)。令牌真源 `src/styles/srs-design-tokens.css`（由 `src/main.ts` **最先**导入）。
+
+`src/styles/flashcard-home.css` 是该规范的**基准实现**，同时是令牌层的第一个消费者（2026-07-27 完成令牌化）：
+
+- 圆角 / 间距 / 阴影 / 动效时长 / 字号 / 字重 / 内容测量一律取 `--srs-*` 令牌，**不再写裸数值**；仅少数无对应档的值保留字面量并就地注释说明（`18px`/`26px` 环形字号、`15px` 主 CTA 与次级按钮图标、`24px`/`48px` 空状态图标、`360px` 错误详情宽、`0.4s` 进度弧补间、`10px`/`14px`/`18px` 等非 4pt 栅格间距）。
+- 颜色只能来自 `--orca-color-*` 或令牌层派生的 `--srs-accent-*` / `--srs-surface-*` / `--srs-hairline*`；唯一允许的十六进制是 `--orca-color-warning-6` 的 fallback。
+- 状态语义统一：新卡 `--srs-accent-new`、今日到期 `--srs-accent-due`、积压 `--srs-accent-backlog`、未来 `--srs-accent-future`、阅读 `--srs-accent-reading`（左色条、徽章、卡组表计数列、`StatChip` 全部共用）。
+- **React 内联样式不再承载视觉表现**。`FlashHomePage` / `HomeSummaryBar` / `DeckListView` / `DeckRow` / `CardListView` / `CardListItem` / `HighlightText` / `TodayProgressRing` / `DifficultCardsView` / `SrsFlashcardHomeRenderer` / `SrsFlashcardHomePanel` / `SafeBlockPreview` / `DeckCardCompact` 均走 CSS 类。仅两类例外：
+  1. `TodayProgressRing` 的 `strokeDasharray` / `strokeDashoffset`（运行时几何量，必须留内联）；
+  2. `StatChip` 通过 `style={{ "--srs-stat-chip-tone": … }}` 把**令牌名**交接给样式表（不是硬编码颜色）。
+- 宿主 Button 无 `disabled` 属性，禁用态统一用 `.srs-btn-disabled`（`opacity/cursor`），替代原先的内联 `opacity`。
+- 所有自定义可点击元素（`.srs-home-linkbtn`、`.srs-home-nav-btn`、`.srs-filter-chip`、`.srs-stat-chip--clickable`、`.srs-today-learning__timebox-btn`、`.srs-deck-row__main`、`.srs-difficult-card`）具备 `:hover` / `:active` / `:disabled` / `:focus-visible` 四态，焦点环 `2px solid var(--orca-color-primary-5)` + `outline-offset: 2px`。
+- **禁止放宽**文件顶部的宿主 chrome 隐藏选择器（`.orca-block-editor.srs-flash-home-host-chrome-managed …`）与 `.srs-flash-home-host { display: contents }`；裸选择器会波及内嵌渲染。
+
+困难卡片视图的类名表见 [SRS_困难卡片.md](SRS_困难卡片.md#视觉规范)。
+
 ## 危险操作确认
 
 `CardListItem` 删除 / 重置经 `orca.components.ConfirmBox` 二次确认后再生效。删除确认文案按变体三分（`deleteConfirmText`，导出便于测试）：

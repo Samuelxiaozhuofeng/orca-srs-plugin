@@ -84,7 +84,7 @@ export default function TodayProgressRing({ state }: TodayProgressRingProps) {
             strokeDasharray={CIRCUMFERENCE}
             strokeDashoffset={dashOffset}
             transform={`rotate(-90 ${center} ${center})`}
-            style={{ transition: "stroke-dashoffset 0.4s ease" }}
+            className="srs-today-progress-ring__arc"
           />
         ) : null}
       </svg>

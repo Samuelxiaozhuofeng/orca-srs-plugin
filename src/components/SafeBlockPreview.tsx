@@ -68,11 +68,11 @@ export default function SafeBlockPreview({ blockId, panelId }: SafeBlockPreviewP
 
   // 添加安全检查
   if (!blockId) {
-    return <div style={{ color: "var(--orca-color-text-3)", fontSize: "12px" }}>无效的卡片</div>
+    return <div className="srs-block-preview--invalid">无效的卡片</div>
   }
 
   return (
-    <div ref={containerRef} style={{ minHeight: "20px" }}>
+    <div ref={containerRef} className="srs-block-preview">
       <Block
         panelId={virtualPanelId}
         blockId={blockId}

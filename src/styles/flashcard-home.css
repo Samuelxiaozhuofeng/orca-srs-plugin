@@ -1,6 +1,10 @@
 /**
  * Flash Home（今日学习）— Apple-grade layout & card list visual frame
- * Uses Orca CSS tokens so it adapts to light / dark theme.
+ *
+ * 本文件是 `模块文档/SRS_UI设计规范.md` 的**基准实现**，同时是设计令牌的第一个消费者：
+ * 圆角 / 间距 / 阴影 / 动效 / 排版一律取自 `src/styles/srs-design-tokens.css`
+ * （由 `src/main.ts` 最先导入），禁止再写裸数值。颜色只能来自 `--orca-color-*`
+ * 或令牌层派生的 `--srs-accent-*` / `--srs-surface-*` / `--srs-hairline*`。
  */
 
 /* ---------- Host panel chrome (main block view only) ---------- */
@@ -31,11 +35,11 @@
 .srs-card-list-frame {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--orca-color-border-1);
-  background: var(--orca-color-bg-2);
+  gap: var(--srs-space-4);
+  padding: var(--srs-space-4);
+  border-radius: var(--srs-radius-lg);
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-sunken);
   box-sizing: border-box;
 }
 
@@ -45,14 +49,14 @@
   align-items: center;
   justify-content: center;
   min-height: 120px;
-  padding: 28px 16px;
+  padding: 28px var(--srs-space-4);
   color: var(--orca-color-text-3);
-  font-size: 13px;
+  font-size: var(--srs-text-secondary);
   text-align: center;
 }
 
 .srs-card-list-frame__count {
-  font-size: 12px;
+  font-size: var(--srs-text-caption);
   color: var(--orca-color-text-3);
   margin: 0 0 2px 2px;
 }
@@ -63,24 +67,20 @@
   display: flex;
   flex-direction: row;
   gap: 0;
-  background: var(--orca-color-bg-1);
-  border: 1px solid var(--orca-color-border-1);
-  border-radius: 12px;
+  background: var(--srs-surface-base);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
   overflow: hidden;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--srs-shadow-1);
   transition:
-    box-shadow 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.15s ease;
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-base) var(--srs-ease);
 }
 
 .srs-card-frame:hover {
-  border-color: var(--orca-color-border-2, var(--orca-color-border-1));
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.08),
-    0 8px 20px rgba(0, 0, 0, 0.08);
+  border-color: var(--srs-hairline-strong);
+  box-shadow: var(--srs-shadow-2);
 }
 
 /* Left status accent strip */
@@ -91,19 +91,19 @@
 }
 
 .srs-card-frame__accent--new {
-  background: var(--orca-color-primary-6);
+  background: var(--srs-accent-new);
 }
 
 .srs-card-frame__accent--today {
-  background: var(--orca-color-danger-6);
+  background: var(--srs-accent-due);
 }
 
 .srs-card-frame__accent--backlog {
-  background: var(--orca-color-success-6);
+  background: var(--srs-accent-backlog);
 }
 
 .srs-card-frame__accent--future {
-  background: var(--orca-color-text-3);
+  background: var(--srs-accent-future);
 }
 
 .srs-card-frame__body {
@@ -112,15 +112,15 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 14px var(--srs-space-4);
 }
 
 .srs-card-frame__header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--srs-space-2);
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--srs-text-caption);
   color: var(--orca-color-text-3);
   line-height: 1.4;
   min-width: 0;
@@ -141,21 +141,21 @@
 
 .srs-card-frame__preview {
   min-height: 28px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--orca-color-bg-2);
-  border: 1px solid var(--orca-color-border-1);
+  padding: 10px var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
   box-sizing: border-box;
 }
 
 .srs-card-frame__footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--srs-space-2);
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--srs-text-caption);
   color: var(--orca-color-text-3);
-  border-top: 1px solid var(--orca-color-border-1);
+  border-top: 1px solid var(--srs-hairline);
   padding-top: 10px;
   margin-top: 2px;
 }
@@ -171,7 +171,7 @@
 
 .srs-card-frame__actions {
   display: flex;
-  gap: 4px;
+  gap: var(--srs-space-1);
   flex-shrink: 0;
   align-items: center;
   margin-left: auto;
@@ -182,51 +182,51 @@
 .srs-card-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
+  padding: 2px var(--srs-space-2);
+  border-radius: var(--srs-radius-pill);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
   line-height: 1.4;
   white-space: nowrap;
 }
 
 .srs-card-badge--new {
-  background: var(--orca-color-primary-1, var(--orca-color-bg-2));
-  color: var(--orca-color-primary-6);
+  background: var(--orca-color-primary-1, var(--srs-surface-sunken));
+  color: var(--srs-accent-new);
 }
 
 .srs-card-badge--today {
-  background: var(--orca-color-bg-2);
-  color: var(--orca-color-danger-6);
+  background: var(--srs-surface-sunken);
+  color: var(--srs-accent-due);
 }
 
 .srs-card-badge--backlog {
-  background: var(--orca-color-bg-2);
-  color: var(--orca-color-success-6);
+  background: var(--srs-surface-sunken);
+  color: var(--srs-accent-backlog);
 }
 
 .srs-card-badge--future {
-  background: var(--orca-color-bg-2);
+  background: var(--srs-surface-sunken);
   color: var(--orca-color-text-2);
 }
 
 .srs-card-badge--meta {
-  background: var(--orca-color-bg-2);
+  background: var(--srs-surface-sunken);
   color: var(--orca-color-text-2);
 }
 
 .srs-card-badge--warn {
-  background: var(--orca-color-bg-2);
-  color: var(--orca-color-warning-6);
+  background: var(--srs-surface-sunken);
+  color: var(--srs-accent-warn);
 }
 
 /* ---------- Loader / end of list ---------- */
 
 .srs-card-list-loader {
   text-align: center;
-  padding: 16px;
+  padding: var(--srs-space-4);
   color: var(--orca-color-text-3);
-  font-size: 13px;
+  font-size: var(--srs-text-secondary);
 }
 
 /* ---------- Shell / page ---------- */
@@ -238,16 +238,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 36px 24px 56px;
-  background: var(--orca-color-bg-1);
-  font-family: var(
-    --orca-font-family,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    sans-serif
-  );
+  padding: 36px var(--srs-space-6) 56px;
+  background: var(--srs-surface-base);
+  font-family: var(--srs-font-family);
 }
 
 /* Shared centered content column — comfortable reading measure. */
@@ -255,13 +248,13 @@
 .srs-flash-home-view,
 .srs-difficult-cards-view {
   width: 100%;
-  max-width: 720px;
+  max-width: var(--srs-measure);
 }
 
 .srs-flash-home-page-inner {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--srs-space-6);
 }
 
 .srs-flash-home-state {
@@ -270,18 +263,19 @@
   justify-content: center;
   height: 100%;
   min-height: 200px;
-  font-size: 14px;
+  font-size: var(--srs-text-body);
   color: var(--orca-color-text-2);
 }
 
 .srs-flash-home-state--error {
   flex-direction: column;
-  gap: 12px;
-  padding: 24px;
+  gap: var(--srs-space-3);
+  padding: var(--srs-space-6);
+  text-align: center;
 }
 
 .srs-flash-home-state__error-text {
-  color: var(--orca-color-danger-5);
+  color: var(--srs-accent-danger);
 }
 
 /* ---------- Home summary + 今日学习 ---------- */
@@ -289,7 +283,7 @@
 .srs-home-summary {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--srs-space-4);
   align-items: stretch;
   width: 100%;
 }
@@ -300,49 +294,47 @@
   gap: 18px;
   align-items: center;
   padding: 30px 28px 26px;
-  border-radius: 20px;
-  border: 1px solid var(--orca-color-border-1);
-  background: var(--orca-color-bg-1);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 10px 30px rgba(0, 0, 0, 0.06);
+  border-radius: var(--srs-radius-xl);
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-hero);
   box-sizing: border-box;
 }
 
 .srs-today-learning__title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+  letter-spacing: var(--srs-tracking-wide);
   color: var(--orca-color-text-3);
 }
 
 .srs-today-learning__loading {
-  font-size: 13px;
+  font-size: var(--srs-text-secondary);
   color: var(--orca-color-text-3);
-  padding: 12px 0;
+  padding: var(--srs-space-3) 0;
 }
 
 .srs-today-learning__error {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  color: var(--orca-color-danger-5);
-  font-size: 14px;
+  gap: var(--srs-space-2);
+  color: var(--srs-accent-danger);
+  font-size: var(--srs-text-body);
   text-align: center;
 }
 
 .srs-today-learning__error-detail {
-  font-size: 12px;
+  font-size: var(--srs-text-caption);
   color: var(--orca-color-text-3);
-  max-width: 360px;
+  max-width: var(--srs-measure-narrow);
 }
 
 .srs-today-learning__partial {
-  font-size: 12px;
-  color: var(--orca-color-warning-6, #b78103);
+  font-size: var(--srs-text-caption);
+  color: var(--srs-accent-warn);
   text-align: center;
-  max-width: 420px;
+  max-width: var(--srs-measure-prose);
 }
 
 .srs-today-learning__hero {
@@ -350,7 +342,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: var(--srs-space-5);
   width: 100%;
 }
 
@@ -358,15 +350,26 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--srs-space-1);
 }
 
 /* ---- 环形进度 ---- */
 .srs-today-progress-ring {
   position: relative;
   flex: 0 0 auto;
+  /* 与 TodayProgressRing.tsx 的 SIZE 常量一致（组件固有几何量） */
   width: 84px;
   height: 84px;
+}
+
+.srs-today-progress-ring__arc {
+  transition: stroke-dashoffset var(--srs-duration-gauge) var(--srs-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .srs-today-progress-ring__arc {
+    transition: none;
+  }
 }
 
 .srs-today-progress-ring__center {
@@ -378,40 +381,40 @@
 }
 
 .srs-today-progress-ring__pct {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--srs-text-subtitle);
+  font-weight: var(--srs-weight-bold);
   color: var(--orca-color-text-1);
 }
 
 .srs-today-progress-ring__check {
-  font-size: 26px;
-  color: var(--orca-color-success-6);
+  font-size: var(--srs-text-display);
+  color: var(--srs-accent-success);
 }
 
 .srs-today-learning__remaining {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--srs-space-2);
 }
 
 .srs-today-learning__remaining-value {
-  font-size: 44px;
-  font-weight: 700;
+  font-size: var(--srs-text-hero);
+  font-weight: var(--srs-weight-bold);
   color: var(--orca-color-text-1);
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--srs-tracking-tight);
   font-variant-numeric: tabular-nums;
 }
 
 .srs-today-learning__remaining-label {
-  font-size: 14px;
+  font-size: var(--srs-text-body);
   color: var(--orca-color-text-3);
 }
 
 .srs-today-learning__breakdown,
 .srs-today-learning__eta,
 .srs-today-learning__completed {
-  font-size: 13px;
+  font-size: var(--srs-text-secondary);
   color: var(--orca-color-text-2);
 }
 
@@ -424,15 +427,15 @@
 .srs-today-learning__breakdown-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--srs-space-1);
 }
 
 .srs-today-learning__breakdown-item--srs {
-  color: var(--orca-color-primary-6);
+  color: var(--srs-accent-srs);
 }
 
 .srs-today-learning__breakdown-item--ir {
-  color: var(--orca-color-warning-6, #b78103);
+  color: var(--srs-accent-reading);
 }
 
 .srs-today-learning__breakdown-sep {
@@ -442,22 +445,22 @@
 .srs-today-learning__eta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--srs-space-1);
   color: var(--orca-color-text-3);
 }
 
 .srs-today-learning__done {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--orca-color-success-6);
-  padding: 8px 0;
+  font-size: var(--srs-text-title);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--srs-accent-success);
+  padding: var(--srs-space-2) 0;
 }
 
 .srs-today-learning__recommendation {
-  font-size: 13px;
+  font-size: var(--srs-text-secondary);
   color: var(--orca-color-text-2);
   text-align: center;
-  max-width: 420px;
+  max-width: var(--srs-measure-prose);
 }
 
 /* iOS-style segmented control: a track with a lifted selected pill. */
@@ -465,24 +468,24 @@
   display: inline-flex;
   gap: 3px;
   padding: 3px;
-  border-radius: 12px;
-  background: var(--orca-color-bg-2);
-  border: 1px solid var(--orca-color-border-1);
+  border-radius: var(--srs-radius-lg);
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
 }
 
 .srs-today-learning__timebox-btn {
   border: none;
   background: transparent;
   color: var(--orca-color-text-2);
-  border-radius: 9px;
+  border-radius: var(--srs-radius-md);
   padding: 7px 18px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-medium);
   cursor: pointer;
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
+    background-color var(--srs-duration-slow) var(--srs-ease),
+    color var(--srs-duration-slow) var(--srs-ease),
+    box-shadow var(--srs-duration-slow) var(--srs-ease);
 }
 
 .srs-today-learning__timebox-btn:hover:not(:disabled):not(
@@ -491,11 +494,20 @@
   color: var(--orca-color-text-1);
 }
 
+.srs-today-learning__timebox-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.srs-today-learning__timebox-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
 .srs-today-learning__timebox-btn--selected {
   color: var(--orca-color-text-1);
-  background: var(--orca-color-bg-1);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  background: var(--srs-surface-base);
+  font-weight: var(--srs-weight-semibold);
+  box-shadow: var(--srs-shadow-pill);
 }
 
 .srs-today-learning__timebox-btn:disabled {
@@ -507,16 +519,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--orca-color-danger-5);
+  gap: var(--srs-space-2);
+  font-size: var(--srs-text-caption);
+  color: var(--srs-accent-danger);
   text-align: center;
-  max-width: 420px;
+  max-width: var(--srs-measure-prose);
 }
 
 .srs-today-learning__resume-error-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--srs-space-2);
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -527,8 +539,8 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: 13px;
+  gap: var(--srs-space-1) var(--srs-space-2);
+  font-size: var(--srs-text-secondary);
 }
 
 .srs-home-summary__strip-sep {
@@ -543,9 +555,9 @@
 .srs-stat-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  gap: var(--srs-space-1);
+  padding: 3px var(--srs-space-2);
+  border-radius: var(--srs-radius-xs);
   border: 1px solid transparent;
   background: transparent;
   color: var(--orca-color-text-2);
@@ -558,7 +570,16 @@
 }
 
 .srs-stat-chip__value {
-  font-weight: 600;
+  font-weight: var(--srs-weight-semibold);
+}
+
+/*
+ * 语义色由调用方通过 `--srs-stat-chip-tone` 传入（新卡 = accent-new、今日到期 =
+ * accent-due、积压 = accent-backlog）。JSX 只交接令牌名，不写视觉声明。
+ */
+.srs-stat-chip__icon,
+.srs-stat-chip__value {
+  color: var(--srs-stat-chip-tone, inherit);
 }
 
 .srs-stat-chip--clickable {
@@ -566,13 +587,22 @@
   appearance: none;
   -webkit-appearance: none;
   transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease;
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease);
 }
 
 .srs-stat-chip--clickable:hover {
-  background: var(--orca-color-bg-2);
-  border-color: var(--orca-color-border-1);
+  background: var(--srs-surface-sunken);
+  border-color: var(--srs-hairline);
+}
+
+.srs-stat-chip--clickable:active {
+  transform: translateY(0.5px);
+}
+
+.srs-stat-chip--clickable:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .srs-stat-chip--clickable:focus-visible {
@@ -594,9 +624,18 @@
   min-width: 208px;
   justify-content: center !important;
   padding: 11px 30px !important;
-  border-radius: 12px !important;
-  font-size: 15px !important;
-  font-weight: 600 !important;
+  border-radius: var(--srs-radius-lg) !important;
+  font-size: var(--srs-text-callout) !important;
+  font-weight: var(--srs-weight-semibold) !important;
+}
+
+/*
+ * 宿主 orca.components.Button 不接受 disabled 属性，禁用态通过本类表达。
+ * 用 !important 覆盖宿主按钮自身样式，等价于原先的内联 opacity/cursor。
+ */
+.srs-btn-disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
 }
 
 /* Quiet inline action (重新开始) */
@@ -604,15 +643,24 @@
   border: none;
   background: transparent;
   color: var(--orca-color-primary-6);
-  font-size: 13px;
-  padding: 8px 12px;
-  border-radius: 8px;
+  font-size: var(--srs-text-secondary);
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--srs-duration-base) var(--srs-ease);
 }
 
 .srs-home-linkbtn:hover:not(:disabled) {
-  background: var(--orca-color-bg-2);
+  background: var(--srs-surface-sunken);
+}
+
+.srs-home-linkbtn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.srs-home-linkbtn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
 }
 
 .srs-home-linkbtn:disabled {
@@ -624,7 +672,7 @@
 .srs-home-summary__nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--srs-space-2);
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -633,32 +681,37 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--orca-color-border-1);
-  background: var(--orca-color-bg-1);
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-base);
   color: var(--orca-color-text-2);
-  border-radius: 10px;
+  border-radius: var(--srs-radius-md);
   padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-medium);
   cursor: pointer;
   transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.1s ease;
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
 }
 
 .srs-home-nav-btn i {
-  font-size: 15px;
+  font-size: var(--srs-icon-sm);
 }
 
 .srs-home-nav-btn:hover:not(:disabled) {
-  background: var(--orca-color-bg-2);
-  border-color: var(--orca-color-border-2, var(--orca-color-border-1));
+  background: var(--srs-surface-sunken);
+  border-color: var(--srs-hairline-strong);
 }
 
 .srs-home-nav-btn:active:not(:disabled) {
   transform: translateY(0.5px);
+}
+
+.srs-home-nav-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
 }
 
 .srs-home-nav-btn:disabled {
@@ -669,13 +722,13 @@
 /* 阅读资料库 — the prominent tonal entry */
 .srs-home-nav-btn--library {
   color: var(--orca-color-primary-6);
-  background: var(--orca-color-primary-1, var(--orca-color-bg-2));
+  background: var(--orca-color-primary-1, var(--srs-surface-sunken));
   border-color: transparent;
-  font-weight: 600;
+  font-weight: var(--srs-weight-semibold);
 }
 
 .srs-home-nav-btn--library:hover:not(:disabled) {
-  background: var(--orca-color-primary-2, var(--orca-color-bg-2));
+  background: var(--orca-color-primary-2, var(--srs-surface-sunken));
   border-color: transparent;
 }
 
@@ -691,7 +744,7 @@
 @media (max-width: 420px) {
   .srs-today-learning__hero {
     flex-direction: column;
-    gap: 8px;
+    gap: var(--srs-space-2);
   }
 
   .srs-today-learning__hero-main {
@@ -704,49 +757,72 @@
 .srs-card-list-view {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--srs-space-3);
 }
 
 .srs-card-list-view__header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--srs-space-3);
 }
 
 .srs-card-list-view__back {
-  font-size: 13px;
-  padding: 6px 12px;
+  font-size: var(--srs-text-secondary);
+  padding: 6px var(--srs-space-3);
 }
 
 .srs-card-list-view__title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
   color: var(--orca-color-text-1);
   flex: 1;
   min-width: 0;
 }
 
 .srs-card-list-view__review {
-  font-size: 13px;
-  padding: 6px 12px;
+  font-size: var(--srs-text-secondary);
+  padding: 6px var(--srs-space-3);
 }
 
 .srs-card-list-view__filters {
   display: flex;
-  gap: 8px;
+  gap: var(--srs-space-2);
   flex-wrap: wrap;
 }
 
 .srs-filter-chip {
-  padding: 6px 12px;
-  border-radius: 16px;
-  border: 1px solid var(--orca-color-border-1);
+  padding: 6px var(--srs-space-3);
+  border-radius: var(--srs-radius-pill);
+  border: 1px solid var(--srs-hairline);
   background: transparent;
   color: var(--orca-color-text-2);
-  font-size: 13px;
+  font-size: var(--srs-text-secondary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--srs-duration-slow) var(--srs-ease),
+    border-color var(--srs-duration-slow) var(--srs-ease),
+    color var(--srs-duration-slow) var(--srs-ease);
   font: inherit;
+}
+
+.srs-filter-chip:hover:not(:disabled):not(.srs-filter-chip--active) {
+  background: var(--srs-surface-sunken);
+  border-color: var(--srs-hairline-strong);
+  color: var(--orca-color-text-1);
+}
+
+.srs-filter-chip:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.srs-filter-chip:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-filter-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .srs-filter-chip--active {
@@ -756,8 +832,8 @@
 }
 
 .srs-card-action {
-  font-size: 12px !important;
-  padding: 4px 8px !important;
+  font-size: var(--srs-text-caption) !important;
+  padding: var(--srs-space-1) var(--srs-space-2) !important;
   min-width: auto !important;
 }
 
@@ -766,5 +842,621 @@
 }
 
 .srs-card-action--warn {
-  color: var(--orca-color-warning-6) !important;
+  color: var(--srs-accent-warn) !important;
+}
+
+.srs-card-action__icon {
+  margin-right: var(--srs-space-1);
+}
+
+/* ---------- Deck list view ---------- */
+
+.srs-deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-3);
+}
+
+.srs-deck-search {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-3);
+  background: var(--srs-surface-sunken);
+  border-radius: var(--srs-radius-sm);
+  border: 1px solid var(--srs-hairline);
+  box-sizing: border-box;
+}
+
+.srs-deck-search__icon {
+  font-size: var(--srs-text-heading);
+  color: var(--orca-color-text-3);
+}
+
+.srs-deck-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--orca-color-text-1);
+  font-family: inherit;
+  font-size: var(--srs-text-body);
+  padding: var(--srs-space-1) 0;
+}
+
+.srs-deck-search__clear {
+  padding: var(--srs-space-1) !important;
+  min-width: auto !important;
+  font-size: var(--srs-text-body) !important;
+  color: var(--orca-color-text-3) !important;
+}
+
+.srs-deck-list__match-count {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  padding-left: 2px;
+}
+
+.srs-deck-table {
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-sm);
+  overflow: hidden;
+}
+
+.srs-deck-table__head {
+  display: flex;
+  align-items: center;
+  padding: 10px var(--srs-space-3);
+  background: var(--srs-surface-sunken);
+  border-bottom: 1px solid var(--srs-hairline);
+}
+
+.srs-deck-table__col-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-text-2);
+}
+
+.srs-deck-table__col-count {
+  width: 60px;
+  text-align: center;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+}
+
+.srs-deck-table__col-count--new {
+  color: var(--srs-accent-new);
+}
+
+.srs-deck-table__col-count--today {
+  color: var(--srs-accent-due);
+}
+
+.srs-deck-table__col-count--backlog {
+  color: var(--srs-accent-backlog);
+}
+
+.srs-deck-table__col-actions {
+  width: 64px;
+}
+
+.srs-deck-table__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.srs-deck-table__empty {
+  text-align: center;
+  padding: var(--srs-space-6);
+  color: var(--orca-color-text-3);
+  font-size: var(--srs-text-secondary);
+}
+
+.srs-deck-table__empty-icon {
+  margin-bottom: var(--srs-space-2);
+  font-size: var(--srs-icon-md);
+  opacity: 0.5;
+}
+
+.srs-deck-table__empty-hint {
+  font-size: var(--srs-text-caption);
+  margin-top: var(--srs-space-1);
+  opacity: 0.7;
+}
+
+.srs-deck-table__loader {
+  padding: var(--srs-space-3);
+  text-align: center;
+  color: var(--orca-color-text-3);
+  font-size: var(--srs-text-secondary);
+}
+
+.srs-deck-table__loader--complete {
+  padding: var(--srs-space-2);
+}
+
+.srs-deck-table__loader-done {
+  opacity: 0.6;
+}
+
+/* ---------- Deck row ---------- */
+
+.srs-deck-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.srs-deck-row__main {
+  display: flex;
+  align-items: center;
+  padding: 10px var(--srs-space-3);
+  background: var(--srs-surface-base);
+  border-radius: var(--srs-radius-xs);
+  cursor: pointer;
+  transition: background-color var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-deck-row__main:hover {
+  background: var(--srs-surface-sunken);
+}
+
+.srs-deck-row__main:active {
+  transform: translateY(0.5px);
+}
+
+.srs-deck-row__main:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-deck-row__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--srs-text-body);
+  color: var(--orca-color-text-1);
+  font-weight: var(--srs-weight-medium);
+}
+
+.srs-deck-row__note {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.srs-deck-row__count {
+  width: 60px;
+  text-align: center;
+  font-size: var(--srs-text-body);
+  color: var(--orca-color-text-4, var(--orca-color-text-3));
+}
+
+.srs-deck-row__count--new.srs-deck-row__count--active {
+  color: var(--srs-accent-new);
+}
+
+.srs-deck-row__count--today.srs-deck-row__count--active {
+  color: var(--srs-accent-due);
+}
+
+.srs-deck-row__count--backlog.srs-deck-row__count--active {
+  color: var(--srs-accent-backlog);
+}
+
+.srs-deck-row__actions {
+  width: 64px;
+  text-align: center;
+  display: flex;
+  gap: var(--srs-space-1);
+}
+
+.srs-deck-row__action {
+  padding: var(--srs-space-1) !important;
+  min-width: auto !important;
+  opacity: 0.7;
+}
+
+.srs-deck-row__action--disabled {
+  opacity: 0.3;
+}
+
+.srs-deck-row__action--enabled {
+  opacity: 1;
+}
+
+.srs-deck-row__note-editor {
+  padding: var(--srs-space-2) var(--srs-space-3);
+  background: var(--srs-surface-sunken);
+  border-radius: var(--srs-radius-xs);
+  margin-top: var(--srs-space-1);
+}
+
+.srs-deck-row__note-editor-row {
+  display: flex;
+  gap: var(--srs-space-2);
+  align-items: center;
+}
+
+.srs-deck-row__note-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--srs-space-1) var(--srs-space-2);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-space-1);
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-1);
+  font-family: inherit;
+  font-size: var(--srs-text-secondary);
+}
+
+.srs-deck-row__note-input:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-deck-row__note-btn {
+  font-size: var(--srs-text-caption) !important;
+  padding: var(--srs-space-1) var(--srs-space-2) !important;
+}
+
+/* ---------- Search highlight ---------- */
+
+.srs-highlight {
+  background: var(--orca-color-warning-2);
+  color: var(--orca-color-warning-7);
+  font-weight: var(--srs-weight-semibold);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* ---------- Legacy panel wrapper (SrsFlashcardHomePanel) ---------- */
+
+.srs-flashcard-home-panel {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---------- Block previews ---------- */
+
+.srs-block-preview {
+  min-height: 20px;
+}
+
+.srs-block-preview--invalid {
+  color: var(--orca-color-text-3);
+  font-size: var(--srs-text-caption);
+}
+
+.srs-block-text-preview__fallback {
+  color: var(--orca-color-text-3);
+  font-size: var(--srs-text-secondary);
+}
+
+.srs-block-text-preview__text {
+  font-size: var(--srs-text-body);
+  color: var(--orca-color-text-1);
+  line-height: 1.5;
+}
+
+/* ---------- Compact deck card (grid mode, currently unmounted) ---------- */
+
+.srs-deck-card-compact {
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  padding: var(--srs-space-4);
+  background: var(--srs-surface-base);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-3);
+  box-shadow: var(--srs-shadow-1);
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    box-shadow var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-deck-card-compact:hover {
+  background: var(--srs-surface-sunken);
+  border-color: var(--srs-hairline-strong);
+  box-shadow: var(--srs-shadow-2);
+}
+
+.srs-deck-card-compact:active {
+  transform: translateY(0.5px);
+}
+
+.srs-deck-card-compact:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-deck-card-compact__name {
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-text-1);
+  margin-bottom: var(--srs-space-1);
+}
+
+.srs-deck-card-compact__stats {
+  display: flex;
+  gap: var(--srs-space-3);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+}
+
+.srs-deck-card-compact__stat {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+}
+
+.srs-deck-card-compact__stat--done {
+  color: var(--srs-accent-success);
+}
+
+.srs-deck-card-compact__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--srs-radius-pill);
+}
+
+.srs-deck-card-compact__dot--due {
+  background: var(--orca-color-warning-5);
+}
+
+.srs-deck-card-compact__dot--new {
+  background: var(--orca-color-primary-5);
+}
+
+.srs-deck-card-compact__dot--done {
+  background: var(--orca-color-success-5);
+}
+
+.srs-deck-card-compact__total {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  padding-top: var(--srs-space-2);
+  border-top: 1px solid var(--srs-hairline);
+}
+
+.srs-deck-card-compact__review {
+  width: 100%;
+  padding: var(--srs-space-2) !important;
+  font-size: var(--srs-text-secondary) !important;
+  margin-top: var(--srs-space-1);
+}
+
+/* ---------- Difficult cards view ---------- */
+
+.srs-difficult-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-4);
+}
+
+.srs-difficult-cards__header {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-3);
+}
+
+.srs-difficult-cards__back,
+.srs-difficult-cards__review {
+  font-size: var(--srs-text-secondary);
+  padding: 6px var(--srs-space-3);
+}
+
+.srs-difficult-cards__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-text-1);
+}
+
+.srs-difficult-cards__title-icon {
+  color: var(--srs-accent-due);
+}
+
+.srs-difficult-cards__count {
+  font-size: var(--srs-text-body);
+  font-weight: var(--srs-weight-regular);
+  color: var(--orca-color-text-3);
+}
+
+/* 说明托盘 */
+.srs-difficult-cards__intro {
+  padding: var(--srs-space-3);
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+.srs-difficult-cards__intro-lead {
+  margin: 0;
+}
+
+.srs-difficult-cards__intro-list {
+  margin: var(--srs-space-2) 0 0 0;
+  padding-left: var(--srs-space-5);
+}
+
+.srs-difficult-cards__filters {
+  display: flex;
+  gap: var(--srs-space-2);
+  flex-wrap: wrap;
+}
+
+/* 困难原因语义色（Orca 调色板无紫色档，难度较高改用 primary） */
+.srs-difficult-reason--again {
+  color: var(--srs-accent-due);
+}
+
+.srs-difficult-reason--lapses {
+  color: var(--srs-accent-warn);
+}
+
+.srs-difficult-reason--difficulty {
+  color: var(--orca-color-primary-6);
+}
+
+/* 单张困难卡：与 Flash Home 卡片基线一致 */
+.srs-difficult-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  padding: 14px var(--srs-space-4);
+  background: var(--srs-surface-base);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  box-shadow: var(--srs-shadow-1);
+  cursor: pointer;
+  box-sizing: border-box;
+  transition:
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-difficult-card:hover {
+  border-color: var(--srs-hairline-strong);
+  box-shadow: var(--srs-shadow-2);
+}
+
+.srs-difficult-card:active {
+  transform: translateY(0.5px);
+}
+
+.srs-difficult-card:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-difficult-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* 原因徽章：pill + micro，底色取语义色的浅阶 */
+.srs-difficult-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  padding: 2px var(--srs-space-2);
+  border-radius: var(--srs-radius-pill);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.srs-difficult-badge__icon {
+  font-size: var(--srs-text-micro);
+}
+
+.srs-difficult-badge--again {
+  background: var(--orca-color-danger-1, var(--srs-surface-sunken));
+  color: var(--srs-accent-due);
+}
+
+.srs-difficult-badge--lapses {
+  background: var(--orca-color-warning-1, var(--srs-surface-sunken));
+  color: var(--srs-accent-warn);
+}
+
+.srs-difficult-badge--difficulty {
+  background: var(--orca-color-primary-1, var(--srs-surface-sunken));
+  color: var(--orca-color-primary-6);
+}
+
+.srs-difficult-badge--multiple {
+  background: var(--orca-color-danger-1, var(--srs-surface-sunken));
+  color: var(--srs-accent-due);
+  font-weight: var(--srs-weight-semibold);
+}
+
+.srs-difficult-card__deck {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  min-width: 0;
+}
+
+.srs-difficult-card__preview {
+  min-height: 28px;
+  padding: 10px var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  box-sizing: border-box;
+}
+
+.srs-difficult-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  border-top: 1px solid var(--srs-hairline);
+  padding-top: 10px;
+}
+
+.srs-difficult-card__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  white-space: nowrap;
+}
+
+/* 空 / 加载 / 上限提示 */
+.srs-difficult-cards__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 28px var(--srs-space-4);
+  text-align: center;
+  color: var(--orca-color-text-3);
+}
+
+.srs-difficult-cards__empty-icon {
+  display: block;
+  font-size: var(--srs-icon-empty);
+  opacity: 0.5;
+  margin-bottom: var(--srs-space-3);
+}
+
+.srs-difficult-cards__empty-title {
+  font-size: var(--srs-text-body);
+  margin-bottom: var(--srs-space-2);
+}
+
+.srs-difficult-cards__empty-hint {
+  font-size: var(--srs-text-secondary);
+  opacity: 0.7;
+}
+
+.srs-difficult-cards__cap {
+  text-align: center;
+  padding: var(--srs-space-2);
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
 }

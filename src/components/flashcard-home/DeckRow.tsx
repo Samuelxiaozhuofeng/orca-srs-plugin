@@ -13,6 +13,12 @@ type DeckRowProps = {
   onNoteChange: (deckName: string, note: string) => void
 }
 
+/** 计数列类名：非零时取语义色（新卡 / 今日到期 / 积压），为零时降级为中性灰。 */
+function countClass(kind: "new" | "today" | "backlog", count: number): string {
+  const base = `srs-deck-row__count srs-deck-row__count--${kind}`
+  return count > 0 ? `${base} srs-deck-row__count--active` : base
+}
+
 export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck, onReviewDeck, onNoteChange }: DeckRowProps) {
   const [isEditingNote, setIsEditingNote] = useState(false)
   const [noteText, setNoteText] = useState(deck.note || "")
@@ -58,43 +64,16 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      <div
-        onClick={handleClick}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: "10px 12px",
-          backgroundColor: "var(--orca-color-bg-1)",
-          borderRadius: "6px",
-          cursor: "pointer",
-          transition: "background-color 0.15s ease"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--orca-color-bg-2)"
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--orca-color-bg-1)"
-        }}
-      >
+    <div className="srs-deck-row">
+      <div className="srs-deck-row__main" onClick={handleClick}>
         {/* 牌组名称 */}
-        <div style={{
-          flex: 1,
-          fontSize: "14px",
-          color: "var(--orca-color-text-1)",
-          fontWeight: 500
-        }}>
+        <div className="srs-deck-row__name">
           <div>
             <HighlightText text={deck.name} query={searchQuery} />
           </div>
           {deck.note && !isEditingNote && (
             <div
-              style={{
-                fontSize: "12px",
-                color: "var(--orca-color-text-3)",
-                marginTop: "2px",
-                cursor: "pointer"
-              }}
+              className="srs-deck-row__note"
               onClick={handleNoteClick}
               title="点击编辑备注"
             >
@@ -103,46 +82,27 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
           )}
         </div>
 
-        {/* 新卡 - 蓝色 */}
-        <div style={{
-          width: "60px",
-          textAlign: "center",
-          fontSize: "14px",
-          color: deck.newCount > 0 ? "#3b82f6" : "#9ca3af"
-        }}>
+        {/* 新卡 */}
+        <div className={countClass("new", deck.newCount)}>
           {deck.newCount}
         </div>
 
-        {/* 今日到期 - 红色 */}
-        <div style={{
-          width: "60px",
-          textAlign: "center",
-          fontSize: "14px",
-          color: deck.todayCount > 0 ? "#ef4444" : "#9ca3af"
-        }}>
+        {/* 今日到期 */}
+        <div className={countClass("today", deck.todayCount)}>
           {deck.todayCount}
         </div>
 
-        {/* 积压（已到期） - 绿色 */}
-        <div style={{
-          width: "60px",
-          textAlign: "center",
-          fontSize: "14px",
-          color: deck.overdueCount > 0 ? "#22c55e" : "#9ca3af"
-        }}>
+        {/* 积压（已到期） */}
+        <div className={countClass("backlog", deck.overdueCount)}>
           {deck.overdueCount}
         </div>
 
         {/* 操作按钮 */}
-        <div style={{ width: "64px", textAlign: "center", display: "flex", gap: "4px" }}>
+        <div className="srs-deck-row__actions">
           <Button
             variant="plain"
             onClick={handleNoteClick}
-            style={{
-              padding: "4px",
-              minWidth: "auto",
-              opacity: 0.7
-            }}
+            className="srs-deck-row__action"
             title={deck.note ? "编辑备注" : "添加备注"}
           >
             <i className="ti ti-note" />
@@ -150,11 +110,11 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
           <Button
             variant="plain"
             onClick={handleReview}
-            style={{
-              padding: "4px",
-              minWidth: "auto",
-              opacity: (dueCount > 0 || deck.newCount > 0) ? 1 : 0.3
-            }}
+            className={
+              dueCount > 0 || deck.newCount > 0
+                ? "srs-deck-row__action srs-deck-row__action--enabled"
+                : "srs-deck-row__action srs-deck-row__action--disabled"
+            }
             title="开始复习"
           >
             <i className="ti ti-player-play" />
@@ -164,41 +124,28 @@ export default function DeckRow({ deck, pluginName, searchQuery = "", onViewDeck
 
       {/* 备注编辑区域 */}
       {isEditingNote && (
-        <div style={{
-          padding: "8px 12px",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "6px",
-          marginTop: "4px"
-        }}>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        <div className="srs-deck-row__note-editor">
+          <div className="srs-deck-row__note-editor-row">
             <input
               type="text"
               value={noteText}
               onChange={handleNoteChange}
               placeholder="输入卡组备注..."
-              style={{
-                flex: 1,
-                padding: "4px 8px",
-                border: "1px solid var(--orca-color-border-1)",
-                borderRadius: "4px",
-                backgroundColor: "var(--orca-color-bg-1)",
-                color: "var(--orca-color-text-1)",
-                fontSize: "13px"
-              }}
+              className="srs-deck-row__note-input"
               onClick={(e) => e.stopPropagation()}
               autoFocus
             />
             <Button
               variant="plain"
               onClick={handleNoteCancel}
-              style={{ fontSize: "12px", padding: "4px 8px" }}
+              className="srs-deck-row__note-btn"
             >
               取消
             </Button>
             <Button
               variant="solid"
               onClick={handleNoteSave}
-              style={{ fontSize: "12px", padding: "4px 8px" }}
+              className="srs-deck-row__note-btn"
             >
               保存
             </Button>

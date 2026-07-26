@@ -108,7 +108,7 @@ export default function HomeSummaryBar({
             <Button
               variant="solid"
               onClick={actionBusy ? undefined : onRefresh}
-              style={{ opacity: actionBusy ? 0.5 : 1 }}
+              className={actionBusy ? "srs-btn-disabled" : undefined}
             >
               重试
             </Button>
@@ -247,7 +247,7 @@ export default function HomeSummaryBar({
                   <Button
                     variant="plain"
                     onClick={actionBusy ? undefined : onRetryResumeLoad}
-                    style={{ opacity: actionBusy ? 0.5 : 1 }}
+                    className={actionBusy ? "srs-btn-disabled" : undefined}
                   >
                     重试读取
                   </Button>
@@ -256,9 +256,9 @@ export default function HomeSummaryBar({
                     onClick={
                       actionBusy || !canStart ? undefined : onStartFresh
                     }
-                    style={{
-                      opacity: actionBusy || !canStart ? 0.5 : 1
-                    }}
+                    className={
+                      actionBusy || !canStart ? "srs-btn-disabled" : undefined
+                    }
                   >
                     开始新会话
                   </Button>
@@ -273,7 +273,7 @@ export default function HomeSummaryBar({
                   <Button
                     variant="plain"
                     onClick={actionBusy ? undefined : onRetryContinue}
-                    style={{ opacity: actionBusy ? 0.5 : 1 }}
+                    className={actionBusy ? "srs-btn-disabled" : undefined}
                   >
                     重试继续
                   </Button>
@@ -282,9 +282,9 @@ export default function HomeSummaryBar({
                     onClick={
                       actionBusy || !canStart ? undefined : onStartFresh
                     }
-                    style={{
-                      opacity: actionBusy || !canStart ? 0.5 : 1
-                    }}
+                    className={
+                      actionBusy || !canStart ? "srs-btn-disabled" : undefined
+                    }
                   >
                     开始新会话
                   </Button>
@@ -300,10 +300,6 @@ export default function HomeSummaryBar({
                   "srs-home-primary-btn" +
                   (primaryDisabled ? " srs-btn-disabled" : "")
                 }
-                style={{
-                  opacity: primaryDisabled ? 0.5 : 1,
-                  cursor: primaryDisabled ? "not-allowed" : "pointer"
-                }}
               >
                 {primaryLabel}
               </Button>
@@ -361,7 +357,7 @@ export default function HomeSummaryBar({
           icon="ti-sparkles"
           label="新卡"
           value={todayStats.newCount}
-          color="var(--orca-color-primary-6)"
+          color="var(--srs-accent-new)"
           onClick={onStatClick ? () => onStatClick("new") : undefined}
           title="查看全部新卡"
         />
@@ -370,7 +366,7 @@ export default function HomeSummaryBar({
           icon="ti-clock"
           label="今日到期"
           value={todayStats.todayCount}
-          color="var(--orca-color-danger-6)"
+          color="var(--srs-accent-due)"
           onClick={onStatClick ? () => onStatClick("today") : undefined}
           title="查看今日到期记忆卡"
         />
@@ -379,7 +375,7 @@ export default function HomeSummaryBar({
           icon="ti-inbox"
           label="积压"
           value={backlogCount}
-          color="var(--orca-color-success-6)"
+          color="var(--srs-accent-backlog)"
           onClick={onStatClick ? () => onStatClick("backlog") : undefined}
           title="查看积压记忆卡"
         />
@@ -402,13 +398,14 @@ type StatChipProps = {
 }
 
 function StatChip({ icon, label, value, color, onClick, title }: StatChipProps) {
+  // 语义色以 CSS 自定义属性交接给样式表（`--srs-stat-chip-tone`），
+  // JSX 不再写视觉声明；取值仍是设计令牌名，不是硬编码颜色。
+  const toneStyle = { "--srs-stat-chip-tone": color } as React.CSSProperties
   const content = (
     <>
-      <i className={`ti ${icon}`} style={{ color }} />
+      <i className={`ti ${icon} srs-stat-chip__icon`} />
       <span className="srs-stat-chip__label">{label}</span>
-      <span className="srs-stat-chip__value" style={{ color }}>
-        {value}
-      </span>
+      <span className="srs-stat-chip__value">{value}</span>
     </>
   )
   if (onClick) {
@@ -416,6 +413,7 @@ function StatChip({ icon, label, value, color, onClick, title }: StatChipProps) 
       <button
         type="button"
         className="srs-stat-chip srs-stat-chip--clickable"
+        style={toneStyle}
         onClick={onClick}
         title={title}
       >
@@ -424,7 +422,7 @@ function StatChip({ icon, label, value, color, onClick, title }: StatChipProps) 
     )
   }
   return (
-    <span className="srs-stat-chip" title={title}>
+    <span className="srs-stat-chip" style={toneStyle} title={title}>
       {content}
     </span>
   )

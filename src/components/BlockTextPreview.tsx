@@ -18,7 +18,7 @@ export default function BlockTextPreview({ blockId }: BlockTextPreviewProps) {
 
   if (!block) {
     return (
-      <span style={{ color: "var(--orca-color-text-3)", fontSize: "13px" }}>
+      <span className="srs-block-text-preview__fallback">
         卡片 #{String(blockId).slice(-6)}
       </span>
     )
@@ -31,18 +31,14 @@ export default function BlockTextPreview({ blockId }: BlockTextPreviewProps) {
   
   if (!cleanText) {
     return (
-      <span style={{ color: "var(--orca-color-text-3)", fontSize: "13px" }}>
+      <span className="srs-block-text-preview__fallback">
         （空白卡片）
       </span>
     )
   }
 
   return (
-    <span style={{ 
-      fontSize: "14px", 
-      color: "var(--orca-color-text-1)",
-      lineHeight: "1.5"
-    }}>
+    <span className="srs-block-text-preview__text">
       {cleanText}
     </span>
   )

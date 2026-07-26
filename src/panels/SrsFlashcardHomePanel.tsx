@@ -41,13 +41,6 @@ export default function SrsFlashcardHomePanel(props: PanelProps) {
     <div
       ref={rootRef}
       className="srs-flashcard-home-panel"
-      style={{
-        height: "100%",
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        minWidth: 0
-      }}
     >
       <SrsErrorBoundary componentName="闪卡主页" errorTitle="闪卡主页加载出错">
         <SrsFlashcardHome panelId={panelId} pluginName="srs-plugin" />

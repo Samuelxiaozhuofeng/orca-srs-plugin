@@ -76,36 +76,17 @@ export default function DeckListView({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="srs-deck-list">
       {/* 搜索栏 */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        padding: "12px",
-        backgroundColor: "var(--orca-color-bg-2)",
-        borderRadius: "8px",
-        border: "1px solid var(--orca-color-border-1)"
-      }}>
-        <i className="ti ti-search" style={{
-          fontSize: "16px",
-          color: "var(--orca-color-text-3)"
-        }} />
+      <div className="srs-deck-search">
+        <i className="ti ti-search srs-deck-search__icon" />
         <input
           ref={searchInputRef}
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="搜索卡组名称或备注内容..."
-          style={{
-            flex: 1,
-            border: "none",
-            outline: "none",
-            backgroundColor: "transparent",
-            color: "var(--orca-color-text-1)",
-            fontSize: "14px",
-            padding: "4px 0"
-          }}
+          className="srs-deck-search__input"
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               handleClearSearch()
@@ -116,12 +97,7 @@ export default function DeckListView({
           <Button
             variant="plain"
             onClick={handleClearSearch}
-            style={{
-              padding: "4px",
-              minWidth: "auto",
-              fontSize: "14px",
-              color: "var(--orca-color-text-3)"
-            }}
+            className="srs-deck-search__clear"
             title="清空搜索"
           >
             <i className="ti ti-x" />
@@ -130,88 +106,43 @@ export default function DeckListView({
       </div>
 
       {isSearching && filteredDecks.length > 0 && (
-        <div style={{
-          fontSize: "12px",
-          color: "var(--orca-color-text-3)",
-          paddingLeft: "2px"
-        }}>
+        <div className="srs-deck-list__match-count">
           匹配 {filteredDecks.length} 个卡组
         </div>
       )}
 
       {/* 牌组表格 */}
-      <div style={{
-        border: "1px solid var(--orca-color-border-1)",
-        borderRadius: "8px",
-        overflow: "hidden"
-      }}>
+      <div className="srs-deck-table">
         {/* 表头 */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          padding: "10px 12px",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderBottom: "1px solid var(--orca-color-border-1)"
-        }}>
-          <div style={{
-            flex: 1,
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "var(--orca-color-text-2)"
-          }}>
+        <div className="srs-deck-table__head">
+          <div className="srs-deck-table__col-name">
             牌组
           </div>
-          <div style={{
-            width: "60px",
-            textAlign: "center",
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "#3b82f6"
-          }}>
+          <div className="srs-deck-table__col-count srs-deck-table__col-count--new">
             新卡
           </div>
-          <div style={{
-            width: "60px",
-            textAlign: "center",
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "#ef4444"
-          }}>
+          <div className="srs-deck-table__col-count srs-deck-table__col-count--today">
             今日到期
           </div>
-          <div style={{
-            width: "60px",
-            textAlign: "center",
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "#22c55e"
-          }}>
+          <div className="srs-deck-table__col-count srs-deck-table__col-count--backlog">
             积压
           </div>
-          <div style={{ width: "64px" }} />
+          <div className="srs-deck-table__col-actions" />
         </div>
 
         {/* 牌组列表 */}
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className="srs-deck-table__body">
           {deckStats.decks.length === 0 ? (
-            <div style={{
-              textAlign: "center",
-              padding: "24px",
-              color: "var(--orca-color-text-3)"
-            }}>
+            <div className="srs-deck-table__empty">
               暂无牌组，请先创建卡片
             </div>
           ) : filteredDecks.length === 0 ? (
-            <div style={{
-              textAlign: "center",
-              padding: "24px",
-              color: "var(--orca-color-text-3)"
-            }}>
-              <div style={{ marginBottom: "8px" }}>
-                <i className="ti ti-search-off" style={{ fontSize: "24px", opacity: 0.5 }} />
+            <div className="srs-deck-table__empty">
+              <div className="srs-deck-table__empty-icon">
+                <i className="ti ti-search-off" />
               </div>
               <div>未找到匹配的卡组</div>
-              <div style={{ fontSize: "12px", marginTop: "4px", opacity: 0.7 }}>
+              <div className="srs-deck-table__empty-hint">
                 尝试搜索卡组名称或备注内容
               </div>
             </div>
@@ -232,17 +163,16 @@ export default function DeckListView({
               {/* 加载触发器 */}
               <div
                 ref={loaderRef}
-                style={{
-                  padding: hasMore ? "12px" : "8px",
-                  textAlign: "center",
-                  color: "var(--orca-color-text-3)",
-                  fontSize: "13px"
-                }}
+                className={
+                  hasMore
+                    ? "srs-deck-table__loader"
+                    : "srs-deck-table__loader srs-deck-table__loader--complete"
+                }
               >
                 {hasMore ? (
                   <span>加载更多... ({displayCount}/{filteredDecks.length})</span>
                 ) : filteredDecks.length > DECK_PAGE_SIZE ? (
-                  <span style={{ opacity: 0.6 }}>已加载全部 {filteredDecks.length} 个卡组</span>
+                  <span className="srs-deck-table__loader-done">已加载全部 {filteredDecks.length} 个卡组</span>
                 ) : null}
               </div>
             </>

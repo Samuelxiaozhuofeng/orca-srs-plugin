@@ -133,15 +133,7 @@ export default function SrsFlashcardHomeRenderer(props: RendererProps) {
   const renderContent = () => {
     if (isLoading) {
       return (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          minHeight: "200px",
-          fontSize: "14px",
-          color: "var(--orca-color-text-2)"
-        }}>
+        <div className="srs-flash-home-state srs-flash-home-state--loading">
           加载中...
         </div>
       )
@@ -149,17 +141,8 @@ export default function SrsFlashcardHomeRenderer(props: RendererProps) {
 
     if (errorMessage) {
       return (
-        <div style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
-          padding: "24px",
-          height: "100%",
-          justifyContent: "center",
-          alignItems: "center",
-          textAlign: "center"
-        }}>
-          <div style={{ color: "var(--orca-color-danger-5)" }}>
+        <div className="srs-flash-home-state srs-flash-home-state--error">
+          <div className="srs-flash-home-state__error-text">
             加载失败：{errorMessage}
           </div>
           <Button variant="solid" onClick={handleRetry}>

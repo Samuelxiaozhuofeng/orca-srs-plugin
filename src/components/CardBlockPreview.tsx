@@ -59,7 +59,7 @@ export default function CardBlockPreview({ blockId, panelId }: CardBlockPreviewP
 
   // 添加安全检查，确保 blockId 有效
   if (!blockId) {
-    return <div style={{ color: "var(--orca-color-text-3)", fontSize: "12px" }}>无效的卡片</div>
+    return <div className="srs-block-preview--invalid">无效的卡片</div>
   }
 
   return (

@@ -54,16 +54,22 @@ function getDifficultReasonText(reason: DifficultReason): string {
   }
 }
 
-function getDifficultReasonColor(reason: DifficultReason): string {
+/**
+ * 困难原因 → 语义修饰后缀（视觉在 `flashcard-home.css` 的 Difficult cards 小节）。
+ * 颜色一律走设计令牌，不再返回硬编码十六进制。
+ */
+function getDifficultReasonTone(
+  reason: DifficultReason
+): "again" | "lapses" | "difficulty" | "multiple" {
   switch (reason) {
     case "high_again_rate":
-      return "#ef4444"  // 红色
+      return "again"
     case "high_lapses":
-      return "#f59e0b"  // 橙色
+      return "lapses"
     case "high_difficulty":
-      return "#8b5cf6"  // 紫色
+      return "difficulty"
     case "multiple":
-      return "#dc2626"  // 深红色
+      return "multiple"
   }
 }
 
@@ -97,90 +103,49 @@ function DifficultCardItem({ info, panelId, onCardClick }: DifficultCardItemProp
     onCardClick(card.id)
   }
 
+  const tone = getDifficultReasonTone(reason)
+
   return (
-    <div
-      style={{
-        border: "1px solid var(--orca-color-border-1)",
-        borderRadius: "8px",
-        padding: "12px",
-        backgroundColor: "var(--orca-color-bg-1)",
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px",
-        cursor: "pointer",
-        transition: "all 0.2s ease"
-      }}
-      onClick={handleClick}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--orca-color-bg-2)"
-        e.currentTarget.style.borderColor = "var(--orca-color-primary-4)"
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--orca-color-bg-1)"
-        e.currentTarget.style.borderColor = "var(--orca-color-border-1)"
-      }}
-    >
+    <div className="srs-difficult-card" onClick={handleClick}>
       {/* 困难原因标签 */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px"
-      }}>
-        <span style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "4px",
-          padding: "2px 8px",
-          borderRadius: "12px",
-          fontSize: "12px",
-          fontWeight: 500,
-          backgroundColor: `${getDifficultReasonColor(reason)}20`,
-          color: getDifficultReasonColor(reason)
-        }}>
-          <i className={`ti ${getDifficultReasonIcon(reason)}`} style={{ fontSize: "12px" }} />
+      <div className="srs-difficult-card__header">
+        <span className={`srs-difficult-badge srs-difficult-badge--${tone}`}>
+          <i
+            className={`ti ${getDifficultReasonIcon(reason)} srs-difficult-badge__icon`}
+          />
           {getDifficultReasonText(reason)}
         </span>
-        <span style={{
-          fontSize: "12px",
-          color: "var(--orca-color-text-3)"
-        }}>
+        <span className="srs-difficult-card__deck">
           {card.deck}
         </span>
       </div>
 
       {/* 卡片内容预览 */}
-      <div style={{ minHeight: "24px" }}>
+      <div className="srs-difficult-card__preview">
         <SafeBlockPreview blockId={card.id} panelId={panelId} />
       </div>
 
       {/* 统计信息 */}
-      <div style={{
-        display: "flex",
-        gap: "16px",
-        fontSize: "12px",
-        color: "var(--orca-color-text-3)",
-        borderTop: "1px solid var(--orca-color-border-1)",
-        paddingTop: "8px"
-      }}>
-        <span title="最近10次复习中的Again次数">
-          <i className="ti ti-x" style={{ marginRight: "2px" }} />
+      <div className="srs-difficult-card__footer">
+        <span className="srs-difficult-card__stat" title="最近10次复习中的Again次数">
+          <i className="ti ti-x" />
           Again: {recentAgainCount}
         </span>
-        <span title="总遗忘次数">
-          <i className="ti ti-repeat" style={{ marginRight: "2px" }} />
+        <span className="srs-difficult-card__stat" title="总遗忘次数">
+          <i className="ti ti-repeat" />
           遗忘: {totalLapses}
         </span>
-        <span title="难度值 (1-10)">
-          <i className="ti ti-flame" style={{ marginRight: "2px" }} />
+        <span className="srs-difficult-card__stat" title="难度值 (1-10)">
+          <i className="ti ti-flame" />
           难度: {difficulty.toFixed(1)}
         </span>
         {card.clozeNumber && (
-          <span style={{ color: "var(--orca-color-primary-5)" }}>
+          <span className="srs-card-badge srs-card-badge--meta">
             填空 c{card.clozeNumber}
           </span>
         )}
         {card.directionType && (
-          <span style={{ color: card.directionType === "forward" ? "var(--orca-color-primary-5)" : "var(--orca-color-warning-5)" }}>
+          <span className="srs-card-badge srs-card-badge--meta">
             {card.directionType === "forward" ? "正向" : "反向"}
           </span>
         )}
@@ -327,45 +292,23 @@ export default function DifficultCardsView({
 
   if (isLoading) {
     return (
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "200px",
-        color: "var(--orca-color-text-2)"
-      }}>
+      <div className="srs-flash-home-state srs-flash-home-state--loading">
         加载中...
       </div>
     )
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div className="srs-difficult-cards">
       {/* 头部 */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "12px"
-      }}>
-        <Button variant="plain" onClick={onBack} style={{ fontSize: "13px", padding: "6px 12px" }}>
+      <div className="srs-difficult-cards__header">
+        <Button variant="plain" onClick={onBack} className="srs-difficult-cards__back">
           ← 返回
         </Button>
-        <div style={{
-          fontSize: "16px",
-          fontWeight: 600,
-          color: "var(--orca-color-text-1)",
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          gap: "8px"
-        }}>
-          <i className="ti ti-alert-triangle" style={{ color: "#ef4444" }} />
+        <div className="srs-difficult-cards__title">
+          <i className="ti ti-alert-triangle srs-difficult-cards__title-icon" />
           困难卡片
-          <span style={{
-            fontSize: "14px",
-            fontWeight: 400,
-            color: "var(--orca-color-text-3)"
-          }}>
+          <span className="srs-difficult-cards__count">
             ({difficultCards.length})
           </span>
         </div>
@@ -373,7 +316,7 @@ export default function DifficultCardsView({
           <Button
             variant="solid"
             onClick={handleStartReview}
-            style={{ fontSize: "13px", padding: "6px 12px" }}
+            className="srs-difficult-cards__review"
           >
             复习困难卡片
           </Button>
@@ -381,50 +324,34 @@ export default function DifficultCardsView({
       </div>
 
       {/* 说明文字 */}
-      <div style={{
-        padding: "12px",
-        backgroundColor: "var(--orca-color-bg-2)",
-        borderRadius: "8px",
-        fontSize: "13px",
-        color: "var(--orca-color-text-2)",
-        lineHeight: 1.6
-      }}>
-        <p style={{ margin: 0 }}>
+      <div className="srs-difficult-cards__intro">
+        <p className="srs-difficult-cards__intro-lead">
           困难卡片是指经常遗忘或难度较高的卡片。系统会自动识别以下类型：
         </p>
-        <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
-          <li><span style={{ color: "#ef4444" }}>频繁遗忘</span>：最近10次复习中按了3次以上 Again</li>
-          <li><span style={{ color: "#f59e0b" }}>遗忘次数多</span>：总遗忘次数达到3次以上</li>
-          <li><span style={{ color: "#8b5cf6" }}>难度较高</span>：难度值达到7以上</li>
+        <ul className="srs-difficult-cards__intro-list">
+          <li><span className="srs-difficult-reason--again">频繁遗忘</span>：最近10次复习中按了3次以上 Again</li>
+          <li><span className="srs-difficult-reason--lapses">遗忘次数多</span>：总遗忘次数达到3次以上</li>
+          <li><span className="srs-difficult-reason--difficulty">难度较高</span>：难度值达到7以上</li>
         </ul>
       </div>
 
       {/* 筛选标签 */}
-      <div style={{
-        display: "flex",
-        gap: "8px",
-        flexWrap: "wrap"
-      }}>
+      <div className="srs-difficult-cards__filters">
         {[
-          { key: "all" as FilterType, label: "全部", color: "var(--orca-color-text-2)" },
-          { key: "high_again_rate" as FilterType, label: "频繁遗忘", color: "#ef4444" },
-          { key: "high_lapses" as FilterType, label: "遗忘次数多", color: "#f59e0b" },
-          { key: "high_difficulty" as FilterType, label: "难度较高", color: "#8b5cf6" }
+          { key: "all" as FilterType, label: "全部" },
+          { key: "high_again_rate" as FilterType, label: "频繁遗忘" },
+          { key: "high_lapses" as FilterType, label: "遗忘次数多" },
+          { key: "high_difficulty" as FilterType, label: "难度较高" }
         ].map(tab => (
           <button
             key={tab.key}
+            type="button"
             onClick={() => setFilter(tab.key)}
-            style={{
-              padding: "6px 12px",
-              borderRadius: "16px",
-              border: "1px solid",
-              borderColor: filter === tab.key ? tab.color : "var(--orca-color-border-1)",
-              backgroundColor: filter === tab.key ? `${tab.color}15` : "transparent",
-              color: filter === tab.key ? tab.color : "var(--orca-color-text-2)",
-              fontSize: "13px",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
+            className={
+              filter === tab.key
+                ? "srs-filter-chip srs-filter-chip--active"
+                : "srs-filter-chip"
+            }
           >
             {tab.label} ({stats[tab.key]})
           </button>
@@ -432,22 +359,14 @@ export default function DifficultCardsView({
       </div>
 
       {/* 卡片列表 */}
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px"
-      }}>
+      <div className="srs-card-list-frame">
         {filteredCards.length === 0 ? (
-          <div style={{
-            textAlign: "center",
-            padding: "48px 24px",
-            color: "var(--orca-color-text-3)"
-          }}>
-            <i className="ti ti-mood-smile" style={{ fontSize: "48px", opacity: 0.5, display: "block", marginBottom: "12px" }} />
-            <div style={{ fontSize: "15px", marginBottom: "8px" }}>
+          <div className="srs-difficult-cards__empty">
+            <i className="ti ti-mood-smile srs-difficult-cards__empty-icon" />
+            <div className="srs-difficult-cards__empty-title">
               {filter === "all" ? "太棒了！没有困难卡片" : "没有符合条件的困难卡片"}
             </div>
-            <div style={{ fontSize: "13px", opacity: 0.7 }}>
+            <div className="srs-difficult-cards__empty-hint">
               继续保持良好的复习习惯
             </div>
           </div>
@@ -462,27 +381,12 @@ export default function DifficultCardsView({
               />
             ))}
             {displayCount < filteredCards.length ? (
-              <div
-                ref={loaderRef}
-                style={{
-                  textAlign: "center",
-                  padding: "12px",
-                  fontSize: "12px",
-                  color: "var(--orca-color-text-3)"
-                }}
-              >
+              <div ref={loaderRef} className="srs-card-list-loader">
                 滚动加载更多（已显示 {displayCount}/{filteredCards.length}）
               </div>
             ) : null}
             {totalMatching > DIFFICULT_CARDS_HARD_CAP ? (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "8px",
-                  fontSize: "12px",
-                  color: "var(--orca-color-text-3)"
-                }}
-              >
+              <div className="srs-difficult-cards__cap">
                 仅显示前 {DIFFICULT_CARDS_HARD_CAP} 张困难卡片（共 {totalMatching} 张匹配）。请用筛选缩小范围。
               </div>
             ) : null}

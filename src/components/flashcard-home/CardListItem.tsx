@@ -139,7 +139,7 @@ export default function CardListItem({
                     : "删除卡片（移除 Card 标记和 SRS 数据）"
                 }
               >
-                <i className="ti ti-trash" style={{ marginRight: "4px" }} />
+                <i className="ti ti-trash srs-card-action__icon" />
                 删除
               </Button>
             )}
@@ -162,7 +162,7 @@ export default function CardListItem({
                 className="srs-card-action srs-card-action--warn"
                 title="重置卡片为新卡状态"
               >
-                <i className="ti ti-refresh" style={{ marginRight: "4px" }} />
+                <i className="ti ti-refresh srs-card-action__icon" />
                 重置
               </Button>
             )}
@@ -174,7 +174,7 @@ export default function CardListItem({
             className="srs-card-action"
             title="在右侧面板打开编辑"
           >
-            <i className="ti ti-external-link" style={{ marginRight: "4px" }} />
+            <i className="ti ti-external-link srs-card-action__icon" />
             跳转
           </Button>
         </div>
