@@ -116,6 +116,69 @@ describe("shouldTrackFormalShortRelearn", () => {
       })
     ).toBe(false)
   })
+
+  // P0 回归：窗口必须覆盖 ts-fsrs 默认步长下 Review 卡 Again(10m) / 新卡 Hard(≈6m)，
+  // 否则被评分卡因超窗不进 pending，本会话内永远不短期回流。
+  it("窗口覆盖 10m relearning：Review 卡评 Again 后 due=now+10m 仍进 pending 跟踪", () => {
+    const TEN_MIN = 10 * 60 * 1000
+    // 旧 5 分钟窗口下 10m 会被判 out_of_window（false）；15 分钟窗口下应为 true
+    expect(TEN_MIN).toBeLessThanOrEqual(SHORT_RELEARN_WINDOW_MS)
+    expect(
+      shouldTrackFormalShortRelearn({
+        grade: "again",
+        dueTimeMs: now + TEN_MIN,
+        nowMs: now
+      })
+    ).toBe(true)
+
+    const reviewAgain = card({ id: 1 }, now + TEN_MIN)
+    const r = upsertPendingDueCard(
+      createEmptyPendingDueState(),
+      reviewAgain,
+      now + TEN_MIN,
+      now
+    )
+    expect(r.status).toBe("tracked")
+    expect(r.entry?.dueTime).toBe(now + TEN_MIN)
+  })
+
+  it("窗口覆盖 6m hard：新卡 Hard 后 due=now+6m 进 pending 跟踪", () => {
+    const SIX_MIN = 6 * 60 * 1000
+    expect(SIX_MIN).toBeLessThanOrEqual(SHORT_RELEARN_WINDOW_MS)
+    expect(
+      shouldTrackFormalShortRelearn({
+        grade: "hard",
+        dueTimeMs: now + SIX_MIN,
+        nowMs: now
+      })
+    ).toBe(true)
+    const r = upsertPendingDueCard(
+      createEmptyPendingDueState(),
+      card({ id: 2 }, now + SIX_MIN),
+      now + SIX_MIN,
+      now
+    )
+    expect(r.status).toBe("tracked")
+  })
+
+  it("窗口边界：恰好 15m 追踪，超过则 out_of_window", () => {
+    expect(SHORT_RELEARN_WINDOW_MS).toBe(15 * 60 * 1000)
+    expect(
+      shouldTrackFormalShortRelearn({
+        grade: "again",
+        dueTimeMs: now + SHORT_RELEARN_WINDOW_MS,
+        nowMs: now
+      })
+    ).toBe(true)
+    expect(
+      upsertPendingDueCard(
+        createEmptyPendingDueState(),
+        card({ id: 3 }, now + SHORT_RELEARN_WINDOW_MS + 1),
+        now + SHORT_RELEARN_WINDOW_MS + 1,
+        now
+      ).status
+    ).toBe("out_of_window")
+  })
 })
 
 describe("upsertPendingDueCard", () => {

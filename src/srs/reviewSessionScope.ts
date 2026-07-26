@@ -174,10 +174,49 @@ export function filterCardsBySessionScope(
 }
 
 /**
+ * 会话队列中「尚未处理」部分（当前卡及其之后，index >= currentIndex）的身份集合。
+ *
+ * 与 pendingDueRequeue.getUnprocessedTailCardKeys（[currentIndex+1..end]）语义相近但
+ * 略有区别：动态扫描把**当前正在复习的卡**也视为未处理（避免为正在展示的卡追加重复项），
+ * 故取 [currentIndex..end]；而 pending 定时器在评分推进后才重入，故其尾部是 [currentIndex+1..end]。
+ *
+ * index < currentIndex 的**已评分**卡不在此集合中——它们到期后允许通过动态扫描回流。
+ */
+export function collectUnprocessedQueueCardKeys(
+  queue: readonly ReviewCard[],
+  currentIndex: number
+): Set<string> {
+  const keys = new Set<string>()
+  const start = Math.max(0, currentIndex)
+  for (let i = start; i < queue.length; i++) {
+    keys.add(cardKeyFromReviewCard(queue[i]))
+  }
+  return keys
+}
+
+export type SelectNewDueCardsOptions = {
+  /**
+   * 当前正在复习的卡索引。用于区分「已评分头部」与「未处理部分」：
+   * 只有 index >= currentIndex 的队列项被排除，index < currentIndex 的已评分卡到期后可回流。
+   * 省略时默认 0（排除整个 existingQueue，等价于旧的"全队列去重"行为）。
+   */
+  currentIndex?: number
+  /**
+   * 已在短期重学 pending 跟踪中的身份。这些卡将由 pending 定时器负责重入，
+   * 扫描路径必须排除它们，避免与定时器双重入队（额度语义也由 pending 路径统一处理）。
+   */
+  pendingKeys?: ReadonlySet<string> | null
+}
+
+/**
  * 从「已构建的候选队列」中选出应追加到当前会话的正式根卡：
  * 1) 先按 FC-02 冻结 scope 过滤
- * 2) 再排除已在 existingQueue 中的 cardKey
- * 3) 再按会话冻结额度（FC-01）接纳：仅新身份消耗剩余新/旧额度；已接纳身份不重复消耗
+ * 2) 再排除去重集合：(a) 会话中**尚未处理**的队列部分（[currentIndex..end]）；
+ *    (b) 已在 pending 短期重学跟踪中的身份。
+ *    **已处理（已评分）的卡不在去重集合中**——到期后允许回流（P0：Review 卡评 Again 后回流）。
+ * 3) 再按会话冻结额度（FC-01）接纳：仅新身份消耗剩余新/旧额度；已接纳身份不重复消耗。
+ *    回流的已评分卡其 cardKey 早已在 budget.accepted*Keys 中，acceptFormalRoot 返回 true 但
+ *    不重复扣额度，故回流不会二次消耗每日额度。
  *
  * 自动刷新与手动刷新共用此 helper。budget === null 表示不限额（fixed）。
  * 注意：动态路径应对候选使用不限额的 buildReviewQueue，再由此处扣减剩余额度。
@@ -186,13 +225,18 @@ export function selectNewDueCardsForSession(
   candidates: readonly ReviewCard[],
   existingQueue: readonly ReviewCard[],
   scope: ReviewSessionScope,
-  budget: SessionRootCardBudget | null = null
+  budget: SessionRootCardBudget | null = null,
+  options: SelectNewDueCardsOptions = {}
 ): ReviewCard[] {
   const inScope = filterCardsBySessionScope(candidates, scope)
-  const existingKeys = new Set(
-    existingQueue.map((card) => cardKeyFromReviewCard(card))
-  )
-  return filterAndAcceptNewFormalRoots(inScope, existingKeys, budget)
+  const currentIndex = options.currentIndex ?? 0
+  const excludedKeys = collectUnprocessedQueueCardKeys(existingQueue, currentIndex)
+  if (options.pendingKeys) {
+    for (const key of options.pendingKeys) {
+      excludedKeys.add(key)
+    }
+  }
+  return filterAndAcceptNewFormalRoots(inScope, excludedKeys, budget)
 }
 
 /**

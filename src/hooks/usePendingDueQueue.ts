@@ -185,10 +185,17 @@ export function usePendingDueQueue({
     if (upsert.needsReschedule) reschedule()
   }
 
+  /**
+   * 当前正在 pending 短期重学跟踪中的身份集合快照。
+   * 供动态扫描（selectNewDueCardsForSession）排除，避免与 pending 定时器双重入队。
+   * 返回新 Set，调用方不得改动内部状态。
+   */
+  const getPendingKeys = (): Set<string> => new Set(stateRef.current.entries.keys())
+
   useEffect(() => () => {
     clearTimer()
     stateRef.current = deactivateAndClearPending(stateRef.current)
   }, [])
 
-  return { clear, reset, track }
+  return { clear, reset, track, getPendingKeys }
 }

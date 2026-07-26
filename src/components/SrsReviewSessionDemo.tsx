@@ -173,6 +173,12 @@ export default function SrsReviewSession({
   const sessionScopeRef = useRef(sessionScope)
   sessionScopeRef.current = sessionScope
   /**
+   * 当前卡索引 ref：60s 全库扫描 effect 依赖为 [pluginName]，其闭包会捕获陈旧 currentIndex。
+   * 动态扫描去重需按「已评分头部 / 未处理部分」边界排除卡片，必须读到最新索引，故经 ref 传入。
+   */
+  const currentIndexRef = useRef(currentIndex)
+  currentIndexRef.current = currentIndex
+  /**
    * 会话冻结额度状态：正式根卡已接纳集合不因 currentIndex 前移释放。
    * null = 不限额（fixed）。
    */
@@ -209,7 +215,8 @@ export default function SrsReviewSession({
   const {
     clear: clearPendingDueSession,
     reset: resetPendingDueSession,
-    track: trackPendingDueCard
+    track: trackPendingDueCard,
+    getPendingKeys: getPendingDueKeys
   } = usePendingDueQueue({
     queue,
     currentIndex,
@@ -484,13 +491,19 @@ export default function SrsReviewSession({
         
         // 使用 setQueue 的函数形式来获取最新的队列状态
         setQueue((prevQueue: ReviewCard[]) => {
+          // 去重只排除：未处理部分（[currentIndex..end]）+ pending 短期重学跟踪身份；
+          // 已评分头部（index < currentIndex）的到期卡允许回流（如 Review 卡评 Again 后 10m）
           const newCards = selectNewDueCardsForSession(
             newQueue,
             prevQueue,
             scope,
-            budget
+            budget,
+            {
+              currentIndex: currentIndexRef.current,
+              pendingKeys: getPendingDueKeys()
+            }
           )
-          
+
           if (newCards.length > 0) {
             console.log(`[${pluginName}] 发现 ${newCards.length} 张新到期卡片，添加到复习队列`)
             setNewCardsAdded((prev: number) => prev + newCards.length)
@@ -947,13 +960,18 @@ export default function SrsReviewSession({
       // 使用 setQueue 的函数形式来获取最新的队列状态，避免闭包问题
       let foundNewCards = 0
       setQueue((prevQueue: ReviewCard[]) => {
+        // 与自动刷新同一去重语义：排除未处理部分 + pending 跟踪；已评分头部到期卡可回流
         const newCards = selectNewDueCardsForSession(
           newQueue,
           prevQueue,
           scope,
-          budget
+          budget,
+          {
+            currentIndex: currentIndexRef.current,
+            pendingKeys: getPendingDueKeys()
+          }
         )
-        
+
         foundNewCards = newCards.length
         
         if (newCards.length > 0) {

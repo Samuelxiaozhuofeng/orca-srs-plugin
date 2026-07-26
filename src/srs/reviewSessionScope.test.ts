@@ -3,6 +3,7 @@ import type { ReviewCard } from "./types"
 import { cardKeyFromReviewCard } from "./cardIdentity"
 import {
   allowsFullLibraryDynamicScan,
+  collectUnprocessedQueueCardKeys,
   createAllScope,
   createDeckScope,
   createFixedScope,
@@ -300,6 +301,116 @@ describe("reviewSessionScope", () => {
         budget
       )
       expect(forManual).toEqual([])
+    })
+  })
+
+  describe("collectUnprocessedQueueCardKeys", () => {
+    it("只含 index >= currentIndex（当前卡及其后），不含已评分头部", () => {
+      const a = card({ id: 1 })
+      const b = card({ id: 2 })
+      const c = card({ id: 3 })
+      const keys = collectUnprocessedQueueCardKeys([a, b, c], 1)
+      expect(keys.has(cardKeyFromReviewCard(a))).toBe(false) // 已评分头部
+      expect(keys.has(cardKeyFromReviewCard(b))).toBe(true) // 当前卡
+      expect(keys.has(cardKeyFromReviewCard(c))).toBe(true) // 未处理尾部
+    })
+
+    it("currentIndex=0 时含整个队列（等价旧全队列去重）", () => {
+      const a = card({ id: 1 })
+      const b = card({ id: 2 })
+      const keys = collectUnprocessedQueueCardKeys([a, b], 0)
+      expect(keys.size).toBe(2)
+    })
+  })
+
+  describe("P0：已评分卡到期回流（动态扫描去重按已处理/未处理边界）", () => {
+    it("① Review 卡评 Again 后进入已评分头部，10 分钟后扫描将其重新入队", () => {
+      // 队列 [A(已评分), B(当前)]，currentIndex=1；A 评 Again 后 10m 再次到期
+      const a = card({ id: 1, deck: "A", isNew: false })
+      const b = card({ id: 2, deck: "A", isNew: false })
+
+      const reflowed = selectNewDueCardsForSession(
+        [a], // 扫描候选：A 现已到期
+        [a, b],
+        createAllScope(),
+        null,
+        { currentIndex: 1 }
+      )
+      expect(reflowed.map((c) => c.id)).toEqual([1])
+
+      // 对照：旧"全队列去重"（默认 currentIndex=0）会错误地把已评分的 A 也排除掉
+      const brokenOld = selectNewDueCardsForSession(
+        [a],
+        [a, b],
+        createAllScope()
+      )
+      expect(brokenOld).toEqual([])
+    })
+
+    it("③ 未处理部分（当前卡及其后）的卡不会被扫描重复加入", () => {
+      const head = card({ id: 1, deck: "A" }) // 已评分头部
+      const current = card({ id: 2, deck: "A" }) // 当前卡
+      const tail = card({ id: 3, deck: "A" }) // 未处理尾部
+
+      const result = selectNewDueCardsForSession(
+        [head, current, tail], // 三张都被当成到期候选
+        [head, current, tail],
+        createAllScope(),
+        null,
+        { currentIndex: 1 }
+      )
+      // 当前卡与尾部在未处理部分被去重；仅已评分头部允许回流
+      expect(result.map((c) => c.id)).toEqual([1])
+    })
+
+    it("已在 pending 短期重学跟踪中的身份不被扫描重复加入（与定时器互斥）", () => {
+      const tracked = card({ id: 1, deck: "A" }) // 已评分头部，且在 pending 跟踪中
+      const fresh = card({ id: 2, deck: "A" })
+
+      const result = selectNewDueCardsForSession(
+        [tracked, fresh],
+        [tracked], // 队列仅含已评分的 tracked
+        createAllScope(),
+        null,
+        {
+          currentIndex: 1,
+          pendingKeys: new Set([cardKeyFromReviewCard(tracked)])
+        }
+      )
+      // tracked 交给 pending 定时器负责重入，扫描不重复加入；fresh 正常加入
+      expect(result.map((c) => c.id)).toEqual([2])
+    })
+
+    it("② 回流的已评分卡不重复消耗每日额度", () => {
+      const a = card({ id: 1, deck: "A", isNew: false })
+      const current = card({ id: 9, deck: "A", isNew: false })
+      // a 首次进入即占用唯一的 1 个复习额度 → remaining review = 0
+      const budget = createSessionRootCardBudget(
+        { newCardsPerDay: 0, reviewCardsPerDay: 1 },
+        [a]
+      )!
+
+      const reflowed = selectNewDueCardsForSession(
+        [a], // a 到期回流
+        [a, current],
+        createDeckScope("A"),
+        budget,
+        { currentIndex: 1 }
+      )
+      // 已接纳身份重入：acceptFormalRoot 返回 true 但不再占额度
+      expect(reflowed.map((c) => c.id)).toEqual([1])
+      expect(budget.acceptedReviewKeys.size).toBe(1)
+
+      // 相反：额度已满时，未接纳的新身份仍被拦截
+      const stranger = card({ id: 42, deck: "A", isNew: false })
+      const blocked = selectNewDueCardsForSession(
+        [stranger],
+        [a, current],
+        createDeckScope("A"),
+        budget,
+        { currentIndex: 1 }
+      )
+      expect(blocked).toEqual([])
     })
   })
 

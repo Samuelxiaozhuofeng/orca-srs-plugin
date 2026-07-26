@@ -6,7 +6,7 @@
  * 调度唯一 timer。
  *
  * 规则摘要：
- * - 仅正式 Again/Hard，且 FSRS due 落在短期窗口（默认 5 分钟）内才追踪
+ * - 仅正式 Again/Hard，且 FSRS due 落在短期窗口（默认 15 分钟，覆盖 10m relearning / 6m hard）内才追踪
  * - 同一 cardKey 幂等 upsert 到最新 card snapshot + due；generation 单调递增
  * - 定时器带 token；更新 due 后必须重排，旧 token 触发时判 stale
  * - 到期后追加到队尾；去重只检查 currentIndex+1 之后的未处理尾部
@@ -27,8 +27,20 @@ import {
 } from "./reviewSessionScope"
 import type { SessionRootCardBudget } from "./reviewSessionBudget"
 
-/** 正式 Again/Hard 短期重学窗口（ms） */
-export const SHORT_RELEARN_WINDOW_MS = 5 * 60 * 1000
+/**
+ * 正式 Again/Hard 短期重学窗口（ms）。
+ *
+ * 窗口必须覆盖 ts-fsrs 默认步长下 Again/Hard 产生的最短到期间隔，否则被评分的卡
+ * 因 `due - now` 超窗而不进 pending 跟踪，本会话内永远不会短期回流。依据 ts-fsrs@5.2.3
+ * 默认步长（`default_relearning_steps=["10m"]`、`default_learning_steps=["1m","10m"]`）：
+ * - Review 卡评 Again → 走 relearning step，`due = now + 10m`
+ * - 新卡/学习中卡评 Hard → `getHardInterval = round((1m+10m)/2) = 6m`
+ * 取 15 分钟作为覆盖上述两者（10m relearning、6m hard）的安全上界，含少量缓冲以吸收
+ * 评分与 due 计算之间的处理延迟；仍显著小于任何天级正式间隔，不会误纳常规复习卡。
+ *
+ * 注意：若将来在设置中放开自定义 learning/relearning steps，需同步复核此窗口。
+ */
+export const SHORT_RELEARN_WINDOW_MS = 15 * 60 * 1000
 
 /** 定时器最小延迟，避免 0ms 忙等 */
 export const PENDING_TIMER_MIN_DELAY_MS = 1000
