@@ -239,6 +239,14 @@ chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|impo
 
 相关 fixture：`buildEpubMultiFragmentChapters` / `buildEpubMultiFragmentDualTocNavWins` / `buildEpubSingleFragmentToc` / `buildEpubMultiFragmentNumberingTocWithSliceHeadings`（`epubFixtures.ts`）。
 
+## 视觉规范
+
+向导 UI 遵循 [SRS_UI设计规范.md](SRS_UI设计规范.md)（Apple HIG 基线）。样式类定义在 `src/styles/ai-card-dialog.css` 尾部的「导入向导」小节（该表已由 `src/main.ts` 导入，故未新建样式表）：`.srs-import-dialog*`、`.srs-chapter-selector*`、`.srs-import-progress*`、`.srs-import-result*`、`.srs-web-preview*`、`.srs-ui-locked`。
+
+- 组件里**不得**用内联样式做视觉表现；唯一保留的内联量是 `EpubImportProgress` 进度条填充的百分比宽度（运行时动态几何量）。
+- 忙碌 / 不可用的宿主 `Button` 用 `.srs-ui-locked` 表达（含 `pointer-events: none`，是行为契约的一部分）。
+- 详细落地约定见 [SRS_AI模块.md](SRS_AI模块.md) 的「视觉规范」小节。
+
 ## 相关文件
 
 - `src/importers/epub/*`

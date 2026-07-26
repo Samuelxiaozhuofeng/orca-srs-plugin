@@ -185,9 +185,7 @@ function ConfigPhase(props: {
     onClose
   } = props
 
-  const lockStyle = isGenerating
-    ? { opacity: 0.5, pointerEvents: "none" as const }
-    : undefined
+  const lockClass = isGenerating ? "srs-ui-locked" : undefined
 
   const guardType = (type: AICardType) => {
     if (!isGenerating) onCardTypeChange(type)
@@ -204,8 +202,9 @@ function ConfigPhase(props: {
             卡片类型
           </div>
           <div
-            className="ai-card-dialog__segmented"
-            style={lockStyle}
+            className={`ai-card-dialog__segmented${
+              lockClass ? ` ${lockClass}` : ""
+            }`}
             role="radiogroup"
             aria-labelledby="ai-card-type-label"
           >
@@ -233,8 +232,9 @@ function ConfigPhase(props: {
             最多生成
           </div>
           <div
-            className="ai-card-dialog__segmented"
-            style={lockStyle}
+            className={`ai-card-dialog__segmented${
+              lockClass ? ` ${lockClass}` : ""
+            }`}
             role="radiogroup"
             aria-labelledby="ai-max-cards-label"
           >
@@ -390,11 +390,7 @@ function ReviewPhase(props: {
               }}
               aria-disabled={!canSave}
               tabIndex={canSave ? 0 : -1}
-              style={
-                !canSave
-                  ? { opacity: 0.5, pointerEvents: "none" }
-                  : undefined
-              }
+              className={!canSave ? "srs-ui-locked" : undefined}
             >
               保存 {selectedCount} 张
             </Button>

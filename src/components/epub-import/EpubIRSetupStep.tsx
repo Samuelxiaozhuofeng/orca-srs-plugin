@@ -58,9 +58,9 @@ export default function EpubIRSetupStep({
   const labels = accessibilityLabels()
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: 14, fontWeight: 600 }}>创建渐进阅读书籍</div>
-      <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+    <div className="srs-import-dialog__step">
+      <div className="srs-import-result__headline">创建渐进阅读书籍</div>
+      <div className="srs-import-dialog__hint">
         默认全选已成功导入章节；取消的章节保持普通笔记，之后可再加入。
       </div>
       <EpubChapterSelector
@@ -72,8 +72,8 @@ export default function EpubIRSetupStep({
         disabled={isWorking}
         label="渐进阅读章节"
       />
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <label style={{ fontSize: 13 }}>
+      <div className="srs-import-dialog__radio-row">
+        <label className="srs-import-dialog__radio">
           <input
             type="radio"
             name="ir-mode"
@@ -84,7 +84,7 @@ export default function EpubIRSetupStep({
           />{" "}
           {labels.modeDistributed}
         </label>
-        <label style={{ fontSize: 13 }}>
+        <label className="srs-import-dialog__radio">
           <input
             type="radio"
             name="ir-mode"
@@ -101,8 +101,8 @@ export default function EpubIRSetupStep({
         onChange={onPriorityChange}
         disabled={isWorking}
       />
-      <label style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
-        计划天数
+      <label className="srs-import-dialog__field">
+        <span className="srs-import-dialog__label">计划天数</span>
         <input
           type="number"
           min={1}
@@ -111,25 +111,20 @@ export default function EpubIRSetupStep({
           onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
             onTotalDaysChange(Math.max(1, Number(e.target.value) || 1))
           }
-          style={{ display: "block", width: "100%", maxWidth: 200, padding: 8 }}
+          className="srs-import-dialog__input srs-import-dialog__input--number srs-import-dialog__input--narrow"
         />
       </label>
-      <div
-        style={{
-          border: "1px dashed var(--orca-color-border-1)",
-          borderRadius: 8,
-          padding: 10,
-          fontSize: 13
-        }}
-      >
-        {schedulePreviewText(mode, selectedChapterIds.length, totalDays, priority)}
+      <div className="srs-import-dialog__tray srs-import-dialog__tray--dashed">
+        <div className="srs-import-dialog__tray-body">
+          {schedulePreviewText(mode, selectedChapterIds.length, totalDays, priority)}
+        </div>
       </div>
       {failedCount > 0 ? (
-        <div role="status" style={{ fontSize: 13, color: "var(--orca-color-warning-6, #a60)" }}>
+        <div role="status" className="srs-import-dialog__warn">
           成功 {successCount}，失败 {failedCount}。成功章节已写入计划，可重试失败项。
         </div>
       ) : null}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div className="srs-import-dialog__actions">
         <Button
           variant="outline"
           onClick={
@@ -138,7 +133,7 @@ export default function EpubIRSetupStep({
               : () => (failedCount > 0 ? onDeferFailures() : onBack())
           }
           aria-disabled={isWorking}
-          style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+          className={isWorking ? "srs-ui-locked" : undefined}
         >
           {failedCount > 0 ? "稍后" : "返回"}
         </Button>
@@ -150,7 +145,7 @@ export default function EpubIRSetupStep({
               onRetry()
             }}
             aria-disabled={isWorking}
-            style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+            className={isWorking ? "srs-ui-locked" : undefined}
           >
             {isWorking ? "重试中…" : "重试失败项"}
           </Button>
@@ -162,9 +157,9 @@ export default function EpubIRSetupStep({
               onConfirm()
             }}
             aria-disabled={isWorking || selectedChapterIds.length === 0}
-            style={
+            className={
               isWorking || selectedChapterIds.length === 0
-                ? { opacity: 0.5, pointerEvents: "none" }
+                ? "srs-ui-locked"
                 : undefined
             }
           >

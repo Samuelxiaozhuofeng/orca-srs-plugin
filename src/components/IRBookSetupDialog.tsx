@@ -51,52 +51,21 @@ export default function IRBookSetupDialog({
     }
   }, [isWorking, onConfirm, priority, totalDays])
 
-  const dialogStyle: React.CSSProperties = {
-    width: "min(560px, calc(100vw - 32px))",
-    maxHeight: "min(80vh, 720px)",
-    overflowY: "auto",
-    backgroundColor: "var(--orca-color-bg-1)",
-    border: "1px solid var(--orca-color-border-1)",
-    borderRadius: "12px",
-    padding: "20px",
-    color: "var(--orca-color-text-1)",
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px"
-  }
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: "12px",
-    color: "var(--orca-color-text-2)",
-    fontWeight: 600,
-    letterSpacing: "0.02em"
-  }
-
-  const inputBaseStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: "10px",
-    border: "1px solid var(--orca-color-border-1)",
-    backgroundColor: "var(--orca-color-bg-2)",
-    color: "var(--orca-color-text-1)",
-    fontSize: "14px",
-    outline: "none"
-  }
-
-  const actionStyle = (disabled: boolean) => disabled
-    ? { opacity: 0.5, pointerEvents: "none" as const }
-    : undefined
+  const lockedClass = (disabled: boolean) =>
+    disabled ? "srs-ui-locked" : undefined
 
   return (
     <ModalOverlay visible={true} canClose={!isWorking} onClose={onCancel}>
-      <div style={dialogStyle}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "var(--orca-color-text-1)" }}>
-              📚 创建渐进阅读书籍
-            </h2>
-            <div style={{ fontSize: "13px", color: "var(--orca-color-text-2)" }}>
-              检测到 <span style={{ color: "var(--orca-color-primary-6)", fontWeight: 700 }}>{Math.max(0, chapterCount)}</span> 个章节
+      <div className="srs-import-dialog srs-import-dialog--tall">
+        <div className="srs-import-dialog__header">
+          <div className="srs-import-dialog__header-text">
+            <h2 className="srs-import-dialog__title">📚 创建渐进阅读书籍</h2>
+            <div className="srs-import-dialog__subtitle">
+              检测到{" "}
+              <span className="srs-import-dialog__subtitle-strong">
+                {Math.max(0, chapterCount)}
+              </span>{" "}
+              个章节
             </div>
           </div>
           <Button
@@ -105,29 +74,15 @@ export default function IRBookSetupDialog({
               if (isWorking) return
               onCancel()
             }}
-            style={actionStyle(isWorking)}
+            className={lockedClass(isWorking)}
           >
             关闭
           </Button>
         </div>
 
-        <div style={{
-          border: "1px solid var(--orca-color-border-1)",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "12px",
-          padding: "12px 14px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "6px"
-        }}>
-          <div style={labelStyle}>书名</div>
-          <div style={{
-            fontSize: "14px",
-            color: "var(--orca-color-text-1)",
-            fontWeight: 600,
-            lineHeight: 1.4,
-            wordBreak: "break-word"
-          }}>
+        <div className="srs-import-dialog__tray">
+          <div className="srs-import-dialog__label">书名</div>
+          <div className="srs-import-dialog__tray-value">
             {bookTitle || "(未命名)"}
           </div>
         </div>
@@ -138,8 +93,8 @@ export default function IRBookSetupDialog({
           disabled={isWorking}
         />
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={labelStyle}>计划天数</div>
+        <div className="srs-import-dialog__field">
+          <div className="srs-import-dialog__label">计划天数</div>
           <input
             type="number"
             min={minDays}
@@ -150,36 +105,26 @@ export default function IRBookSetupDialog({
               if (!Number.isFinite(next)) return
               setTotalDaysInput(next)
             }}
-            style={inputBaseStyle}
+            className="srs-import-dialog__input srs-import-dialog__input--number"
           />
-          <div style={{ fontSize: "12px", color: "var(--orca-color-text-3)", lineHeight: 1.4 }}>
+          <div className="srs-import-dialog__hint">
             最少 {minDays} 天（每章至少留出 1 天）。重要性影响进队与再推节奏，不改变总天数跨度。
           </div>
         </div>
 
-        <div style={{
-          border: "1px dashed var(--orca-color-border-1)",
-          backgroundColor: "var(--orca-color-bg-2)",
-          borderRadius: "12px",
-          padding: "12px 14px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "6px"
-        }}>
-          <div style={labelStyle}>推送预览</div>
-          <div style={{ fontSize: "14px", color: "var(--orca-color-text-1)", fontWeight: 600 }}>
-            {schedulePreview}
-          </div>
+        <div className="srs-import-dialog__tray srs-import-dialog__tray--dashed">
+          <div className="srs-import-dialog__label">推送预览</div>
+          <div className="srs-import-dialog__tray-value">{schedulePreview}</div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "4px" }}>
+        <div className="srs-import-dialog__actions">
           <Button
             variant="outline"
             onClick={() => {
               if (isWorking) return
               onCancel()
             }}
-            style={actionStyle(isWorking)}
+            className={lockedClass(isWorking)}
           >
             取消
           </Button>
@@ -188,7 +133,7 @@ export default function IRBookSetupDialog({
             onClick={() => {
               void handleConfirm()
             }}
-            style={actionStyle(isWorking)}
+            className={lockedClass(isWorking)}
           >
             {isWorking ? "创建中..." : "确认创建"}
           </Button>

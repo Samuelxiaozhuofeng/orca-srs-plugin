@@ -50,13 +50,14 @@ export function AICardDraftCard(props: AICardDraftCardProps) {
         </span>
         <Button
           variant="plain"
-          className="ai-card-dialog__draft-remove"
+          className={`ai-card-dialog__draft-remove${
+            disabled ? " srs-ui-locked" : ""
+          }`}
           onClick={() => {
             if (!disabled) onRemoveDraft(draft.id)
           }}
           title="删除草稿"
           aria-label={`删除草稿 ${draft.id}`}
-          style={disabled ? { opacity: 0.5, pointerEvents: "none" } : undefined}
         >
           <i className="ti ti-trash" aria-hidden="true" />
         </Button>

@@ -7,41 +7,32 @@ export type EpubImportProgressProps = {
 
 export default function EpubImportProgress({ progress, error }: EpubImportProgressProps) {
   return (
-    <div role="status" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div role="status" aria-live="polite" className="srs-import-progress">
       {error ? (
-        <div style={{ color: "var(--orca-color-danger-6, #c00)", fontSize: 14 }} role="alert">
+        <div className="srs-import-dialog__error" role="alert">
           {error}
         </div>
       ) : null}
-      <div style={{ fontSize: 14, color: "var(--orca-color-text-1)" }}>
+      <div className="srs-import-progress__message">
         {progress?.message || "准备中…"}
       </div>
       {progress?.chapterTotal != null && progress.chapterIndex != null ? (
-        <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+        <div className="srs-import-progress__detail">
           章节进度 {progress.chapterIndex}/{progress.chapterTotal}
           {progress.chapterTitle ? ` · ${progress.chapterTitle}` : ""}
         </div>
       ) : null}
-      <div
-        aria-hidden
-        style={{
-          height: 6,
-          borderRadius: 999,
-          background: "var(--orca-color-bg-3, #eee)",
-          overflow: "hidden"
-        }}
-      >
+      <div aria-hidden className="srs-import-progress__track">
+        {/* 宽度是运行时动态几何量，保持内联 */}
         <div
+          className="srs-import-progress__fill"
           style={{
-            height: "100%",
             width:
               progress?.chapterTotal && progress.chapterIndex
                 ? `${Math.round((progress.chapterIndex / progress.chapterTotal) * 100)}%`
                 : progress?.phase === "complete"
                   ? "100%"
-                  : "30%",
-            background: "var(--orca-color-primary-6, #4c8bf5)",
-            transition: "width 0.2s ease"
+                  : "30%"
           }}
         />
       </div>

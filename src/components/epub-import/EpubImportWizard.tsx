@@ -262,26 +262,17 @@ export default function EpubImportWizard({
     }
   }, [result, irPlan, bookTitle, pluginName, onClose])
 
-  const shellStyle: React.CSSProperties = {
-    width: "min(640px, calc(100vw - 32px))",
-    maxHeight: "min(86vh, 800px)",
-    overflowY: "auto",
-    backgroundColor: "var(--orca-color-bg-1, #fff)",
-    border: "1px solid var(--orca-color-border-1, #ddd)",
-    borderRadius: 12,
-    padding: 20,
-    color: "var(--orca-color-text-1, #222)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 16
-  }
-
   return (
-    <div style={shellStyle} role="dialog" aria-modal="true" aria-label="导入 EPUB">
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 18 }}>导入 EPUB</h2>
-          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)", marginTop: 4 }}>
+    <div
+      className="srs-import-dialog srs-import-dialog--wide"
+      role="dialog"
+      aria-modal="true"
+      aria-label="导入 EPUB"
+    >
+      <div className="srs-import-dialog__header">
+        <div className="srs-import-dialog__header-text">
+          <h2 className="srs-import-dialog__title">导入 EPUB</h2>
+          <div className="srs-import-dialog__subtitle">
             普通笔记导入独立完成；可选继续创建渐进阅读
           </div>
         </div>
@@ -292,28 +283,28 @@ export default function EpubImportWizard({
           }}
           aria-label={labels.cancel}
           aria-disabled={isWorking}
-          style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+          className={isWorking ? "srs-ui-locked" : undefined}
         >
           关闭
         </Button>
       </div>
 
       {error ? (
-        <div role="alert" style={{ color: "var(--orca-color-danger-6, #c00)", fontSize: 13 }}>
+        <div role="alert" className="srs-import-dialog__error">
           {error}
         </div>
       ) : null}
 
       {step === "file" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ fontSize: 13 }}>
-            {labels.fileInput}
+        <div className="srs-import-dialog__step">
+          <label className="srs-import-dialog__field">
+            <span className="srs-import-dialog__label">{labels.fileInput}</span>
             <input
               type="file"
               accept=".epub,application/epub+zip"
               aria-label={labels.fileInput}
               disabled={isWorking}
-              style={{ display: "block", marginTop: 8 }}
+              className="srs-import-dialog__file-input"
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 void handleFile(e.target.files?.[0] ?? null)
               }}
@@ -323,42 +314,38 @@ export default function EpubImportWizard({
       ) : null}
 
       {step === "title" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6 }}>
-            {labels.titleInput}
+        <div className="srs-import-dialog__step">
+          <label className="srs-import-dialog__field">
+            <span className="srs-import-dialog__label">{labels.titleInput}</span>
             <input
               type="text"
               value={bookTitle}
               aria-label={labels.titleInput}
               disabled={isWorking}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBookTitle(e.target.value)}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid var(--orca-color-border-1)"
-              }}
+              className="srs-import-dialog__input"
             />
           </label>
           {parsed ? (
-            <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+            <div className="srs-import-dialog__meta">
               作者：{parsed.metadata.author} · 章节 {parsed.chapters.length}
             </div>
           ) : null}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <div className="srs-import-dialog__actions">
             <Button
               variant="outline"
               onClick={isWorking ? undefined : () => setStep("file")}
               aria-disabled={isWorking}
-              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              className={isWorking ? "srs-ui-locked" : undefined}
             >
               上一步
             </Button>
             <Button
               variant="solid"
               aria-disabled={!canProceedFromTitle(bookTitle) || isWorking}
-              style={
+              className={
                 !canProceedFromTitle(bookTitle) || isWorking
-                  ? { opacity: 0.5, pointerEvents: "none" }
+                  ? "srs-ui-locked"
                   : undefined
               }
               onClick={() => {
@@ -373,19 +360,19 @@ export default function EpubImportWizard({
       ) : null}
 
       {step === "chapters" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="srs-import-dialog__step">
           <EpubChapterSelector
             chapters={chapters}
             selectedKeys={selectedKeys}
             onChange={setSelectedKeys}
             disabled={isWorking}
           />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <div className="srs-import-dialog__actions">
             <Button
               variant="outline"
               onClick={isWorking ? undefined : () => setStep("title")}
               aria-disabled={isWorking}
-              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              className={isWorking ? "srs-ui-locked" : undefined}
             >
               上一步
             </Button>
@@ -397,9 +384,9 @@ export default function EpubImportWizard({
               }}
               aria-label={labels.startImport}
               aria-disabled={!canProceedFromChapters(selectedKeys) || isWorking}
-              style={
+              className={
                 !canProceedFromChapters(selectedKeys) || isWorking
-                  ? { opacity: 0.5, pointerEvents: "none" }
+                  ? "srs-ui-locked"
                   : undefined
               }
             >

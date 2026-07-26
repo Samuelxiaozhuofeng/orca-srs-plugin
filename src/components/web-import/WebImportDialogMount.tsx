@@ -243,59 +243,32 @@ export default function WebImportDialog({
   ])
 
   return (
-    <div
-      style={{
-        width: "min(520px, 92vw)",
-        maxHeight: "90vh",
-        overflowY: "auto",
-        padding: 20,
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-        backgroundColor: "var(--orca-color-bg-1)",
-        border: "1px solid var(--orca-color-border-1)",
-        borderRadius: "12px",
-        color: "var(--orca-color-text-1)",
-        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)"
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 600, color: "var(--orca-color-text-1)" }}>导入网页</div>
+    <div className="srs-import-dialog">
+      <div className="srs-import-dialog__header">
+        <div className="srs-import-dialog__header-text">
+          <h2 className="srs-import-dialog__title">导入网页</h2>
+        </div>
         <Button
           variant="plain"
           onClick={isWorking ? undefined : handleClose}
           aria-label="关闭"
           aria-disabled={isWorking}
-          style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+          className={isWorking ? "srs-ui-locked" : undefined}
         >
           关闭
         </Button>
       </div>
 
       {error ? (
-        <div
-          role="alert"
-          style={{
-            color: "var(--orca-color-danger-6, #c00)",
-            fontSize: 13,
-            lineHeight: 1.45
-          }}
-        >
+        <div role="alert" className="srs-import-dialog__error">
           {error}
         </div>
       ) : null}
 
       {step === "url" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "var(--orca-color-text-1)" }}>
-            网页地址
+        <div className="srs-import-dialog__step">
+          <label className="srs-import-dialog__field">
+            <span className="srs-import-dialog__label">网页地址</span>
             <input
               type="url"
               value={url}
@@ -311,20 +284,13 @@ export default function WebImportDialog({
                   void handleScrape()
                 }
               }}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid var(--orca-color-border-1)",
-                backgroundColor: "var(--orca-color-bg-2)",
-                color: "var(--orca-color-text-1)",
-                outline: "none"
-              }}
+              className="srs-import-dialog__input"
             />
           </label>
-          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+          <div className="srs-import-dialog__hint">
             使用 Firecrawl 抓取正文。请先在插件设置中配置 API Key。
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <div className="srs-import-dialog__actions">
             <Button
               variant="solid"
               onClick={() => {
@@ -333,10 +299,8 @@ export default function WebImportDialog({
               }}
               aria-label="解析网页"
               aria-disabled={isWorking || !url.trim()}
-              style={
-                isWorking || !url.trim()
-                  ? { opacity: 0.5, pointerEvents: "none" }
-                  : undefined
+              className={
+                isWorking || !url.trim() ? "srs-ui-locked" : undefined
               }
             >
               {isWorking ? "解析中…" : "解析网页"}
@@ -346,57 +310,25 @@ export default function WebImportDialog({
       ) : null}
 
       {step === "preview" && article ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid var(--orca-color-border-1)",
-              backgroundColor: "var(--orca-color-bg-2)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              fontSize: 13
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14, color: "var(--orca-color-text-1)" }}>{article.title}</div>
-            <div style={{ color: "var(--orca-color-text-2)" }}>
+        <div className="srs-import-dialog__step">
+          <div className="srs-import-dialog__tray">
+            <div className="srs-web-preview__title">{article.title}</div>
+            <div className="srs-web-preview__line">
               来源：{article.hostname}
             </div>
             {article.author || article.siteName ? (
-              <div style={{ color: "var(--orca-color-text-2)" }}>
+              <div className="srs-web-preview__line">
                 {[article.author, article.siteName].filter(Boolean).join(" · ")}
               </div>
             ) : null}
-            <div style={{ color: "var(--orca-color-text-2)" }}>
+            <div className="srs-web-preview__line">
               正文字符约 {article.textLength}
             </div>
             {article.excerpt ? (
-              <div
-                style={{
-                  color: "var(--orca-color-text-2)",
-                  lineHeight: 1.45,
-                  marginTop: 2,
-                  maxHeight: 72,
-                  overflow: "hidden"
-                }}
-              >
-                {article.excerpt}
-              </div>
+              <div className="srs-web-preview__excerpt">{article.excerpt}</div>
             ) : null}
             {article.warnings && article.warnings.length > 0 ? (
-              <div
-                role="status"
-                style={{
-                  marginTop: 2,
-                  color: "var(--orca-color-text-2)",
-                  fontSize: 12,
-                  lineHeight: 1.4,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2
-                }}
-              >
+              <div role="status" className="srs-web-preview__warnings">
                 {article.warnings.slice(0, 4).map(
                   (w: { code: string; message: string }, i: number) => (
                     <div key={`${w.code}-${i}`}>⚠ {w.message}</div>
@@ -407,14 +339,9 @@ export default function WebImportDialog({
           </div>
 
           <label
-            style={{
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: isWorking ? "default" : "pointer",
-              color: "var(--orca-color-text-1)"
-            }}
+            className={`srs-import-dialog__checkbox${
+              isWorking ? " srs-import-dialog__checkbox--static" : ""
+            }`}
           >
             <input
               type="checkbox"
@@ -430,15 +357,11 @@ export default function WebImportDialog({
           </label>
 
           <label
-            style={{
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              opacity: joinIR ? 1 : 0.5,
-              cursor: joinIR && !isWorking ? "pointer" : "default",
-              color: "var(--orca-color-text-1)"
-            }}
+            className={`srs-import-dialog__checkbox${
+              joinIR ? "" : " srs-import-dialog__checkbox--muted"
+            }${
+              joinIR && !isWorking ? "" : " srs-import-dialog__checkbox--static"
+            }`}
           >
             <input
               type="checkbox"
@@ -450,19 +373,14 @@ export default function WebImportDialog({
             />
             今天阅读
           </label>
-          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+          <div className="srs-import-dialog__hint">
             「今天阅读」仅在加入渐进阅读时可用；默认不安排到今天。
           </div>
 
           <label
-            style={{
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: isWorking ? "default" : "pointer",
-              color: "var(--orca-color-text-1)"
-            }}
+            className={`srs-import-dialog__checkbox${
+              isWorking ? " srs-import-dialog__checkbox--static" : ""
+            }`}
           >
             <input
               type="checkbox"
@@ -474,12 +392,12 @@ export default function WebImportDialog({
             />
             AI 总结分析
           </label>
-          <div style={{ fontSize: 12, color: "var(--orca-color-text-2)" }}>
+          <div className="srs-import-dialog__hint">
             使用「AI / Firecrawl 服务设置」中的默认模型，在页面首块写入 Markdown
             总结与要点。失败不回滚正文导入。
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <div className="srs-import-dialog__actions">
             <Button
               variant="outline"
               onClick={
@@ -491,7 +409,7 @@ export default function WebImportDialog({
                     }
               }
               aria-disabled={isWorking}
-              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              className={isWorking ? "srs-ui-locked" : undefined}
             >
               上一步
             </Button>
@@ -503,7 +421,7 @@ export default function WebImportDialog({
               }}
               aria-label="导入"
               aria-disabled={isWorking}
-              style={isWorking ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+              className={isWorking ? "srs-ui-locked" : undefined}
             >
               {isWorking
                 ? enableAiSummary

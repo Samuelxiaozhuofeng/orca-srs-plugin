@@ -223,6 +223,26 @@ makeAICard / interactiveAICard（别名）
 
 斜杠：仅 `aiCard` → `makeAICard`。
 
+## 视觉规范
+
+AI 对话框与导入向导的视觉层统一遵循 [SRS_UI设计规范.md](SRS_UI设计规范.md)（Apple HIG 基线，基准实现是 Flash Home）。令牌真源为 `src/styles/srs-design-tokens.css`。
+
+| 样式表 | 覆盖面 |
+| --- | --- |
+| `src/styles/ai-card-dialog.css` | AI 制卡对话框、快捷交互弹窗、提示词库、服务设置、后台任务托盘，**以及导入向导**（EPUB / 网页 / 渐进阅读书籍设置）。导入向导没有独立样式表——`src/main.ts` 的样式导入清单不在本模块职责内，故其类（`.srs-import-dialog*`、`.srs-chapter-selector*`、`.srs-import-progress*`、`.srs-web-preview*`）合并在本表尾部。 |
+| `src/styles/ai-quick-interact.css` | 行尾加载图标、AI 结果块罩层、预览/子块操作栏 |
+
+落地约定（改动这两张表或相关组件时必须保持）：
+
+- **禁止裸数值与裸十六进制色**：圆角 / 间距 / 阴影 / 动效时长 / 字号字重一律用 `--srs-*`；颜色只能来自 `--orca-color-*` 或 `--srs-*` 派生。历史上这两张表大量引用了并不存在的变量（`--orca-bg-primary`、`--orca-border`、`--orca-text-primary`、`--orca-color-primary`、`--orca-color-dangerous`、`--orca-accent-color`…），实际永远落到硬编码 fallback，靠 `@media (prefers-color-scheme: dark)` 二次覆盖——当 Orca 主题与系统主题不一致时会出现浅底深字。现已全部换成真实 Orca 令牌并删除所有 `prefers-color-scheme` / `.theme-dark` 分支。
+- **浮层容器基线**：`--srs-surface-base` + hairline + `--srs-radius-lg` + `--srs-shadow-overlay` + `--srs-font-family`。
+- **草稿卡 / 提示词卡 / 后台任务卡**：`bg-1` + hairline + `--srs-radius-lg` + `--srs-shadow-1`，hover 升 `--srs-shadow-2` + `--srs-hairline-strong`；状态用左侧 4px 语义色条（`.is-selected` → `--srs-accent-new`，`.has-error` → `--orca-color-danger-5`，任务卡 generating/ready/error 同理）。
+- **按钮体系**：`__btn--primary` 走主 CTA（`--srs-radius-lg`、15px/600）；`__btn` 基线走次级按钮（`--srs-radius-md`、`7px 14px`、13px/500）；`__btn--ghost` 与各面板 `__close` 走安静按钮。四态齐全，焦点环统一 `2px solid var(--orca-color-primary-5)` + `outline-offset: 2px`。
+- **表单控件**：`--srs-radius-sm`（对话框内）/ `--srs-radius-md`（导入向导）+ hairline，聚焦态为 `primary-5` 边框 + 半透明 primary 光环，不使用浏览器默认蓝框。
+- **内联样式**：组件里只允许保留**运行时动态几何量**。目前唯一一处是 `EpubImportProgress` 的进度条填充宽度；轨道与填充的视觉（`--srs-radius-pill` + `--orca-color-primary-5`）在 CSS 里。
+- **锁定态**：忙碌 / 不可用的宿主 `orca.components.Button` 用 `.srs-ui-locked`（`opacity` + `cursor` + `pointer-events: none`，`!important`）表达，等价于原先的内联样式；部分调用点未在 `onClick` 内二次守卫，指针拦截是行为契约的一部分，**不要去掉 `pointer-events`**。
+- **宿主兼容选择器**：`ai-quick-interact.css` 中所有 `.orca-block[data-srs-ai-result…]` / `.orca-repr-main` 作用域选择器必须原样保留，绝不放宽为裸选择器。
+
 ## 相关测试
 
 `aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow`/`resultTags`/`reuseSameResultBlock` + `insertQuickResult` 打标/合并写入 + 候选选择归一化）、`aiQuickInteractJobs.test.ts`（后台 preview/direct/tags/reuse 跳过预览 / 多选与离开面板取消）
