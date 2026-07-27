@@ -106,3 +106,43 @@ export function canUndoNext(params: {
   if (isWorking) return false
   return true
 }
+
+/** 与「下一篇」成功 toast / 过期通知共用，避免文案分叉 */
+export const IR_NEXT_NOTIFY_TITLE = "渐进阅读"
+export const IR_NEXT_SUCCESS_MESSAGE = "已进入下一篇"
+/** 可撤销时：右下角通知整卡/按钮可点（宿主 action 无自定义文案） */
+export const IR_NEXT_SUCCESS_UNDO_MESSAGE =
+  "已进入下一篇 · 点此可撤销上一篇（Alt+U）"
+export const IR_UNDO_STALE_FROM_NOTIFY_MESSAGE =
+  "已无法撤销上一篇（可能已有后续操作）"
+
+/**
+ * 构造「下一篇」成功通知。可撤销时挂 `action`，由调用方用 ref 接到最新 `handleUndoNext`，
+ * 避免 notify 闭包捕获创建时尚未 flush 的 React state。
+ */
+export function buildNextSuccessNotify(params: {
+  canUndo: boolean
+  onUndoFromNotify: () => void
+}): {
+  message: string
+  options: {
+    title: string
+    action?: () => void
+  }
+} {
+  if (!params.canUndo) {
+    return {
+      message: IR_NEXT_SUCCESS_MESSAGE,
+      options: { title: IR_NEXT_NOTIFY_TITLE }
+    }
+  }
+  return {
+    message: IR_NEXT_SUCCESS_UNDO_MESSAGE,
+    options: {
+      title: IR_NEXT_NOTIFY_TITLE,
+      action: () => {
+        params.onUndoFromNotify()
+      }
+    }
+  }
+}

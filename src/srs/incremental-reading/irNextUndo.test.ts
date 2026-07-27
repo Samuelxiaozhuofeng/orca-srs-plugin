@@ -12,8 +12,12 @@ import type { IRSessionEntry } from "./irMixedQueuePolicy"
 import type { IRState } from "./irTypes"
 import {
   applyIRStateToCard,
+  buildNextSuccessNotify,
   canUndoNext,
   createNextUndoRecord,
+  IR_NEXT_NOTIFY_TITLE,
+  IR_NEXT_SUCCESS_MESSAGE,
+  IR_NEXT_SUCCESS_UNDO_MESSAGE,
   reinsertUndoEntry
 } from "./irNextUndo"
 
@@ -164,5 +168,32 @@ describe("canUndoNext", () => {
     expect(canUndoNext({ record, showSummary: true, queueLength: 2, isWorking: false })).toBe(false)
     expect(canUndoNext({ record, showSummary: false, queueLength: 0, isWorking: false })).toBe(false)
     expect(canUndoNext({ record, showSummary: false, queueLength: 2, isWorking: true })).toBe(false)
+  })
+})
+
+describe("buildNextSuccessNotify", () => {
+  it("omits action when undo is not available", () => {
+    const onUndoFromNotify = () => {
+      throw new Error("should not run")
+    }
+    const notify = buildNextSuccessNotify({ canUndo: false, onUndoFromNotify })
+    expect(notify.message).toBe(IR_NEXT_SUCCESS_MESSAGE)
+    expect(notify.options).toEqual({ title: IR_NEXT_NOTIFY_TITLE })
+    expect(notify.options.action).toBeUndefined()
+  })
+
+  it("attaches a notify action that calls the undo entry when undo is available", () => {
+    let called = 0
+    const notify = buildNextSuccessNotify({
+      canUndo: true,
+      onUndoFromNotify: () => {
+        called += 1
+      }
+    })
+    expect(notify.message).toBe(IR_NEXT_SUCCESS_UNDO_MESSAGE)
+    expect(notify.options.title).toBe(IR_NEXT_NOTIFY_TITLE)
+    expect(typeof notify.options.action).toBe("function")
+    notify.options.action!()
+    expect(called).toBe(1)
   })
 })

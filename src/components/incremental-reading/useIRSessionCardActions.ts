@@ -40,6 +40,7 @@ import {
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import type { IRSessionEntry } from "../../srs/incremental-reading/irMixedQueuePolicy"
 import {
+  buildNextSuccessNotify,
   createNextUndoRecord,
   type IRNextUndoRecord
 } from "../../srs/incremental-reading/irNextUndo"
@@ -69,6 +70,11 @@ export type IRSessionCardActionsDeps = {
    * 「下一篇」写入；任何其它会写库的动作清空（撤销只覆盖最近一次且无后续污染的情况）。
    */
   setUndoRecord: (record: IRNextUndoRecord | null) => void
+  /**
+   * 右下角「下一篇」成功通知上的撤销入口。
+   * 须由会话壳用 ref 接到最新 `handleUndoNext`，并在不可用时给出可见反馈。
+   */
+  requestUndoNextFromNotify: () => void
   removeCurrent: (options?: { metric?: "action.review" }) => void
 }
 
@@ -105,6 +111,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     setCompleteChapterOpen,
     setArchiveConfirmOpen,
     setUndoRecord,
+    requestUndoNextFromNotify,
     removeCurrent
   } = deps
 
@@ -151,11 +158,12 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
         })
         : null
       setUndoRecord(undoRecord)
-      orca.notify(
-        "success",
-        undoRecord ? "已进入下一篇（顶部可撤销上一篇）" : "已进入下一篇",
-        { title: "渐进阅读" }
-      )
+      // 可撤销时把同一撤销路径挂到右下角通知 action，避免长文中途还要滚回顶部
+      const notify = buildNextSuccessNotify({
+        canUndo: Boolean(undoRecord),
+        onUndoFromNotify: requestUndoNextFromNotify
+      })
+      orca.notify("success", notify.message, notify.options)
     } catch (error) {
       metricsRef.current.record("action.failure", undefined, { kind: "next" })
       console.error("[IR Session] 下一篇失败:", error)

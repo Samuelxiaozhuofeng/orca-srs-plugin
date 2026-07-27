@@ -24,6 +24,8 @@ import { undoPerformNext } from "../../srs/incremental-reading/irSessionService"
 import {
   applyIRStateToCard,
   canUndoNext,
+  IR_NEXT_NOTIFY_TITLE,
+  IR_UNDO_STALE_FROM_NOTIFY_MESSAGE,
   reinsertUndoEntry,
   type IRNextUndoRecord
 } from "../../srs/incremental-reading/irNextUndo"
@@ -143,6 +145,35 @@ export default function IRSessionShell({
   const endGateSuppressedRef = useRef(false)
   /** 会话内「撤销上一篇」单步记录（离开会话即随组件状态清空） */
   const [undoRecord, setUndoRecord] = useState<IRNextUndoRecord | null>(null)
+  /**
+   * 通知 action 可能在 setState 之后才被点击：用 ref 读最新门闩 / 撤销实现，
+   * 避免闭包拿到「下一篇」当次 render 的旧 undoRecord（常为 null）。
+   */
+  const sessionAliveRef = useRef(true)
+  const undoGateRef = useRef({
+    record: null as IRNextUndoRecord | null,
+    showSummary: false,
+    queueLength: 0,
+    isWorking: false
+  })
+  const handleUndoNextRef = useRef<() => Promise<void>>(async () => {})
+  /** 稳定回调：只读 ref，可安全挂到 orca.notify action */
+  const requestUndoNextFromNotify = useRef(() => {
+    if (!sessionAliveRef.current) return
+    const gate = undoGateRef.current
+    if (!canUndoNext({
+      record: gate.record,
+      showSummary: gate.showSummary,
+      queueLength: gate.queueLength,
+      isWorking: gate.isWorking
+    })) {
+      orca.notify("info", IR_UNDO_STALE_FROM_NOTIFY_MESSAGE, {
+        title: IR_NEXT_NOTIFY_TITLE
+      })
+      return
+    }
+    void handleUndoNextRef.current()
+  }).current
   const [isSequentialActive, setIsSequentialActive] = useState(false)
   const [sequentialHasNext, setSequentialHasNext] = useState(true)
   const themeStorageWarnedRef = useRef(false)
@@ -150,6 +181,13 @@ export default function IRSessionShell({
   /** 完成页展示的今日累计（或会话回退）指标 */
   const [summaryMetrics, setSummaryMetrics] = useState<IRSessionMetricsSnapshot | null>(null)
   const [summaryStorageWarning, setSummaryStorageWarning] = useState<string | null>(null)
+
+  useEffect(() => {
+    sessionAliveRef.current = true
+    return () => {
+      sessionAliveRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     const result = writeIRReaderTheme(theme)
@@ -498,6 +536,7 @@ export default function IRSessionShell({
     setCompleteChapterOpen,
     setArchiveConfirmOpen,
     setUndoRecord,
+    requestUndoNextFromNotify,
     removeCurrent
   })
 
@@ -507,12 +546,20 @@ export default function IRSessionShell({
     queueLength: queue.length,
     isWorking
   })
+  // 每帧同步门闩，供通知 action 在任意时刻读取
+  undoGateRef.current = {
+    record: undoRecord,
+    showSummary,
+    queueLength: queue.length,
+    isWorking
+  }
 
   /**
    * 撤销上一篇：先回滚排期（写库），成功后再回插队列并切回。
    * 顺序反过来会出现「UI 已回去但排期仍被污染」的假撤销；失败保留记录以便重试。
    */
   const handleUndoNext = async () => {
+    if (!sessionAliveRef.current) return
     if (!undoRecord || !undoAvailable) return
     setIsWorking(true)
     try {
@@ -556,6 +603,7 @@ export default function IRSessionShell({
       setIsWorking(false)
     }
   }
+  handleUndoNextRef.current = handleUndoNext
 
   /**
    * 「下一篇」统一入口：读到文末且停留足够久时先确认，其余情况与既有行为完全一致。

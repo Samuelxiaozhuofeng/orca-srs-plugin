@@ -64,7 +64,7 @@ export default function IRSessionHeader({
             tabIndex={0}
             variant="outline"
             onClick={onUndoNext}
-            title="回到刚才那篇并恢复阅读位置（Alt+U）"
+            title="回到刚才那篇并恢复阅读位置（Alt+U；或点右下角「下一篇」成功通知）"
           >
             撤销上一篇
           </Button>
