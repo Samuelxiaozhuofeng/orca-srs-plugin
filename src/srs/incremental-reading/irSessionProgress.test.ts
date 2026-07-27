@@ -4,7 +4,8 @@ import {
   formatSessionProgress,
   isSessionQueueEmpty,
   markSessionItemCompleted,
-  syncSessionRemaining
+  syncSessionRemaining,
+  unmarkSessionItemCompleted
 } from "./irSessionProgress"
 
 describe("irSessionProgress", () => {
@@ -24,6 +25,21 @@ describe("irSessionProgress", () => {
     progress = markSessionItemCompleted(progress)
     expect(progress.completed).toBe(1)
     expect(formatSessionProgress(progress)).toBe("1 / 1")
+  })
+
+  it("gives the count back when the reader undoes 下一篇", () => {
+    let progress = createSessionProgress(4)
+    progress = markSessionItemCompleted(progress)
+    progress = markSessionItemCompleted(progress)
+    progress = unmarkSessionItemCompleted(progress)
+    expect(formatSessionProgress(progress)).toBe("1 / 4")
+    expect(progress.remaining).toBe(3)
+  })
+
+  it("does not push completed below zero or remaining above planned", () => {
+    const progress = unmarkSessionItemCompleted(createSessionProgress(2))
+    expect(progress.completed).toBe(0)
+    expect(progress.remaining).toBe(2)
   })
 
   it("tracks empty remaining independently of planned", () => {

@@ -6,22 +6,11 @@
  */
 
 import type { Block, CursorData } from "../../orca.d.ts"
-import { getAISettings } from "./aiSettingsSchema"
-import { buildChatCompletionsBody } from "./aiChatRequest"
+import { callChatCompletions } from "./aiChatClient"
 import {
-  classifyAiFetchCatchError,
-  readHttpErrorMessage
-} from "./aiHttpErrors"
-import {
-  AI_MAX_RESPONSE_BYTES,
-  GENERATION_TIMEOUT_MS,
-  type AIServiceError
+  type AIServiceError,
+  QUICK_INTERACT_TIMEOUT_MS
 } from "./aiDraftTypes"
-import {
-  readResponseJsonLimited,
-  ResponseTooLargeError
-} from "../http/safeResponse"
-import { sanitizePublicError } from "../http/redactSecrets"
 import { parsePlainTextPayload } from "./aiBlockExplain"
 
 /** 选中文本发送上限 */
@@ -56,12 +45,6 @@ export type RunToolbarAIPromptOptions = {
 export type RunToolbarAIPromptResult =
   | { success: true; text: string }
   | { success: false; error: AIServiceError }
-
-function isAbortError(error: unknown): boolean {
-  if (error instanceof DOMException && error.name === "AbortError") return true
-  if (error instanceof Error && error.name === "AbortError") return true
-  return false
-}
 
 export function clipText(text: string, max: number): string {
   const t = text.trim()
@@ -177,136 +160,6 @@ export function buildQuickInteractUserPrompt(
   return lines.join("\n")
 }
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string }
-
-async function chatCompletionsText(options: {
-  pluginName: string
-  messages: ChatMessage[]
-  maxTokens: number
-  /** 非空时覆盖全局 model */
-  modelOverride?: string
-  signal?: AbortSignal
-}): Promise<
-  { success: true; content: string } | { success: false; error: AIServiceError }
-> {
-  const settings = getAISettings(options.pluginName)
-  if (!settings.apiKey) {
-    return {
-      success: false,
-      error: { code: "NO_API_KEY", message: "请先在设置中配置 API Key" }
-    }
-  }
-
-  const modelOverride = options.modelOverride?.trim()
-  const effectiveSettings = modelOverride
-    ? { ...settings, model: modelOverride }
-    : settings
-
-  const timeoutController = new AbortController()
-  const timeoutId = setTimeout(
-    () => timeoutController.abort(),
-    GENERATION_TIMEOUT_MS
-  )
-  const { signal } = options
-  const onExternalAbort = () => timeoutController.abort()
-  if (signal) {
-    if (signal.aborted) {
-      clearTimeout(timeoutId)
-      return {
-        success: false,
-        error: { code: "CANCELLED", message: "已取消生成" }
-      }
-    }
-    signal.addEventListener("abort", onExternalAbort, { once: true })
-  }
-
-  try {
-    const response = await fetch(settings.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify(
-        buildChatCompletionsBody({
-          settings: effectiveSettings,
-          messages: options.messages,
-          temperature: 0.4,
-          maxTokens: options.maxTokens
-        })
-      ),
-      signal: timeoutController.signal
-    })
-
-    if (!response.ok) {
-      const fallback = `请求失败: ${response.status}`
-      const errorMessage = await readHttpErrorMessage(
-        response,
-        fallback,
-        settings.apiKey
-      )
-      return {
-        success: false,
-        error: { code: `HTTP_${response.status}`, message: errorMessage }
-      }
-    }
-
-    let data: { choices?: Array<{ message?: { content?: string } }> }
-    try {
-      data = await readResponseJsonLimited(response, AI_MAX_RESPONSE_BYTES)
-    } catch (error) {
-      if (error instanceof ResponseTooLargeError) {
-        return {
-          success: false,
-          error: {
-            code: "RESPONSE_TOO_LARGE",
-            message: sanitizePublicError(
-              `AI 响应过大（上限 ${AI_MAX_RESPONSE_BYTES} 字节）`,
-              settings.apiKey
-            )
-          }
-        }
-      }
-      throw error
-    }
-
-    const aiContent = data.choices?.[0]?.message?.content
-    if (!aiContent || typeof aiContent !== "string") {
-      return {
-        success: false,
-        error: { code: "EMPTY_RESPONSE", message: "AI 返回内容为空" }
-      }
-    }
-    return { success: true, content: aiContent }
-  } catch (error) {
-    if (isAbortError(error)) {
-      const cancelledByUser = signal?.aborted === true
-      return {
-        success: false,
-        error: {
-          code: cancelledByUser ? "CANCELLED" : "TIMEOUT",
-          message: cancelledByUser
-            ? "已取消生成"
-            : `生成超时（${Math.round(GENERATION_TIMEOUT_MS / 1000)} 秒）`
-        }
-      }
-    }
-    const classified = classifyAiFetchCatchError(error)
-    return {
-      success: false,
-      error: {
-        code: classified.code,
-        message: sanitizePublicError(classified.message, settings.apiKey)
-      }
-    }
-  } finally {
-    clearTimeout(timeoutId)
-    if (signal) {
-      signal.removeEventListener("abort", onExternalAbort)
-    }
-  }
-}
-
 /**
  * 按用户指令处理选中文本，返回纯文本结果。
  */
@@ -328,9 +181,11 @@ export async function runToolbarAIPrompt(
     }
   }
 
-  const chat = await chatCompletionsText({
+  const chat = await callChatCompletions({
     pluginName: options.pluginName,
-    maxTokens: 1600,
+    purpose: "quick",
+    timeoutMs: QUICK_INTERACT_TIMEOUT_MS,
+    temperature: 0.4,
     signal: options.signal,
     modelOverride: options.model,
     messages: [

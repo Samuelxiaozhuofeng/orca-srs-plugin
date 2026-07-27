@@ -184,6 +184,27 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.makeAICard`
   })
 
+  orca.slashCommands.registerSlashCommand(`${pluginName}.quickBasicCard`, {
+    icon: "ti ti-bolt",
+    group: "SRS",
+    title: "快捷问答卡（选中即生成，下方预览）",
+    command: `${pluginName}.quickBasicCard`
+  })
+
+  orca.slashCommands.registerSlashCommand(`${pluginName}.quickClozeCard`, {
+    icon: "ti ti-bolt",
+    group: "SRS",
+    title: "快捷填空卡（选中即生成，下方预览）",
+    command: `${pluginName}.quickClozeCard`
+  })
+
+  orca.slashCommands.registerSlashCommand(`${pluginName}.quickChoiceCard`, {
+    icon: "ti ti-bolt",
+    group: "SRS",
+    title: "快捷选择题（选中即生成，下方预览）",
+    command: `${pluginName}.quickChoiceCard`
+  })
+
   orca.slashCommands.registerSlashCommand(`${pluginName}.manageAIPrompts`, {
     icon: "ti ti-books",
     group: "SRS",
@@ -287,6 +308,9 @@ export async function unregisterUIComponents(
   orca.toolbar.unregisterToolbarButton(`${pluginName}.aiQuickInteract`)
 
   // 斜杠命令
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.quickBasicCard`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.quickClozeCard`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.quickChoiceCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.makeCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.choiceCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.listCard`)

@@ -6,12 +6,27 @@ import type {
   AIReasoningEffort,
   AISettings
 } from "../srs/ai/aiSettingsSchema"
-import { AI_REASONING_EFFORTS } from "../srs/ai/aiSettingsSchema"
+import type { QuickCardPrefs } from "../srs/ai/aiQuickCardPrefs"
+import {
+  AI_CARD_LANGUAGE_LABELS,
+  AI_CARD_LANGUAGES,
+  AI_CUSTOM_INSTRUCTION_MAX,
+  type AICardLanguage
+} from "../srs/ai/aiDraftTypes"
+import {
+  AI_REASONING_EFFORTS,
+  AI_WEB_SEARCH_TOOL_TYPES,
+  MAX_AI_MAX_OUTPUT_TOKENS,
+  MIN_AI_MAX_OUTPUT_TOKENS,
+  type AIWebSearchToolType
+} from "../srs/ai/aiSettingsSchema"
+import { AiRequestLogSection } from "./AIRequestLogSection"
 import type { WebImportSettings } from "../srs/settings/webImportSettingsSchema"
 
 export type ServiceSettingsDraft = {
   ai: AISettings
   firecrawl: WebImportSettings
+  quickCard: QuickCardPrefs
 }
 
 export interface AIServiceSettingsDialogProps {
@@ -23,6 +38,7 @@ export interface AIServiceSettingsDialogProps {
   formKey: string
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
+  initialQuickCard: QuickCardPrefs
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
@@ -49,6 +65,7 @@ function stopBubble(e: { stopPropagation: () => void }): void {
 function ServiceSettingsForm(props: {
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
+  initialQuickCard: QuickCardPrefs
   busy: boolean
   modelOptions: readonly string[]
   isFetchingModels: boolean
@@ -70,6 +87,20 @@ function ServiceSettingsForm(props: {
   const [reasoningEffort, setReasoningEffort] = useState<AIReasoningEffort>(
     props.initialAI.reasoningEffort
   )
+  const [webSearchToolType, setWebSearchToolType] =
+    useState<AIWebSearchToolType>(props.initialAI.webSearchToolType)
+  const [maxOutputTokens, setMaxOutputTokens] = useState(
+    String(props.initialAI.maxOutputTokens)
+  )
+  const [quickCardLanguage, setQuickCardLanguage] = useState<AICardLanguage>(
+    props.initialQuickCard.cardLanguage
+  )
+  const [quickCardInstruction, setQuickCardInstruction] = useState(
+    props.initialQuickCard.customInstruction
+  )
+  const [quickCardModel, setQuickCardModel] = useState(
+    props.initialQuickCard.model
+  )
   const [firecrawlApiKey, setFirecrawlApiKey] = useState(
     props.initialFirecrawl.firecrawlApiKey
   )
@@ -84,9 +115,17 @@ function ServiceSettingsForm(props: {
       apiUrl,
       model,
       enableNativeWebSearch,
-      reasoningEffort
+      reasoningEffort,
+      webSearchToolType,
+      // 非法输入交给 normalizeAISettings 兜底钳制，这里不静默改用户的字
+      maxOutputTokens: Number(maxOutputTokens)
     },
-    firecrawl: { firecrawlApiKey, firecrawlApiUrl }
+    firecrawl: { firecrawlApiKey, firecrawlApiUrl },
+    quickCard: {
+      cardLanguage: quickCardLanguage,
+      customInstruction: quickCardInstruction,
+      model: quickCardModel
+    }
   })
 
   const modelList = props.modelOptions
@@ -215,17 +254,64 @@ function ServiceSettingsForm(props: {
               disabled={busy}
             />
             <span>
-              仅{" "}
-              <code className="ai-service-settings__code">grok-4.5</code>{" "}
-              支持：请求附带{" "}
-              <code className="ai-service-settings__code">
-                {'tools: [{ type: "web_search" }]'}
-              </code>
+              开启后按下方形态附带{" "}
+              <code className="ai-service-settings__code">tools</code>
             </span>
           </label>
           <p className="ai-service-settings__hint">
-            目前只支持 grok-4.5。其它模型（如 Gemini、GPT、其它 Grok
-            版本）即使开启此开关，也不会附带 web_search，按普通对话请求处理。制卡仍做源文本接地校验。
+            制卡仍做源文本接地校验：开启联网后若答案依赖源外内容，校验可能失败。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">联网 tool 形态</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={webSearchToolType}
+            onChange={(e) =>
+              setWebSearchToolType(e.target.value as AIWebSearchToolType)
+            }
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy || !enableNativeWebSearch}
+          >
+            {AI_WEB_SEARCH_TOOL_TYPES.map((toolType) => (
+              <option key={toolType} value={toolType}>
+                {toolType === "auto"
+                  ? "自动（仅 grok-4.5 附带 web_search）"
+                  : toolType}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            「自动」只认 model id 含 grok-4.5，新版本号一发布即失效。你的网关支持哪种
+            tool，比这里的字符串匹配更清楚——需要时直接选定形态，它会原样写进请求体
+            <code className="ai-service-settings__code">tools</code>
+            ；上游不支持会返回可见的 HTTP 错误，不静默降级。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">最大输出 token</span>
+          <input
+            type="number"
+            className="ai-service-settings__input"
+            value={maxOutputTokens}
+            min={MIN_AI_MAX_OUTPUT_TOKENS}
+            max={MAX_AI_MAX_OUTPUT_TOKENS}
+            step={1024}
+            onChange={(e) => setMaxOutputTokens(e.target.value)}
+            onKeyDown={stopKeys}
+            onKeyUp={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          />
+          <p className="ai-service-settings__hint">
+            这是<strong>输出</strong>上限，与模型的上下文窗口无关——百万上下文的模型
+            输出上限通常仍是 8k~64k，填超过会被网关按 400 拒绝。
+            推理模型（deepseek-v4 / gemini thinking 等）会把思考 token
+            一并计入，预算不足时正文会被截断成半个 JSON；真撞上了会明确提示
+            「被最大输出 token 截断」并告诉你花了多少 token 在推理上。
           </p>
         </label>
 
@@ -270,6 +356,83 @@ function ServiceSettingsForm(props: {
 
       <section className="ai-service-settings__section">
         <h3 className="ai-service-settings__section-title">
+          <i className="ti ti-bolt" aria-hidden="true" />
+          快捷制卡
+        </h3>
+        <p className="ai-service-settings__section-desc">
+          用于「快捷问答卡 / 快捷填空卡 / 快捷选择题」三个命令：选中即生成，
+          结果作为待激活卡片插到块下方等你确认。
+          <strong>卡型由命令决定</strong>，详细程度固定为概要档（1~2 张）——
+          块下面挂十几张预览卡没法看也没法选；要成批生成请用「AI 生成闪卡」弹窗。
+        </p>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">卡片语言</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={quickCardLanguage}
+            onChange={(e) =>
+              setQuickCardLanguage(e.target.value as AICardLanguage)
+            }
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          >
+            {AI_CARD_LANGUAGES.map((language) => (
+              <option key={language} value={language}>
+                {AI_CARD_LANGUAGE_LABELS[language]}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            只改题干措辞；答案与原文摘录始终保持源文本原样（接地校验的前提）。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">自定义指令（可选）</span>
+          <textarea
+            className="ai-service-settings__input"
+            rows={2}
+            value={quickCardInstruction}
+            maxLength={AI_CUSTOM_INSTRUCTION_MAX}
+            placeholder="例：只做定义类；答案尽量短"
+            onChange={(e) => setQuickCardInstruction(e.target.value)}
+            onKeyDown={stopKeys}
+            onKeyUp={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          />
+          <p className="ai-service-settings__hint">
+            {quickCardInstruction.length}/{AI_CUSTOM_INSTRUCTION_MAX}
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">专用模型（可选）</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={modelList.includes(quickCardModel) ? quickCardModel : ""}
+            onChange={(e) => setQuickCardModel(e.target.value)}
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          >
+            <option value="">默认（用上方全局模型）</option>
+            {modelList.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            快捷路径适合用更快更便宜的模型；留空则跟随全局设置。
+          </p>
+        </label>
+      </section>
+
+      <section className="ai-service-settings__section">
+        <h3 className="ai-service-settings__section-title">
           <i className="ti ti-world-www" aria-hidden="true" />
           Firecrawl（网页导入）
         </h3>
@@ -309,6 +472,8 @@ function ServiceSettingsForm(props: {
         </label>
       </section>
 
+      <AiRequestLogSection />
+
       {props.statusMessage ? (
         <p className="ai-service-settings__status" role="status">
           {props.statusMessage}
@@ -346,6 +511,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     formKey,
     initialAI,
     initialFirecrawl,
+    initialQuickCard,
     modelOptions,
     isFetchingModels,
     isTestingAI,
@@ -409,6 +575,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             key={formKey}
             initialAI={initialAI}
             initialFirecrawl={initialFirecrawl}
+            initialQuickCard={initialQuickCard}
             busy={busy}
             modelOptions={modelOptions}
             isFetchingModels={isFetchingModels}

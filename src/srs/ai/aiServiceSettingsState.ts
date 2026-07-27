@@ -2,6 +2,11 @@
  * AI / Firecrawl 服务设置面板状态
  */
 
+import {
+  getQuickCardPrefs,
+  hydrateQuickCardPrefs,
+  type QuickCardPrefs
+} from "./aiQuickCardPrefs"
 import { isAIDialogBusyOrInReview } from "./aiDialogState"
 import { isAIQuickInteractOpen } from "./aiQuickInteractState"
 import {
@@ -26,6 +31,7 @@ export interface AIServiceSettingsState {
   /** 打开时载入的初始值，供表单 key 初始化 */
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
+  initialQuickCard: QuickCardPrefs
 }
 
 const emptyAI: AISettings = {
@@ -33,7 +39,15 @@ const emptyAI: AISettings = {
   apiUrl: "",
   model: "",
   enableNativeWebSearch: false,
-  reasoningEffort: "default"
+  reasoningEffort: "default",
+  webSearchToolType: "auto",
+  maxOutputTokens: 16384
+}
+
+const emptyQuickCard: QuickCardPrefs = {
+  cardLanguage: "auto",
+  customInstruction: "",
+  model: ""
 }
 
 const emptyFirecrawl: WebImportSettings = {
@@ -78,12 +92,14 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   // 先用同步缓存/settings 填充，避免空白
   aiServiceSettingsState.initialAI = getAISettings(pluginName)
   aiServiceSettingsState.initialFirecrawl = getWebImportSettings(pluginName)
+  aiServiceSettingsState.initialQuickCard = getQuickCardPrefs(pluginName)
   aiServiceSettingsState.isOpen = true
 
   try {
-    const [ai, firecrawl] = await Promise.all([
+    const [ai, firecrawl, quickCard] = await Promise.all([
       hydrateAISettings(pluginName),
-      hydrateWebImportSettings(pluginName)
+      hydrateWebImportSettings(pluginName),
+      hydrateQuickCardPrefs(pluginName)
     ])
     if (
       !aiServiceSettingsState.isOpen ||
@@ -93,6 +109,7 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
     }
     aiServiceSettingsState.initialAI = ai
     aiServiceSettingsState.initialFirecrawl = firecrawl
+    aiServiceSettingsState.initialQuickCard = quickCard
   } catch (error) {
     console.error("[AI ServiceSettings] 加载失败:", error)
     if (

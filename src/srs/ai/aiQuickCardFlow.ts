@@ -1,0 +1,308 @@
+/**
+ * 快捷制卡：选中文本 → 直接生成 → 以待激活卡片形式插到块下方预览。
+ *
+ * 与「AI 生成闪卡」弹窗的分工：
+ * - 卡型由**命令名**决定（每次都随内容变，不该藏在设置里）
+ * - 语言 / 自定义指令 / 专用 model 走持久化偏好（稳定偏好，设一次用很久）
+ * - 详细程度固定概要档——块下面挂十几张预览卡没法看也没法选；
+ *   要成批生成就该打开弹窗，那是另一个场景
+ */
+
+import type { Block, CursorData, DbId } from "../../orca.d.ts"
+import {
+  AI_CARD_TYPE_LABELS,
+  type AICardType
+} from "./aiDraftTypes"
+import { generateFlashcardDrafts } from "./aiService"
+import { resolveBlockBackendFirst, writeAICardDrafts } from "./aiCardWriter"
+import { getQuickCardPrefs } from "./aiQuickCardPrefs"
+import { isAIConfigured } from "./aiSettingsSchema"
+import { extractSelectedTextFromCursor } from "./aiQuickPrompt"
+import {
+  aiQuickJobsState,
+  captureActivePanelViewSnapshot,
+  type QuickBackgroundJob
+} from "./aiQuickInteractJobs"
+import { sanitizePublicError } from "../http/redactSecrets"
+
+const TITLE = "AI 快捷制卡"
+
+/** 快捷路径固定用概要档，理由见文件头。 */
+const QUICK_DETAIL_LEVEL = "summary" as const
+
+/**
+ * 写入阶段看门狗。
+ *
+ * 生成阶段自带超时，写入阶段没有——一旦宿主命令因任何原因不回，
+ * 任务就永远停在 generating，用户看到一个转不停且无处可点的圈。
+ * 宁可报一个「写入超时」让人有迹可循，也不要静默卡死。
+ */
+const WRITE_PHASE_TIMEOUT_MS = 30_000
+
+class WritePhaseTimeoutError extends Error {
+  constructor() {
+    super("写入阶段超时")
+    this.name = "WritePhaseTimeoutError"
+  }
+}
+
+function withWriteTimeout<T>(work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new WritePhaseTimeoutError()),
+      WRITE_PHASE_TIMEOUT_MS
+    )
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
+let jobSeq = 0
+function nextQuickCardJobId(): string {
+  jobSeq += 1
+  return `aicard_${Date.now().toString(36)}_${jobSeq}`
+}
+
+function findJob(jobId: string): QuickBackgroundJob | undefined {
+  return (aiQuickJobsState.jobs as QuickBackgroundJob[]).find(
+    (j) => j.id === jobId
+  )
+}
+
+function patchJob(jobId: string, patch: Partial<QuickBackgroundJob>): void {
+  aiQuickJobsState.jobs = (aiQuickJobsState.jobs as QuickBackgroundJob[]).map(
+    (j) => (j.id === jobId ? { ...j, ...patch } : j)
+  )
+}
+
+function removeJob(jobId: string): void {
+  aiQuickJobsState.jobs = (aiQuickJobsState.jobs as QuickBackgroundJob[]).filter(
+    (j) => j.id !== jobId
+  )
+}
+
+/**
+ * 取制卡源文本：优先选区，没有选区就用整块正文。
+ *
+ * 选区为空不是错误——「光标停在块里直接按快捷键」是最顺手的用法。
+ */
+export function resolveQuickCardSource(
+  cursor: CursorData
+): { blockId: number; text: string; fromSelection: boolean } | null {
+  const selection = extractSelectedTextFromCursor(cursor)
+  if (selection && selection.selectedText.trim()) {
+    return {
+      blockId: selection.blockId,
+      text: selection.selectedText.trim(),
+      fromSelection: true
+    }
+  }
+
+  const blockId = Number(cursor?.anchor?.blockId)
+  if (!Number.isFinite(blockId)) return null
+  const block = orca.state.blocks?.[blockId] as Block | undefined
+  const text = (block?.text ?? "").trim()
+  if (!text) return null
+  return { blockId, text, fromSelection: false }
+}
+
+/** 预览包装块标题。 */
+export function buildQuickCardRootText(
+  cardType: AICardType,
+  count: number
+): string {
+  return `AI 快捷制卡 · ${AI_CARD_TYPE_LABELS[cardType]}（${count} 张，待确认）`
+}
+
+export type StartQuickCardOptions = {
+  pluginName: string
+  cursor: CursorData
+  cardType: AICardType
+}
+
+/**
+ * 启动一次快捷制卡。返回 job id；失败时抛出（调用方已 notify）。
+ */
+export async function startQuickCardJob(
+  options: StartQuickCardOptions
+): Promise<string | null> {
+  const { pluginName, cursor, cardType } = options
+
+  if (!isAIConfigured(pluginName)) {
+    orca.notify("warn", "请先在「AI / Firecrawl 服务设置」中配置 API Key", {
+      title: TITLE
+    })
+    return null
+  }
+
+  const source = resolveQuickCardSource(cursor)
+  if (!source) {
+    orca.notify("warn", "请选中文本，或把光标放在有内容的块上", { title: TITLE })
+    return null
+  }
+
+  const prefs = getQuickCardPrefs(pluginName)
+  const panelSnap = captureActivePanelViewSnapshot()
+  const jobId = nextQuickCardJobId()
+
+  const job: QuickBackgroundJob = {
+    id: jobId,
+    kind: "card",
+    pluginName,
+    sourceBlockId: source.blockId,
+    selectedText: source.text,
+    blockText: source.text,
+    promptLabel: AI_CARD_TYPE_LABELS[cardType],
+    promptText: "",
+    includeBlockContext: false,
+    model: prefs.model,
+    status: "generating",
+    resultText: "",
+    errorMessage: null,
+    resultRootBlockId: null,
+    cardBlockIds: [],
+    selectedResultBlockIds: [],
+    createdAt: Date.now(),
+    panelId: panelSnap.panelId,
+    panelViewKey: panelSnap.panelViewKey
+  }
+  aiQuickJobsState.jobs = [...aiQuickJobsState.jobs, job]
+
+  try {
+    const generated = await generateFlashcardDrafts({
+      pluginName,
+      sourceText: source.text,
+      cardTypes: [cardType],
+      detailLevel: QUICK_DETAIL_LEVEL,
+      cardLanguage: prefs.cardLanguage,
+      customInstruction: prefs.customInstruction
+    })
+
+    if (!findJob(jobId)) return null // 已被取消/卸载
+
+    if (!generated.success) {
+      const message = sanitizePublicError(generated.error.message)
+      patchJob(jobId, { status: "error", errorMessage: message })
+      orca.notify("error", message, { title: TITLE })
+      return jobId
+    }
+
+    if (generated.cards.length === 0) {
+      removeJob(jobId)
+      orca.notify("info", "这段内容没能产出合格的卡片", { title: TITLE })
+      return null
+    }
+
+    // 包装块：给预览一个可挂罩层与操作栏的单一根，保留时再把卡片提出来
+    const sourceBlock = await resolveBlockBackendFirst(source.blockId)
+    if (!sourceBlock) {
+      removeJob(jobId)
+      orca.notify("error", "源块已不存在", { title: TITLE })
+      return null
+    }
+
+    let cardBlockIds: number[] = []
+
+    /*
+     * 单条插入不再自己开 invokeGroup：writeAICardDrafts 内部已有一个
+     * 顶层组，连开两个顶层组会让后一个等不到提交。撤销粒度也更合理——
+     * 一次快捷制卡本就该是一个撤销单元。
+     */
+    const createdRoot = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      sourceBlock,
+      "lastChild",
+      [{ t: "t", v: buildQuickCardRootText(cardType, generated.cards.length) }]
+    )) as number | null
+
+    if (typeof createdRoot !== "number") {
+      removeJob(jobId)
+      orca.notify("error", "创建预览块失败", { title: TITLE })
+      return null
+    }
+    const rootId: DbId = createdRoot
+
+    const written = await withWriteTimeout(
+      writeAICardDrafts({
+        pluginName,
+        sourceBlockId: rootId,
+        // 接地复校必须对着生成用的文本，包装块正文只是个标题
+        sourceText: source.text,
+        drafts: generated.cards,
+        // 预览期间不进复习队列；「保留」时才激活
+        startPending: true
+      })
+    )
+
+    if (!written.success) {
+      try {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.deleteBlocks",
+          null,
+          [rootId]
+        )
+      } catch (cleanupError) {
+        console.error("[AI 快捷制卡] 清理预览块失败:", cleanupError)
+      }
+      removeJob(jobId)
+      orca.notify("error", written.error.message, { title: TITLE })
+      return null
+    }
+
+    cardBlockIds = written.createdBlockIds
+
+    if (!findJob(jobId)) {
+      // 生成期间用户已离场：不留下未确认的预览
+      try {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.deleteBlocks",
+          null,
+          [rootId]
+        )
+      } catch (cleanupError) {
+        console.error("[AI 快捷制卡] 离场清理失败:", cleanupError)
+      }
+      return null
+    }
+
+    patchJob(jobId, {
+      status: "ready",
+      resultRootBlockId: rootId,
+      cardBlockIds,
+      resultText: `${cardBlockIds.length} 张${AI_CARD_TYPE_LABELS[cardType]}`
+    })
+    return jobId
+  } catch (error) {
+    if (error instanceof WritePhaseTimeoutError) {
+      // 写入可能仍在后台推进，此时删块会与它打架——只报告，不清理
+      const message = `写入超时（${Math.round(
+        WRITE_PHASE_TIMEOUT_MS / 1000
+      )} 秒）。卡片可能已部分写入，请检查块下方是否残留「AI 快捷制卡」预览块。`
+      if (findJob(jobId)) {
+        patchJob(jobId, { status: "error", errorMessage: message })
+      }
+      console.error("[AI 快捷制卡] 写入阶段超时")
+      orca.notify("error", message, { title: TITLE })
+      return jobId
+    }
+
+    const message = sanitizePublicError(
+      error instanceof Error ? error.message : "快捷制卡失败"
+    )
+    if (findJob(jobId)) {
+      patchJob(jobId, { status: "error", errorMessage: message })
+    }
+    console.error("[AI 快捷制卡] 失败:", error)
+    orca.notify("error", message, { title: TITLE })
+    return jobId
+  }
+}

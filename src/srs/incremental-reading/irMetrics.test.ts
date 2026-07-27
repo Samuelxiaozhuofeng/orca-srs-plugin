@@ -41,6 +41,27 @@ describe("IRSessionMetrics", () => {
     }
   })
 
+  it("takes an undone 下一篇 back out of the processed counts", () => {
+    const metrics = new IRSessionMetrics()
+    metrics.record("action.next", 3000, { cardType: "topic" })
+    metrics.record("action.next", 3000, { cardType: "extracts" })
+    metrics.record("action.next.undo", undefined, { cardType: "extracts" })
+
+    const snap = metrics.getSnapshot()
+    expect(snap.completedCount).toBe(1)
+    expect(snap.topicProcessed).toBe(1)
+    expect(snap.extractProcessed).toBe(0)
+  })
+
+  it("never lets an undo push counters below zero", () => {
+    const metrics = new IRSessionMetrics()
+    metrics.record("action.next.undo", undefined, { cardType: "topic" })
+
+    const snap = metrics.getSnapshot()
+    expect(snap.completedCount).toBe(0)
+    expect(snap.topicProcessed).toBe(0)
+  })
+
   it("computes restore and failure rates", () => {
     const metrics = new IRSessionMetrics()
     metrics.record("breakpoint.restore")

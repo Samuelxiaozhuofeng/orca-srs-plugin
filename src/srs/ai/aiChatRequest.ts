@@ -3,7 +3,20 @@
  * 统一附带可选的 model 原生联网 tool 与思考强度，避免各调用点复制。
  */
 
-import type { AIReasoningEffort, AISettings } from "./aiSettingsSchema"
+import type {
+  AIReasoningEffort,
+  AISettings,
+  AIWebSearchToolType
+} from "./aiSettingsSchema"
+
+/**
+ * 联网判定所需的最小设置面。
+ * webSearchToolType 可选：旧调用点（含既有测试）无需同步改造，缺省按 "auto"。
+ */
+export type WebSearchAwareSettings = Pick<
+  AISettings,
+  "model" | "enableNativeWebSearch"
+> & { webSearchToolType?: AIWebSearchToolType }
 
 export type ChatCompletionsMessage = {
   role: "system" | "user" | "assistant"
@@ -11,10 +24,8 @@ export type ChatCompletionsMessage = {
 }
 
 export type BuildChatCompletionsBodyOptions = {
-  settings: Pick<
-    AISettings,
-    "model" | "enableNativeWebSearch" | "reasoningEffort"
-  >
+  settings: WebSearchAwareSettings &
+    Pick<AISettings, "model" | "reasoningEffort">
   messages: ChatCompletionsMessage[]
   temperature?: number
   maxTokens?: number
@@ -27,13 +38,15 @@ export type BuildChatCompletionsBodyOptions = {
 
 /**
  * xAI Grok 原生 server-side tool。
- * 本插件仅在 model 为 grok-4.5 时附带；其它模型即使开关打开也不发 tools。
  */
 export const NATIVE_WEB_SEARCH_TOOL = { type: "web_search" } as const
 
 /**
- * 是否为支持原生 web_search 的模型。
+ * 「自动」档下认为支持原生 web_search 的模型。
  * 仅匹配 id 中含 `grok-4.5`（大小写不敏感；可含网关前缀）。
+ *
+ * 这条匹配天生脆弱：新版本号一发布即失效，也覆盖不到其它厂商的 tool 形态。
+ * 因此它只作为「自动」档的推荐值，用户可在设置里显式指定 tool 形态覆盖它。
  */
 export function isNativeWebSearchSupportedModel(
   model: string | undefined | null
@@ -43,18 +56,36 @@ export function isNativeWebSearchSupportedModel(
 }
 
 /**
- * 是否应在请求体中附带 web_search tool。
- * 条件：开关开 + allowWebSearch + model 为 grok-4.5；否则普通请求、不带 tools。
+ * 解析本次请求应附带的联网 tool；null = 不带 tools 走普通请求。
+ *
+ * 优先级：allowWebSearch（调用方硬性关闭）> 总开关 > tool 形态设置。
+ * 显式形态（web_search / google_search）不再看 model id——
+ * 用户比这里的字符串匹配更清楚自己的网关支持什么。
+ */
+export function resolveWebSearchTool(
+  settings: WebSearchAwareSettings,
+  allowWebSearch = true
+): { type: string } | null {
+  if (allowWebSearch !== true) return null
+  if (settings.enableNativeWebSearch !== true) return null
+
+  const toolType = settings.webSearchToolType ?? "auto"
+  if (toolType === "auto") {
+    return isNativeWebSearchSupportedModel(settings.model)
+      ? { ...NATIVE_WEB_SEARCH_TOOL }
+      : null
+  }
+  return { type: toolType }
+}
+
+/**
+ * @deprecated 用 resolveWebSearchTool；保留供既有测试与外部引用。
  */
 export function shouldAttachNativeWebSearch(
-  settings: Pick<AISettings, "enableNativeWebSearch" | "model">,
+  settings: WebSearchAwareSettings,
   allowWebSearch = true
 ): boolean {
-  return (
-    allowWebSearch === true &&
-    settings.enableNativeWebSearch === true &&
-    isNativeWebSearchSupportedModel(settings.model)
-  )
+  return resolveWebSearchTool(settings, allowWebSearch) !== null
 }
 
 /**
@@ -92,8 +123,12 @@ export function buildChatCompletionsBody(
     body.max_tokens = options.maxTokens
   }
 
-  if (shouldAttachNativeWebSearch(options.settings, options.allowWebSearch)) {
-    body.tools = [{ ...NATIVE_WEB_SEARCH_TOOL }]
+  const webSearchTool = resolveWebSearchTool(
+    options.settings,
+    options.allowWebSearch
+  )
+  if (webSearchTool) {
+    body.tools = [webSearchTool]
   }
 
   const effort = resolveReasoningEffort(options.settings.reasoningEffort)

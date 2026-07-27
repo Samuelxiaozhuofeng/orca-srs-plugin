@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("../storage", () => ({
   ensureCardSrsState: vi.fn(async () => undefined),
-  writeInitialClozeSrsState: vi.fn(async () => undefined)
+  writeInitialClozeSrsState: vi.fn(async () => undefined),
+  // 写 srs.batchId 后必须失效缓存；mock 缺这两个导出会让写入路径抛 TypeError
+  invalidateBlockCache: vi.fn(() => undefined)
 }))
 
 vi.mock("../tagPropertyInit", () => ({

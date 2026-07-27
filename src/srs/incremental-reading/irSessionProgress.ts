@@ -36,6 +36,17 @@ export function markSessionItemCompleted(progress: IRSessionProgress): IRSession
   }
 }
 
+/** 撤销「下一篇」：把一次已计入的完成回退（不低于 0） */
+export function unmarkSessionItemCompleted(progress: IRSessionProgress): IRSessionProgress {
+  const completed = Math.max(0, progress.completed - 1)
+  const remaining = Math.min(progress.planned, progress.remaining + 1)
+  return {
+    planned: progress.planned,
+    completed,
+    remaining
+  }
+}
+
 export function syncSessionRemaining(
   progress: IRSessionProgress,
   remaining: number

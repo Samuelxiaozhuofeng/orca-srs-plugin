@@ -8,21 +8,31 @@
 import {
   aiDialogState,
   closeAIDialog,
+  appendGenerationSuccess,
   applyGenerationSuccess,
+  draftExclusionSummary,
   setDialogError,
   setDialogInfo,
   setGenerating,
+  setGeneratingMore,
   setSaving,
   updateDraft,
   removeDraft,
   setDraftSelected,
+  toggleCardType,
   backToConfig
 } from "../srs/ai/aiDialogState"
 import { AICardGenerationDialog } from "./AICardGenerationDialog"
 import { generateFlashcardDrafts } from "../srs/ai/aiService"
 import { writeAICardDrafts } from "../srs/ai/aiCardWriter"
 import { createRequestTokenGuard } from "../srs/ai/aiRequestToken"
-import type { AICardDraft, AICardType, MaxCardsOption } from "../srs/ai/aiDraftTypes"
+import {
+  AI_CUSTOM_INSTRUCTION_MAX,
+  type AICardDraft,
+  type AICardLanguage,
+  type AICardType,
+  type AIDetailLevel
+} from "../srs/ai/aiDraftTypes"
 import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
 
@@ -47,7 +57,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
     }
   }, [])
 
-  const handleGenerate = async () => {
+  const runGeneration = async (mode: "first" | "more") => {
     if (!snap.sourceBlockId || !snap.sourceText.trim()) {
       setDialogError("缺少源文本，请关闭后重试")
       return
@@ -58,16 +68,26 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
     abortRef.current = controller
     const token = tokenGuardRef.current.next()
 
-    setGenerating(true)
+    // 「再生成一批」保留已有草稿与勾选，只在按钮上转圈
+    if (mode === "more") setGeneratingMore(true)
+    else setGenerating(true)
     setDialogError(null)
     setDialogInfo(null)
+
+    const excludeSummaries =
+      mode === "more"
+        ? (aiDialogState.drafts as AICardDraft[]).map(draftExclusionSummary)
+        : undefined
 
     try {
       const result = await generateFlashcardDrafts({
         pluginName,
         sourceText: snap.sourceText,
-        cardType: snap.cardType,
-        maxCards: snap.maxCards,
+        cardTypes: snap.cardTypes as AICardType[],
+        detailLevel: snap.detailLevel,
+        cardLanguage: snap.cardLanguage,
+        customInstruction: snap.customInstruction,
+        excludeSummaries,
         signal: controller.signal
       })
 
@@ -91,6 +111,15 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
         return
       }
 
+      if (mode === "more") {
+        appendGenerationSuccess(
+          result.cards,
+          result.rejected,
+          result.truncatedCount
+        )
+        return
+      }
+
       applyGenerationSuccess(
         result.cards,
         result.rejected,
@@ -111,9 +140,13 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
           abortRef.current = null
         }
         setGenerating(false)
+        setGeneratingMore(false)
       }
     }
   }
+
+  const handleGenerate = () => runGeneration("first")
+  const handleGenerateMore = () => runGeneration("more")
 
   const handleCancelGenerate = () => {
     tokenGuardRef.current.invalidate()
@@ -121,6 +154,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
     abortRef.current = null
     setDialogInfo("已取消生成")
     setGenerating(false)
+    setGeneratingMore(false)
   }
 
   const handleSave = async () => {
@@ -157,7 +191,8 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       const result = await writeAICardDrafts({
         pluginName,
         sourceBlockId: snap.sourceBlockId,
-        drafts: selected
+        drafts: selected,
+        startPending: aiDialogState.startPending
       })
 
       if (!result.success) {
@@ -170,9 +205,13 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
         return
       }
 
-      orca.notify("success", `已保存 ${result.createdBlockIds.length} 张卡片`, {
-        title: "AI 生成闪卡"
-      })
+      orca.notify(
+        "success",
+        aiDialogState.startPending
+          ? `已保存 ${result.createdBlockIds.length} 张卡片（待激活，暂不排期）`
+          : `已保存 ${result.createdBlockIds.length} 张卡片`,
+        { title: "AI 生成闪卡" }
+      )
       closeAIDialog()
     } catch (error) {
       const message =
@@ -191,13 +230,17 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       visible={snap.isOpen}
       phase={snap.phase}
       sourceText={snap.sourceText}
-      cardType={snap.cardType}
-      maxCards={snap.maxCards}
+      cardTypes={snap.cardTypes as AICardType[]}
+      detailLevel={snap.detailLevel}
+      cardLanguage={snap.cardLanguage}
+      customInstruction={snap.customInstruction}
+      startPending={snap.startPending}
       drafts={snap.drafts as AICardDraft[]}
       selectedIds={snap.selectedIds as string[]}
       errorMessage={snap.errorMessage}
       infoMessage={snap.infoMessage}
       isGenerating={snap.isGenerating}
+      isGeneratingMore={snap.isGeneratingMore}
       isSaving={snap.isSaving}
       onClose={() => {
         if (snap.isGenerating) {
@@ -207,17 +250,36 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
           closeAIDialog()
         }
       }}
-      onCardTypeChange={(type: AICardType) => {
+      onToggleCardType={(type: AICardType) => {
         if (!aiDialogState.isGenerating) {
-          aiDialogState.cardType = type
+          toggleCardType(type)
         }
       }}
-      onMaxCardsChange={(n: MaxCardsOption) => {
+      onDetailLevelChange={(level: AIDetailLevel) => {
         if (!aiDialogState.isGenerating) {
-          aiDialogState.maxCards = n
+          aiDialogState.detailLevel = level
+        }
+      }}
+      onCardLanguageChange={(language: AICardLanguage) => {
+        if (!aiDialogState.isGenerating) {
+          aiDialogState.cardLanguage = language
+        }
+      }}
+      onCustomInstructionChange={(text: string) => {
+        if (!aiDialogState.isGenerating) {
+          aiDialogState.customInstruction = text.slice(
+            0,
+            AI_CUSTOM_INSTRUCTION_MAX
+          )
+        }
+      }}
+      onStartPendingChange={(value: boolean) => {
+        if (!aiDialogState.isSaving) {
+          aiDialogState.startPending = value
         }
       }}
       onGenerate={handleGenerate}
+      onGenerateMore={handleGenerateMore}
       onCancelGenerate={handleCancelGenerate}
       onBack={backToConfig}
       onToggleSelect={setDraftSelected}

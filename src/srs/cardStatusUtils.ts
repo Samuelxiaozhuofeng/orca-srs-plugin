@@ -9,14 +9,20 @@
 import type { DbId, Block } from "../orca.d.ts"
 import { isCardTag } from "./tagUtils"
 import { invalidateBlockCache } from "./storage"
+import { invalidateIrBlockCache } from "./incremental-reading/irBlockCache"
 
 
 /**
  * 卡片状态类型
  * - normal: 正常状态
- * - suspend: 暂停状态（不会出现在复习队列）
+ * - suspend: 暂停状态（不会出现在复习队列，也不进入任何收集结果）
+ * - pending: 待激活（卡片已建好但尚未排期）
+ *
+ * pending 与 suspend 的区别很重要：suspend 在 reviewCardFactory 处直接返回空数组，
+ * 卡片对所有消费方都不可见；pending 仍然会被收集成 ReviewCard，只是不进复习队列，
+ * 这样 Flash Home 才能统计并提供「激活」入口。
  */
-export type CardStatus = "normal" | "suspend"
+export type CardStatus = "normal" | "suspend" | "pending"
 
 /**
  * 从块的 #card 标签属性中提取卡片状态
@@ -67,15 +73,19 @@ export function extractCardStatus(block: Block): CardStatus {
     if (statusValue.length === 0 || !statusValue[0] || typeof statusValue[0] !== "string") {
       return "normal"
     }
-    const firstValue = statusValue[0].trim().toLowerCase()
-    if (firstValue === "suspend") return "suspend"
-    return "normal"
+    return normalizeCardStatusValue(statusValue[0])
   } else if (typeof statusValue === "string") {
-    const trimmedValue = statusValue.trim().toLowerCase()
-    if (trimmedValue === "suspend") return "suspend"
-    return "normal"
+    return normalizeCardStatusValue(statusValue)
   }
 
+  return "normal"
+}
+
+/** 未知值一律按 normal：宁可多复习一张，也不要静默吞掉卡片。 */
+function normalizeCardStatusValue(raw: string): CardStatus {
+  const value = raw.trim().toLowerCase()
+  if (value === "suspend") return "suspend"
+  if (value === "pending") return "pending"
   return "normal"
 }
 
@@ -240,3 +250,61 @@ export async function postponeCard(
 export const buryCard = postponeCard
 
 
+
+/**
+ * 批量激活待激活卡片：把 #card 标签的 status 从 pending 清回空。
+ *
+ * 刻意不复用 `unsuspendCard`：它只读 `orca.state.blocks`，对**未渲染**的块
+ * 直接抛「找不到块」——而批量激活面对的正是一堆从未打开过的 AI 卡；
+ * 它也没有失效缓存，紧接着的收集会读回旧 status。这里 backend-first 解析并
+ * 在写后失效两套缓存。
+ *
+ * 逐个串行处理并累计失败，不用 Promise.all —— 批量块写入必须有界，
+ * 且单张失败不应让整批静默中止。
+ */
+export async function activatePendingCards(
+  blockIds: readonly DbId[]
+): Promise<{ activated: DbId[]; failed: Array<{ blockId: DbId; error: string }> }> {
+  const activated: DbId[] = []
+  const failed: Array<{ blockId: DbId; error: string }> = []
+
+  for (const blockId of blockIds) {
+    try {
+      let block: Block | null = null
+      try {
+        block =
+          ((await orca.invokeBackend("get-block", blockId)) as Block | null) ??
+          null
+      } catch {
+        block = (orca.state.blocks?.[blockId] as Block | undefined) ?? null
+      }
+      if (!block) {
+        throw new Error(`找不到块 #${blockId}`)
+      }
+
+      const cardRef = block.refs?.find(
+        (ref) => ref.type === 2 && isCardTag(ref.alias)
+      )
+      if (!cardRef) {
+        throw new Error(`块 #${blockId} 没有 #card 标签`)
+      }
+
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setRefData",
+        null,
+        cardRef,
+        [{ name: "status", value: "" }]
+      )
+
+      invalidateBlockCache(blockId)
+      invalidateIrBlockCache(blockId)
+      activated.push(blockId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[SRS] 激活卡片 #${blockId} 失败:`, error)
+      failed.push({ blockId, error: message })
+    }
+  }
+
+  return { activated, failed }
+}

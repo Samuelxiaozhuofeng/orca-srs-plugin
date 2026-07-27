@@ -297,3 +297,16 @@ const { queue, formalRootCards } = await buildSessionReviewQueue(
 | `src/components/SrsReviewSessionRenderer.tsx` | 加载队列 |
 | `src/components/SrsReviewSessionDemo.tsx` | 会话运行时 |
 | `模块文档/SRS 动态复习队列.md` | 动态追加与 pending 细节 |
+
+## 同批聚簇与待激活（2026-07-27）
+
+`buildReviewQueue` 的流水线由「分区 → 排序 → 限额 → 2:1 交织」扩展为
+「分区 → 排序 → 限额 → **同批聚簇** → 2:1 交织」。
+
+- `clusterCardsByBatch(cards)`：把带相同 `ReviewCard.batchId` 的卡以**该批最早到期成员**为锚点就地展开。批次之间、以及无 batchId 的卡之间，原有 due 升序完全不变——聚簇只改变同批卡的相对聚合，不会把晚到期的卡提前到别的批次之前。只有一张的批次不构成簇，保持原位。
+- **顺序很关键**：聚簇必须在 `applyDailyRootLimits` **之后**。放在之前会让整批卡一起挤进当日额度，把队列变成单一材料。
+- `batchId` 来自块属性 `srs.batchId`（`src/srs/cardBatch.ts`），由 AI 批量制卡写入。它是**分组令牌不是实体身份**，不得用作卡片唯一标识（与 book-ir / ir-auto 的既有约定一致）。走 `srs.` 前缀因此会被 `deleteCardSrsData` 一并清除——重置卡片即丢分组，可接受。
+
+`partitionDueAndNewCards` 现在排除 `card.isPending`：待激活卡既不进队列也**不占当日额度**（否则激活前队列会莫名变短）。pending 与 suspend 的区别见 [SRS_AI模块.md](SRS_AI模块.md)。
+
+相关测试：`reviewQueueBatchCluster.test.ts`（聚簇不丢不重、批次独立锚定、pending 不进队列不占额度）、`cardBatch.test.ts`。

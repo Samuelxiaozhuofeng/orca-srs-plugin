@@ -12,13 +12,36 @@ import type { Block, ContentFragment } from "../../orca.d.ts"
 import { ensureCardSrsState, writeInitialClozeSrsState } from "../storage"
 import { ensureCardTagProperties } from "../tagPropertyInit"
 import { buildCardTagData } from "../cardTagDataBuilder"
+import { createCardBatchId, writeCardBatchId } from "../cardBatch"
 import { validateEditableDraft } from "./aiDraftParseValidate"
-import type { AICardDraft, BasicCardDraft, ClozeCardDraft } from "./aiDraftTypes"
+import type {
+  AICardDraft,
+  BasicCardDraft,
+  ChoiceCardDraft,
+  ClozeCardDraft
+} from "./aiDraftTypes"
+import type { BlockWithRepr } from "../blockUtils"
+import { resolveFrontBack } from "../blockUtils"
 
 export interface WriteAICardsOptions {
   pluginName: string
   sourceBlockId: number
   drafts: AICardDraft[]
+  /**
+   * 生成时实际使用的源文本。
+   *
+   * 必须能由调用方指定：写入父块不一定就是生成来源（快捷制卡把卡片挂在
+   * 包装块下，包装块的正文只是个标题）。用父块 text 复校会让所有草稿判为
+   * 「依据未出现在源文本中」，整批无法保存。缺省时回退父块正文。
+   */
+  sourceText?: string
+  /**
+   * 建好卡但先不排期，由用户在 Flash Home 批量激活。
+   * 一次写 12 张会瞬间打爆当日新卡额度并打乱 FSRS 的新卡节奏。
+   */
+  startPending?: boolean
+  /** 同批标记；缺省自动生成。多于一张时才有聚簇意义。 */
+  batchId?: string
 }
 
 export interface WriteAICardsSuccess {
@@ -34,6 +57,20 @@ export interface WriteAICardsFailure {
 }
 
 export type WriteAICardsResult = WriteAICardsSuccess | WriteAICardsFailure
+
+/** 每张卡写入后统一打的标记。 */
+type CardStampOptions = {
+  batchId: string
+  status: "" | "pending"
+}
+
+/**
+ * 同批标记 + 待激活状态。
+ * 属性写失败必须冒泡：静默失败会让聚簇「有时生效」，比不做更难排查。
+ */
+async function stampCard(blockId: number, stamp: CardStampOptions): Promise<void> {
+  await writeCardBatchId(blockId, stamp.batchId)
+}
 
 /**
  * 构造 Cloze 内容片段：在 insertBlock 前完成，避免 setBlockContent
@@ -105,7 +142,8 @@ async function insertBasicCard(
   parentBlock: Block,
   card: BasicCardDraft,
   pluginName: string,
-  trackTopLevel: (id: number) => void
+  trackTopLevel: (id: number) => void,
+  stamp: CardStampOptions
 ): Promise<number> {
   const questionBlockId = (await orca.commands.invokeEditorCommand(
     "core.editor.insertBlock",
@@ -143,9 +181,106 @@ async function insertBasicCard(
     null,
     questionBlockId,
     "card",
-    await buildCardTagData(pluginName, questionBlockId, "basic")
+    await buildCardTagData(pluginName, questionBlockId, "basic", stamp.status)
   )
 
+  await stampCard(questionBlockId, stamp)
+  await ensureCardSrsState(questionBlockId)
+  return questionBlockId
+}
+
+/**
+ * 写入选择题卡。
+ *
+ * 结构与 `createChoiceCardFromBlock` 手工创建的完全一致，否则复习渲染器
+ * 与 `extractChoiceOptions` 认不出来：
+ *   题干块（#card type=choice + #choice，_repr = srs.choice-card）
+ *     └── 每个选项一个直接子块，正确项打 #correct
+ */
+async function insertChoiceCard(
+  parentBlock: Block,
+  card: ChoiceCardDraft,
+  pluginName: string,
+  trackTopLevel: (id: number) => void,
+  stamp: CardStampOptions
+): Promise<number> {
+  const questionBlockId = (await orca.commands.invokeEditorCommand(
+    "core.editor.insertBlock",
+    null,
+    parentBlock,
+    "lastChild",
+    [{ t: "t", v: card.question }]
+  )) as number | null
+
+  if (!questionBlockId) {
+    throw new Error("创建选择题题干块失败")
+  }
+
+  trackTopLevel(questionBlockId)
+
+  const questionBlock = await resolveBlockBackendFirst(questionBlockId)
+  if (!questionBlock) {
+    throw new Error("无法获取选择题题干块")
+  }
+
+  // 选项必须按顺序逐个插入：lastChild 语义依赖前一次插入已落库
+  for (const option of card.options) {
+    const optionBlockId = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      questionBlock,
+      "lastChild",
+      [{ t: "t", v: option.text }]
+    )) as number | null
+
+    if (!optionBlockId) {
+      throw new Error("创建选项块失败")
+    }
+
+    if (option.correct) {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.insertTag",
+        null,
+        optionBlockId,
+        "correct"
+      )
+    }
+  }
+
+  await orca.commands.invokeEditorCommand(
+    "core.editor.insertTag",
+    null,
+    questionBlockId,
+    "card",
+    await buildCardTagData(pluginName, questionBlockId, "choice", stamp.status)
+  )
+
+  await orca.commands.invokeEditorCommand(
+    "core.editor.insertTag",
+    null,
+    questionBlockId,
+    "choice"
+  )
+
+  // _repr 决定复习界面用哪个渲染器；缺了它这张卡会退化成普通问答卡
+  const liveBlock = orca.state.blocks?.[questionBlockId] as
+    | BlockWithRepr
+    | undefined
+  if (liveBlock) {
+    const { front, back } = resolveFrontBack(liveBlock)
+    liveBlock._repr = {
+      type: "srs.choice-card",
+      front,
+      back,
+      cardType: "choice"
+    }
+  } else {
+    console.warn(
+      `[${pluginName}] 选择题块 #${questionBlockId} 不在 state 中，_repr 未设置`
+    )
+  }
+
+  await stampCard(questionBlockId, stamp)
   await ensureCardSrsState(questionBlockId)
   return questionBlockId
 }
@@ -154,7 +289,8 @@ async function insertClozeCard(
   parentBlock: Block,
   card: ClozeCardDraft,
   pluginName: string,
-  trackTopLevel: (id: number) => void
+  trackTopLevel: (id: number) => void,
+  stamp: CardStampOptions
 ): Promise<number> {
   const content = buildClozeContentFragments(card.text, card.clozeText, pluginName, 1)
 
@@ -177,9 +313,10 @@ async function insertClozeCard(
     null,
     blockId,
     "card",
-    await buildCardTagData(pluginName, blockId, "cloze")
+    await buildCardTagData(pluginName, blockId, "cloze", stamp.status)
   )
 
+  await stampCard(blockId, stamp)
   await writeInitialClozeSrsState(blockId, 1, 0)
   return blockId
 }
@@ -269,6 +406,10 @@ export async function writeAICardDrafts(
   options: WriteAICardsOptions
 ): Promise<WriteAICardsResult> {
   const { pluginName, sourceBlockId, drafts } = options
+  const stamp: CardStampOptions = {
+    batchId: options.batchId ?? createCardBatchId("ai"),
+    status: options.startPending === true ? "pending" : ""
+  }
 
   if (drafts.length === 0) {
     return {
@@ -285,7 +426,7 @@ export async function writeAICardDrafts(
     }
   }
 
-  const sourceText = (sourceBlock.text ?? "").trim()
+  const sourceText = (options.sourceText ?? sourceBlock.text ?? "").trim()
   if (!sourceText) {
     return {
       success: false,
@@ -323,9 +464,11 @@ export async function writeAICardDrafts(
 
         for (const draft of drafts) {
           if (draft.type === "basic") {
-            await insertBasicCard(parent, draft, pluginName, trackTopLevel)
+            await insertBasicCard(parent, draft, pluginName, trackTopLevel, stamp)
+          } else if (draft.type === "choice") {
+            await insertChoiceCard(parent, draft, pluginName, trackTopLevel, stamp)
           } else {
-            await insertClozeCard(parent, draft, pluginName, trackTopLevel)
+            await insertClozeCard(parent, draft, pluginName, trackTopLevel, stamp)
           }
         }
       },

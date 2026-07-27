@@ -101,6 +101,16 @@ export type ReviewCard = {
   listItemIndex?: number  // 条目序号（从 1 开始，基于当前 children 顺序）
   listItemIds?: DbId[]  // 列表条目子块 ID 列表（基于当前 children 顺序）
   isAuxiliaryPreview?: boolean  // 是否为辅助预览（不计入统计、不更新 SRS）
+  /**
+   * 同批生成标记（如一次 AI 制卡）。同批卡在队列中聚拢展示。
+   * 可选：既有测试夹具与手工建卡不带该字段。
+   */
+  batchId?: string
+  /**
+   * 待激活：卡片已存在但尚未排期，不进复习队列。
+   * 与 suspend 不同——pending 卡仍会被收集，便于统计与批量激活。
+   */
+  isPending?: boolean
   content?: ContentFragment[]  // 块内容（仅 cloze 卡片使用，用于渲染填空）
   tags?: TagInfo[]  // 额外标签（排除 #card）
 }

@@ -7,11 +7,7 @@ import {
   normalizeAISettings,
   type AISettings
 } from "./aiSettingsSchema"
-import { buildChatCompletionsBody } from "./aiChatRequest"
-import {
-  classifyAiFetchCatchError,
-  readHttpErrorMessage
-} from "./aiHttpErrors"
+import { callChatCompletions } from "./aiChatClient"
 import { CONNECTION_TEST_TIMEOUT_MS } from "./aiDraftTypes"
 import { sanitizePublicError } from "../http/redactSecrets"
 
@@ -255,108 +251,58 @@ export async function testAIConfigWithDetails(
     }
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    CONNECTION_TEST_TIMEOUT_MS
-  )
+  const chat = await callChatCompletions({
+    pluginName,
+    settingsOverride: settings,
+    purpose: "connection-test",
+    // 测连是用户显式的单发探测：不排队、不重试，失败就要立刻看到原因
+    bypassConcurrencyGate: true,
+    maxRetries: 0,
+    messages: [{ role: "user", content: "Hi" }],
+    maxTokens: 5,
+    // 测连不触发联网 tool，避免额外延迟/计费；reasoning_effort 仍会带上
+    allowWebSearch: false,
+    timeoutMs: CONNECTION_TEST_TIMEOUT_MS,
+    timeoutLabel: "连接超时",
+    // 只关心链路可达：个别网关对 max_tokens=5 会返回空 content
+    allowEmptyContent: true
+  })
 
-  try {
-    const response = await fetch(settings.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify(
-        buildChatCompletionsBody({
-          settings,
-          messages: [{ role: "user", content: "Hi" }],
-          maxTokens: 5,
-          // 测连不触发联网 tool，避免额外延迟/计费；reasoning_effort 仍会带上
-          allowWebSearch: false
-        })
-      ),
-      signal: controller.signal
-    })
-
-    if (response.ok) {
-      const { readResponseJsonLimited, ResponseTooLargeError } = await import(
-        "../http/safeResponse"
-      )
-      const { AI_MAX_RESPONSE_BYTES } = await import("./aiDraftTypes")
-      let data: { model?: string }
-      try {
-        data = await readResponseJsonLimited(response, AI_MAX_RESPONSE_BYTES)
-      } catch (error) {
-        if (error instanceof ResponseTooLargeError) {
-          return {
-            success: false,
-            message: `连接响应过大（上限 ${AI_MAX_RESPONSE_BYTES} 字节）`,
-            details: { error: "RESPONSE_TOO_LARGE" }
-          }
-        }
-        throw error
-      }
-      const modelUsed = data.model || settings.model
-      return {
-        success: true,
-        message: `连接成功！\n使用模型: ${modelUsed}`,
-        details: { status: response.status, model: modelUsed }
-      }
+  if (chat.success) {
+    const modelUsed = chat.model || settings.model
+    return {
+      success: true,
+      message: `连接成功！\n使用模型: ${modelUsed}`,
+      details: { status: chat.status, model: modelUsed }
     }
+  }
 
-    const fallback = `HTTP ${response.status}`
-    const bodyMessage = await readHttpErrorMessage(
-      response,
-      fallback,
-      settings.apiKey
-    )
-    const detailedError = formatAIConfigError(
-      { code: `HTTP_${response.status}`, message: bodyMessage },
-      settings
-    )
+  if (chat.error.code === "RESPONSE_TOO_LARGE") {
+    return {
+      success: false,
+      message: chat.error.message,
+      details: { error: "RESPONSE_TOO_LARGE" }
+    }
+  }
 
+  const detailedError = formatAIConfigError(chat.error, settings)
+  if (chat.status != null) {
     return {
       success: false,
       message: detailedError,
-      details: { status: response.status, error: bodyMessage }
+      details: { status: chat.status, error: chat.error.message }
     }
-  } catch (error) {
-    if (isAbortError(error)) {
-      const detailedError = formatAIConfigError(
-        {
-          code: "TIMEOUT",
-          message: `连接超时（${Math.round(CONNECTION_TEST_TIMEOUT_MS / 1000)} 秒）`
-        },
-        settings
-      )
-      return {
-        success: false,
-        message: detailedError,
-        details: { error: "TIMEOUT" }
-      }
-    }
-
-    const classified = classifyAiFetchCatchError(error)
-    const safe = sanitizePublicError(classified.message, settings.apiKey)
-    const detailedError = formatAIConfigError(
-      {
-        code: classified.code,
-        message: safe
-      },
-      settings
-    )
-
+  }
+  if (chat.error.code === "TIMEOUT") {
     return {
       success: false,
       message: detailedError,
-      details: {
-        error: safe,
-        code: classified.code
-      }
+      details: { error: "TIMEOUT" }
     }
-  } finally {
-    clearTimeout(timeoutId)
+  }
+  return {
+    success: false,
+    message: detailedError,
+    details: { error: chat.error.message, code: chat.error.code }
   }
 }

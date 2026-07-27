@@ -107,10 +107,22 @@
   color: var(--orca-color-text-1);
 }
 
+/*
+ * 配置区必须自己滚动。
+ * 容器是 `max-height: 80vh; overflow: hidden` 的纵向 flex，header/source/footer
+ * 都是 flex-shrink:0；配置区一旦长过剩余空间，就会把 footer（生成/取消按钮）
+ * 顶出可视区且无法滚到——与提示词库表单历史上踩过的是同一个坑，解法一致：
+ * 字段区 flex:1 + min-height:0 + 自身滚动，底栏保持固定。
+ */
 .ai-card-dialog__controls {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--srs-space-3);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .ai-card-dialog__field {
@@ -332,6 +344,7 @@
 /* ---------- 滚动条（所有 AI 浮层共用） ---------- */
 
 .ai-card-dialog__source-body::-webkit-scrollbar,
+.ai-card-dialog__controls::-webkit-scrollbar,
 .ai-card-dialog__draft-list::-webkit-scrollbar,
 .ai-quick-dialog__source-body::-webkit-scrollbar,
 .ai-quick-dialog__result-body::-webkit-scrollbar,
@@ -340,6 +353,7 @@
 }
 
 .ai-card-dialog__source-body::-webkit-scrollbar-thumb,
+.ai-card-dialog__controls::-webkit-scrollbar-thumb,
 .ai-card-dialog__draft-list::-webkit-scrollbar-thumb,
 .ai-quick-dialog__source-body::-webkit-scrollbar-thumb,
 .ai-quick-dialog__result-body::-webkit-scrollbar-thumb,
@@ -1951,4 +1965,228 @@
   gap: 2px;
   line-height: 1.4;
   margin-top: 2px;
+}
+
+/* ============================================================
+   AI 用量与最近请求（AIRequestLogSection）
+   全部消费 srs-design-tokens.css，不硬编码圆角/间距/字号。
+   ============================================================ */
+
+.ai-request-log__totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--srs-space-2);
+  margin-bottom: var(--srs-space-3);
+}
+
+.ai-request-log__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--srs-space-1);
+  padding: var(--srs-space-2) var(--srs-space-1);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+}
+
+.ai-request-log__stat-value {
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  letter-spacing: var(--srs-tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--orca-color-text-1);
+}
+
+.ai-request-log__stat-label {
+  font-size: var(--srs-text-micro);
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ai-request-log__row {
+  padding: var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-2);
+  /* 左侧 accent 用 inset shadow：不占文档流，避免行高跳动 */
+  box-shadow: inset 2px 0 0 0 var(--srs-accent-success);
+}
+
+.ai-request-log__row--error {
+  box-shadow: inset 2px 0 0 0 var(--srs-accent-danger);
+}
+
+.ai-request-log__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-2);
+}
+
+.ai-request-log__time,
+.ai-request-log__duration {
+  font-variant-numeric: tabular-nums;
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__purpose {
+  font-weight: var(--srs-weight-medium);
+  color: var(--orca-color-text-1);
+}
+
+.ai-request-log__model {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__badge {
+  padding: 0 var(--srs-space-1);
+  border-radius: var(--srs-radius-pill);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
+  color: var(--srs-accent-warn);
+  background: var(--orca-color-bg-1);
+}
+
+.ai-request-log__status {
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-request-log__status--ok {
+  color: var(--srs-accent-success);
+}
+
+.ai-request-log__status--error {
+  color: var(--srs-accent-danger);
+}
+
+.ai-request-log__row-meta {
+  display: flex;
+  gap: var(--srs-space-2);
+  margin-top: var(--srs-space-1);
+  font-size: var(--srs-text-micro);
+  color: var(--orca-color-text-3);
+}
+
+.ai-request-log__tokens {
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-request-log__error {
+  margin: var(--srs-space-1) 0 0;
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+  color: var(--srs-accent-danger);
+  max-width: var(--srs-measure-narrow);
+  /* 上游错误正文可能很长且无空格，强制折行避免撑破面板 */
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   制卡弹窗 v2 配置项（详细程度 / 语言 / 自定义指令）
+   ============================================================ */
+
+.ai-card-dialog__field-hint {
+  margin: var(--srs-space-1) 0 0;
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+  color: var(--orca-color-text-3);
+  max-width: var(--srs-measure-prose);
+}
+
+.ai-card-dialog__select,
+.ai-card-dialog__textarea {
+  width: 100%;
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border: 1px solid var(--orca-color-border);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-1);
+  color: var(--orca-color-text-1);
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-body);
+  transition: border-color var(--srs-duration-base) var(--srs-ease);
+}
+
+.ai-card-dialog__select:focus,
+.ai-card-dialog__textarea:focus {
+  outline: none;
+  border-color: var(--orca-color-primary-5);
+}
+
+.ai-card-dialog__select:disabled,
+.ai-card-dialog__textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-card-dialog__textarea {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.6;
+}
+
+/* 选择题草稿：选项列表 */
+.ai-card-dialog__options {
+  list-style: none;
+  margin: var(--srs-space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+}
+
+.ai-card-dialog__option {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-1) var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-2);
+}
+
+.ai-card-dialog__option.is-correct {
+  /* inset shadow 不占文档流，避免勾选时行高跳动 */
+  box-shadow: inset 2px 0 0 0 var(--srs-accent-success);
+}
+
+.ai-card-dialog__option .ai-card-dialog__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 待激活开关（复习阶段） */
+.ai-card-dialog__pending-toggle {
+  display: flex;
+  /* 预览区是 flex:1 容器；开关必须钉住，否则草稿一多就被压扁到看不见 */
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-2) var(--srs-space-3);
+  margin-bottom: var(--srs-space-2);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-1);
+  cursor: pointer;
+}
+
+.ai-card-dialog__pending-toggle .ai-card-dialog__field-hint {
+  display: block;
+  margin-top: var(--srs-space-1);
 }

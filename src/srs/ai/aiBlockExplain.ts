@@ -2,22 +2,11 @@
  * IR / 阅读：块级白话解释、举例、反驳、追问（复用 AI 连接设置；解释本身不写库）
  */
 
-import { getAISettings } from "./aiSettingsSchema"
-import { buildChatCompletionsBody } from "./aiChatRequest"
+import { callChatCompletions } from "./aiChatClient"
 import {
-  classifyAiFetchCatchError,
-  readHttpErrorMessage
-} from "./aiHttpErrors"
-import {
-  AI_MAX_RESPONSE_BYTES,
-  GENERATION_TIMEOUT_MS,
-  type AIServiceError
+  type AIServiceError,
+  BLOCK_EXPLAIN_TIMEOUT_MS
 } from "./aiDraftTypes"
-import {
-  readResponseJsonLimited,
-  ResponseTooLargeError
-} from "../http/safeResponse"
-import { sanitizePublicError } from "../http/redactSecrets"
 
 /** Max source chars sent for one block explain request. */
 export const BLOCK_EXPLAIN_SOURCE_MAX = 4_000
@@ -81,12 +70,6 @@ export type GenerateBlockFollowUpOptions = {
 export type GenerateBlockFollowUpResult =
   | { success: true; answer: string }
   | { success: false; error: AIServiceError }
-
-function isAbortError(error: unknown): boolean {
-  if (error instanceof DOMException && error.name === "AbortError") return true
-  if (error instanceof Error && error.name === "AbortError") return true
-  return false
-}
 
 function clip(text: string, max: number): string {
   const t = text.trim()
@@ -304,124 +287,6 @@ export function parsePlainTextPayload(rawContent: string, max = 2000): string {
   return plain.length > max ? plain.slice(0, max) : plain
 }
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string }
-
-async function chatCompletionsJson(options: {
-  pluginName: string
-  messages: ChatMessage[]
-  maxTokens: number
-  signal?: AbortSignal
-}): Promise<{ success: true; content: string } | { success: false; error: AIServiceError }> {
-  const settings = getAISettings(options.pluginName)
-  if (!settings.apiKey) {
-    return {
-      success: false,
-      error: { code: "NO_API_KEY", message: "请先在设置中配置 API Key" }
-    }
-  }
-
-  const timeoutController = new AbortController()
-  const timeoutId = setTimeout(() => timeoutController.abort(), GENERATION_TIMEOUT_MS)
-  const { signal } = options
-  const onExternalAbort = () => timeoutController.abort()
-  if (signal) {
-    if (signal.aborted) {
-      clearTimeout(timeoutId)
-      return {
-        success: false,
-        error: { code: "CANCELLED", message: "已取消生成" }
-      }
-    }
-    signal.addEventListener("abort", onExternalAbort, { once: true })
-  }
-
-  try {
-    const response = await fetch(settings.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify(
-        buildChatCompletionsBody({
-          settings,
-          messages: options.messages,
-          temperature: 0.3,
-          maxTokens: options.maxTokens
-        })
-      ),
-      signal: timeoutController.signal
-    })
-
-    if (!response.ok) {
-      const fallback = `请求失败: ${response.status}`
-      const errorMessage = await readHttpErrorMessage(
-        response,
-        fallback,
-        settings.apiKey
-      )
-      return {
-        success: false,
-        error: { code: `HTTP_${response.status}`, message: errorMessage }
-      }
-    }
-
-    let data: { choices?: Array<{ message?: { content?: string } }> }
-    try {
-      data = await readResponseJsonLimited(response, AI_MAX_RESPONSE_BYTES)
-    } catch (error) {
-      if (error instanceof ResponseTooLargeError) {
-        return {
-          success: false,
-          error: {
-            code: "RESPONSE_TOO_LARGE",
-            message: sanitizePublicError(
-              `AI 响应过大（上限 ${AI_MAX_RESPONSE_BYTES} 字节）`,
-              settings.apiKey
-            )
-          }
-        }
-      }
-      throw error
-    }
-
-    const aiContent = data.choices?.[0]?.message?.content
-    if (!aiContent || typeof aiContent !== "string") {
-      return {
-        success: false,
-        error: { code: "EMPTY_RESPONSE", message: "AI 返回内容为空" }
-      }
-    }
-    return { success: true, content: aiContent }
-  } catch (error) {
-    if (isAbortError(error)) {
-      const cancelledByUser = signal?.aborted === true
-      return {
-        success: false,
-        error: {
-          code: cancelledByUser ? "CANCELLED" : "TIMEOUT",
-          message: cancelledByUser
-            ? "已取消生成"
-            : `生成超时（${Math.round(GENERATION_TIMEOUT_MS / 1000)} 秒）`
-        }
-      }
-    }
-    const classified = classifyAiFetchCatchError(error)
-    return {
-      success: false,
-      error: {
-        code: classified.code,
-        message: sanitizePublicError(classified.message, settings.apiKey)
-      }
-    }
-  } finally {
-    clearTimeout(timeoutId)
-    if (signal) {
-      signal.removeEventListener("abort", onExternalAbort)
-    }
-  }
-}
-
 /**
  * Single Chat Completions call: explain one block (or focus within it).
  */
@@ -437,9 +302,11 @@ export async function generateBlockExplanation(
     }
   }
 
-  const chat = await chatCompletionsJson({
+  const chat = await callChatCompletions({
     pluginName,
-    maxTokens: 900,
+    purpose: "explain",
+    timeoutMs: BLOCK_EXPLAIN_TIMEOUT_MS,
+    temperature: 0.3,
     signal,
     messages: [
       { role: "system", content: buildBlockExplainSystemPrompt(thinner) },
@@ -474,9 +341,11 @@ export async function generateBlockSideContent(
     }
   }
 
-  const chat = await chatCompletionsJson({
+  const chat = await callChatCompletions({
     pluginName: options.pluginName,
-    maxTokens: 700,
+    purpose: "explain",
+    timeoutMs: BLOCK_EXPLAIN_TIMEOUT_MS,
+    temperature: 0.3,
     signal: options.signal,
     messages: [
       { role: "system", content: buildBlockSideSystemPrompt(options.mode) },
@@ -519,9 +388,9 @@ export async function generateBlockFollowUp(
     }
   }
 
-  const chat = await chatCompletionsJson({
+  const chat = await callChatCompletions({
     pluginName: options.pluginName,
-    maxTokens: 900,
+    temperature: 0.3,
     signal: options.signal,
     messages: [
       { role: "system", content: buildBlockFollowUpSystemPrompt() },

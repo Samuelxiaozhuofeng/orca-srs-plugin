@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { generateFlashcardDrafts } from "./aiService"
+import {
+  clipCardSource,
+  clipCustomInstruction,
+  generateFlashcardDrafts
+} from "./aiService"
+import {
+  AI_CARD_SOURCE_MAX,
+  AI_CUSTOM_INSTRUCTION_MAX
+} from "./aiDraftTypes"
+import { DEFAULT_AI_MAX_OUTPUT_TOKENS } from "./aiSettingsSchema"
 
 const PLUGIN = "test-ai-service"
 const SOURCE = "使役形（～させる）表示让某人做某事。"
@@ -47,7 +56,7 @@ describe("generateFlashcardDrafts", () => {
   }
 
   function parseRequestBody(fetchMock: ReturnType<typeof vi.fn>) {
-    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     return JSON.parse(String(init.body)) as {
       model: string
       temperature: number
@@ -74,8 +83,8 @@ describe("generateFlashcardDrafts", () => {
     const result = await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
-      maxCards: 3
+      cardTypes: ["basic"],
+      detailLevel: "key"
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -111,8 +120,8 @@ describe("generateFlashcardDrafts", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
-      maxCards: 3
+      cardTypes: ["basic"],
+      detailLevel: "key"
     })
 
     const body = parseRequestBody(fetchMock)
@@ -156,8 +165,8 @@ describe("generateFlashcardDrafts", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: clozeSource,
-      cardType: "cloze",
-      maxCards: 3
+      cardTypes: ["cloze"],
+      detailLevel: "key"
     })
 
     const body = parseRequestBody(fetchMock)
@@ -196,19 +205,21 @@ describe("generateFlashcardDrafts", () => {
     await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
-      maxCards: 5
+      cardTypes: ["basic"],
+      detailLevel: "exhaustive"
     })
 
     const body = parseRequestBody(fetchMock)
     const user = body.messages[1].content
     expect(body.messages[1].role).toBe("user")
 
-    expect(user).toContain("Card type: basic")
-    expect(user).toContain("Maximum cards: 5")
+    expect(user).toContain("Card types allowed: basic")
+    // 上限现在按详细程度档位推出，且明确标注为上限而非目标
+    expect(user).toContain("Hard ceiling: at most 12 cards")
+    expect(user).toContain("This is a limit, not a target")
     expect(user).toContain(SOURCE)
-    expect(user).toMatch(/quality over quantity/i)
-    expect(user).toMatch(/fewer cards or an empty cards array/i)
+    // 「宁缺毋滥」的措辞随档位改造换了说法，但语义仍必须出现在 user prompt 里
+    expect(user).toMatch(/returning fewer, or none, is expected/i)
     expect(user).toContain("-----BEGIN SOURCE-----")
     expect(user).toContain("-----END SOURCE-----")
     expect(user).toMatch(/untrusted SOURCE DATA/i)
@@ -233,8 +244,8 @@ describe("generateFlashcardDrafts", () => {
     const pending = generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
-      maxCards: 3,
+      cardTypes: ["basic"],
+      detailLevel: "key",
       signal: controller.signal
     })
     controller.abort()
@@ -264,8 +275,8 @@ describe("generateFlashcardDrafts", () => {
     const result = await generateFlashcardDrafts({
       pluginName: PLUGIN,
       sourceText: SOURCE,
-      cardType: "basic",
-      maxCards: 3
+      cardTypes: ["basic"],
+      detailLevel: "key"
     })
 
     expect(result).toEqual({
@@ -275,5 +286,301 @@ describe("generateFlashcardDrafts", () => {
         message: "quota exceeded for this account"
       }
     })
+  })
+})
+
+describe("clipCardSource", () => {
+  it("leaves sources within the limit untouched", () => {
+    const { text, truncated } = clipCardSource("  短文本  ", 100)
+    expect(text).toBe("短文本")
+    expect(truncated).toBe(false)
+  })
+
+  it("clips over-long sources without injecting a marker", () => {
+    const long = "あ".repeat(50)
+    const { text, truncated } = clipCardSource(long, 10)
+    expect(truncated).toBe(true)
+    expect(text).toHaveLength(10)
+    // 标记会成为模型可引用的伪源文本，接地校验就是拿这段文本做的
+    expect(text).not.toContain("truncated")
+    expect(long.startsWith(text)).toBe(true)
+  })
+
+  it("defaults to AI_CARD_SOURCE_MAX", () => {
+    const long = "x".repeat(AI_CARD_SOURCE_MAX + 500)
+    const { text, truncated } = clipCardSource(long)
+    expect(truncated).toBe(true)
+    expect(text).toHaveLength(AI_CARD_SOURCE_MAX)
+  })
+})
+
+describe("generateFlashcardDrafts source cap", () => {
+  beforeEach(() => {
+    installSettings()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("caps the prompt source and tells the model it was truncated", async () => {
+    const long = "使役形の説明。".repeat(3000)
+    const payload = JSON.stringify({
+      choices: [{ message: { content: '{"cards":[]}' } }]
+    })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(
+              new TextEncoder().encode(payload).byteLength
+            )
+          }
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: long,
+      cardTypes: ["basic"],
+      detailLevel: "key"
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userMsg = body.messages.find((m) => m.role === "user")!.content
+    expect(userMsg).toContain("was truncated")
+    // 整块 21000 字符不应原样进请求体
+    expect(userMsg.length).toBeLessThan(long.length)
+  })
+})
+
+describe("制卡弹窗 v2 prompt 选项", () => {
+  beforeEach(() => {
+    installSettings()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function captureBody(fetchMock: ReturnType<typeof vi.fn>) {
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    return JSON.parse(String(init.body)) as {
+      max_tokens: number
+      messages: Array<{ role: string; content: string }>
+    }
+  }
+
+  function mockEmptyCards() {
+    const payload = JSON.stringify({
+      choices: [{ message: { content: '{"cards":[]}' } }]
+    })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(
+              new TextEncoder().encode(payload).byteLength
+            )
+          }
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  it("maps each detail level to its own ceiling", async () => {
+    for (const [level, cap] of [
+      ["summary", 2],
+      ["key", 5],
+      ["exhaustive", 12]
+    ] as const) {
+      const fetchMock = mockEmptyCards()
+      await generateFlashcardDrafts({
+        pluginName: PLUGIN,
+        sourceText: SOURCE,
+        cardTypes: ["basic"],
+        detailLevel: level
+      })
+      const user = captureBody(fetchMock).messages.find(
+        (m) => m.role === "user"
+      )!.content
+      expect(user).toContain(`Hard ceiling: at most ${cap} cards`)
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("frames the ceiling as a limit rather than a production target", async () => {
+    // 旧 prompt 的 "Maximum cards: 3" 会被模型当成配额去凑，
+    // 与 system prompt 的 quality-over-quantity 直接打架
+    const fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"]
+    })
+    const user = captureBody(fetchMock).messages.find(
+      (m) => m.role === "user"
+    )!.content
+    expect(user).toContain("This is a limit, not a target")
+    expect(user).not.toContain("Maximum cards:")
+  })
+
+  it("takes max_tokens from settings rather than the detail level", async () => {
+    // 档位不再决定输出预算：推理模型把 reasoning token 一并计入
+    // completion_tokens，任何按档位写死的小值都会被思考吃光。
+    for (const level of ["summary", "key", "exhaustive"] as const) {
+      const fetchMock = mockEmptyCards()
+      await generateFlashcardDrafts({
+        pluginName: PLUGIN,
+        sourceText: SOURCE,
+        cardTypes: ["basic"],
+        detailLevel: level
+      })
+      expect(captureBody(fetchMock).max_tokens).toBe(
+        DEFAULT_AI_MAX_OUTPUT_TOKENS
+      )
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("passes a custom instruction outside the untrusted source markers", async () => {
+    const fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      customInstruction: "只做定义类"
+    })
+    const user = captureBody(fetchMock).messages.find(
+      (m) => m.role === "user"
+    )!.content
+    const instructionAt = user.indexOf("只做定义类")
+    const sourceBeginAt = user.indexOf("-----BEGIN SOURCE-----")
+    expect(instructionAt).toBeGreaterThan(-1)
+    // 自定义指令是受信输入，必须在 SOURCE 分隔符之外
+    expect(instructionAt).toBeLessThan(sourceBeginAt)
+  })
+
+  it("clips an over-long custom instruction", () => {
+    const long = "x".repeat(AI_CUSTOM_INSTRUCTION_MAX + 200)
+    expect(clipCustomInstruction(long)).toHaveLength(AI_CUSTOM_INSTRUCTION_MAX)
+    expect(clipCustomInstruction("  spaced  ")).toBe("spaced")
+    expect(clipCustomInstruction(undefined)).toBe("")
+  })
+
+  it("asks for target-language wording but forbids translating quotes", async () => {
+    const fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      cardLanguage: "en"
+    })
+    const system = captureBody(fetchMock).messages.find(
+      (m) => m.role === "system"
+    )!.content
+    expect(system).toContain("Write the question wording")
+    expect(system).toContain("English")
+    // 翻译摘录会让接地校验整批失败
+    expect(system).toContain("Never translate, paraphrase, or summarise")
+  })
+
+  it("keeps source-matching wording when language is auto", async () => {
+    const fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      cardLanguage: "auto"
+    })
+    const system = captureBody(fetchMock).messages.find(
+      (m) => m.role === "system"
+    )!.content
+    expect(system).toContain("Match the language of the source.")
+    expect(system).not.toContain("Do NOT translate")
+  })
+
+  it("sends existing cards as an exclusion list when asking for more", async () => {
+    const fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      excludeSummaries: ["已有问题一", "  ", "已有问题二"]
+    })
+    const user = captureBody(fetchMock).messages.find(
+      (m) => m.role === "user"
+    )!.content
+    expect(user).toContain("- 已有问题一")
+    expect(user).toContain("- 已有问题二")
+    expect(user).toContain("Draft only NEW cards")
+  })
+
+  it("omits the exclusion block entirely on a first batch", async () => {
+    const fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"]
+    })
+    const user = captureBody(fetchMock).messages.find(
+      (m) => m.role === "user"
+    )!.content
+    expect(user).not.toContain("Draft only NEW cards")
+  })
+})
+
+describe("卡片语言与引用字段的冲突", () => {
+  beforeEach(() => {
+    installSettings()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("calls answer/text/sourceQuote quotations, not prose to write", async () => {
+    // 真实故障：只说「不要翻译」时，模型把 answer 当成「自己写的 prose」，
+    // 用目标语言重写了一段摘要 → answer ⊄ sourceQuote，整批被打掉
+    const payload = JSON.stringify({ choices: [{ message: { content: '{"cards":[]}' } }] })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(new TextEncoder().encode(payload).byteLength)
+          }
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      cardLanguage: "en"
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const system = (
+      JSON.parse(String(init.body)) as {
+        messages: Array<{ role: string; content: string }>
+      }
+    ).messages.find((m) => m.role === "system")!.content
+
+    expect(system).toContain("QUOTATIONS, not prose you write")
+    expect(system).toContain("Never translate, paraphrase, or summarise")
+    // 必须明说「英文题干 + 源语言答案」是合法组合，否则模型会去调和矛盾
+    expect(system).toMatch(/English question and a source-language answer/i)
   })
 })

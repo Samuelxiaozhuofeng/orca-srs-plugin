@@ -43,7 +43,9 @@ describe("AI / Firecrawl settings setData store", () => {
       apiUrl: "https://example.test/v1/chat/completions",
       model: "gpt-test",
       enableNativeWebSearch: false,
-      reasoningEffort: "default"
+      reasoningEffort: "default",
+      webSearchToolType: "auto",
+      maxOutputTokens: 16384
     })
   })
 
@@ -87,7 +89,9 @@ describe("AI / Firecrawl settings setData store", () => {
         apiUrl: "https://api.deepseek.com/chat/completions",
         model: "deepseek-chat",
         enableNativeWebSearch: true,
-        reasoningEffort: "high"
+        reasoningEffort: "high",
+        maxOutputTokens: 16384,
+        webSearchToolType: "auto"
       })
     )
     expect(saved.apiKey).toBe("sk-new")

@@ -17,8 +17,19 @@ import { sanitizePublicError } from "../http/redactSecrets"
 
 export type QuickBackgroundJobStatus = "generating" | "ready" | "error"
 
+/**
+ * 任务种类。
+ * `quick` = 文本类快捷交互（默认，旧数据缺省即此值）；
+ * `card`  = 快捷制卡：结果根下挂的是待激活卡片块，保留/丢弃语义不同。
+ */
+export type QuickBackgroundJobKind = "quick" | "card"
+
 export interface QuickBackgroundJob {
   id: string
+  /** 缺省视为 "quick"，保持旧任务与既有测试不变 */
+  kind?: QuickBackgroundJobKind
+  /** 仅 card：写入的卡片块 ID（结果根的直接子块） */
+  cardBlockIds?: number[]
   pluginName: string
   sourceBlockId: number
   selectedText: string
@@ -366,6 +377,14 @@ export function cancelBackgroundQuickJob(
 export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
   const job = findJob(jobId)
   if (!job) return
+
+  if (job.kind === "card") {
+    const { keepQuickCardJob } = await import("./aiQuickCardJob")
+    await keepQuickCardJob(job)
+    removeJob(jobId)
+    return
+  }
+
   if (job.resultRootBlockId != null) {
     const result = await keepQuickResult(job.resultRootBlockId)
     if (!result.success) {
@@ -482,6 +501,17 @@ export async function dismissBackgroundQuickJob(jobId: string): Promise<void> {
 
   if (job.status === "generating") {
     cancelBackgroundQuickJob(jobId)
+    return
+  }
+
+  if (job.kind === "card") {
+    const { dismissQuickCardJob } = await import("./aiQuickCardJob")
+    const result = await dismissQuickCardJob(job)
+    if (!result.success) {
+      orca.notify("error", result.error, { title: "AI 快捷制卡" })
+      return
+    }
+    removeJob(jobId)
     return
   }
 

@@ -4,10 +4,19 @@
  * 配置 → 单次生成 → 预览/编辑/选择 → 确认写入
  */
 
-import type {
-  AICardDraft,
-  AICardType,
-  MaxCardsOption
+import {
+  AI_CARD_TYPE_LABELS,
+  AI_CARD_TYPES,
+  AI_CARD_LANGUAGE_LABELS,
+  AI_CARD_LANGUAGES,
+  AI_CUSTOM_INSTRUCTION_MAX,
+  AI_DETAIL_LEVEL_HINTS,
+  AI_DETAIL_LEVEL_LABELS,
+  AI_DETAIL_LEVELS,
+  type AICardDraft,
+  type AICardLanguage,
+  type AICardType,
+  type AIDetailLevel
 } from "../srs/ai/aiDraftTypes"
 import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
 import { AICardDraftCard } from "./AICardDraftCard"
@@ -18,18 +27,26 @@ export interface AICardGenerationDialogProps {
   visible: boolean
   phase: "config" | "review"
   sourceText: string
-  cardType: AICardType
-  maxCards: MaxCardsOption
+  cardTypes: AICardType[]
+  detailLevel: AIDetailLevel
+  cardLanguage: AICardLanguage
+  customInstruction: string
+  startPending: boolean
   drafts: AICardDraft[]
   selectedIds: string[]
   errorMessage: string | null
   infoMessage: string | null
   isGenerating: boolean
+  isGeneratingMore: boolean
   isSaving: boolean
   onClose: () => void
-  onCardTypeChange: (type: AICardType) => void
-  onMaxCardsChange: (n: MaxCardsOption) => void
+  onToggleCardType: (type: AICardType) => void
+  onDetailLevelChange: (level: AIDetailLevel) => void
+  onCardLanguageChange: (language: AICardLanguage) => void
+  onCustomInstructionChange: (text: string) => void
+  onStartPendingChange: (value: boolean) => void
   onGenerate: () => void
+  onGenerateMore: () => void
   onCancelGenerate: () => void
   onBack: () => void
   onToggleSelect: (id: string, selected: boolean) => void
@@ -38,25 +55,36 @@ export interface AICardGenerationDialogProps {
   onSave: () => void
 }
 
-const MAX_OPTIONS: MaxCardsOption[] = [1, 3, 5]
+/** 编辑器会抢键：表单内的键盘事件一律不冒泡出去。 */
+function stopKeys(e: { stopPropagation: () => void }) {
+  e.stopPropagation()
+}
 
 export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
   const {
     visible,
     phase,
     sourceText,
-    cardType,
-    maxCards,
+    cardTypes,
+    detailLevel,
+    cardLanguage,
+    customInstruction,
+    startPending,
     drafts,
     selectedIds,
     errorMessage,
     infoMessage,
     isGenerating,
+    isGeneratingMore,
     isSaving,
     onClose,
-    onCardTypeChange,
-    onMaxCardsChange,
+    onToggleCardType,
+    onDetailLevelChange,
+    onCardLanguageChange,
+    onCustomInstructionChange,
+    onStartPendingChange,
     onGenerate,
+    onGenerateMore,
     onCancelGenerate,
     onBack,
     onToggleSelect,
@@ -66,7 +94,7 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
   } = props
 
   const { ModalOverlay } = orca.components
-  const busy = isGenerating || isSaving
+  const busy = isGenerating || isGeneratingMore || isSaving
   const selectedCount = useMemo(
     () => drafts.filter(d => selectedIds.includes(d.id)).length,
     [drafts, selectedIds]
@@ -130,11 +158,15 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
 
         {phase === "config" ? (
           <ConfigPhase
-            cardType={cardType}
-            maxCards={maxCards}
+            cardTypes={cardTypes}
+            detailLevel={detailLevel}
+            cardLanguage={cardLanguage}
+            customInstruction={customInstruction}
             isGenerating={isGenerating}
-            onCardTypeChange={onCardTypeChange}
-            onMaxCardsChange={onMaxCardsChange}
+            onToggleCardType={onToggleCardType}
+            onDetailLevelChange={onDetailLevelChange}
+            onCardLanguageChange={onCardLanguageChange}
+            onCustomInstructionChange={onCustomInstructionChange}
             onGenerate={onGenerate}
             onCancelGenerate={onCancelGenerate}
             onClose={onClose}
@@ -148,6 +180,10 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
             canSave={canSave}
             isSaving={isSaving}
             isGenerating={isGenerating}
+            isGeneratingMore={isGeneratingMore}
+            startPending={startPending}
+            onStartPendingChange={onStartPendingChange}
+            onGenerateMore={onGenerateMore}
             onToggleSelect={onToggleSelect}
             onUpdateDraft={onUpdateDraft}
             onRemoveDraft={onRemoveDraft}
@@ -164,22 +200,30 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
 }
 
 function ConfigPhase(props: {
-  cardType: AICardType
-  maxCards: MaxCardsOption
+  cardTypes: AICardType[]
+  detailLevel: AIDetailLevel
+  cardLanguage: AICardLanguage
+  customInstruction: string
   isGenerating: boolean
-  onCardTypeChange: (type: AICardType) => void
-  onMaxCardsChange: (n: MaxCardsOption) => void
+  onToggleCardType: (type: AICardType) => void
+  onDetailLevelChange: (level: AIDetailLevel) => void
+  onCardLanguageChange: (language: AICardLanguage) => void
+  onCustomInstructionChange: (text: string) => void
   onGenerate: () => void
   onCancelGenerate: () => void
   onClose: () => void
 }) {
   const { Button } = orca.components
   const {
-    cardType,
-    maxCards,
+    cardTypes,
+    detailLevel,
+    cardLanguage,
+    customInstruction,
     isGenerating,
-    onCardTypeChange,
-    onMaxCardsChange,
+    onToggleCardType,
+    onDetailLevelChange,
+    onCardLanguageChange,
+    onCustomInstructionChange,
     onGenerate,
     onCancelGenerate,
     onClose
@@ -188,10 +232,10 @@ function ConfigPhase(props: {
   const lockClass = isGenerating ? "srs-ui-locked" : undefined
 
   const guardType = (type: AICardType) => {
-    if (!isGenerating) onCardTypeChange(type)
+    if (!isGenerating) onToggleCardType(type)
   }
-  const guardMax = (n: MaxCardsOption) => {
-    if (!isGenerating) onMaxCardsChange(n)
+  const guardLevel = (level: AIDetailLevel) => {
+    if (!isGenerating) onDetailLevelChange(level)
   }
 
   return (
@@ -199,57 +243,114 @@ function ConfigPhase(props: {
       <section className="ai-card-dialog__controls">
         <div className="ai-card-dialog__field">
           <div className="ai-card-dialog__section-label" id="ai-card-type-label">
-            卡片类型
+            卡片类型（可多选）
           </div>
           <div
             className={`ai-card-dialog__segmented${
               lockClass ? ` ${lockClass}` : ""
             }`}
-            role="radiogroup"
+            role="group"
             aria-labelledby="ai-card-type-label"
           >
-            <Button
-              variant={cardType === "basic" ? "solid" : "outline"}
-              onClick={() => guardType("basic")}
-              aria-pressed={cardType === "basic"}
-              tabIndex={isGenerating ? -1 : 0}
-            >
-              Basic
-            </Button>
-            <Button
-              variant={cardType === "cloze" ? "solid" : "outline"}
-              onClick={() => guardType("cloze")}
-              aria-pressed={cardType === "cloze"}
-              tabIndex={isGenerating ? -1 : 0}
-            >
-              Cloze
-            </Button>
+            {AI_CARD_TYPES.map((type) => {
+              const on = cardTypes.includes(type)
+              return (
+                <Button
+                  key={type}
+                  variant={on ? "solid" : "outline"}
+                  onClick={() => guardType(type)}
+                  aria-pressed={on}
+                  tabIndex={isGenerating ? -1 : 0}
+                >
+                  {AI_CARD_TYPE_LABELS[type]}
+                </Button>
+              )
+            })}
           </div>
+          <p className="ai-card-dialog__field-hint">
+            选多种时由 AI 按内容特点分配：定义类走问答、术语密集段走填空、
+            有明确易混选项的走选择题。至少保留一种。
+          </p>
         </div>
 
         <div className="ai-card-dialog__field">
-          <div className="ai-card-dialog__section-label" id="ai-max-cards-label">
-            最多生成
+          <div className="ai-card-dialog__section-label" id="ai-detail-label">
+            详细程度
           </div>
           <div
             className={`ai-card-dialog__segmented${
               lockClass ? ` ${lockClass}` : ""
             }`}
             role="radiogroup"
-            aria-labelledby="ai-max-cards-label"
+            aria-labelledby="ai-detail-label"
           >
-            {MAX_OPTIONS.map(n => (
+            {AI_DETAIL_LEVELS.map((level) => (
               <Button
-                key={n}
-                variant={maxCards === n ? "solid" : "outline"}
-                onClick={() => guardMax(n)}
-                aria-pressed={maxCards === n}
+                key={level}
+                variant={detailLevel === level ? "solid" : "outline"}
+                onClick={() => guardLevel(level)}
+                aria-pressed={detailLevel === level}
                 tabIndex={isGenerating ? -1 : 0}
               >
-                {n}
+                {AI_DETAIL_LEVEL_LABELS[level]}
               </Button>
             ))}
           </div>
+          <p className="ai-card-dialog__field-hint">
+            {AI_DETAIL_LEVEL_HINTS[detailLevel]}。张数由 AI 按材料密度决定，档位只设上限。
+          </p>
+        </div>
+
+        <div className="ai-card-dialog__field">
+          <label
+            className="ai-card-dialog__section-label"
+            htmlFor="ai-card-language"
+          >
+            卡片语言
+          </label>
+          <select
+            id="ai-card-language"
+            className="ai-card-dialog__select"
+            value={cardLanguage}
+            disabled={isGenerating}
+            onChange={(e) => onCardLanguageChange(e.target.value as AICardLanguage)}
+            onKeyDown={stopKeys}
+            onKeyUp={stopKeys}
+          >
+            {AI_CARD_LANGUAGES.map((language) => (
+              <option key={language} value={language}>
+                {AI_CARD_LANGUAGE_LABELS[language]}
+              </option>
+            ))}
+          </select>
+          <p className="ai-card-dialog__field-hint">
+            只改题干措辞。答案与原文摘录必须逐字取自源文本（接地校验的前提），不会被翻译。
+          </p>
+        </div>
+
+        <div className="ai-card-dialog__field">
+          <label
+            className="ai-card-dialog__section-label"
+            htmlFor="ai-custom-instruction"
+          >
+            自定义指令（可选）
+          </label>
+          <textarea
+            id="ai-custom-instruction"
+            className="ai-card-dialog__textarea"
+            value={customInstruction}
+            disabled={isGenerating}
+            rows={2}
+            maxLength={AI_CUSTOM_INSTRUCTION_MAX}
+            placeholder="例：只做定义类；聚焦第三段；答案尽量短"
+            onChange={(e) => onCustomInstructionChange(e.target.value)}
+            onKeyDown={stopKeys}
+            onKeyUp={stopKeys}
+          />
+          <p className="ai-card-dialog__field-hint">
+            {customInstruction.length}/{AI_CUSTOM_INSTRUCTION_MAX}
+            　指令不会覆盖接地要求：卡片仍必须能在源文本中找到依据。
+          </p>
         </div>
       </section>
 
@@ -290,6 +391,10 @@ function ReviewPhase(props: {
   canSave: boolean
   isSaving: boolean
   isGenerating: boolean
+  isGeneratingMore: boolean
+  startPending: boolean
+  onStartPendingChange: (value: boolean) => void
+  onGenerateMore: () => void
   onToggleSelect: (id: string, selected: boolean) => void
   onUpdateDraft: (id: string, patch: Partial<AICardDraft>) => void
   onRemoveDraft: (id: string) => void
@@ -299,7 +404,7 @@ function ReviewPhase(props: {
   onSave: () => void
   onClose: () => void
 }) {
-  const { Button } = orca.components
+  const { Button, Checkbox } = orca.components
   const {
     drafts,
     selectedIds,
@@ -308,6 +413,10 @@ function ReviewPhase(props: {
     canSave,
     isSaving,
     isGenerating,
+    isGeneratingMore,
+    startPending,
+    onStartPendingChange,
+    onGenerateMore,
     onToggleSelect,
     onUpdateDraft,
     onRemoveDraft,
@@ -318,7 +427,7 @@ function ReviewPhase(props: {
     onClose
   } = props
 
-  const busy = isSaving || isGenerating
+  const busy = isSaving || isGenerating || isGeneratingMore
 
   return (
     <>
@@ -326,6 +435,24 @@ function ReviewPhase(props: {
         <div className="ai-card-dialog__section-label">
           草稿预览（已选 {selectedCount}/{drafts.length}）
         </div>
+        <label className="ai-card-dialog__pending-toggle">
+          <Checkbox
+            checked={startPending}
+            disabled={busy}
+            aria-label="保存为待激活"
+            onChange={({ checked }: { checked: boolean }) =>
+              onStartPendingChange(checked)
+            }
+          />
+          <span>
+            保存为待激活（不立即排期）
+            <span className="ai-card-dialog__field-hint">
+              一次写入多张会瞬间打爆当日新卡额度并打乱新卡节奏；待激活的卡可在
+              闪卡主页批量放行。
+            </span>
+          </span>
+        </label>
+
         {drafts.length === 0 ? (
           <p className="ai-card-dialog__empty">暂无草稿，请返回重新生成</p>
         ) : (
@@ -351,14 +478,14 @@ function ReviewPhase(props: {
       </section>
 
       <footer className="ai-card-dialog__footer">
-        {isGenerating ? (
+        {isGenerating || isGeneratingMore ? (
           <>
             <span className="ai-card-dialog__status">
               <i
                 className="ti ti-loader-2 ai-card-dialog__spin"
                 aria-hidden="true"
               />
-              重新生成中…
+              {isGeneratingMore ? "补充生成中…" : "重新生成中…"}
             </span>
             <Button variant="outline" onClick={onCancelGenerate}>
               取消生成
@@ -382,6 +509,9 @@ function ReviewPhase(props: {
             </Button>
             <Button variant="outline" onClick={onGenerate}>
               重新生成
+            </Button>
+            <Button variant="outline" onClick={onGenerateMore}>
+              再来一批
             </Button>
             <Button
               variant="solid"
