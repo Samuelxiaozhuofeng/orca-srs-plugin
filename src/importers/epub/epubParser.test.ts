@@ -23,7 +23,9 @@ import {
   parseEpub,
   resolveHrefTarget,
   SUBSTANTIVE_PREFIX_MIN_CHARS,
-  hasSubstantivePrefix
+  hasSubstantivePrefix,
+  suggestChapterImportRole,
+  MARKER_SUGGEST_MAX_BODY_CHARS
 } from "./epubParser"
 import { parseHtmlOutlineTokens } from "./htmlOutline"
 import {
@@ -283,6 +285,32 @@ describe("epubParser", () => {
     )
     expect(alphaHtml).toContain("Alpha body")
     expect(alphaHtml).not.toContain("Lead-in prose")
+  })
+
+  it("suggestChapterImportRole flags short bodies and thin part dividers", () => {
+    expect(suggestChapterImportRole(MARKER_SUGGEST_MAX_BODY_CHARS, "正文长章")).toBe(
+      "marker"
+    )
+    expect(
+      suggestChapterImportRole(MARKER_SUGGEST_MAX_BODY_CHARS + 1, "正文长章")
+    ).toBe("page")
+    expect(suggestChapterImportRole(100, "第一部分 人类网络")).toBe("marker")
+    expect(suggestChapterImportRole(500, "第一部分 人类网络")).toBe("marker")
+    expect(suggestChapterImportRole(801, "第一部分 人类网络")).toBe("page")
+  })
+
+  it("getChapterPreview returns plain text without requiring image uploads", async () => {
+    const buffer = await buildEpubChapterWithSubsections("ncx")
+    const parser = new EpubParser()
+    await parser.load(buffer)
+    const chapters = await parser.getChapters({ granularity: "auto" })
+    const ch = chapters[0]
+    const preview = await parser.getChapterPreview(ch.href, ch.title)
+    expect(preview.charCount).toBeGreaterThan(20)
+    expect(preview.previewText).toContain("最基本的概念")
+    expect(preview.suggestedRole).toBe(
+      suggestChapterImportRole(preview.charCount, ch.title)
+    )
   })
 
   it("hasSubstantivePrefix uses the 40-char threshold boundary", () => {
@@ -599,6 +627,15 @@ describe("manifest parse/serialize", () => {
     }
     const parsed = parseEpubManifest(serializeEpubManifest(withPlan))
     expect(parsed.chapterPlan).toEqual({ version: 1, granularity: "auto" })
+  })
+
+  it("round-trips optional chapter role marker", () => {
+    const withRole = {
+      ...sample,
+      chapters: [{ ...sample.chapters[0], role: "marker" as const }]
+    }
+    const parsed = parseEpubManifest(serializeEpubManifest(withRole))
+    expect(parsed.chapters[0].role).toBe("marker")
   })
 
   it("allows missing chapterPlan (legacy resume → toc-fragments)", () => {

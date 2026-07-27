@@ -7,6 +7,13 @@ import type { DbId } from "../../orca.d.ts"
 export type EpubImportStatus = "importing" | "partial" | "complete"
 export type EpubChapterImportStatus = "pending" | "imported" | "failed"
 
+/**
+ * How a selected TOC item is written into the book notes.
+ * - page: standalone chapter page + catalog ref (default; eligible for Book IR)
+ * - marker: plain structural block under「章节:」(not a separate page; not IR-eligible)
+ */
+export type EpubChapterImportRole = "page" | "marker"
+
 export interface EpubMetadata {
   title: string
   author: string
@@ -70,6 +77,10 @@ export interface EpubChapterManifestEntry {
   blockId: DbId | null
   status: EpubChapterImportStatus
   error: string | null
+  /**
+   * Import write shape. Absent on pre-role manifests → treat as `page`.
+   */
+  role?: EpubChapterImportRole
 }
 
 export interface EpubBookManifestV1 {
@@ -111,6 +122,11 @@ export interface ImportEpubRequest {
   bookTitle: string
   /** Chapter keys (from parse) selected for import */
   selectedChapterKeys: string[]
+  /**
+   * Per-key write role for selected chapters. Missing key → `page`.
+   * Keys not in selectedChapterKeys are ignored.
+   */
+  chapterRoles?: Record<string, EpubChapterImportRole>
   pluginName?: string
   onProgress?: (progress: ImportEpubProgress) => void
   /**
@@ -118,6 +134,15 @@ export interface ImportEpubRequest {
    * Default `auto`. Persisted on manifest as chapterPlan for resume.
    */
   chapterGranularity?: EpubChapterGranularity
+}
+
+export interface EpubChapterPreview {
+  /** Truncated plain text for UI (may end with …) */
+  previewText: string
+  /** Full body character count (whitespace collapsed to single spaces, then length) */
+  charCount: number
+  /** Suggested write role from length/title heuristics */
+  suggestedRole: EpubChapterImportRole
 }
 
 export interface ImportEpubResult {

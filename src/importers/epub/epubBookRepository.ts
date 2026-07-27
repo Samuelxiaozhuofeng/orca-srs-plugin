@@ -8,6 +8,7 @@ import { parseEpubManifest, serializeEpubManifest } from "./manifest"
 import type {
   EpubBookManifestV1,
   EpubChapter,
+  EpubChapterImportRole,
   EpubChapterManifestEntry,
   EpubImportStatus,
   EpubMetadata
@@ -15,6 +16,7 @@ import type {
 import { EPUB_PROP, EpubValidationError } from "./types"
 import {
   createBookPage,
+  createChapterMarkerBlock,
   createChapterPage,
   createInlineReference
 } from "./orcaBookHelpers"
@@ -237,6 +239,8 @@ export async function createBookShell(params: {
   sourceFileName: string
   sourceAssetPath: string
   selectedChapters: EpubChapter[]
+  /** Per-chapter write role; missing key → page. */
+  chapterRoles?: Record<string, EpubChapterImportRole>
   /** New imports must record the chapter-planning policy used for key stability. */
   chapterPlan?: EpubBookManifestV1["chapterPlan"]
 }): Promise<{ bookBlockId: DbId; chaptersHeadingId: DbId; manifest: EpubBookManifestV1 }> {
@@ -281,15 +285,20 @@ export async function createBookShell(params: {
     { type: "heading", level: 2 }
   )
 
-  const chapterEntries: EpubChapterManifestEntry[] = params.selectedChapters.map((ch) => ({
-    key: ch.key,
-    spineIndex: ch.spineIndex,
-    href: ch.href,
-    title: ch.title,
-    blockId: null,
-    status: "pending" as const,
-    error: null
-  }))
+  const chapterEntries: EpubChapterManifestEntry[] = params.selectedChapters.map((ch) => {
+    const role: EpubChapterImportRole =
+      params.chapterRoles?.[ch.key] === "marker" ? "marker" : "page"
+    return {
+      key: ch.key,
+      spineIndex: ch.spineIndex,
+      href: ch.href,
+      title: ch.title,
+      blockId: null,
+      status: "pending" as const,
+      error: null,
+      role
+    }
+  })
 
   const manifest: EpubBookManifestV1 = {
     version: 1,
@@ -339,22 +348,37 @@ export async function importOneChapter(params: {
   chapterHtml: string
   /** Resume path: already-created chapter page from a prior partial failure */
   existingBlockId?: DbId | null
+  /** Write shape; default page (standalone + catalog ref). */
+  role?: EpubChapterImportRole
 }): Promise<DbId> {
+  const role: EpubChapterImportRole = params.role === "marker" ? "marker" : "page"
   let chapterPageId = params.existingBlockId ?? null
 
   if (chapterPageId == null) {
-    chapterPageId = await createChapterPage(params.chapter.title, params.chapterHtml, {
-      useOutlineImport: true
-    })
+    if (role === "marker") {
+      chapterPageId = await createChapterMarkerBlock(
+        params.chaptersHeadingId,
+        params.chapter.title,
+        params.chapterHtml,
+        { useOutlineImport: true }
+      )
+    } else {
+      chapterPageId = await createChapterPage(params.chapter.title, params.chapterHtml, {
+        useOutlineImport: true
+      })
+    }
   }
 
   try {
     await setChapterEpubProperties(chapterPageId, params.bookBlockId, params.chapter)
-    await ensureInlineReference(
-      chapterPageId,
-      params.chaptersHeadingId,
-      params.chapter.title
-    )
+    // Markers already live under the catalog heading; pages need a catalog ref.
+    if (role === "page") {
+      await ensureInlineReference(
+        chapterPageId,
+        params.chaptersHeadingId,
+        params.chapter.title
+      )
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new PartialChapterImportError(chapterPageId, message)

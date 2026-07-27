@@ -5,19 +5,25 @@
 import type { DbId } from "../../orca.d.ts"
 import type {
   EpubChapter,
+  EpubChapterImportRole,
+  EpubChapterPreview,
   ImportEpubProgress,
   ImportEpubResult,
   ParsedEpub
 } from "../../importers/epub/types"
-import { parseEpub, importEpub, resumeEpubImport } from "../../importers/epub/epubImportService"
+import { importEpub, resumeEpubImport } from "../../importers/epub/epubImportService"
+import { EpubParser } from "../../importers/epub/epubParser"
+import { computeSha256Hex } from "../../importers/epub/fingerprint"
 import { assertFileSizeBeforeRead } from "../../importers/epub/epubLimits"
 import { initializeBookIR, retryFailedBookIRInit } from "../../srs/book-ir/bookIRService"
 import type { BookIRPlanV1 } from "../../importers/epub/types"
 import {
   accessibilityLabels,
+  applySuggestedRoles,
   canProceedFromChapters,
   canProceedFromTitle,
   defaultBookTitle,
+  defaultChapterRoles,
   selectAllChapterKeys,
   type WizardStep
 } from "./epubImportViewModel"
@@ -49,12 +55,18 @@ export default function EpubImportWizard({
   const [parsed, setParsed] = useState<ParsedEpub | null>(null)
   const [bookTitle, setBookTitle] = useState("")
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  const [chapterRoles, setChapterRoles] = useState<
+    Record<string, EpubChapterImportRole>
+  >({})
   const [progress, setProgress] = useState<ImportEpubProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ImportEpubResult | null>(null)
   const [isWorking, setIsWorking] = useState(false)
+  const [suggestingMarkers, setSuggestingMarkers] = useState(false)
   /** Parse-only cancel (pure epubParser); not wired to Orca write paths (evidence-gated). */
   const parseAbortRef = useRef<AbortController | null>(null)
+  /** Kept after file parse so chapter preview can re-slice without re-reading the ZIP. */
+  const parserRef = useRef<EpubParser | null>(null)
 
   useEffect(() => {
     onWorkingChange?.(isWorking)
@@ -81,8 +93,15 @@ export default function EpubImportWizard({
   const importedChapterOptions = useMemo(() => {
     if (!result) return []
     return result.manifest.chapters
-      .filter((c: { status: string; blockId: DbId | null }) =>
-        c.status === "imported" && typeof c.blockId === "number"
+      .filter(
+        (c: {
+          status: string
+          blockId: DbId | null
+          role?: "page" | "marker"
+        }) =>
+          c.status === "imported"
+          && typeof c.blockId === "number"
+          && (c.role ?? "page") === "page"
       )
       .map((c: { blockId: DbId | null; title: string; spineIndex: number }) => ({
         key: String(c.blockId),
@@ -102,17 +121,27 @@ export default function EpubImportWizard({
       assertFileSizeBeforeRead(file)
       const ab = await file.arrayBuffer()
       if (controller.signal.aborted) return
-      // Pure parse layer supports AbortSignal; import/write path does not yet (evidence-gated).
-      const p = await parseEpub(ab, { signal: controller.signal })
+      // Keep one parser instance for chapter previews in the wizard.
+      const parser = new EpubParser()
+      await parser.load(ab, { signal: controller.signal })
       if (controller.signal.aborted) return
+      const metadata = await parser.getMetadata()
+      const chapterList = await parser.getChapters({ granularity: "auto" })
+      const fingerprint = await computeSha256Hex(ab)
+      if (controller.signal.aborted) return
+      const p: ParsedEpub = { metadata, chapters: chapterList, fingerprint }
+      parserRef.current = parser
       setBuffer(ab)
       setParsed(p)
       setFileName(file.name)
       setBookTitle(defaultBookTitle(p.metadata.title, file.name))
-      setSelectedKeys(selectAllChapterKeys(p.chapters))
+      const keys = selectAllChapterKeys(p.chapters)
+      setSelectedKeys(keys)
+      setChapterRoles(defaultChapterRoles(keys))
       setStep("title")
     } catch (e) {
       if (controller.signal.aborted) return
+      parserRef.current = null
       setError(e instanceof Error ? e.message : String(e))
       setStep("file")
     } finally {
@@ -120,6 +149,47 @@ export default function EpubImportWizard({
       setIsWorking(false)
     }
   }, [])
+
+  const loadChapterPreview = useCallback(
+    async (chapterKey: string): Promise<EpubChapterPreview> => {
+      const parser = parserRef.current
+      const chapter = chapters.find((c) => c.key === chapterKey)
+      if (!parser || !chapter) {
+        throw new Error("预览不可用：请重新选择 EPUB 文件")
+      }
+      return parser.getChapterPreview(chapter.href, chapter.title, {
+        endFragment: chapter.endFragment
+      })
+    },
+    [chapters]
+  )
+
+  const applyMarkerSuggestions = useCallback(async () => {
+    const parser = parserRef.current
+    if (!parser || chapters.length === 0 || selectedKeys.length === 0) return
+    setSuggestingMarkers(true)
+    setError(null)
+    try {
+      const suggestions: Record<string, EpubChapterImportRole> = {}
+      for (const key of selectedKeys) {
+        const chapter = chapters.find((c) => c.key === key)
+        if (!chapter) continue
+        const preview = await parser.getChapterPreview(
+          chapter.href,
+          chapter.title,
+          { endFragment: chapter.endFragment }
+        )
+        suggestions[key] = preview.suggestedRole
+      }
+      setChapterRoles((current: Record<string, EpubChapterImportRole>) =>
+        applySuggestedRoles(current, suggestions, selectedKeys)
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSuggestingMarkers(false)
+    }
+  }, [chapters, selectedKeys])
 
   const runImport = useCallback(async () => {
     if (!buffer || !parsed) return
@@ -137,6 +207,7 @@ export default function EpubImportWizard({
         sourceFileName: fileName,
         bookTitle: bookTitle.trim(),
         selectedChapterKeys: selectedKeys,
+        chapterRoles,
         pluginName,
         onProgress: setProgress
       })
@@ -155,7 +226,7 @@ export default function EpubImportWizard({
     } finally {
       setIsWorking(false)
     }
-  }, [buffer, parsed, bookTitle, selectedKeys, fileName, pluginName])
+  }, [buffer, parsed, bookTitle, selectedKeys, chapterRoles, fileName, pluginName])
 
   const handleResume = useCallback(async () => {
     if (!result) return
@@ -360,32 +431,54 @@ export default function EpubImportWizard({
       ) : null}
 
       {step === "chapters" ? (
-        <div className="srs-import-dialog__step">
+        <div className="srs-import-dialog__step srs-import-dialog__step--chapters">
           <EpubChapterSelector
             chapters={chapters}
             selectedKeys={selectedKeys}
             onChange={setSelectedKeys}
-            disabled={isWorking}
+            disabled={isWorking || suggestingMarkers}
+            enableImportRoles
+            chapterRoles={chapterRoles}
+            onChapterRolesChange={setChapterRoles}
+            loadPreview={loadChapterPreview}
+            onApplyMarkerSuggestions={() => void applyMarkerSuggestions()}
+            suggesting={suggestingMarkers}
           />
           <div className="srs-import-dialog__actions">
             <Button
               variant="outline"
-              onClick={isWorking ? undefined : () => setStep("title")}
-              aria-disabled={isWorking}
-              className={isWorking ? "srs-ui-locked" : undefined}
+              onClick={
+                isWorking || suggestingMarkers ? undefined : () => setStep("title")
+              }
+              aria-disabled={isWorking || suggestingMarkers}
+              className={
+                isWorking || suggestingMarkers ? "srs-ui-locked" : undefined
+              }
             >
               上一步
             </Button>
             <Button
               variant="solid"
               onClick={() => {
-                if (!canProceedFromChapters(selectedKeys) || isWorking) return
+                if (
+                  !canProceedFromChapters(selectedKeys)
+                  || isWorking
+                  || suggestingMarkers
+                ) {
+                  return
+                }
                 void runImport()
               }}
               aria-label={labels.startImport}
-              aria-disabled={!canProceedFromChapters(selectedKeys) || isWorking}
+              aria-disabled={
+                !canProceedFromChapters(selectedKeys)
+                || isWorking
+                || suggestingMarkers
+              }
               className={
-                !canProceedFromChapters(selectedKeys) || isWorking
+                !canProceedFromChapters(selectedKeys)
+                || isWorking
+                || suggestingMarkers
                   ? "srs-ui-locked"
                   : undefined
               }

@@ -1,7 +1,7 @@
 # EPUB 导入
 
 > 文档同步日期：2026-07-27
-> 变更说明：**章节粒度 `auto`（Sol A+C）**：TOC 保留层级（nav 嵌套 `ol/li`、NCX 树状 `navPoint`）；默认 `auto` 在「整章容器」（父级无 fragment + 子 fragment 均为其后代 + 父 heading 匹配 + 子 heading 更深 + 实质前缀/跨文件重复结构）时**不展开**小节，保留整文件章与章首正文；证据不足但有实质前缀时发「前缀章 + fragment 章」；否则保持历史 multi-fragment 展开。manifest 可选 `chapterPlan: { version:1; granularity }`；新导入写 `auto`；旧 manifest 缺字段时 resume 强制 `toc-fragments` 保 key。实现：`epubChapterPlan.ts` + `epubParser.ts`。回归：章+小节 NCX/nav、prefix 兜底、granularity 强制、`chapterPlan` 解析。
+> 变更说明：**导入预览 + 结构标记**：章节步可预览正文（`getChapterPreview`，不上传图片）；每选中项可选 `page`（独立章节页+目录引用，可进 Book IR）或 `marker`（「章节:」下普通 h3 块，保留部/篇结构、不建独立页、不进 IR）；manifest `chapters[].role`；「短文建议为标记」。另：**章节粒度 `auto`（Sol A+C）**——整章容器不拆小节；前缀兜底；`chapterPlan`；旧 resume→`toc-fragments`。
 > 2026-07-26：`epubBookRepository.getBlock` 改 **backend-first**（对齐 `bookIRPlanRepository` 范式）：优先后端 `get-block`，失败 `console.warn` 后回退 `orca.state`——`persistManifest` 后紧接的 `loadManifestFromBook` / `ensureChaptersHeading` / `ensureInlineReference` 写后读不再受旧 state 快照影响（旧行为会把已导入章节当 pending 重跑 / 重复建页）。回归：`epubBookRepository.test.ts`。另更正：工具栏 `importEpubButton` 已移除，导入入口为斜杠 / 命令面板。
 > 2026-07-25：WP-07 **纯层**已落地严格 HTML 清洗、资源预算、MIME 魔数、解析层 AbortSignal；ZIP load 与 entry 解压完成后会再次检查取消。
 > **未验收 / 证据阻塞**：`importEpub` / `resumeEpubImport` 写入链取消、超限图片「省略 vs 零写入拒绝」preflight、真机 Network 与 resume 一致性。
@@ -97,8 +97,10 @@ fingerprint, sourceFileName, sourceAssetPath
 status: importing | partial | complete
 bookBlockId
 chapterPlan?: { version: 1; granularity: auto | spine | toc-fragments }  // 新导入必写；缺省=旧书
-chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|imported|failed, error }
+chapters[]: { key, spineIndex, href, title, blockId | null, status, error, role?: page|marker }
 ```
+
+`role`：`page`（默认/缺省）= 独立章节页 + 目录行内引用，**可进渐进阅读**；`marker` = 挂在「章节:」下的普通标题块（可含短正文 outline），**不建独立页、不进 IR 章节多选**。
 
 `resolveManifestChapterGranularity(manifest)`：有 `chapterPlan.granularity` 用其值；**缺省 → `toc-fragments`**（保证旧 fragment key 续传可解析，不会被 `auto` 收成整文件后标成「源中不存在」）。
 
@@ -112,8 +114,8 @@ chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|impo
 
 1. **file**：选 `.epub` → `arrayBuffer` → `parseEpub`（指纹 + metadata + 章节列表）
 2. **title**：默认书名 `defaultBookTitle(metadata.title, fileName)`
-3. **chapters**：默认全选；可过滤后开始导入
-4. **progress**：`importEpub({ buffer, sourceFileName, bookTitle, selectedChapterKeys, onProgress })`
+3. **chapters**：默认全选；**点击章节预览正文**；每项可设 **单独成页** / **只作目录**（或「把短内容改成『只作目录』」）；再开始导入
+4. **progress**：`importEpub({ buffer, sourceFileName, bookTitle, selectedChapterKeys, chapterRoles, onProgress })`
 5. **result**：完成 / 部分失败 / 已存在；可「继续导入」或「继续创建渐进阅读书籍」
 6. **ir_setup**（可选）：独立章节多选 + `distributed` | `sequential` + **重要性**三档 / totalDays → `initializeBookIR`
    - 用户字段名：**重要性**（非「优先级」）；选项 `importanceSetupOptions()`（`src/srs/incremental-reading/irImportance.ts`）

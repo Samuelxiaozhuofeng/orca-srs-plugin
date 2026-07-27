@@ -1821,14 +1821,25 @@
   transition: width var(--srs-duration-slow) var(--srs-ease);
 }
 
-/* ---------- 章节多选 ---------- */
+/* ---------- 章节多选 + 预览 ---------- */
+
+.srs-import-dialog__step--chapters {
+  min-height: 0;
+}
+
+.srs-chapter-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  min-height: 0;
+}
 
 .srs-chapter-selector__toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--srs-space-2);
-  margin-bottom: var(--srs-space-2);
+  margin-bottom: 0;
 }
 
 .srs-chapter-selector__count {
@@ -1838,21 +1849,65 @@
   font-variant-numeric: tabular-nums;
 }
 
+.srs-chapter-selector__hint {
+  background: var(--srs-surface-base);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-md);
+  color: var(--orca-color-text-2);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--srs-text-caption);
+  gap: 4px;
+  line-height: 1.5;
+  margin: 0;
+  padding: var(--srs-space-2) var(--srs-space-3);
+}
+
+.srs-chapter-selector__hint-line {
+  margin: 0;
+}
+
+.srs-chapter-selector__hint-line strong {
+  color: var(--orca-color-text-1);
+  font-weight: 600;
+}
+
+.srs-chapter-selector__hint-line--muted {
+  color: var(--orca-color-text-3);
+}
+
+.srs-chapter-selector__body {
+  display: grid;
+  gap: var(--srs-space-3);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  .srs-chapter-selector__body {
+    grid-template-columns: 1fr;
+  }
+}
+
 .srs-chapter-selector__list {
   background: var(--srs-surface-sunken);
   border: 1px solid var(--srs-hairline);
   border-radius: var(--srs-radius-lg);
   box-sizing: border-box;
-  max-height: 280px;
+  max-height: 360px;
   overflow-y: auto;
   padding: var(--srs-space-2);
+}
+
+.srs-chapter-selector--with-preview .srs-chapter-selector__list {
+  max-height: 420px;
 }
 
 .srs-chapter-selector__item {
   align-items: flex-start;
   border-radius: var(--srs-radius-sm);
-  cursor: pointer;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--srs-space-2);
   padding: var(--srs-space-2) var(--srs-space-1);
   transition: background-color var(--srs-duration-base) var(--srs-ease);
@@ -1862,19 +1917,53 @@
   background: var(--srs-surface-base);
 }
 
+.srs-chapter-selector__item--focused {
+  background: var(--srs-surface-base);
+  box-shadow: inset 0 0 0 1px var(--orca-color-primary-5);
+}
+
+.srs-chapter-selector__item--marker {
+  border-left: 3px solid var(--orca-color-text-3);
+  padding-left: calc(var(--srs-space-1) - 1px);
+}
+
 .srs-chapter-selector__item--disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.srs-chapter-selector__item input {
-  accent-color: var(--orca-color-primary-5);
+.srs-chapter-selector__check {
+  flex: 0 0 auto;
   margin-top: 2px;
 }
 
-.srs-chapter-selector__item input:focus-visible {
+.srs-chapter-selector__check input {
+  accent-color: var(--orca-color-primary-5);
+}
+
+.srs-chapter-selector__check input:focus-visible {
   outline: 2px solid var(--orca-color-primary-5);
   outline-offset: 2px;
+}
+
+.srs-chapter-selector__main {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.srs-chapter-selector__main:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-chapter-selector__main:disabled {
+  cursor: not-allowed;
 }
 
 .srs-chapter-selector__label {
@@ -1887,6 +1976,95 @@
   color: var(--orca-color-text-3);
   font-variant-numeric: tabular-nums;
   margin-right: var(--srs-space-2);
+}
+
+.srs-chapter-selector__roles {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.srs-chapter-selector__role-btn {
+  background: var(--srs-surface-base);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-sm);
+  color: var(--orca-color-text-2);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 3px 6px;
+}
+
+.srs-chapter-selector__role-btn--active {
+  background: var(--orca-color-primary-1, var(--srs-surface-base));
+  border-color: var(--orca-color-primary-5);
+  color: var(--orca-color-primary-6, var(--orca-color-text-1));
+  font-weight: 600;
+}
+
+.srs-chapter-selector__role-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.srs-chapter-selector__role-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 1px;
+}
+
+.srs-chapter-selector__preview {
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  max-height: 420px;
+  min-height: 200px;
+  padding: var(--srs-space-3);
+}
+
+.srs-chapter-selector__preview-title {
+  color: var(--orca-color-text-1);
+  font-size: var(--srs-text-secondary);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.srs-chapter-selector__preview-meta {
+  color: var(--orca-color-text-3);
+  font-size: var(--srs-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.srs-chapter-selector__preview-text {
+  color: var(--orca-color-text-2);
+  flex: 1 1 auto;
+  font-family: inherit;
+  font-size: var(--srs-text-caption);
+  line-height: 1.55;
+  margin: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.srs-chapter-selector__preview-status {
+  color: var(--orca-color-text-3);
+  font-size: var(--srs-text-caption);
+}
+
+.srs-chapter-selector__preview-error {
+  color: var(--orca-color-danger-6, #c0392b);
+  font-size: var(--srs-text-caption);
+}
+
+.srs-chapter-selector__preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--srs-space-2);
 }
 
 /* ---------- 导入结果 ---------- */

@@ -72,6 +72,52 @@ export async function createChapterPage(
   return chapterBlockId
 }
 
+/**
+ * Structural marker: a normal block under the book catalog heading (not a page,
+ * no alias, no separate catalog ref). Keeps part/section dividers visible in-tree.
+ */
+export async function createChapterMarkerBlock(
+  chaptersHeadingId: DbId,
+  chapterTitle: string,
+  chapterHtml: string,
+  options: { useOutlineImport?: boolean } = {}
+): Promise<DbId> {
+  const { useOutlineImport = true } = options
+  const parent = orca.state.blocks[chaptersHeadingId] as Block | undefined
+  if (!parent) {
+    throw new Error(`Chapters heading block not found: ${chaptersHeadingId}`)
+  }
+
+  const markerId = await orca.commands.invokeEditorCommand(
+    "core.editor.insertBlock",
+    null,
+    parent,
+    "lastChild",
+    [{ t: "t", v: chapterTitle }],
+    { type: "heading", level: 3 }
+  )
+
+  if (chapterHtml.trim()) {
+    const markerBlock = orca.state.blocks[markerId]
+    if (!markerBlock) {
+      throw new Error(`Marker block not found after create: ${markerId}`)
+    }
+    if (useOutlineImport) {
+      await importHtmlAsOutline(markerId, chapterHtml)
+    } else {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.batchInsertHTML",
+        null,
+        markerBlock,
+        "lastChild",
+        chapterHtml
+      )
+    }
+  }
+
+  return markerId
+}
+
 export async function createInlineReference(
   targetBlockId: DbId,
   parentBlockId: DbId,

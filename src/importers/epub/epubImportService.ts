@@ -16,12 +16,16 @@ import {
   persistManifest,
   recomputeImportStatus
 } from "./epubBookRepository"
-import { resolveManifestChapterGranularity } from "./manifest"
+import {
+  resolveChapterImportRole,
+  resolveManifestChapterGranularity
+} from "./manifest"
 import { EpubParser, parseEpub } from "./epubParser"
 import { computeSha256Hex } from "./fingerprint"
 import type {
   EpubChapter,
   EpubChapterGranularity,
+  EpubChapterImportRole,
   ImportEpubRequest,
   ImportEpubResult,
   ParsedEpub
@@ -53,9 +57,7 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
       fingerprint,
       status: manifest.status,
       manifest,
-      importedChapterIds: manifest.chapters
-        .filter((c) => c.status === "imported" && c.blockId != null)
-        .map((c) => c.blockId as DbId),
+      importedChapterIds: pageImportedIds(manifest.chapters),
       failedChapters: manifest.chapters.filter((c) => c.status === "failed"),
       pendingChapters: manifest.chapters.filter((c) => c.status === "pending")
     }
@@ -73,6 +75,10 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
   if (selectedChapters.length === 0) {
     throw new EpubValidationError("未选择任何章节", "no_chapters")
   }
+  const chapterRoles = normalizeChapterRoles(
+    selectedChapters.map((c) => c.key),
+    request.chapterRoles
+  )
 
   const suspected = await findSuspectedDuplicatesByTitle(request.bookTitle, fingerprint)
 
@@ -96,6 +102,7 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
     sourceFileName: request.sourceFileName,
     sourceAssetPath,
     selectedChapters,
+    chapterRoles,
     chapterPlan: { version: 1, granularity }
   })
 
@@ -110,10 +117,11 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
 
   for (let i = 0; i < selectedChapters.length; i++) {
     const chapter = selectedChapters[i]
+    const role = chapterRoles[chapter.key] ?? "page"
     const entryIndex = working.chapters.findIndex((c) => c.key === chapter.key)
     onProgress?.({
       phase: "importing_chapters",
-      message: `导入章节 ${i + 1}/${selectedChapters.length}: ${chapter.title}`,
+      message: `导入${role === "marker" ? "目录标题" : "章节页"} ${i + 1}/${selectedChapters.length}: ${chapter.title}`,
       chapterIndex: i + 1,
       chapterTotal: selectedChapters.length,
       chapterTitle: chapter.title
@@ -127,14 +135,16 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
         bookBlockId,
         chaptersHeadingId,
         chapter,
-        chapterHtml
+        chapterHtml,
+        role
       })
       if (entryIndex >= 0) {
         working.chapters[entryIndex] = {
           ...working.chapters[entryIndex],
           blockId: chapterPageId,
           status: "imported",
-          error: null
+          error: null,
+          role
         }
       }
     } catch (error) {
@@ -223,6 +233,7 @@ export async function resumeEpubImport(bookBlockId: DbId): Promise<ImportEpubRes
       // Prefer existing page when a prior run created it but failed later (props/ref).
       // Avoid re-creating HTML content when finishing a partial page.
       const chapterTitle = entry.title || chapter.title
+      const role = resolveChapterImportRole(entry)
       const chapterHtml =
         existingBlockId != null
           ? ""
@@ -234,14 +245,16 @@ export async function resumeEpubImport(bookBlockId: DbId): Promise<ImportEpubRes
         chaptersHeadingId,
         chapter: { ...chapter, title: chapterTitle },
         chapterHtml,
-        existingBlockId
+        existingBlockId,
+        role
       })
       if (entryIndex >= 0) {
         working.chapters[entryIndex] = {
           ...working.chapters[entryIndex],
           blockId: chapterPageId,
           status: "imported",
-          error: null
+          error: null,
+          role
         }
       }
     } catch (error) {
@@ -275,12 +288,35 @@ function toResult(
     fingerprint: manifest.fingerprint,
     status: manifest.status,
     manifest,
-    importedChapterIds: manifest.chapters
-      .filter((c) => c.status === "imported" && typeof c.blockId === "number")
-      .map((c) => c.blockId as DbId),
+    // IR setup only lists full chapter pages — structural markers stay out.
+    importedChapterIds: pageImportedIds(manifest.chapters),
     failedChapters: manifest.chapters.filter((c) => c.status === "failed"),
     pendingChapters: manifest.chapters.filter((c) => c.status === "pending")
   }
+}
+
+function pageImportedIds(
+  chapters: ImportEpubResult["manifest"]["chapters"]
+): DbId[] {
+  return chapters
+    .filter(
+      (c) =>
+        c.status === "imported"
+        && typeof c.blockId === "number"
+        && resolveChapterImportRole(c) === "page"
+    )
+    .map((c) => c.blockId as DbId)
+}
+
+function normalizeChapterRoles(
+  keys: string[],
+  roles: Record<string, EpubChapterImportRole> | undefined
+): Record<string, EpubChapterImportRole> {
+  const out: Record<string, EpubChapterImportRole> = {}
+  for (const key of keys) {
+    out[key] = roles?.[key] === "marker" ? "marker" : "page"
+  }
+  return out
 }
 
 /**

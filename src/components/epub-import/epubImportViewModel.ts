@@ -2,7 +2,12 @@
  * Pure view-model helpers for EPUB import wizard (testable without React).
  */
 
-import type { EpubChapter, EpubImportStatus, ImportEpubResult } from "../../importers/epub/types"
+import type {
+  EpubChapter,
+  EpubChapterImportRole,
+  EpubImportStatus,
+  ImportEpubResult
+} from "../../importers/epub/types"
 import {
   DEFAULT_IR_PRIORITY,
   getSequentialActiveBaseIntervalDays,
@@ -38,6 +43,45 @@ export function selectAllChapterKeys(chapters: EpubChapter[]): string[] {
 
 export function canProceedFromChapters(selectedKeys: string[]): boolean {
   return selectedKeys.length > 0
+}
+
+/** Default every selected key to page when roles map is empty. */
+export function defaultChapterRoles(
+  keys: string[]
+): Record<string, EpubChapterImportRole> {
+  const roles: Record<string, EpubChapterImportRole> = {}
+  for (const key of keys) roles[key] = "page"
+  return roles
+}
+
+/**
+ * Merge suggestion roles for selected keys only; leave unselected keys untouched.
+ */
+export function applySuggestedRoles(
+  current: Record<string, EpubChapterImportRole>,
+  suggestions: Record<string, EpubChapterImportRole>,
+  selectedKeys: string[]
+): Record<string, EpubChapterImportRole> {
+  const selected = new Set(selectedKeys)
+  const next = { ...current }
+  for (const [key, role] of Object.entries(suggestions)) {
+    if (!selected.has(key)) continue
+    next[key] = role
+  }
+  return next
+}
+
+export function countRoles(
+  selectedKeys: string[],
+  roles: Record<string, EpubChapterImportRole>
+): { pages: number; markers: number } {
+  let pages = 0
+  let markers = 0
+  for (const key of selectedKeys) {
+    if (roles[key] === "marker") markers += 1
+    else pages += 1
+  }
+  return { pages, markers }
 }
 
 export function canProceedFromTitle(title: string): boolean {
@@ -121,8 +165,15 @@ export function accessibilityLabels() {
     fileInput: "选择 EPUB 文件",
     titleInput: "书名",
     chapterList: "章节列表",
-    selectAll: "全选章节",
-    clearAll: "清空选择",
+    chapterPreview: "正文预览（帮你决定怎么导入）",
+    selectAll: "全选",
+    clearAll: "全不选",
+    /** Toolbar: auto-pick short parts as “目录标题” */
+    suggestMarkers: "把短内容改成「只作目录」",
+    rolePage: "单独成页",
+    roleMarker: "只作目录",
+    rolePageHint: "内容多、要认真读 → 单独一页，以后可进渐进阅读",
+    roleMarkerHint: "只有一两句、只是「第×部分」分界 → 留在目录里当标题，不建独立页",
     startImport: "开始导入",
     cancel: "取消",
     done: "完成",

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  applySuggestedRoles,
   canProceedFromChapters,
   canProceedFromTitle,
+  countRoles,
   defaultBookTitle,
+  defaultChapterRoles,
   resultSummary,
   schedulePreviewText,
   selectAllChapterKeys,
@@ -36,6 +39,21 @@ describe("epubImportViewModel", () => {
         { id: "2", title: "B", href: "b", key: "1:b", spineIndex: 1 }
       ])
     ).toEqual(["0:a", "1:b"])
+  })
+
+  it("default roles are page; suggestions apply only to selected keys", () => {
+    expect(defaultChapterRoles(["a", "b"])).toEqual({ a: "page", b: "page" })
+    expect(
+      applySuggestedRoles(
+        { a: "page", b: "page", c: "page" },
+        { a: "marker", c: "marker" },
+        ["a", "b"]
+      )
+    ).toEqual({ a: "marker", b: "page", c: "page" })
+    expect(countRoles(["a", "b", "c"], { a: "marker", b: "page" })).toEqual({
+      pages: 2,
+      markers: 1
+    })
   })
 
   it("result summary for partial", () => {

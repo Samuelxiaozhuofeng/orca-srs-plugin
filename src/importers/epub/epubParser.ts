@@ -35,11 +35,19 @@ import {
 import type {
   EpubChapter,
   EpubChapterGranularity,
+  EpubChapterImportRole,
+  EpubChapterPreview,
   EpubManifestItem,
   EpubMetadata,
   ParsedEpub
 } from "./types"
 import { computeSha256Hex } from "./fingerprint"
+
+/** Body length at or below this suggests a structural marker (part divider etc.). */
+export const MARKER_SUGGEST_MAX_BODY_CHARS = 220
+
+/** Max plain characters shown in the import wizard preview pane. */
+export const CHAPTER_PREVIEW_DISPLAY_CHARS = 900
 
 export class EpubParser {
   private zip: JSZip | null = null
@@ -406,6 +414,57 @@ export class EpubParser {
     sanitizeEpubHtmlForImport(root as HTMLElement)
 
     return root.innerHTML
+  }
+
+  /**
+   * Lightweight plain-text preview for the import wizard (no image upload).
+   * Uses the same fragment/prefix slice rules as getChapterContent.
+   */
+  async getChapterPreview(
+    href: string,
+    pageTitle: string,
+    options?: { endFragment?: string; maxDisplayChars?: number }
+  ): Promise<EpubChapterPreview> {
+    throwIfAborted(this.signal)
+    const fullPath = this.resolvePath(href)
+    const content = await this.getFile(fullPath)
+    const doc = parseHtml(content)
+    let root = getHtmlContentRoot(doc, content)
+
+    const startFragment = extractHrefFragment(href)
+    if (startFragment) {
+      root = sliceChapterByFragments(
+        root,
+        startFragment,
+        options?.endFragment,
+        href
+      )
+    } else if (options?.endFragment) {
+      root = sliceChapterPrefixUntilFragment(
+        root,
+        options.endFragment,
+        href,
+        findAnchorElement
+      )
+    }
+
+    removeMatchingTopHeading(root, pageTitle)
+    // Drop scripts/styles only — preview is never injected as HTML into Orca.
+    root.querySelectorAll("script, style").forEach((el) => el.remove())
+
+    const plain = normalizePreviewPlainText(root.textContent ?? "")
+    const charCount = plain.length
+    const maxDisplay = options?.maxDisplayChars ?? CHAPTER_PREVIEW_DISPLAY_CHARS
+    const previewText =
+      plain.length <= maxDisplay
+        ? plain
+        : `${plain.slice(0, maxDisplay).trimEnd()}…`
+
+    return {
+      previewText: previewText || "（无正文文本）",
+      charCount,
+      suggestedRole: suggestChapterImportRole(charCount, pageTitle)
+    }
   }
 
   private async rewriteImageSourcesForChapter(
@@ -949,5 +1008,34 @@ export {
   hasSubstantivePrefix,
   sliceChapterPrefixUntilFragment
 } from "./epubChapterPlan"
+
+/**
+ * Suggest page vs structural marker from body length and title shape.
+ * Pure helper — UI may override.
+ */
+export function suggestChapterImportRole(
+  charCount: number,
+  title: string
+): EpubChapterImportRole {
+  const t = title.trim()
+  // Part / 部 dividers are often thin wrappers users prefer as markers.
+  if (
+    /^第\s*[一二三四五六七八九十百千零〇\d]+\s*部分/.test(t)
+    || /^parts?\s+[\divxlcdm]+\b/i.test(t)
+  ) {
+    if (charCount <= 800) return "marker"
+  }
+  if (charCount <= MARKER_SUGGEST_MAX_BODY_CHARS) return "marker"
+  return "page"
+}
+
+function normalizePreviewPlainText(raw: string): string {
+  return raw
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim()
+}
 
 export { computeSha256Hex }

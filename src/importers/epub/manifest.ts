@@ -6,6 +6,7 @@ import type { DbId } from "../../orca.d.ts"
 import type {
   EpubBookManifestV1,
   EpubChapterGranularity,
+  EpubChapterImportRole,
   EpubChapterImportStatus,
   EpubChapterManifestEntry,
   EpubChapterPlanV1,
@@ -15,11 +16,19 @@ import { EpubValidationError } from "./types"
 
 const IMPORT_STATUSES = new Set<EpubImportStatus>(["importing", "partial", "complete"])
 const CHAPTER_STATUSES = new Set<EpubChapterImportStatus>(["pending", "imported", "failed"])
+const CHAPTER_ROLES = new Set<EpubChapterImportRole>(["page", "marker"])
 const CHAPTER_GRANULARITIES = new Set<EpubChapterGranularity>([
   "auto",
   "spine",
   "toc-fragments"
 ])
+
+/** Manifest role with legacy default (missing → page). */
+export function resolveChapterImportRole(
+  entry: Pick<EpubChapterManifestEntry, "role">
+): EpubChapterImportRole {
+  return entry.role ?? "page"
+}
 
 /**
  * Resume/default when manifest has no chapterPlan (pre-policy imports).
@@ -199,7 +208,19 @@ function parseChapterEntry(
     throw new EpubValidationError(`chapters[${index}].error must be string|null`, "manifest_chapter_error", bookBlockId)
   }
 
-  return {
+  let role: EpubChapterImportRole | undefined
+  if (entry.role !== undefined) {
+    if (typeof entry.role !== "string" || !CHAPTER_ROLES.has(entry.role as EpubChapterImportRole)) {
+      throw new EpubValidationError(
+        `chapters[${index}].role must be page|marker when present`,
+        "manifest_chapter_role",
+        bookBlockId
+      )
+    }
+    role = entry.role as EpubChapterImportRole
+  }
+
+  const parsed: EpubChapterManifestEntry = {
     key: entry.key,
     spineIndex: entry.spineIndex,
     href: entry.href,
@@ -208,6 +229,8 @@ function parseChapterEntry(
     status: entry.status as EpubChapterImportStatus,
     error: entry.error as string | null
   }
+  if (role) parsed.role = role
+  return parsed
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
