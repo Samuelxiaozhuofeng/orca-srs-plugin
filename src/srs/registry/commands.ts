@@ -385,6 +385,50 @@ export function registerCommands(
     "SRS: 测试 AI 连接"
   )
 
+  // ============ 快捷制卡（选中即生成，块下方预览） ============
+  const QUICK_CARD_COMMANDS: Array<{
+    suffix: string
+    cardType: "basic" | "cloze" | "choice"
+    label: string
+  }> = [
+    { suffix: "quickBasicCard", cardType: "basic", label: "SRS: 快捷问答卡" },
+    { suffix: "quickClozeCard", cardType: "cloze", label: "SRS: 快捷填空卡" },
+    { suffix: "quickChoiceCard", cardType: "choice", label: "SRS: 快捷选择题" }
+  ]
+
+  for (const entry of QUICK_CARD_COMMANDS) {
+    orca.commands.registerEditorCommand(
+      `${pluginName}.${entry.suffix}`,
+      async (editor: any) => {
+        const cursor = editor?.[2]
+        if (!cursor) {
+          orca.notify("error", "无法获取光标位置", { title: "AI 快捷制卡" })
+          return null
+        }
+        /*
+         * 刻意 fire-and-forget：editor command 本身就是一个可撤销事务单元，
+         * 在它的 await 里做块写入会与 writeAICardDrafts 内部的 invokeGroup
+         * 撞在一起（第二个顶层组等不到提交），表现为 AI 已返回但任务
+         * 永远停在 generating。
+         *
+         * 仓库既有的后台任务也都不在 editor command 里写块：
+         * 文本类快捷交互从 React 工具栏发起，制卡写入发生在弹窗组件里。
+         */
+        const { startQuickCardJob } = await import("../ai/aiQuickCardFlow")
+        void startQuickCardJob({
+          pluginName: _pluginName,
+          cursor,
+          cardType: entry.cardType
+        }).catch((error) => {
+          console.error("[AI 快捷制卡] 任务失败:", error)
+        })
+        return null
+      },
+      () => {},
+      { label: entry.label }
+    )
+  }
+
   // 激活全部待激活卡片（AI 批量制卡时选了「保存为待激活」的那些）
   orca.commands.registerCommand(
     `${pluginName}.activatePendingCards`,
@@ -801,12 +845,16 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.interactiveAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.aiQuickInteract`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.quickBasicCard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.quickClozeCard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.quickChoiceCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.irRecordProgress`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionNext`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPostpone`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPriority`)
   orca.commands.unregisterCommand(`${pluginName}.irToggleViewMode`)
   orca.commands.unregisterCommand(`${pluginName}.testAIConnection`)
+  orca.commands.unregisterCommand(`${pluginName}.activatePendingCards`)
   orca.commands.unregisterCommand(`${pluginName}.manageAIToolbarPrompts`)
   orca.commands.unregisterCommand(`${pluginName}.openAIServiceSettings`)
   orca.commands.unregisterCommand(`${pluginName}.openOldReviewPanel`)

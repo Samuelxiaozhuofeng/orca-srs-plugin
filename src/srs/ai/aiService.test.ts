@@ -488,10 +488,10 @@ describe("制卡弹窗 v2 prompt 选项", () => {
     const system = captureBody(fetchMock).messages.find(
       (m) => m.role === "system"
     )!.content
-    expect(system).toContain("Write question wording")
+    expect(system).toContain("Write the question wording")
     expect(system).toContain("English")
     // 翻译摘录会让接地校验整批失败
-    expect(system).toContain("Do NOT translate answer, text, or sourceQuote")
+    expect(system).toContain("Never translate, paraphrase, or summarise")
   })
 
   it("keeps source-matching wording when language is auto", async () => {
@@ -536,5 +536,51 @@ describe("制卡弹窗 v2 prompt 选项", () => {
       (m) => m.role === "user"
     )!.content
     expect(user).not.toContain("Draft only NEW cards")
+  })
+})
+
+describe("卡片语言与引用字段的冲突", () => {
+  beforeEach(() => {
+    installSettings()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("calls answer/text/sourceQuote quotations, not prose to write", async () => {
+    // 真实故障：只说「不要翻译」时，模型把 answer 当成「自己写的 prose」，
+    // 用目标语言重写了一段摘要 → answer ⊄ sourceQuote，整批被打掉
+    const payload = JSON.stringify({ choices: [{ message: { content: '{"cards":[]}' } }] })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(new TextEncoder().encode(payload).byteLength)
+          }
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      cardLanguage: "en"
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const system = (
+      JSON.parse(String(init.body)) as {
+        messages: Array<{ role: string; content: string }>
+      }
+    ).messages.find((m) => m.role === "system")!.content
+
+    expect(system).toContain("QUOTATIONS, not prose you write")
+    expect(system).toContain("Never translate, paraphrase, or summarise")
+    // 必须明说「英文题干 + 源语言答案」是合法组合，否则模型会去调和矛盾
+    expect(system).toMatch(/English question and a source-language answer/i)
   })
 })

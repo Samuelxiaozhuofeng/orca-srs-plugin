@@ -25,9 +25,15 @@ function buildLanguageRules(language: AICardLanguage): string[] {
   if (language === "auto") return ["Match the language of the source."]
   const name = AI_CARD_LANGUAGE_PROMPT_NAMES[language]
   return [
-    `Write question wording and any prose you author in ${name}.`,
-    // 答案/摘录必须逐字取自源文本，翻译它们会让接地校验整批失败。
-    `Do NOT translate answer, text, or sourceQuote — those must stay verbatim in the source language, even when it differs from ${name}.`
+    `Write the question wording in ${name}.`,
+    /*
+     * answer / text / sourceQuote 是**引用**而不是你写的散文。
+     * 上一版只说「不要翻译」，模型把 answer 当成「自己写的 prose」照样
+     * 用目标语言重写了一段摘要，于是 answer ⊄ sourceQuote 整批被打掉。
+     * 这里必须把「它是引用、必须逐字」说死。
+     */
+    `The answer, text, and sourceQuote fields are QUOTATIONS, not prose you write. Copy them verbatim from the source, character for character, in the source's own language.`,
+    `This holds even when the source language is not ${name}: a card may legitimately have a ${name} question and a source-language answer. Never translate, paraphrase, or summarise those three fields.`
   ]
 }
 
@@ -90,6 +96,9 @@ function buildSystemPrompt(
     "Unique, clear answer: avoid questions that are too broad, admit multiple reasonable answers, or leak the answer in the wording.",
     "High-value filter: prioritize core concepts, definitions, causal links, mechanisms, conditions, and important distinctions clearly supported by the source. Do not invent filler or edge-case cards to hit a count.",
     "Every card needs a short sourceQuote: an informative contiguous excerpt from the source (not a single character).",
+    // 模型高频行为：把两段不相邻原文用省略号拼起来。校验已放宽到逐段接地，
+    // 但仍优先要一段连续的——单段更好核对。
+    "Prefer one continuous span for sourceQuote. If you must join two separate passages, separate them with an ellipsis (……) and keep each side copied verbatim.",
     "If the source contains Markdown links like [label](url), copy either the full Markdown or the visible label text consistently; do not invent wording not present in the source.",
     "Before returning, silently self-check and drop cards that are vague, trivial, duplicate, ungrounded, or not independently answerable.",
     "If the source cannot support good cards, return fewer cards or an empty cards array."

@@ -21,6 +21,7 @@ AI 模块提供基于 **OpenAI 兼容 Chat Completions** 的能力。产品路�
 | **AI 生成闪卡** | `${pluginName}.makeAICard`（别名 `interactiveAICard`） | 读当前光标块 → 弹窗配置（卡型多选 · 详细程度 · 语言 · 自定义指令）→ AI 请求 → 校验/预览/编辑/勾选（可「再来一批」）→ 确认后分组写入 |
 | **块解释** | 渐进阅读会话：移到块右侧隐形热区出「?」或 `Alt+E` | 读目标块 → 白话/名词内联；可选举例/反驳/追问；用户点「+」才写入普通子块 |
 | **AI 快捷交互** | 编辑器工具栏 sparkles 按钮 | 选中同块文本 → 选提示词；见下「快捷交互」 |
+| **AI 快捷制卡** | `quickBasicCard` / `quickClozeCard` / `quickChoiceCard`（斜杠「快捷问答卡 / 快捷填空卡 / 快捷选择题」） | 选中文本（或整块）→ 直接生成 → 以**待激活卡片**插到块下方预览 → 保留 / 丢弃 |
 
 可见斜杠命令仅 **`${pluginName}.aiCard`（AI 生成闪卡）**。块解释无独立斜杠命令。
 
@@ -137,6 +138,33 @@ src/components/
 - **卸载**：`cancelAllBackgroundQuickJobs` 中止进行中请求；对仍为 `ready` 的未保留预览**默认删除**（与「离开不保存」一致），再清空队列
 - **样式**：`src/styles/ai-quick-interact.css`；结果根块不用 padding/margin 改布局（以免挤歪句柄/子块缩进），仅用背景 + inset box-shadow 做左侧 accent
 
+### 快捷制卡（`aiQuickCardFlow.ts` + `aiQuickCardJob.ts` + `aiQuickCardPrefs.ts`）
+
+与「AI 生成闪卡」弹窗的分工，按「每次都会变」vs「稳定偏好」切：
+
+| 维度 | 归属 | 理由 |
+| --- | --- | --- |
+| 卡型 | **命令名**（三个命令） | 每次都随内容变：这句适合挖空、那段适合问答。藏进设置就意味着按下去之前不知道会得到什么 |
+| 语言 / 自定义指令 / 专用 model | **持久化偏好**（`ai.quickCard`） | 设一次用很久。制卡弹窗的配置是弹窗临时状态（`openAIDialog` 每次重置），存不住，因此单开一个 data 键 |
+| 详细程度 | **固定概要档**，不可配 | 块下面挂十几张预览卡没法看也没法选。快捷路径的价值是「一眼看完、一秒决定」；要成批就该走弹窗 |
+
+**预览机制复用**：结果结构与文本类快捷交互一致（源块下一个结果根 + 子块内容），
+因此罩层、操作栏、离开面板默认取消、卸载清理全部复用现成实现。
+`QuickBackgroundJob` 新增 `kind?: "quick" | "card"`（缺省 `quick`，旧任务与既有测试不变），
+只在 keep / dismiss 两处分支。
+
+**为什么用待激活卡而不是临时块**：卡片一写进去就带 `#card` 标签与 SRS 状态，
+在用户点「保留」之前它已经进复习队列了——当晚复习会撞见一张自己还没确认的卡。
+写成 `status=pending` 后不进队列，且即使预览被意外中断（崩溃、强退），
+卡片也只是「待激活」而非丢失，用命令「SRS: 激活待激活卡片」就能捞回来。
+
+| 动作 | 行为 |
+| --- | --- |
+| 保留 | 把卡片从包装块提出来变成源块直接子块 → 清 pending 激活 → 删空包装块。三步失败处理不同：移动失败可重试；激活失败只 warn 并指路激活命令（回滚只会把用户刚看到的卡又搬走）；删壳失败只剩空块，warn 即可 |
+| 丢弃 | 连包装块带卡片一起删 |
+
+源文本取法：优先选区，无选区则用整块正文（「光标停在块里直接按快捷键」是最顺手的用法，不该报错）；跨块选区退回锚点块正文。
+
 ### 块解释（`aiBlockExplain.ts` + `aiBlockExplainWrite.ts`）
 
 - 解释：块全文 + 可选 FOCUS → JSON `paraphrase` / `terms[]`
@@ -202,6 +230,7 @@ makeAICard / interactiveAICard（别名）
 | 同上 | `webSearchToolType` | `auto` | `auto` = 按 model 推荐（仅 `grok-4.5`，沿用旧行为）；`web_search` / `google_search` 为显式指定，**不看 model id**。此前硬编码字符串匹配，新版本号一发布即失效且覆盖不到其它厂商形态 |
 | 同上 | `maxOutputTokens` | `16384` | 单次响应**输出**上限（与上下文窗口无关；百万上下文的模型输出上限通常仍是 8k~64k，填超会被网关 400）。推理模型把 reasoning token 计入 completion_tokens，旧的写死 2000 会被思考吃光 |
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
+| plugin **data** `ai.quickCard` | `cardLanguage` / `customInstruction` / `model` | `auto` / `""` / `""` | 快捷制卡偏好；面板内独立分区 |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
 
 - 读取：`getAISettings` / `getWebImportSettings`（内存缓存 → 旧 settings 迁移源 → 默认）
@@ -282,6 +311,7 @@ makeAICard / interactiveAICard（别名）
 | `makeAICard` | 主编辑器命令 |
 | `interactiveAICard` | 兼容别名（无独立斜杠） |
 | `testAIConnection` | 连接测试 |
+| `quickBasicCard` / `quickClozeCard` / `quickChoiceCard` | 快捷制卡（editor command，需光标） |
 | `activatePendingCards` | 批量激活「待激活」卡片（backend-first 解析 + 写后失效两套缓存；逐张串行，单张失败不中止整批） |
 
 斜杠：仅 `aiCard` → `makeAICard`。

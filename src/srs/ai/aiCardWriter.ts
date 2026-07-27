@@ -28,6 +28,14 @@ export interface WriteAICardsOptions {
   sourceBlockId: number
   drafts: AICardDraft[]
   /**
+   * 生成时实际使用的源文本。
+   *
+   * 必须能由调用方指定：写入父块不一定就是生成来源（快捷制卡把卡片挂在
+   * 包装块下，包装块的正文只是个标题）。用父块 text 复校会让所有草稿判为
+   * 「依据未出现在源文本中」，整批无法保存。缺省时回退父块正文。
+   */
+  sourceText?: string
+  /**
    * 建好卡但先不排期，由用户在 Flash Home 批量激活。
    * 一次写 12 张会瞬间打爆当日新卡额度并打乱 FSRS 的新卡节奏。
    */
@@ -418,7 +426,7 @@ export async function writeAICardDrafts(
     }
   }
 
-  const sourceText = (sourceBlock.text ?? "").trim()
+  const sourceText = (options.sourceText ?? sourceBlock.text ?? "").trim()
   if (!sourceText) {
     return {
       success: false,

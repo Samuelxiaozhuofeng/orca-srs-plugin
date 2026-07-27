@@ -3,6 +3,10 @@
  */
 
 import {
+  saveQuickCardPrefs,
+  type QuickCardPrefs
+} from "../srs/ai/aiQuickCardPrefs"
+import {
   aiServiceSettingsState,
   closeAIServiceSettings,
   setServiceSettingsError,
@@ -60,6 +64,7 @@ export function AIServiceSettingsMount({
     try {
       await saveAISettings(activePlugin, draft.ai)
       await saveWebImportSettings(activePlugin, draft.firecrawl)
+      await saveQuickCardPrefs(activePlugin, draft.quickCard)
       orca.notify("success", "服务设置已保存", { title: "服务设置" })
       closeAIServiceSettings()
     } catch (error) {
@@ -147,6 +152,7 @@ export function AIServiceSettingsMount({
       formKey={formKey}
       initialAI={snap.initialAI as AISettings}
       initialFirecrawl={snap.initialFirecrawl as WebImportSettings}
+      initialQuickCard={snap.initialQuickCard as QuickCardPrefs}
       modelOptions={modelOptions}
       isFetchingModels={isFetchingModels}
       isTestingAI={isTestingAI}

@@ -6,6 +6,13 @@ import type {
   AIReasoningEffort,
   AISettings
 } from "../srs/ai/aiSettingsSchema"
+import type { QuickCardPrefs } from "../srs/ai/aiQuickCardPrefs"
+import {
+  AI_CARD_LANGUAGE_LABELS,
+  AI_CARD_LANGUAGES,
+  AI_CUSTOM_INSTRUCTION_MAX,
+  type AICardLanguage
+} from "../srs/ai/aiDraftTypes"
 import {
   AI_REASONING_EFFORTS,
   AI_WEB_SEARCH_TOOL_TYPES,
@@ -19,6 +26,7 @@ import type { WebImportSettings } from "../srs/settings/webImportSettingsSchema"
 export type ServiceSettingsDraft = {
   ai: AISettings
   firecrawl: WebImportSettings
+  quickCard: QuickCardPrefs
 }
 
 export interface AIServiceSettingsDialogProps {
@@ -30,6 +38,7 @@ export interface AIServiceSettingsDialogProps {
   formKey: string
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
+  initialQuickCard: QuickCardPrefs
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
@@ -56,6 +65,7 @@ function stopBubble(e: { stopPropagation: () => void }): void {
 function ServiceSettingsForm(props: {
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
+  initialQuickCard: QuickCardPrefs
   busy: boolean
   modelOptions: readonly string[]
   isFetchingModels: boolean
@@ -82,6 +92,15 @@ function ServiceSettingsForm(props: {
   const [maxOutputTokens, setMaxOutputTokens] = useState(
     String(props.initialAI.maxOutputTokens)
   )
+  const [quickCardLanguage, setQuickCardLanguage] = useState<AICardLanguage>(
+    props.initialQuickCard.cardLanguage
+  )
+  const [quickCardInstruction, setQuickCardInstruction] = useState(
+    props.initialQuickCard.customInstruction
+  )
+  const [quickCardModel, setQuickCardModel] = useState(
+    props.initialQuickCard.model
+  )
   const [firecrawlApiKey, setFirecrawlApiKey] = useState(
     props.initialFirecrawl.firecrawlApiKey
   )
@@ -101,7 +120,12 @@ function ServiceSettingsForm(props: {
       // 非法输入交给 normalizeAISettings 兜底钳制，这里不静默改用户的字
       maxOutputTokens: Number(maxOutputTokens)
     },
-    firecrawl: { firecrawlApiKey, firecrawlApiUrl }
+    firecrawl: { firecrawlApiKey, firecrawlApiUrl },
+    quickCard: {
+      cardLanguage: quickCardLanguage,
+      customInstruction: quickCardInstruction,
+      model: quickCardModel
+    }
   })
 
   const modelList = props.modelOptions
@@ -332,6 +356,83 @@ function ServiceSettingsForm(props: {
 
       <section className="ai-service-settings__section">
         <h3 className="ai-service-settings__section-title">
+          <i className="ti ti-bolt" aria-hidden="true" />
+          快捷制卡
+        </h3>
+        <p className="ai-service-settings__section-desc">
+          用于「快捷问答卡 / 快捷填空卡 / 快捷选择题」三个命令：选中即生成，
+          结果作为待激活卡片插到块下方等你确认。
+          <strong>卡型由命令决定</strong>，详细程度固定为概要档（1~2 张）——
+          块下面挂十几张预览卡没法看也没法选；要成批生成请用「AI 生成闪卡」弹窗。
+        </p>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">卡片语言</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={quickCardLanguage}
+            onChange={(e) =>
+              setQuickCardLanguage(e.target.value as AICardLanguage)
+            }
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          >
+            {AI_CARD_LANGUAGES.map((language) => (
+              <option key={language} value={language}>
+                {AI_CARD_LANGUAGE_LABELS[language]}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            只改题干措辞；答案与原文摘录始终保持源文本原样（接地校验的前提）。
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">自定义指令（可选）</span>
+          <textarea
+            className="ai-service-settings__input"
+            rows={2}
+            value={quickCardInstruction}
+            maxLength={AI_CUSTOM_INSTRUCTION_MAX}
+            placeholder="例：只做定义类；答案尽量短"
+            onChange={(e) => setQuickCardInstruction(e.target.value)}
+            onKeyDown={stopKeys}
+            onKeyUp={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          />
+          <p className="ai-service-settings__hint">
+            {quickCardInstruction.length}/{AI_CUSTOM_INSTRUCTION_MAX}
+          </p>
+        </label>
+
+        <label className="ai-service-settings__field">
+          <span className="ai-service-settings__label">专用模型（可选）</span>
+          <select
+            className="ai-service-settings__input ai-service-settings__select"
+            value={modelList.includes(quickCardModel) ? quickCardModel : ""}
+            onChange={(e) => setQuickCardModel(e.target.value)}
+            onKeyDown={stopKeys}
+            onMouseDown={stopBubble}
+            disabled={busy}
+          >
+            <option value="">默认（用上方全局模型）</option>
+            {modelList.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <p className="ai-service-settings__hint">
+            快捷路径适合用更快更便宜的模型；留空则跟随全局设置。
+          </p>
+        </label>
+      </section>
+
+      <section className="ai-service-settings__section">
+        <h3 className="ai-service-settings__section-title">
           <i className="ti ti-world-www" aria-hidden="true" />
           Firecrawl（网页导入）
         </h3>
@@ -410,6 +511,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     formKey,
     initialAI,
     initialFirecrawl,
+    initialQuickCard,
     modelOptions,
     isFetchingModels,
     isTestingAI,
@@ -473,6 +575,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             key={formKey}
             initialAI={initialAI}
             initialFirecrawl={initialFirecrawl}
+            initialQuickCard={initialQuickCard}
             busy={busy}
             modelOptions={modelOptions}
             isFetchingModels={isFetchingModels}

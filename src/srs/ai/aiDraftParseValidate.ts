@@ -91,8 +91,36 @@ function isGroundedExcerpt(sourceText: string, excerpt: string): boolean {
 /**
  * sourceQuote 是否 grounded 于 source（空白规范化；兼容 Markdown 链接纯文本摘录）
  */
+/** 省略号分隔符：中文 `……`、西文 `...`、单个 `…`。 */
+const QUOTE_ELLIPSIS = /(?:…{1,}|\.{3,})/
+
+/** 拆开后每段仍需有足够信息量，避免用一堆碎片凑出「接地」。 */
+const MIN_ELLIPSIS_SEGMENT_LENGTH = 4
+
+/**
+ * sourceQuote 是否接地。
+ *
+ * 除了整段连续匹配，还接受**用省略号拼接的多段引用**：模型经常写成
+ * 「前半句……后半句」，两段各自都出自原文，接地依据其实完全成立，
+ * 一律判为「未出现在源文本中」是过度严格，会把好卡整批打掉。
+ *
+ * 放宽的边界很清楚：每一段都必须**独立通过**同一套接地判定，且不能是
+ * 碎片——否则就成了用几个词拼出一个假的「引用」。
+ */
 export function isSourceQuoteGrounded(sourceText: string, sourceQuote: string): boolean {
-  return isGroundedExcerpt(sourceText, sourceQuote)
+  if (isGroundedExcerpt(sourceText, sourceQuote)) return true
+
+  const segments = sourceQuote
+    .split(QUOTE_ELLIPSIS)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+
+  if (segments.length < 2) return false
+  return segments.every(
+    (segment) =>
+      segment.length >= MIN_ELLIPSIS_SEGMENT_LENGTH &&
+      isGroundedExcerpt(sourceText, segment)
+  )
 }
 
 /**

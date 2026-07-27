@@ -712,3 +712,65 @@ describe("mixed card types", () => {
     expect(result.rejected[0].reason).toContain("与已接受草稿重复")
   })
 })
+
+describe("sourceQuote 省略号拼接", () => {
+  const SOURCE =
+    "我小时候每天都看着妈妈在灶上创造奇迹。我们没什么钱，她能够把最糟糕的食材变成可口的饭菜。" +
+    "后来我去了英国教书，那是另一段故事。" +
+    "我喜欢做饭，因为烹饪是创造。我意识到，在厨房里做的事情和写作很像。"
+
+  it("accepts two real passages joined by a Chinese ellipsis", () => {
+    // 模型高频行为；两段各自都出自原文，接地依据成立，
+    // 一律判为「未出现在源文本中」会把好卡整批打掉
+    expect(
+      isSourceQuoteGrounded(
+        SOURCE,
+        "我小时候每天都看着妈妈在灶上创造奇迹。……我喜欢做饭，因为烹饪是创造。"
+      )
+    ).toBe(true)
+  })
+
+  it("accepts western ellipsis forms too", () => {
+    expect(
+      isSourceQuoteGrounded(SOURCE, "我喜欢做饭，因为烹饪是创造。...我们没什么钱")
+    ).toBe(true)
+    expect(
+      isSourceQuoteGrounded(SOURCE, "我喜欢做饭，因为烹饪是创造。…我们没什么钱")
+    ).toBe(true)
+  })
+
+  it("still rejects when any segment is not from the source", () => {
+    expect(
+      isSourceQuoteGrounded(SOURCE, "我喜欢做饭，因为烹饪是创造。……他其实从不下厨。")
+    ).toBe(false)
+  })
+
+  it("rejects fragment soup stitched out of a few characters", () => {
+    // 放宽不能变成「用几个词拼一个假引用」
+    expect(isSourceQuoteGrounded(SOURCE, "我……做……饭")).toBe(false)
+  })
+
+  it("keeps rejecting a single ungrounded span", () => {
+    expect(isSourceQuoteGrounded(SOURCE, "这段话完全不在原文里出现过")).toBe(false)
+  })
+
+  it("still accepts an ordinary continuous excerpt", () => {
+    expect(isSourceQuoteGrounded(SOURCE, "烹饪是创造")).toBe(true)
+  })
+
+  it("accepts a basic card whose quote is ellipsis-joined", () => {
+    const payload = JSON.stringify({
+      cards: [
+        {
+          type: "basic",
+          question: "鲍曼把烹饪比作什么？",
+          answer: "烹饪是创造",
+          sourceQuote:
+            "我小时候每天都看着妈妈在灶上创造奇迹。……我喜欢做饭，因为烹饪是创造。"
+        }
+      ]
+    })
+    const result = parseAndValidateDrafts(payload, SOURCE, ["basic"], 5)
+    expect(result.success).toBe(true)
+  })
+})

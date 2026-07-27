@@ -111,6 +111,12 @@ export async function load(_name: string) {
     console.warn(`[${pluginName}] 加载 AI 连接设置失败:`, error)
   }
   try {
+    const { hydrateQuickCardPrefs } = await import("./srs/ai/aiQuickCardPrefs")
+    await hydrateQuickCardPrefs(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载快捷制卡偏好失败:`, error)
+  }
+  try {
     const { hydrateWebImportSettings } = await import(
       "./srs/settings/webImportSettingsSchema"
     )
