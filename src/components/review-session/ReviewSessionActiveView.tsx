@@ -11,6 +11,8 @@ export type ReviewBlockLoadError = {
 
 type ReviewSessionActiveViewProps = {
   containerRef: React.RefObject<HTMLDivElement>
+  /** 会话内滚动节点（侧栏形态）；切卡归零优先从它解析真实滚动 owner */
+  scrollBodyRef?: React.RefObject<HTMLDivElement>
   inSidePanel: boolean
   isMaximized: boolean
   currentIndex: number
@@ -80,7 +82,7 @@ export default function ReviewSessionActiveView(props: ReviewSessionActiveViewPr
             <i className="ti ti-refresh" />
           </Button>
         </div>
-        <div className="srs-review-session-body">
+        <div className="srs-review-session-body" ref={props.scrollBodyRef}>
           <ActiveCard {...props} inSidePanel={true} />
         </div>
       </div>

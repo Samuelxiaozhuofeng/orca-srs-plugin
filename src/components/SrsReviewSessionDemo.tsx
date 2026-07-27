@@ -68,6 +68,7 @@ import {
 } from "../srs/reviewSessionActionGate"
 import { shouldTrackFormalShortRelearn } from "../srs/pendingDueRequeue"
 import { useReviewCardAvailability } from "../hooks/useReviewCardAvailability"
+import { resetViewportScrollTop } from "../hooks/viewportScrollReset"
 import ReviewSessionActiveView from "./review-session/ReviewSessionActiveView"
 import ReviewSessionCompletedView from "./review-session/ReviewSessionCompletedView"
 import ReviewSessionEmptyView from "./review-session/ReviewSessionEmptyView"
@@ -155,6 +156,10 @@ export default function SrsReviewSession({
   manageHostEditorChrome = false
 }: SrsReviewSessionProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  /** 会话内滚动节点（`.srs-review-session-body`）；切卡归零的解析起点 */
+  const scrollBodyRef = useRef<HTMLDivElement | null>(null)
+  /** 最近一次解析到的真实纵向滚动 owner（完成页 containerRef 已卸载时的归零目标） */
+  const scrollOwnerRef = useRef<HTMLElement | null>(null)
   const [queue, setQueue] = useState<ReviewCard[]>(cards)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [reviewedCount, setReviewedCount] = useState(0)
@@ -321,6 +326,22 @@ export default function SrsReviewSession({
     )
     setSessionStats(stats)
   }, [isSessionComplete, sessionStats, finishProgressSession])
+
+  /**
+   * 切卡 / 进入完成页时归零真实纵向滚动 owner。
+   * 内部 `.srs-review-session-body` 无滚动范围时，实际滚动的是 host
+   * `.orca-block-editor` 祖先：不归零则新卡片与完成摘要都会停在上一张
+   * 长卡片的滚动位置。完成页 / 模态下 containerRef 已卸载，故记住上一次
+   * 解析到的 owner 作为回退目标（宿主编辑器在会话期间始终存活）。
+   */
+  useEffect(() => {
+    const owner = resetViewportScrollTop(
+      scrollBodyRef.current ?? containerRef.current ?? scrollOwnerRef.current,
+      // 嵌入 Journal / 查询结果 / 引用预览时不得滚动外层宿主（与 chrome 接管同一 gate）
+      { allowAncestorOwner: manageHostEditorChrome }
+    )
+    if (owner) scrollOwnerRef.current = owner
+  }, [currentIndex, isSessionComplete, manageHostEditorChrome])
 
   /** 当前卡片稳定 key（只读/历史均用此身份） */
   const currentCardKey = currentCard ? getReviewCardKey(currentCard) : null
@@ -1123,6 +1144,7 @@ export default function SrsReviewSession({
   return (
     <ReviewSessionActiveView
       containerRef={containerRef}
+      scrollBodyRef={scrollBodyRef}
       inSidePanel={inSidePanel}
       isMaximized={isMaximized}
       currentIndex={currentIndex}
