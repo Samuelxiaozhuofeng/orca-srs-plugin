@@ -34,6 +34,8 @@ type Props = {
   onOpenQueue: () => void
   onClose: () => void
   onCloseHandlerChange?: (handler: (() => Promise<void>) | null) => void
+  /** 工作区前台为阅读时 true；资料库隐藏挂载时 false，用于活跃计时 */
+  sessionActive?: boolean
 }
 
 export default function IRReadingView({
@@ -55,7 +57,8 @@ export default function IRReadingView({
   onQueueSnapshot,
   onOpenQueue,
   onClose,
-  onCloseHandlerChange
+  onCloseHandlerChange,
+  sessionActive = true
 }: Props) {
   /** 今日学习入口默认混合；启动页不再暴露只读/混合与时长选择 */
   const [reviewStarting, setReviewStarting] = useState(false)
@@ -65,16 +68,7 @@ export default function IRReadingView({
     if (starting) return
     setStarting(true)
     try {
-      const {
-        writeIrTodayLearningResume,
-        reportTodayLearningResumeWriteFailure
-      } = await import(
-        "../../../srs/todayLearning/todayLearningResumeStorage"
-      )
-      const writeResult = await writeIrTodayLearningResume({ pluginName })
-      if (!writeResult.ok) {
-        reportTodayLearningResumeWriteFailure(pluginName, writeResult.error)
-      }
+      // 不预写 resume；队列装配成功且非空后再写（见 useIRWorkspaceSession）
       onStartSession("mixed")
     } catch (error) {
       console.error("[IR Workspace] 启动学习会话失败:", error)
@@ -82,7 +76,7 @@ export default function IRReadingView({
       orca.notify("error", `启动失败：${message}`, { title: "今日学习" })
       setStarting(false)
     }
-  }, [onStartSession, pluginName, starting])
+  }, [onStartSession, starting])
 
   const handleStartReviewSession = useCallback(async () => {
     if (reviewStarting) return
@@ -178,6 +172,7 @@ export default function IRReadingView({
         onUndoAutoPostpone={onUndoAutoPostpone}
         sessionNotice={mixedDegradedNotice}
         embedded
+        sessionActive={sessionActive}
         onBackToLibrary={onBackToLibrary}
         onQueueSnapshot={onQueueSnapshot}
         onOpenQueue={onOpenQueue}

@@ -3,7 +3,9 @@
  *
  * 语义（非队列快照）：
  * - srs：记住 session blockId；重开后由 Renderer 用冻结 descriptor + 当前状态/日志重建剩余
- * - ir：记住时长与 mixed；重开后只读重装当日剩余队列，断点靠 ir.resumeBlockId / ir.breakpoint
+ * - ir：统一学习入口标记（version-1 仍为 kind:"ir"）；重开时按**当前**受信任 remaining
+ *   决定 mixed / read-only / 独立 SRS，不把过期 launchMode 当真理；断点靠
+ *   ir.resumeBlockId / ir.breakpoint。不再存储时间盒时长。
  *
  * 无 marker 与读取失败是不同状态；损坏 JSON / 未知版本返回 error，不得 null 冒充 absent。
  */
@@ -53,7 +55,11 @@ export type TodayLearningResumeWriteResult =
   | { ok: true; marker: TodayLearningResumeMarker }
   | { ok: false; error: Error }
 
-/** 只允许与恢复点类型一致的精确剩余数启用“继续”。 */
+/**
+ * 是否应用「继续」按钮。
+ * - kind:"srs"：仅精确且 >0 的 SRS remaining
+ * - kind:"ir"（统一 marker）：精确正 IR **或** 精确正 SRS 任一即可（另一侧可 null）
+ */
 export function resumeMarkerHasTrustedTasks(
   marker: TodayLearningResumeMarker | null,
   remaining: { readonly srs?: number; readonly ir?: number }
@@ -62,7 +68,9 @@ export function resumeMarkerHasTrustedTasks(
     return remaining.srs != null && remaining.srs > 0
   }
   if (marker?.kind === "ir") {
-    return remaining.ir != null && remaining.ir > 0
+    const irOk = remaining.ir != null && remaining.ir > 0
+    const srsOk = remaining.srs != null && remaining.srs > 0
+    return irOk || srsOk
   }
   return false
 }

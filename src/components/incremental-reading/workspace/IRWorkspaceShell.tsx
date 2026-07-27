@@ -158,40 +158,16 @@ export default function IRWorkspaceShell({
 
       if (request.autoStart === true) {
         const sessionLaunchMode = request.sessionLaunchMode ?? "mixed"
-        // 真实 autoStart 时写 IR resume（失败可见，仍继续 load）
+        // 不预写 resume（失败/空队列不得覆盖有效 SRS marker）；
+        // 非空队列装配成功后由 useIRWorkspaceSession 写入。
         void (async () => {
-          try {
-            const {
-              writeIrTodayLearningResume,
-              reportTodayLearningResumeWriteFailure
-            } = await import(
-              "../../../srs/todayLearning/todayLearningResumeStorage"
-            )
-            const writeResult = await writeIrTodayLearningResume({ pluginName })
-            if (!writeResult.ok) {
-              reportTodayLearningResumeWriteFailure(
-                pluginName,
-                writeResult.error
-              )
-            }
-          } catch (resumeError) {
-            console.error(
-              "[IR Workspace] autoStart 写 resume 失败:",
-              resumeError
-            )
-            orca.notify(
-              "error",
-              `学习可继续，但恢复点未保存：${resumeError instanceof Error ? resumeError.message : String(resumeError)}`,
-              { title: "今日学习" }
-            )
-          }
           // 先于队列装配的显式步骤：当日一次自动整理积压（写入允许）
           await runStartAutoPostpone()
           await reading.loadReadingQueue({ sessionLaunchMode })
         })()
       }
     },
-    [mode, reading, pluginName, runStartAutoPostpone]
+    [mode, reading, runStartAutoPostpone]
   )
 
   useEffect(() => {
@@ -455,6 +431,7 @@ export default function IRWorkspaceShell({
             }
             mixedDegradedNotice={reading.session.mixedDegradedNotice}
             sessionGeneration={reading.session.generation}
+            sessionActive={mode === "reading"}
             onStartSession={(sessionLaunchMode) =>
               void (async () => {
                 // 先于队列装配的显式步骤：当日一次自动整理积压

@@ -68,13 +68,20 @@ describe("resumeMarkerHasTrustedTasks", () => {
     expect(resumeMarkerHasTrustedTasks(srsMarker, { srs: 1, ir: 0 })).toBe(true)
     expect(resumeMarkerHasTrustedTasks(irMarker, { srs: 0, ir: 1 })).toBe(true)
     expect(resumeMarkerHasTrustedTasks(srsMarker, { srs: 0, ir: 5 })).toBe(false)
-    expect(resumeMarkerHasTrustedTasks(irMarker, { srs: 5, ir: 0 })).toBe(false)
+    // 统一 ir marker：纯 SRS 剩余也够继续
+    expect(resumeMarkerHasTrustedTasks(irMarker, { srs: 5, ir: 0 })).toBe(true)
   })
 
-  it("rejects missing marker or partial remaining counts", () => {
+  it("accepts a single exact positive side on unified ir markers", () => {
+    expect(resumeMarkerHasTrustedTasks(irMarker, { ir: 3 })).toBe(true)
+    expect(resumeMarkerHasTrustedTasks(irMarker, { srs: 2 })).toBe(true)
+    expect(resumeMarkerHasTrustedTasks(irMarker, { ir: 0, srs: 0 })).toBe(false)
+  })
+
+  it("rejects missing marker; srs marker still needs trusted srs remaining", () => {
     expect(resumeMarkerHasTrustedTasks(null, { srs: 1, ir: 1 })).toBe(false)
     expect(resumeMarkerHasTrustedTasks(srsMarker, { ir: 1 })).toBe(false)
-    expect(resumeMarkerHasTrustedTasks(irMarker, { srs: 1 })).toBe(false)
+    expect(resumeMarkerHasTrustedTasks(srsMarker, { srs: 0, ir: 5 })).toBe(false)
   })
 })
 

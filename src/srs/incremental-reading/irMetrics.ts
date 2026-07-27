@@ -7,6 +7,9 @@
 export type IRMetricEventName =
   | "session.start"
   | "session.end"
+  | "session.pause"
+  | "session.resume"
+  | "session.plan_more"
   | "queue.load"
   | "queue.load_error"
   | "action.next"
@@ -97,6 +100,10 @@ const emptySnapshot = (): IRSessionMetricsSnapshot => ({
 export class IRSessionMetrics {
   private events: IRMetricEvent[] = []
   private snapshot: IRSessionMetricsSnapshot = emptySnapshot()
+  /** 当前活跃区间起点；null 表示已暂停或不在计时 */
+  private activeSegmentStartedAt: number | null = null
+  /** 已累计的活跃毫秒（不含当前未闭合区间） */
+  private accumulatedActiveMs = 0
 
   record(name: IRMetricEventName, value?: number, tags?: IRMetricEvent["tags"]): void {
     const event: IRMetricEvent = {
@@ -110,7 +117,14 @@ export class IRSessionMetrics {
   }
 
   getSnapshot(): IRSessionMetricsSnapshot {
-    return { ...this.snapshot }
+    const live = { ...this.snapshot }
+    // 活跃中的 live 快照也反映当前未闭合区间，便于 UI / 中途 settle
+    if (this.activeSegmentStartedAt != null && live.sessionEndedAt == null) {
+      const now = Date.now()
+      live.durationMs =
+        this.accumulatedActiveMs + Math.max(0, now - this.activeSegmentStartedAt)
+    }
+    return live
   }
 
   getEvents(): readonly IRMetricEvent[] {
@@ -120,6 +134,14 @@ export class IRSessionMetrics {
   reset(): void {
     this.events = []
     this.snapshot = emptySnapshot()
+    this.activeSegmentStartedAt = null
+    this.accumulatedActiveMs = 0
+  }
+
+  private closeActiveSegment(at: number): void {
+    if (this.activeSegmentStartedAt == null) return
+    this.accumulatedActiveMs += Math.max(0, at - this.activeSegmentStartedAt)
+    this.activeSegmentStartedAt = null
   }
 
   private apply(event: IRMetricEvent): void {
@@ -128,12 +150,30 @@ export class IRSessionMetrics {
       case "session.start":
         s.sessionStartedAt = event.at
         s.plannedCount = typeof event.value === "number" ? event.value : s.plannedCount
+        this.accumulatedActiveMs = 0
+        this.activeSegmentStartedAt = event.at
+        s.durationMs = 0
+        break
+      case "session.pause":
+        this.closeActiveSegment(event.at)
+        s.durationMs = this.accumulatedActiveMs
+        break
+      case "session.resume":
+        if (s.sessionEndedAt != null) break
+        if (this.activeSegmentStartedAt == null) {
+          this.activeSegmentStartedAt = event.at
+        }
+        break
+      case "session.plan_more":
+        s.plannedCount +=
+          typeof event.value === "number" && Number.isFinite(event.value)
+            ? Math.max(0, Math.floor(event.value))
+            : 1
         break
       case "session.end":
         s.sessionEndedAt = event.at
-        if (s.sessionStartedAt != null) {
-          s.durationMs = event.at - s.sessionStartedAt
-        }
+        this.closeActiveSegment(event.at)
+        s.durationMs = this.accumulatedActiveMs
         // 只向上对账，绝不覆盖已累加的真实处理数。
         // 会话内短期重学回流时，处理次数会超过启动时的 planned，而调用方传入的
         // progress.completed 被 markSessionItemCompleted 封顶在 planned；若直接覆盖，

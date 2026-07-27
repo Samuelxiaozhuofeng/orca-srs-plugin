@@ -274,6 +274,33 @@ export function useIRWorkspaceSession(
         sessionLaunchMode: launchMode,
         mixedDegradedNotice
       })
+
+      // 仅在非空队列装配成功后写 IR resume；失败可见但不撤销已可用的队列。
+      // 空队列/失败路径不得覆盖先前有效的 SRS marker。
+      if (sessionEntries.length > 0) {
+        try {
+          const {
+            writeIrTodayLearningResume,
+            reportTodayLearningResumeWriteFailure
+          } = await import(
+            "../../../srs/todayLearning/todayLearningResumeStorage"
+          )
+          const writeResult = await writeIrTodayLearningResume({ pluginName: name })
+          if (!writeResult.ok) {
+            reportTodayLearningResumeWriteFailure(name, writeResult.error)
+          }
+        } catch (resumeError) {
+          console.error(
+            "[IR Workspace] 队列装配后写 resume 失败（队列仍可用）:",
+            resumeError
+          )
+          orca.notify(
+            "error",
+            `学习可继续，但恢复点未保存：${resumeError instanceof Error ? resumeError.message : String(resumeError)}`,
+            { title: "今日学习" }
+          )
+        }
+      }
     } catch (error) {
       console.error("[IR Workspace] 加载阅读队列失败:", error)
       const errResult = buildCollectError(error)

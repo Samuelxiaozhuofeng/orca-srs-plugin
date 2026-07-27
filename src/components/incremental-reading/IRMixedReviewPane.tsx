@@ -164,7 +164,7 @@ export default function IRMixedReviewPane({
           <span>{lastLog}</span>
           {showContinue ? (
             <Button tabIndex={0} variant="solid" onClick={advanceOnce}>
-              继续阅读
+              继续学习
             </Button>
           ) : null}
         </div>

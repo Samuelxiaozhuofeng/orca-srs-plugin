@@ -3,6 +3,20 @@ export function calculateElapsedSeconds(startedAt: number, now: number): number 
 }
 
 /**
+ * 活跃累计：在已冻结的秒数上叠加当前活跃区间。
+ * paused 时 currentSegmentStartedAt 为 null，只返回 accumulatedSeconds。
+ */
+export function calculateActiveElapsedSeconds(params: {
+  accumulatedSeconds: number
+  currentSegmentStartedAt: number | null
+  now: number
+}): number {
+  const base = Math.max(0, Math.floor(params.accumulatedSeconds))
+  if (params.currentSegmentStartedAt == null) return base
+  return base + calculateElapsedSeconds(params.currentSegmentStartedAt, params.now)
+}
+
+/**
  * 已投入时长展示：mm:ss，满 1 小时后 h:mm:ss。
  * 无时间盒后计时只做「陈述」，不再有到期判定与打断。
  */
