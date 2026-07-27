@@ -1,5 +1,6 @@
 /**
- * 右侧竖排阅读动作栏：返回(可选)、下一篇、摘录|挖空、重要性、完成、⋯(更多)。
+ * 右侧竖排阅读动作栏：返回(可选)、下篇、摘录|挖空、重要、完成、⋯(更多)。
+ * wide/medium 可见文案统一二字；完整语义在 aria-label / title。
  * position:fixed，跟随所属 `.ir-reading` 面板的可视区域垂直居中，
  * 并按面板宽度三档（wide / medium / narrow）缩放；不覆盖正文。
  */
@@ -184,15 +185,20 @@ export default function IRActionBar({
     }
   }, [tier, showReturn, importanceTierLabel, importanceOpen, moreOpen, completeTitle])
 
+  // 竖排主栏：wide/medium 统一二字，避免「下一篇 / 重要性」三字与「摘录 / 完成」二字混排难看。
+  // narrow 仍用极简符号/档位字；完整语义留给 aria-label / title。
   const returnLabel = compact ? "↩" : "返回"
-  const nextLabel = compact ? "→" : "下一篇"
+  const nextLabel = compact ? "→" : "下篇"
   const secondLabel = compact ? "+" : isTopic ? "摘录" : "挖空"
   const importanceLabel = compact
     ? (importanceTierLabel ?? "中")
-    : "重要性"
+    : "重要"
   const completeLabel = compact ? "完" : "完成"
   // Product scheme 3: more always icon-style ⋯ (compact spirit at every tier).
   const moreLabel = "⋯"
+  const importanceTitle = importanceTierLabel
+    ? `重要性（${importanceTierLabel}）Alt+P`
+    : "重要性 Alt+P"
 
   return (
     <div
@@ -266,7 +272,7 @@ export default function IRActionBar({
           aria-disabled={isWorking}
           aria-expanded={importanceOpen}
           aria-label="重要性"
-          title="重要性 Alt+P"
+          title={importanceTitle}
         >
           {importanceLabel}
         </Button>
