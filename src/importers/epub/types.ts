@@ -21,6 +21,20 @@ export interface EpubManifestItem {
   mediaType: string
 }
 
+/**
+ * How multi-fragment TOC entries map to import chapters.
+ * - auto: keep whole-file chapters when TOC+DOM show chapter+subsection nesting;
+ *   otherwise expand fragments (with optional document-start prefix chapter).
+ * - spine: one chapter per spine XHTML (ignore multi-fragment expansion).
+ * - toc-fragments: historical expand-only behavior (parent whole-file TOC dropped).
+ */
+export type EpubChapterGranularity = "auto" | "spine" | "toc-fragments"
+
+export interface EpubChapterPlanV1 {
+  version: 1
+  granularity: EpubChapterGranularity
+}
+
 export interface EpubChapter {
   id: string
   title: string
@@ -30,6 +44,7 @@ export interface EpubChapter {
   spineIndex: number
   /**
    * End exclusive fragment for multi-fragment logical chapters in one spine file.
+   * Also used for document-start prefix chapters (href has no fragment; slice [0, endFragment)).
    * Runtime-only (rebuilt by re-parse); not part of the persisted manifest schema.
    */
   endFragment?: string
@@ -65,6 +80,11 @@ export interface EpubBookManifestV1 {
   status: EpubImportStatus
   bookBlockId: DbId
   chapters: EpubChapterManifestEntry[]
+  /**
+   * Chapter-planning policy used when this book was (first) imported.
+   * Absent on pre-policy manifests → resume must use `toc-fragments` so keys stay stable.
+   */
+  chapterPlan?: EpubChapterPlanV1
 }
 
 export type ImportEpubPhase =
@@ -93,6 +113,11 @@ export interface ImportEpubRequest {
   selectedChapterKeys: string[]
   pluginName?: string
   onProgress?: (progress: ImportEpubProgress) => void
+  /**
+   * Chapter planning mode; must match the keys from preview/parse.
+   * Default `auto`. Persisted on manifest as chapterPlan for resume.
+   */
+  chapterGranularity?: EpubChapterGranularity
 }
 
 export interface ImportEpubResult {

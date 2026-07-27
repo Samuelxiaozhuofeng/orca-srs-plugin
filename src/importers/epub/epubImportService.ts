@@ -16,15 +16,20 @@ import {
   persistManifest,
   recomputeImportStatus
 } from "./epubBookRepository"
+import { resolveManifestChapterGranularity } from "./manifest"
 import { EpubParser, parseEpub } from "./epubParser"
 import { computeSha256Hex } from "./fingerprint"
 import type {
   EpubChapter,
+  EpubChapterGranularity,
   ImportEpubRequest,
   ImportEpubResult,
   ParsedEpub
 } from "./types"
 import { EpubValidationError } from "./types"
+
+/** Default for new imports / preview (Sol auto plan). */
+export const DEFAULT_IMPORT_CHAPTER_GRANULARITY: EpubChapterGranularity = "auto"
 import { navigateToBlock } from "./orcaBookHelpers"
 import type { DbId } from "../../orca.d.ts"
 
@@ -56,10 +61,12 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
     }
   }
 
+  const granularity =
+    request.chapterGranularity ?? DEFAULT_IMPORT_CHAPTER_GRANULARITY
   const parser = new EpubParser()
   await parser.load(request.buffer)
   const metadata = await parser.getMetadata()
-  const allChapters = await parser.getChapters()
+  const allChapters = await parser.getChapters({ granularity })
 
   const selectedKeys = new Set(request.selectedChapterKeys)
   const selectedChapters = allChapters.filter((ch) => selectedKeys.has(ch.key))
@@ -88,7 +95,8 @@ export async function importEpub(request: ImportEpubRequest): Promise<ImportEpub
     fingerprint,
     sourceFileName: request.sourceFileName,
     sourceAssetPath,
-    selectedChapters
+    selectedChapters,
+    chapterPlan: { version: 1, granularity }
   })
 
   const panelId = orca.state.activePanel
@@ -178,9 +186,10 @@ export async function resumeEpubImport(bookBlockId: DbId): Promise<ImportEpubRes
     )
   }
 
+  const granularity = resolveManifestChapterGranularity(manifest)
   const parser = new EpubParser()
   await parser.load(buffer)
-  const allChapters = await parser.getChapters()
+  const allChapters = await parser.getChapters({ granularity })
   const chapterByKey = new Map(allChapters.map((c) => [c.key, c]))
 
   const chaptersHeadingId = await ensureChaptersHeading(bookBlockId)
@@ -295,7 +304,10 @@ function chapterFailureEntry(
 }
 
 export async function previewParse(
-  buffer: ArrayBuffer
+  buffer: ArrayBuffer,
+  options?: { granularity?: EpubChapterGranularity }
 ): Promise<ParsedEpub> {
-  return parseEpub(buffer)
+  return parseEpub(buffer, {
+    granularity: options?.granularity ?? DEFAULT_IMPORT_CHAPTER_GRANULARITY
+  })
 }

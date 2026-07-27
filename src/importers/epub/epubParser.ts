@@ -25,8 +25,16 @@ import {
   yieldToMain
 } from "./epubLimits"
 import { sanitizeEpubHtmlForImport } from "./epubSanitize"
+import {
+  expandLogicalFragmentChapters as expandLogicalFragmentChaptersCore,
+  planChapters,
+  selectFragmentEntriesForPath,
+  sliceChapterPrefixUntilFragment,
+  type TocEntry
+} from "./epubChapterPlan"
 import type {
   EpubChapter,
+  EpubChapterGranularity,
   EpubManifestItem,
   EpubMetadata,
   ParsedEpub
@@ -107,7 +115,10 @@ export class EpubParser {
     }
   }
 
-  async getChapters(): Promise<EpubChapter[]> {
+  async getChapters(options?: {
+    granularity?: EpubChapterGranularity
+  }): Promise<EpubChapter[]> {
+    const granularity: EpubChapterGranularity = options?.granularity ?? "auto"
     const opfXml = await this.getFile(this.opfPath)
     const doc = new DOMParser().parseFromString(opfXml, "text/xml")
 
@@ -150,10 +161,28 @@ export class EpubParser {
 
     const toc = await this.collectTocEntries(doc, manifestItems)
     applyFileLevelTocTitles(spineChapters, toc)
-    const chapters = expandLogicalFragmentChapters(spineChapters, toc)
+
+    const contentByPath = new Map<string, HtmlSourceCache>()
+    if (granularity === "auto") {
+      await this.preloadMultiFragmentSources(
+        spineChapters,
+        toc,
+        contentByPath
+      )
+    }
+
+    const chapters = planChapters(
+      spineChapters,
+      toc,
+      granularity,
+      (path) => contentByPath.get(this.resolvePath(path))?.root ?? null,
+      makeChapterKey,
+      (href) => normalizeComparableHref(href),
+      findAnchorElement
+    )
     assertChapterCount(chapters.length)
 
-    await this.enrichChapterTitlesFromContent(chapters)
+    await this.enrichChapterTitlesFromContent(chapters, contentByPath)
 
     return chapters
   }
@@ -189,19 +218,16 @@ export class EpubParser {
       if (!tocNav) return
 
       const navDir = hrefDirectory(navHref)
-      tocNav.querySelectorAll("a").forEach((a) => {
-        const href = a.getAttribute("href")
-        const title = a.textContent?.trim()
-        if (!href || !title) return
-        const target = resolveHrefTarget(href, navDir)
-        if (!target.path) return
-        entries.push({
-          path: target.path,
-          fragment: target.fragment,
-          title,
-          source: "nav"
+      const order = { n: 0 }
+      const topList = firstChildList(tocNav)
+      if (topList) {
+        walkNavList(topList, null, 0, navDir, entries, order)
+      } else {
+        // Flat fallback: anchors without list structure (preserve document order).
+        tocNav.querySelectorAll("a").forEach((a) => {
+          pushNavAnchor(a, null, 0, navDir, entries, order)
         })
-      })
+      }
     } catch (error) {
       if (isHardEpubControlError(error)) throw error
       // Soft nav failure only: fall through to NCX.
@@ -227,21 +253,14 @@ export class EpubParser {
       const ncxContent = await this.getFile(this.resolvePath(ncxItem.href))
       const ncxDoc = new DOMParser().parseFromString(ncxContent, "text/xml")
       const ncxDir = hrefDirectory(ncxItem.href)
-
-      ncxDoc.querySelectorAll("navPoint").forEach((navPoint) => {
-        const label = navPoint.querySelector("navLabel > text")?.textContent?.trim()
-        const content = navPoint.querySelector("content")
-        const src = content?.getAttribute("src")
-        if (!label || !src) return
-        const target = resolveHrefTarget(src, ncxDir)
-        if (!target.path) return
-        entries.push({
-          path: target.path,
-          fragment: target.fragment,
-          title: label,
-          source: "ncx"
-        })
-      })
+      const order = { n: 0 }
+      const navMap = ncxDoc.querySelector("navMap")
+      if (!navMap) return
+      for (const child of Array.from(navMap.children)) {
+        if (localName(child) === "navpoint") {
+          walkNcxNavPoint(child, null, 0, ncxDir, entries, order)
+        }
+      }
     } catch (error) {
       if (isHardEpubControlError(error)) throw error
       if (typeof console !== "undefined" && console.warn) {
@@ -250,41 +269,67 @@ export class EpubParser {
     }
   }
 
-  private async enrichChapterTitlesFromContent(
-    chapters: EpubChapter[]
+  private async preloadMultiFragmentSources(
+    spineChapters: EpubChapter[],
+    toc: TocEntry[],
+    contentByPath: Map<string, HtmlSourceCache>
   ): Promise<void> {
-    const contentByPath = new Map<string, {
-      content: string
-      doc: Document
-      root: HTMLElement
-    }>()
+    for (const chapter of spineChapters) {
+      throwIfAborted(this.signal)
+      const path = normalizeComparableHref(chapter.href)
+      if (selectFragmentEntriesForPath(toc, path).length < 2) continue
+      await this.ensureHtmlSource(chapter.href, contentByPath)
+    }
+  }
 
+  private async ensureHtmlSource(
+    href: string,
+    contentByPath: Map<string, HtmlSourceCache>
+  ): Promise<HtmlSourceCache> {
+    const fullPath = this.resolvePath(href)
+    let source = contentByPath.get(fullPath)
+    if (source) return source
+    const content = await this.getFile(fullPath)
+    const doc = parseHtml(content)
+    source = {
+      content,
+      doc,
+      root: getHtmlContentRoot(doc, content)
+    }
+    contentByPath.set(fullPath, source)
+    return source
+  }
+
+  private async enrichChapterTitlesFromContent(
+    chapters: EpubChapter[],
+    contentByPath: Map<string, HtmlSourceCache> = new Map()
+  ): Promise<void> {
     for (let index = 0; index < chapters.length; index++) {
       throwIfAborted(this.signal)
       const chapter = chapters[index]
       try {
-        const fullPath = this.resolvePath(chapter.href)
-        let source = contentByPath.get(fullPath)
-        if (!source) {
-          const content = await this.getFile(fullPath)
-          const doc = parseHtml(content)
-          source = {
-            content,
-            doc,
-            root: getHtmlContentRoot(doc, content)
-          }
-          contentByPath.set(fullPath, source)
-        }
+        const source = await this.ensureHtmlSource(chapter.href, contentByPath)
 
         const startFragment = extractHrefFragment(chapter.href)
-        const contentTitle = startFragment
-          ? extractFragmentHeadingTitle(
+        let contentTitle = ""
+        if (startFragment) {
+          contentTitle = extractFragmentHeadingTitle(
             source.root,
             startFragment,
             chapter.endFragment,
             chapter.href
           )
-          : extractTopHeadingTitle(source.root)
+        } else if (chapter.endFragment) {
+          const prefixRoot = sliceChapterPrefixUntilFragment(
+            source.root,
+            chapter.endFragment,
+            chapter.href,
+            findAnchorElement
+          )
+          contentTitle = extractTopHeadingTitle(prefixRoot)
+        } else {
+          contentTitle = extractTopHeadingTitle(source.root)
+        }
         if (contentTitle) {
           chapter.title = preferChapterTitle(chapter.title, contentTitle)
         } else if (!chapter.title) {
@@ -295,7 +340,14 @@ export class EpubParser {
               chapter.endFragment,
               chapter.href
             )
-            : source.root
+            : chapter.endFragment
+              ? sliceChapterPrefixUntilFragment(
+                source.root,
+                chapter.endFragment,
+                chapter.href,
+                findAnchorElement
+              )
+              : source.root
           chapter.title = extractDocumentFallbackTitle(source.doc, fallbackRoot, [
             chapter.id,
             chapter.href
@@ -337,6 +389,13 @@ export class EpubParser {
         startFragment,
         options?.endFragment,
         href
+      )
+    } else if (options?.endFragment) {
+      root = sliceChapterPrefixUntilFragment(
+        root,
+        options.endFragment,
+        href,
+        findAnchorElement
       )
     }
 
@@ -483,11 +542,10 @@ export function hrefDirectory(href: string): string {
   return idx >= 0 ? path.slice(0, idx + 1) : ""
 }
 
-interface TocEntry {
-  path: string
-  fragment: string
-  title: string
-  source: "nav" | "ncx"
+interface HtmlSourceCache {
+  content: string
+  doc: Document
+  root: HTMLElement
 }
 
 /**
@@ -509,76 +567,19 @@ function applyFileLevelTocTitles(
 }
 
 /**
- * When a spine file has ≥2 distinct non-empty TOC fragments from the preferred
- * TOC source (nav if multi-fragment, else NCX), replace the single spine chapter
- * with logical chapters in TOC order. Whole-file parent entries are not kept.
- * Files with 0 or 1 fragment keep historical whole-file chapter behavior.
+ * Historical multi-fragment expand (toc-fragments). Kept for direct unit tests.
+ * Whole-file parent TOC entries are not kept when ≥2 fragments exist.
  */
 export function expandLogicalFragmentChapters(
   spineChapters: EpubChapter[],
   toc: TocEntry[]
 ): EpubChapter[] {
-  const usedKeys = new Set<string>()
-  const result: EpubChapter[] = []
-
-  for (const chapter of spineChapters) {
-    const path = normalizeComparableHref(chapter.href)
-    const fileHref = chapter.href.split("#")[0] ?? chapter.href
-    const fragmentEntries = selectFragmentEntriesForPath(toc, path)
-
-    if (fragmentEntries.length < 2) {
-      usedKeys.add(chapter.key)
-      result.push(chapter)
-      continue
-    }
-
-    for (let i = 0; i < fragmentEntries.length; i++) {
-      const entry = fragmentEntries[i]
-      const href = `${fileHref}#${entry.fragment}`
-      const key = makeChapterKey(href, chapter.spineIndex, usedKeys)
-      const next = fragmentEntries[i + 1]
-      result.push({
-        id: `${chapter.id}#${entry.fragment}`,
-        title: entry.title,
-        href,
-        key,
-        spineIndex: chapter.spineIndex,
-        endFragment: next?.fragment
-      })
-    }
-  }
-
-  return result
-}
-
-/**
- * Prefer nav multi-fragment TOC for a path; NCX only when nav has fewer than 2.
- */
-function selectFragmentEntriesForPath(
-  toc: TocEntry[],
-  path: string
-): Array<{ fragment: string; title: string }> {
-  const fromNav = uniqueFragmentEntries(
-    toc.filter((e) => e.source === "nav" && e.path === path)
+  return expandLogicalFragmentChaptersCore(
+    spineChapters,
+    toc,
+    makeChapterKey,
+    (href) => normalizeComparableHref(href)
   )
-  if (fromNav.length >= 2) return fromNav
-  return uniqueFragmentEntries(
-    toc.filter((e) => e.source === "ncx" && e.path === path)
-  )
-}
-
-/** Distinct non-empty fragments in TOC order (first title wins per fragment). */
-function uniqueFragmentEntries(
-  entries: TocEntry[]
-): Array<{ fragment: string; title: string }> {
-  const seen = new Set<string>()
-  const out: Array<{ fragment: string; title: string }> = []
-  for (const entry of entries) {
-    if (!entry.fragment || seen.has(entry.fragment)) continue
-    seen.add(entry.fragment)
-    out.push({ fragment: entry.fragment, title: entry.title })
-  }
-  return out
 }
 
 function buildChapterHrefIndex(chapters: EpubChapter[]): Map<string, EpubChapter> {
@@ -588,6 +589,133 @@ function buildChapterHrefIndex(chapters: EpubChapter[]): Map<string, EpubChapter
     chapterByHref.set(key, ch)
   }
   return chapterByHref
+}
+
+function localName(el: Element): string {
+  return (el.localName || el.tagName || "").toLowerCase()
+}
+
+function walkNcxNavPoint(
+  navPoint: Element,
+  parentId: string | null,
+  depth: number,
+  ncxDir: string,
+  entries: TocEntry[],
+  order: { n: number }
+): void {
+  const rawId = navPoint.getAttribute("id") || `ncx-gen-${order.n}`
+  let label = ""
+  let src = ""
+  for (const child of Array.from(navPoint.children)) {
+    const name = localName(child)
+    if (name === "navlabel") {
+      const textEl =
+        Array.from(child.children).find((c) => localName(c) === "text")
+        ?? child.querySelector("text")
+      label = textEl?.textContent?.trim() || ""
+    } else if (name === "content") {
+      src = child.getAttribute("src") || ""
+    }
+  }
+
+  let entryId: string | null = null
+  if (label && src) {
+    const target = resolveHrefTarget(src, ncxDir)
+    if (target.path) {
+      entryId = `ncx:${rawId}`
+      entries.push({
+        path: target.path,
+        fragment: target.fragment,
+        title: label,
+        source: "ncx",
+        id: entryId,
+        parentId,
+        depth,
+        order: order.n++
+      })
+    }
+  }
+
+  const childParent = entryId ?? parentId
+  const childDepth = entryId ? depth + 1 : depth
+  for (const child of Array.from(navPoint.children)) {
+    if (localName(child) === "navpoint") {
+      walkNcxNavPoint(child, childParent, childDepth, ncxDir, entries, order)
+    }
+  }
+}
+
+function firstChildList(container: Element): Element | null {
+  for (const child of Array.from(container.children)) {
+    const name = localName(child)
+    if (name === "ol" || name === "ul") return child
+  }
+  return null
+}
+
+function walkNavList(
+  listEl: Element,
+  parentId: string | null,
+  depth: number,
+  navDir: string,
+  entries: TocEntry[],
+  order: { n: number }
+): void {
+  for (const item of Array.from(listEl.children)) {
+    if (localName(item) !== "li") continue
+    let anchor: Element | null = null
+    let nestedList: Element | null = null
+    for (const child of Array.from(item.children)) {
+      const name = localName(child)
+      if (name === "a" && !anchor) anchor = child
+      else if ((name === "ol" || name === "ul") && !nestedList) nestedList = child
+    }
+    // Some EPUBs wrap <a> in <span>.
+    if (!anchor) {
+      anchor = item.querySelector("a")
+    }
+    let entryId: string | null = null
+    if (anchor) {
+      entryId = pushNavAnchor(anchor, parentId, depth, navDir, entries, order)
+    }
+    if (nestedList) {
+      walkNavList(
+        nestedList,
+        entryId ?? parentId,
+        entryId ? depth + 1 : depth,
+        navDir,
+        entries,
+        order
+      )
+    }
+  }
+}
+
+function pushNavAnchor(
+  anchor: Element,
+  parentId: string | null,
+  depth: number,
+  navDir: string,
+  entries: TocEntry[],
+  order: { n: number }
+): string | null {
+  const href = anchor.getAttribute("href")
+  const title = anchor.textContent?.trim()
+  if (!href || !title) return null
+  const target = resolveHrefTarget(href, navDir)
+  if (!target.path) return null
+  const id = `nav:${order.n}`
+  entries.push({
+    path: target.path,
+    fragment: target.fragment,
+    title,
+    source: "nav",
+    id,
+    parentId,
+    depth,
+    order: order.n++
+  })
+  return id
 }
 
 /**
@@ -792,6 +920,8 @@ function isCoverManifestItem(
 
 export interface ParseEpubOptions {
   signal?: AbortSignal
+  /** Chapter planning mode; default `auto` (new imports / preview). */
+  granularity?: EpubChapterGranularity
 }
 
 /**
@@ -808,8 +938,16 @@ export async function parseEpub(
   const parser = new EpubParser()
   await parser.load(buffer, { signal: options?.signal })
   const metadata = await parser.getMetadata()
-  const chapters = await parser.getChapters()
+  const chapters = await parser.getChapters({
+    granularity: options?.granularity ?? "auto"
+  })
   return { metadata, chapters, fingerprint }
 }
+
+export {
+  SUBSTANTIVE_PREFIX_MIN_CHARS,
+  hasSubstantivePrefix,
+  sliceChapterPrefixUntilFragment
+} from "./epubChapterPlan"
 
 export { computeSha256Hex }

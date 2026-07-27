@@ -1,7 +1,8 @@
 # EPUB 导入
 
-> 文档同步日期：2026-07-26
-> 变更说明：`epubBookRepository.getBlock` 改 **backend-first**（对齐 `bookIRPlanRepository` 范式）：优先后端 `get-block`，失败 `console.warn` 后回退 `orca.state`——`persistManifest` 后紧接的 `loadManifestFromBook` / `ensureChaptersHeading` / `ensureInlineReference` 写后读不再受旧 state 快照影响（旧行为会把已导入章节当 pending 重跑 / 重复建页）。回归：`epubBookRepository.test.ts`。另更正：工具栏 `importEpubButton` 已移除，导入入口为斜杠 / 命令面板。
+> 文档同步日期：2026-07-27
+> 变更说明：**章节粒度 `auto`（Sol A+C）**：TOC 保留层级（nav 嵌套 `ol/li`、NCX 树状 `navPoint`）；默认 `auto` 在「整章容器」（父级无 fragment + 子 fragment 均为其后代 + 父 heading 匹配 + 子 heading 更深 + 实质前缀/跨文件重复结构）时**不展开**小节，保留整文件章与章首正文；证据不足但有实质前缀时发「前缀章 + fragment 章」；否则保持历史 multi-fragment 展开。manifest 可选 `chapterPlan: { version:1; granularity }`；新导入写 `auto`；旧 manifest 缺字段时 resume 强制 `toc-fragments` 保 key。实现：`epubChapterPlan.ts` + `epubParser.ts`。回归：章+小节 NCX/nav、prefix 兜底、granularity 强制、`chapterPlan` 解析。
+> 2026-07-26：`epubBookRepository.getBlock` 改 **backend-first**（对齐 `bookIRPlanRepository` 范式）：优先后端 `get-block`，失败 `console.warn` 后回退 `orca.state`——`persistManifest` 后紧接的 `loadManifestFromBook` / `ensureChaptersHeading` / `ensureInlineReference` 写后读不再受旧 state 快照影响（旧行为会把已导入章节当 pending 重跑 / 重复建页）。回归：`epubBookRepository.test.ts`。另更正：工具栏 `importEpubButton` 已移除，导入入口为斜杠 / 命令面板。
 > 2026-07-25：WP-07 **纯层**已落地严格 HTML 清洗、资源预算、MIME 魔数、解析层 AbortSignal；ZIP load 与 entry 解压完成后会再次检查取消。
 > **未验收 / 证据阻塞**：`importEpub` / `resumeEpubImport` 写入链取消、超限图片「省略 vs 零写入拒绝」preflight、真机 Network 与 resume 一致性。
 > 2026-07-19：ir_setup 重要性字段——用户文案「重要性」，三档绝对档位（20/50/80，默认中），选项来自 `importanceSetupOptions`（`irImportance.ts`）；存储仍写 `priority` → 各章 `ir.priority`。
@@ -42,7 +43,8 @@ src/srs/book-ir/                    第二阶段 IR（计划 / 顺序推进 / �
 | `epubLimits.ts` | 压缩体积 / ZIP 条目 / 解压累计 / 单章 HTML / 图片 / 章节数 / 压缩比预算；`throwIfAborted` |
 | `epubSanitize.ts` | **安全边界** `sanitizeEpubHtmlForImport`（白名单标签、去 on*/style/srcdoc、拒 SVG/危险协议） |
 | `epubMime.ts` | 图片扩展名 + 魔数校验；默认拒绝 SVG |
-| `epubParser.ts` | ZIP/OPF/spine/nav/NCX、`parseEpub`、预算与 signal、`getChapterContent`（严格清洗） |
+| `epubParser.ts` | ZIP/OPF/spine/nav/NCX（层级 TOC）、`parseEpub`、预算与 signal、`getChapterContent`（严格清洗） |
+| `epubChapterPlan.ts` | 章节粒度规划：`auto` / `spine` / `toc-fragments`；整章容器判定、实质前缀、前缀切片 |
 | `epubHtml.ts` | HTML 根节点、标题合并/去重、图片 src 改写（rewrite 失败则 **移除** img）；`sanitizeHtmlForOrca` 仅为 Orca 兼容 |
 | `epubAssets.ts` | 章节内图片上传（拒外部/data/blob、MIME 校验）；`uploadSourceEpub` / `loadSourceEpubBuffer` |
 | `epubManifestChapters.ts` | 从 manifest 列已导入章节；`isPartialEpubImport` |
@@ -94,8 +96,11 @@ version: 1
 fingerprint, sourceFileName, sourceAssetPath
 status: importing | partial | complete
 bookBlockId
+chapterPlan?: { version: 1; granularity: auto | spine | toc-fragments }  // 新导入必写；缺省=旧书
 chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|imported|failed, error }
 ```
+
+`resolveManifestChapterGranularity(manifest)`：有 `chapterPlan.granularity` 用其值；**缺省 → `toc-fragments`**（保证旧 fragment key 续传可解析，不会被 `auto` 收成整文件后标成「源中不存在」）。
 
 导入结果 `ImportEpubResult.kind`：`created` | `resumed` | `already_exists`。
 
@@ -151,23 +156,50 @@ chapters[]: { key, spineIndex, href, title, blockId | null, status: pending|impo
 
 **文件路径匹配**（`normalizeComparableHref`）：去 fragment、处理 `.` / `..`、前导斜杠与反斜杠、尽力 URL 解码（畸形编码不抛错）。**逻辑章节身份**另用 `resolveHrefTarget` / `extractHrefFragment` 保留并解码 fragment；勿用去 fragment 的结果当逻辑章节 key。
 
-实现见 `normalizeComparableHref` / `resolveHrefTarget` / `preferChapterTitle` / `isNumberingOnlyTitle` / `expandLogicalFragmentChapters`。
+实现见 `normalizeComparableHref` / `resolveHrefTarget` / `preferChapterTitle` / `isNumberingOnlyTitle` / `planChapters` / `expandLogicalFragmentChapters`。
 
-### 章节边界：logical fragment chapters（已落地）
+### 章节边界与粒度（`EpubChapterGranularity`）
+
+| 模式 | 何时用 | 行为 |
+| --- | --- | --- |
+| **`auto`（默认，新导入/预览）** | 新书 | 见下表决策；兼容「一文件多并列章」与「一章文件 + 嵌套小节」 |
+| **`toc-fragments`** | 旧 manifest 无 `chapterPlan` 的续传；强制复现历史 | 同文件 ≥2 fragment → 展开；丢弃整文件父 TOC 项 |
+| **`spine`** | 内部/测试/故障恢复 | 每 spine XHTML 一章，不展开 fragment |
+
+#### `auto` 决策（同一 spine 文件）
+
+| 条件 | 结果 | chapterKey |
+| --- | --- | --- |
+| 0/1 个不同 fragment | 历史整文件章 | `spineIndex:path` |
+| **整章容器**（强证据） | **不展开**，整文件一章，标题用父 TOC | `spineIndex:path` |
+| 非整章，但有实质前缀 + 整文件父 TOC | **前缀章**（文件头→第一 fragment）+ fragment 章 | 前缀 `spineIndex:path`；小节 `…#fragment` |
+| 其余（同文件多并列章等） | 历史 fragment 展开 | `spineIndex:path#fragment` |
+
+**整章容器**须同时满足（不依赖「第 X 章」语言正则）：
+
+1. TOC 层级：存在无 fragment 父项 `P`；该文件全部 fragment 均为 `P` 的后代  
+2. 锚点存在且 TOC 顺序与 DOM 顺序一致（失败**抛错**，不静默）  
+3. 第一 fragment 前有 heading，与 `P.title` 经 `titlesEquivalent` 等价  
+4. 各 fragment 标题层级**严格深于**父 heading（如父 `h1`、子 `h3`）  
+5. 确认：第一 fragment 前有**实质正文**（去 heading 后 ≥40 非空白字符，或含 img/table/blockquote/pre 等），**或** 同结构在 ≥2 个 spine 文件上重复  
+
+TOC 采集保留 `id/parentId/depth/order`（nav 递归 `ol/li`，NCX 递归 `navPoint`）。
+
+#### logical fragment 切片（展开时）
 
 | 规则 | 说明 |
 | --- | --- |
-| 触发条件 | 同一 spine XHTML 在**优先 TOC 源**中有 **≥2 个不同非空 fragment** 目录项 |
-| TOC 优先 | EPUB 3 nav 优先；仅当 nav 对该文件不足 2 个 fragment 时才用 NCX；双目录不生成重复逻辑章节 |
-| 展开结果 | 用 TOC 顺序的逻辑章节**替换**该文件的单一 spine 章节；父级无 fragment 整文件项**不**作为章节（避免重复整文件正文） |
-| 0/1 fragment | 保持历史整文件章节：`href` 无 fragment、key 为 `spineIndex:path`（兼容已有 manifest / 续传） |
-| 身份 | `href` 含 fragment；`key` = `spineIndex:path#fragment`；同书稳定唯一 |
-| 正文切片 | 从起始锚点（`id` 或 `name`）起，到同文件下一逻辑章节 fragment 之前；末章到文件末尾；DOM Range / `cloneContents`，不做字符串硬切 |
-| 锚点失败 | 起始或已声明的结束锚点找不到 → **抛错**（消息含 href/fragment），**绝不**退回整文件 |
-| 结束边界 | `EpubChapter.endFragment` 仅运行时字段，重 parse 可重建；**不**写入 manifest schema |
-| 预算 | `assertChapterCount` 在最终展开后的章节数组上执行 |
-| 下游 | 切片后再走图片改写、安全清洗、页面标题去重、outline 导入 |
-| 标题补全 | `enrichChapterTitlesFromContent` 按 `resolvePath` 缓存**原始字符串**（不缓存 DOM）；有 fragment 时先 `sliceChapterByFragments` 再 `extractTopHeadingTitle` / fallback |
+| TOC 优先 | EPUB 3 nav 优先；仅当 nav 对该文件不足 2 个 fragment 时才用 NCX |
+| 0/1 fragment | 整文件：`href` 无 fragment、key `spineIndex:path` |
+| 展开身份 | `href` 含 fragment；`key` = `spineIndex:path#fragment` |
+| 正文切片 | 起始锚点 → 下一逻辑章 fragment 前；末章到文件末尾；DOM Range |
+| 前缀切片 | `href` 无 fragment + 运行时 `endFragment`：`[0, endFragment)` |
+| 锚点失败 | **抛错**（含 path/fragment），**绝不**退回整文件藏重复正文 |
+| `endFragment` | 仅运行时；**不**写入 manifest |
+| 预算 | `assertChapterCount` 在最终章节数组上执行 |
+| 标题补全 | 按路径缓存 HTML；fragment/前缀切片后再提 heading |
+
+**已导入旧书**不会自动改粒度；同指纹去重不重建。坏结果需**删书重导**。不要原地改 `chapterKey` 或合并章节页。
 
 ## 正文 outline 结构
 

@@ -237,6 +237,8 @@ export async function createBookShell(params: {
   sourceFileName: string
   sourceAssetPath: string
   selectedChapters: EpubChapter[]
+  /** New imports must record the chapter-planning policy used for key stability. */
+  chapterPlan?: EpubBookManifestV1["chapterPlan"]
 }): Promise<{ bookBlockId: DbId; chaptersHeadingId: DbId; manifest: EpubBookManifestV1 }> {
   const bookBlockId = await createBookPage(params.bookTitle)
   const bookBlock = orca.state.blocks[bookBlockId] as Block | undefined
@@ -296,7 +298,8 @@ export async function createBookShell(params: {
     sourceAssetPath: params.sourceAssetPath,
     status: "importing",
     bookBlockId,
-    chapters: chapterEntries
+    chapters: chapterEntries,
+    ...(params.chapterPlan ? { chapterPlan: params.chapterPlan } : {})
   }
 
   await setBookEpubProperties(bookBlockId, {

@@ -130,7 +130,7 @@
     - 每轮 reconcile 每章恰一次 strict `get-block`；死门面 `setupBookIR` 已删除
     - 关联：`src/srs/book-ir/*`、`bookIRCreator.ts`
 
-26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-26 更新（repository backend-first）
+26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-27 更新（章节粒度 auto：章+小节不展开 / chapterPlan 续传）
     - 解析、指纹、导入服务、向导、与普通笔记/BookIR 边界；同 XHTML 多 fragment 逻辑章节展开与 DOM 切片
     - `epubBookRepository.getBlock` backend-first：manifest 写后读可信，resume 不再误判已导入章节
     - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：向导 47 处内联样式迁移到 `ai-card-dialog.css` 尾部的 `.srs-import-dialog*` / `.srs-chapter-selector*` / `.srs-import-progress*` / `.srs-import-result*` 类，仅保留进度条宽度 1 处运行时几何量
@@ -191,6 +191,7 @@
   - **`danger` / `dangerous` 命名歧义**：官方主题文档示例写 `--orca-color-dangerous-5`，本仓库全域用 `--orca-color-danger-*`。缺失时 `var()` 静默失效，故令牌层危险色改走「danger → dangerous → 兜底字面量」回退链
   - 验证：`tsc` 通过 · `npm test` 177 文件 / 1757 用例全绿 · `npm run build` 成功（`dist/style.css` 195.62 kB）
   - **未做**：Orca 实例内运行时渲染验证（四条线共同盲区，建议集中验一次明暗主题）；困难卡列表项无 `tabIndex`，键盘不可达（已确认为可接受，`:focus-visible` 规则保留待用）
+- **2026-07-27（EPUB 章节粒度 auto）**：默认 `auto` 识别「一章一文件 + NCX/nav 嵌套小节」为整章容器（不拆小节、不丢章首）；保留历史 multi-fragment 展开；前缀正文兜底；manifest `chapterPlan` + 旧书 resume 强制 `toc-fragments`。真书《智人之上》auto≈21 章 / legacy=101 章。见 [EPUB导入.md](EPUB导入.md)
 - **2026-07-27（渐进阅读双面板视觉对齐）**：`ir-workspace.css`（2934→3600+ 行）全面令牌化并对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)——圆角十档收敛为六档阶梯、阴影统一为 `--srs-shadow-*` 五级、动效统一为 `--srs-duration-*` 三级、排版统一 `--srs-text-*`/`--srs-weight-*` 且统计数字加 `tabular-nums`；资料库概览细带改 Flash Home StatChip 形态、列表行改卡片基线（hover 升 `shadow-1` + `hairline-strong`）、时间导航带改筛选 Chip、`.ir-tag` 与来源/章节徽标统一徽章规格、工具栏统一次级按钮四态；专注阅读会话总结卡升英雄卡（`radius-xl` + `shadow-hero`）、动作栏/抽屉/次级浮层统一 `shadow-overlay` + `radius-lg`、启动页用 `--srs-measure` 收行长；三套阅读纸张主题改为「每主题一份 `--ir-paper-*` 调色板」（刻意纸色，无法由 Orca 主题派生），其余全表零裸十六进制；IR 组件视觉内联样式迁移到 CSS 类。**未动**：宿主挂载 / 渲染宿主 / 虚拟化 / 事件 / 数据流；专注阅读仍为块宿主（面板宿主深树同步死循环，见 [问题经验.md](问题经验.md)）；`*-host-chrome-managed` 作用域选择器原样保留。见 [渐进阅读.md](渐进阅读.md)
 - **2026-07-27（AI 能力扩展，分支 ai-1…ai-5，已合并 main）**：五处重复的 Chat Completions 请求链路收敛到 `aiChatClient.callChatCompletions` 单一出口（1756 个既有测试零改动全绿即为等价证据），在其上一次性补齐有限次退避重试、全局并发闸门、按路径分级超时、usage 采集与会话内请求日志；联网 tool 形态由硬编码 `grok-4.5` 匹配改为设置项；制卡新增详细程度（取代固定张数）、自定义指令、卡片语言、再来一批；新增选择题卡并支持卡型混合生成；新增 `srs.batchId` 同批聚簇与 `CardStatus.pending` 待激活（含「SRS: 激活待激活卡片」命令）；输出 token 预算做成设置项（默认 16384）并新增 `finish_reason=length` 截断检测——推理模型会把 reasoning token 计入 completion_tokens，旧的写死 2000 会被思考吃光而报成「不是合法 JSON」。子树源范围 / 术语块引用两项保留在未合并的 `ai-6-scope` 分支。见 [SRS_AI模块.md](SRS_AI模块.md)、[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)、[SRS_复习队列管理.md](SRS_复习队列管理.md)
 - **2026-07-27（AI 对话框 / 导入向导视觉对齐）**：`ai-card-dialog.css`、`ai-quick-interact.css` 全面令牌化并对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `@media (prefers-color-scheme: dark)` / `.theme-dark` 硬编码分支——这两张表历史上引用了并不存在的 Orca 变量（`--orca-bg-primary`/`--orca-border`/`--orca-text-primary`/`--orca-color-primary`/`--orca-color-dangerous`/`--orca-accent-color`），实际永远落到十六进制 fallback，Orca 主题与系统主题不一致时会出现浅底深字；草稿卡/提示词卡/后台任务卡改为 Flash Home 卡片基线 + 左侧 4px 语义色条；按钮体系统一（主 CTA / 次级 / 安静，四态 + `primary-5` 焦点环）；EPUB 与网页导入向导的 70 处内联样式迁移为 `.srs-import-dialog*` 等 CSS 类，仅保留进度条宽度 1 处运行时几何量。见 [SRS_AI模块.md](SRS_AI模块.md)、[EPUB导入.md](EPUB导入.md)、[网页导入.md](网页导入.md)

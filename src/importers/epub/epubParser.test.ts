@@ -4,10 +4,12 @@ import {
   buildEpub2Ncx,
   buildEpub2WithFrontMatter,
   buildEpub3NavRelativePaths,
+  buildEpubChapterWithSubsections,
   buildEpubMultiFragmentChapters,
   buildEpubMultiFragmentDualTocNavWins,
   buildEpubMultiFragmentNumberingTocWithSliceHeadings,
   buildEpubNavZeroMatchNcxFallback,
+  buildEpubPrefixPlusFragments,
   buildEpubSingleFragmentToc,
   buildInvalidContainerEpub,
   buildMinimalEpub3
@@ -19,7 +21,9 @@ import {
   makeChapterKey,
   normalizeComparableHref,
   parseEpub,
-  resolveHrefTarget
+  resolveHrefTarget,
+  SUBSTANTIVE_PREFIX_MIN_CHARS,
+  hasSubstantivePrefix
 } from "./epubParser"
 import { parseHtmlOutlineTokens } from "./htmlOutline"
 import {
@@ -201,6 +205,97 @@ describe("epubParser", () => {
     expect(parsed.chapters[0].href).toBe("chapter.xhtml")
     expect(parsed.chapters[0].key).toBe("0:chapter.xhtml")
     expect(parsed.chapters[0].endFragment).toBeUndefined()
+  })
+
+  it.each(["ncx", "nav"] as const)(
+    "auto keeps whole-file chapter for nested subsection TOC (%s)",
+    async (format) => {
+      const buffer = await buildEpubChapterWithSubsections(format)
+      const parsed = await parseEpub(buffer)
+      expect(parsed.chapters).toHaveLength(1)
+      expect(parsed.chapters[0].title).toBe("第一章 信息是什么？")
+      expect(parsed.chapters[0].href).toBe("Text/chapter.xhtml")
+      expect(parsed.chapters[0].key).toBe("0:Text/chapter.xhtml")
+      expect(parsed.chapters[0].key.includes("#")).toBe(false)
+      expect(parsed.chapters[0].endFragment).toBeUndefined()
+
+      const parser = new EpubParser()
+      await parser.load(buffer)
+      const html = await parser.getChapterContent(
+        parsed.chapters[0].href,
+        parsed.chapters[0].title
+      )
+      expect(html).toContain("最基本的概念")
+      expect(html).toContain("真相究竟是什么")
+      expect(html).toContain("信息有何作用")
+      expect(html).toContain("人类历史的信息")
+    }
+  )
+
+  it("toc-fragments still expands subsection TOC (legacy resume identity)", async () => {
+    const buffer = await buildEpubChapterWithSubsections("ncx")
+    const parsed = await parseEpub(buffer, { granularity: "toc-fragments" })
+    expect(parsed.chapters.map((c) => c.title)).toEqual([
+      "真相究竟是什么？",
+      "信息有何作用？",
+      "人类历史的信息"
+    ])
+    expect(parsed.chapters.every((c) => c.href.includes("#"))).toBe(true)
+  })
+
+  it("spine mode ignores multi-fragment expansion", async () => {
+    const buffer = await buildEpubMultiFragmentChapters("ncx")
+    const parsed = await parseEpub(buffer, { granularity: "spine" })
+    expect(parsed.chapters.map((c) => c.href)).toEqual([
+      "Text/front.xhtml",
+      "Text/part.xhtml"
+    ])
+    expect(parsed.chapters.every((c) => !c.href.includes("#"))).toBe(true)
+  })
+
+  it("auto emits prefix chapter when lead-in exists but parent title is not a body heading", async () => {
+    const buffer = await buildEpubPrefixPlusFragments()
+    const parsed = await parseEpub(buffer)
+    expect(parsed.chapters.map((c) => c.title)).toEqual([
+      "Group Label Not In Body",
+      "Alpha",
+      "Beta"
+    ])
+    expect(parsed.chapters[0].href).toBe("Text/part.xhtml")
+    expect(parsed.chapters[0].key).toBe("0:Text/part.xhtml")
+    expect(parsed.chapters[0].endFragment).toBe("a")
+    expect(parsed.chapters[1].href).toBe("Text/part.xhtml#a")
+    expect(parsed.chapters[2].href).toBe("Text/part.xhtml#b")
+
+    const parser = new EpubParser()
+    await parser.load(buffer)
+    const prefixHtml = await parser.getChapterContent(
+      parsed.chapters[0].href,
+      parsed.chapters[0].title,
+      { endFragment: parsed.chapters[0].endFragment }
+    )
+    expect(prefixHtml).toContain("Lead-in prose")
+    expect(prefixHtml).not.toContain("Alpha body")
+    const alphaHtml = await parser.getChapterContent(
+      parsed.chapters[1].href,
+      parsed.chapters[1].title,
+      { endFragment: parsed.chapters[1].endFragment }
+    )
+    expect(alphaHtml).toContain("Alpha body")
+    expect(alphaHtml).not.toContain("Lead-in prose")
+  })
+
+  it("hasSubstantivePrefix uses the 40-char threshold boundary", () => {
+    const makeRoot = (body: string) =>
+      getHtmlContentRoot(parseHtml(`<body>${body}<h3 id="x">X</h3></body>`), "")
+    const short = "a".repeat(SUBSTANTIVE_PREFIX_MIN_CHARS - 1)
+    const exact = "a".repeat(SUBSTANTIVE_PREFIX_MIN_CHARS)
+    const shortRoot = makeRoot(`<p>${short}</p>`)
+    const exactRoot = makeRoot(`<p>${exact}</p>`)
+    const shortAnchor = shortRoot.querySelector("#x")!
+    const exactAnchor = exactRoot.querySelector("#x")!
+    expect(hasSubstantivePrefix(shortRoot, shortAnchor)).toBe(false)
+    expect(hasSubstantivePrefix(exactRoot, exactAnchor)).toBe(true)
   })
 
   it("enriches multi-fragment titles from each slice, not the first heading of the whole file", async () => {
@@ -495,6 +590,31 @@ describe("manifest parse/serialize", () => {
     const json = serializeEpubManifest(sample)
     const parsed = parseEpubManifest(json)
     expect(parsed).toEqual(sample)
+  })
+
+  it("round-trips optional chapterPlan", () => {
+    const withPlan = {
+      ...sample,
+      chapterPlan: { version: 1 as const, granularity: "auto" as const }
+    }
+    const parsed = parseEpubManifest(serializeEpubManifest(withPlan))
+    expect(parsed.chapterPlan).toEqual({ version: 1, granularity: "auto" })
+  })
+
+  it("allows missing chapterPlan (legacy resume → toc-fragments)", () => {
+    const parsed = parseEpubManifest(JSON.stringify(sample))
+    expect(parsed.chapterPlan).toBeUndefined()
+  })
+
+  it("rejects invalid chapterPlan.granularity", () => {
+    expect(() =>
+      parseEpubManifest(
+        JSON.stringify({
+          ...sample,
+          chapterPlan: { version: 1, granularity: "bogus" }
+        })
+      )
+    ).toThrow(EpubValidationError)
   })
 
   it("rejects unsupported version", () => {

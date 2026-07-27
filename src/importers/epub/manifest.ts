@@ -5,14 +5,31 @@
 import type { DbId } from "../../orca.d.ts"
 import type {
   EpubBookManifestV1,
+  EpubChapterGranularity,
   EpubChapterImportStatus,
   EpubChapterManifestEntry,
+  EpubChapterPlanV1,
   EpubImportStatus
 } from "./types"
 import { EpubValidationError } from "./types"
 
 const IMPORT_STATUSES = new Set<EpubImportStatus>(["importing", "partial", "complete"])
 const CHAPTER_STATUSES = new Set<EpubChapterImportStatus>(["pending", "imported", "failed"])
+const CHAPTER_GRANULARITIES = new Set<EpubChapterGranularity>([
+  "auto",
+  "spine",
+  "toc-fragments"
+])
+
+/**
+ * Resume/default when manifest has no chapterPlan (pre-policy imports).
+ * Missing plan → `toc-fragments` so historical fragment keys stay resolvable.
+ */
+export function resolveManifestChapterGranularity(
+  manifest: Pick<EpubBookManifestV1, "chapterPlan">
+): EpubChapterGranularity {
+  return manifest.chapterPlan?.granularity ?? "toc-fragments"
+}
 
 export function serializeEpubManifest(manifest: EpubBookManifestV1): string {
   if (manifest.version !== 1) {
@@ -94,7 +111,9 @@ export function parseEpubManifest(
     parseChapterEntry(entry, index, bookBlockId)
   )
 
-  return {
+  const chapterPlan = parseOptionalChapterPlan(value.chapterPlan, bookBlockId)
+
+  const result: EpubBookManifestV1 = {
     version: 1,
     fingerprint: value.fingerprint,
     sourceFileName: value.sourceFileName,
@@ -102,6 +121,43 @@ export function parseEpubManifest(
     status: value.status as EpubImportStatus,
     bookBlockId: value.bookBlockId as DbId,
     chapters
+  }
+  if (chapterPlan) result.chapterPlan = chapterPlan
+  return result
+}
+
+function parseOptionalChapterPlan(
+  raw: unknown,
+  bookBlockId?: DbId
+): EpubChapterPlanV1 | undefined {
+  if (raw === undefined) return undefined
+  if (!isRecord(raw)) {
+    throw new EpubValidationError(
+      "epub.manifest.chapterPlan must be an object when present",
+      "manifest_chapterPlan",
+      bookBlockId
+    )
+  }
+  if (raw.version !== 1) {
+    throw new EpubValidationError(
+      `epub.manifest.chapterPlan.version must be 1, got ${String(raw.version)}`,
+      "manifest_chapterPlan_version",
+      bookBlockId
+    )
+  }
+  if (
+    typeof raw.granularity !== "string"
+    || !CHAPTER_GRANULARITIES.has(raw.granularity as EpubChapterGranularity)
+  ) {
+    throw new EpubValidationError(
+      `epub.manifest.chapterPlan.granularity must be auto|spine|toc-fragments, got ${String(raw.granularity)}`,
+      "manifest_chapterPlan_granularity",
+      bookBlockId
+    )
+  }
+  return {
+    version: 1,
+    granularity: raw.granularity as EpubChapterGranularity
   }
 }
 

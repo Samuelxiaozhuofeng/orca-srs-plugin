@@ -650,6 +650,203 @@ export async function buildEpubMultiFragmentNumberingTocWithSliceHeadings(): Pro
 }
 
 /**
+ * Chapter + nested subsection TOC (Nexus / Calibre style): one spine XHTML with
+ * h1 chapter title, substantive lead-in body, then h3 subsections with fragments.
+ * Parent navPoint is whole-file; children are fragment anchors.
+ * Auto plan must keep a single whole-file chapter (not expand subsections).
+ */
+export async function buildEpubChapterWithSubsections(
+  format: "ncx" | "nav" = "ncx"
+): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+
+  // ≥40 non-whitespace chars of lead-in body after h1 (substantive prefix).
+  const chapterBody = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <h1>第一章 信息是什么？</h1>
+    <p>最基本的概念总是很难定义。因为后续的一切都以这些概念作为基础，反而让人难以想象这些概念背后还能有什么更基本的概念。</p>
+    <h3 id="sec1">真相究竟是什么？</h3>
+    <p>Subsection one body about truth.</p>
+    <h3 id="sec2">信息有何作用？</h3>
+    <p>Subsection two body about utility.</p>
+    <h3 id="sec3">人类历史的信息</h3>
+    <p>Subsection three body about history.</p>
+  </body>
+</html>`
+
+  if (format === "ncx") {
+    zip.file(
+      "OEBPS/content.opf",
+      `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Chapter With Subsections NCX</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>zh</dc:language>
+    <dc:identifier id="uid">ch-sub-ncx</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="ch" href="Text/chapter.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="ch"/>
+  </spine>
+</package>`
+    )
+    zip.file(
+      "OEBPS/toc.ncx",
+      `<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="n-ch">
+      <navLabel><text>第一章 信息是什么？</text></navLabel>
+      <content src="Text/chapter.xhtml"/>
+      <navPoint id="n1">
+        <navLabel><text>真相究竟是什么？</text></navLabel>
+        <content src="Text/chapter.xhtml#sec1"/>
+      </navPoint>
+      <navPoint id="n2">
+        <navLabel><text>信息有何作用？</text></navLabel>
+        <content src="Text/chapter.xhtml#sec2"/>
+      </navPoint>
+      <navPoint id="n3">
+        <navLabel><text>人类历史的信息</text></navLabel>
+        <content src="Text/chapter.xhtml#sec3"/>
+      </navPoint>
+    </navPoint>
+  </navMap>
+</ncx>`
+    )
+  } else {
+    zip.file(
+      "OEBPS/content.opf",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Chapter With Subsections Nav</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>zh</dc:language>
+    <dc:identifier id="uid">ch-sub-nav</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="nav" href="Text/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ch" href="Text/chapter.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch"/>
+  </spine>
+</package>`
+    )
+    zip.file(
+      "OEBPS/Text/nav.xhtml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc" class="toc">
+      <ol>
+        <li>
+          <a href="chapter.xhtml">第一章 信息是什么？</a>
+          <ol>
+            <li><a href="chapter.xhtml#sec1">真相究竟是什么？</a></li>
+            <li><a href="chapter.xhtml#sec2">信息有何作用？</a></li>
+            <li><a href="chapter.xhtml#sec3">人类历史的信息</a></li>
+          </ol>
+        </li>
+      </ol>
+    </nav>
+  </body>
+</html>`
+    )
+  }
+
+  zip.file("OEBPS/Text/chapter.xhtml", chapterBody)
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
+ * Multi-fragment with substantive lead-in but NO matching parent h1 title
+ * (parent TOC is a group label). Auto should emit prefix chapter + fragments.
+ */
+export async function buildEpubPrefixPlusFragments(): Promise<ArrayBuffer> {
+  const zip = new JSZip()
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" })
+  zip.file(
+    "META-INF/container.xml",
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+  )
+  zip.file(
+    "OEBPS/content.opf",
+    `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Prefix Plus Fragments</dc:title>
+    <dc:creator>Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="uid">prefix-frags</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="part" href="Text/part.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="part"/>
+  </spine>
+</package>`
+  )
+  zip.file(
+    "OEBPS/toc.ncx",
+    `<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="n-part">
+      <navLabel><text>Group Label Not In Body</text></navLabel>
+      <content src="Text/part.xhtml"/>
+      <navPoint id="n1">
+        <navLabel><text>Alpha</text></navLabel>
+        <content src="Text/part.xhtml#a"/>
+      </navPoint>
+      <navPoint id="n2">
+        <navLabel><text>Beta</text></navLabel>
+        <content src="Text/part.xhtml#b"/>
+      </navPoint>
+    </navPoint>
+  </navMap>
+</ncx>`
+  )
+  zip.file(
+    "OEBPS/Text/part.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <p>Lead-in prose that must not be dropped when fragments expand. Enough characters here for the substantive prefix threshold of forty non-whitespace glyphs.</p>
+    <h2 id="a">Alpha</h2>
+    <p>Alpha body.</p>
+    <h2 id="b">Beta</h2>
+    <p>Beta body.</p>
+  </body>
+</html>`
+  )
+  return zip.generateAsync({ type: "arraybuffer" })
+}
+
+/**
  * Nav exists but its links never match spine hrefs (wrong paths).
  * NCX has correct relative links and should fill titles.
  */
