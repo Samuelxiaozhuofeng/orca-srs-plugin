@@ -4,18 +4,12 @@
  * 定义渐进阅读相关功能的设置项
  */
 
-import {
-  DEFAULT_MIXED_LEARNING_REVIEW_RATIO,
-  normalizeMixedLearningRatio
-} from "../incremental-reading/irMixedQueuePolicy"
-
 export const INCREMENTAL_READING_SETTINGS_KEYS = {
   enableAutoExtractMark: "enableAutoExtractMark",
   topicQuotaPercent: "topicQuotaPercent",
   dailyLimit: "dailyLimit",
   enableAutoDefer: "enableAutoDefer",
-  mixedLearningEnabled: "mixedLearningEnabled",
-  mixedLearningReviewRatio: "mixedLearningReviewRatio"
+  mixedLearningEnabled: "mixedLearningEnabled"
 } as const
 
 export const DEFAULT_IR_TOPIC_QUOTA_PERCENT = 20
@@ -54,13 +48,7 @@ export const incrementalReadingSettingsSchema = {
     label: "混合学习模式",
     type: "boolean" as const,
     defaultValue: false,
-    description: "专注阅读时间盒中均匀混入已到期 SRS 复习卡（默认关闭）"
-  },
-  [INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio]: {
-    label: "混合学习 SRS 占比（%）",
-    type: "number" as const,
-    defaultValue: DEFAULT_MIXED_LEARNING_REVIEW_RATIO,
-    description: "SRS 复习条目占混合队列的目标比例，仅支持 20/30/40"
+    description: "学习会话中均匀混入今日到期的 SRS 记忆卡（默认关闭；今日学习入口始终按混合启动）"
   }
 }
 
@@ -73,7 +61,6 @@ export interface IncrementalReadingSettings {
   dailyLimit: number
   enableAutoDefer: boolean
   mixedLearningEnabled: boolean
-  mixedLearningReviewRatio: number
 }
 
 /**
@@ -99,9 +86,6 @@ export function getIncrementalReadingSettings(pluginName: string): IncrementalRe
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue,
     mixedLearningEnabled:
       settings?.[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled] ??
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue,
-    mixedLearningReviewRatio: normalizeMixedLearningRatio(
-      settings?.[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio]
-    )
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue
   }
 }

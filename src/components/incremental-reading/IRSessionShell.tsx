@@ -15,6 +15,7 @@ import {
   resolveOrcaRepo
 } from "../../srs/incremental-reading/irDailyStatsStorage"
 import {
+  addSessionPlannedItem,
   createSessionProgress,
   markSessionItemCompleted,
   syncSessionRemaining
@@ -24,8 +25,10 @@ import { resolveSessionItemizeIntercept } from "../../srs/incremental-reading/ir
 import type { IRSessionProgress } from "../../srs/incremental-reading/irTypes"
 import {
   readingCardsToEntries,
+  reviewEntryKey,
   type IRSessionEntry
 } from "../../srs/incremental-reading/irMixedQueuePolicy"
+import type { ReviewCard } from "../../srs/types"
 import { useIRReadingBreakpoint } from "../../hooks/useIRReadingBreakpoint"
 import { useIRShortcuts } from "../../hooks/useIRShortcuts"
 import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
@@ -57,7 +60,6 @@ export type IRSessionShellProps = {
   cards?: IRCard[]
   panelId: string
   pluginName?: string
-  timeBudgetMinutes?: number
   loadFailed?: boolean
   loadErrorMessage?: string | null
   onRetryLoad?: () => void
@@ -72,6 +74,8 @@ export type IRSessionShellProps = {
   onQueueSnapshot?: (snapshot: { queue: IRSessionEntry[]; currentIndex: number }) => void
   onOpenQueue?: () => void
   onCloseHandlerChange?: (handler: (() => Promise<void>) | null) => void
+  /** 完成页「再学一轮」：在同一面板重新装配今日队列 */
+  onContinueSession?: () => void
 }
 
 export default function IRSessionShell({
@@ -79,7 +83,6 @@ export default function IRSessionShell({
   cards,
   panelId,
   pluginName = "orca-srs",
-  timeBudgetMinutes = 20,
   loadFailed = false,
   loadErrorMessage = null,
   onRetryLoad,
@@ -91,7 +94,8 @@ export default function IRSessionShell({
   onBackToLibrary,
   onQueueSnapshot,
   onOpenQueue,
-  onCloseHandlerChange
+  onCloseHandlerChange,
+  onContinueSession
 }: IRSessionShellProps) {
   const initialEntries = entriesProp ?? readingCardsToEntries(cards ?? [])
   const [queue, setQueue] = useState<IRSessionEntry[]>(initialEntries)
@@ -202,17 +206,9 @@ export default function IRSessionShell({
 
   const readingContext = useIRReadingContext(currentCard)
 
+  // 无时间盒：只陈述已投入时长，不设到期、不打断
   const timer = useIRSessionTimer({
-    budgetMinutes: timeBudgetMinutes,
-    running: !showSummary && !loadFailed && queue.length > 0,
-    onExpire: () => {
-      // 时间盒到期：仅通知一次，不打断阅读（摘要页仅在队列读完时展示）
-      orca.notify(
-        "info",
-        `本次专注阅读已达到 ${timeBudgetMinutes} 分钟，你可以继续阅读`,
-        { title: "渐进阅读" }
-      )
-    }
+    running: !showSummary && !loadFailed && queue.length > 0
   })
 
   const breakpoint = useIRReadingBreakpoint({
@@ -423,17 +419,36 @@ export default function IRSessionShell({
     return () => window.removeEventListener("orca-srs:ir-session-action", onAction as EventListener)
   })
 
-  const removeCurrent = (options?: { metric?: "action.review" }) => {
+  const removeCurrent = (options?: {
+    metric?: "action.review"
+    /** 短期重学回流：移除当前条目后追加到队尾，本次会话内再出现一次 */
+    requeueEntry?: IRSessionEntry
+  }) => {
     if (options?.metric === "action.review") {
       metricsRef.current.record("action.review")
     }
     setQueue((prev: IRSessionEntry[]) => {
-      const next = prev.filter((_: IRSessionEntry, idx: number) => idx !== currentIndex)
+      const kept = prev.filter((_: IRSessionEntry, idx: number) => idx !== currentIndex)
+      const requeued = options?.requeueEntry
+      const next = requeued ? [...kept, requeued] : kept
       const nextIndex = next.length === 0 ? 0 : Math.min(currentIndex, next.length - 1)
       setCurrentIndex(nextIndex)
-      setProgress((p: IRSessionProgress) => syncSessionRemaining(markSessionItemCompleted(p), next.length))
+      setProgress((p: IRSessionProgress) => {
+        // 回流条目会被再处理一次：先扩计划再记完成，completed 才不会被旧 planned 封顶
+        const planned = requeued ? addSessionPlannedItem(p) : p
+        return syncSessionRemaining(markSessionItemCompleted(planned), next.length)
+      })
       if (next.length === 0) setShowSummary(true)
       return next
+    })
+  }
+
+  const handleReviewEntryComplete = (requeueCard?: ReviewCard) => {
+    removeCurrent({
+      metric: "action.review",
+      requeueEntry: requeueCard
+        ? { kind: "review", card: requeueCard, key: reviewEntryKey(requeueCard) }
+        : undefined
     })
   }
 
@@ -605,6 +620,10 @@ export default function IRSessionShell({
           autoPostponeCount={0}
           reviewCompleted={displayMetrics.reviewProcessed}
           storageWarning={summaryStorageWarning}
+          // 本次一条都没处理 = 装配出来就是空队列：今天真的没有更多了，
+          // 此时再给「再学一轮」只会重装出同一个空队列（点了像没反应）
+          allDoneForToday={!startedRef.current}
+          onContinue={startedRef.current ? onContinueSession : undefined}
           onClose={embedded ? onBackToLibrary : () => void handleClose()}
           closeLabel={embedded ? "返回资料库" : "关闭"}
         />
@@ -624,7 +643,7 @@ export default function IRSessionShell({
       >
         <IRSessionHeader
           progress={progress}
-          remainingTimeLabel={timer.formattedRemaining}
+          elapsedTimeLabel={timer.formattedElapsed}
           autoPostponeLabel={autoPostponeLabel}
           sessionNotice={sessionNotice}
           onUndoAutoPostpone={onUndoAutoPostpone}
@@ -638,7 +657,7 @@ export default function IRSessionShell({
             panelId={panelId}
             pluginName={pluginName}
             nextBlockId={nextReadingBlockId}
-            onComplete={() => removeCurrent({ metric: "action.review" })}
+            onComplete={handleReviewEntryComplete}
           />
         </div>
       </div>
@@ -660,7 +679,7 @@ export default function IRSessionShell({
     >
       <IRSessionHeader
         progress={progress}
-        remainingTimeLabel={timer.formattedRemaining}
+        elapsedTimeLabel={timer.formattedElapsed}
         autoPostponeLabel={autoPostponeLabel}
         sessionNotice={sessionNotice}
         onUndoAutoPostpone={onUndoAutoPostpone}

@@ -6,6 +6,7 @@ import {
   ceilSecondsToMinutes,
   computeIrTodayRemaining,
   computeSrsTodayRemaining,
+  irDailyQuotaUsedFromTotals,
   irReadingCompletedFromTotals,
   requireIRDailyStatsForSession
 } from "./todayLearningSummary"
@@ -403,5 +404,21 @@ describe("requireIRDailyStatsForSession fail-closed", () => {
       fromStorage: true
     })
     expect(gate).toEqual({ ok: true, usedCompletedCount: 7 })
+  })
+
+  it("does not let mixed SRS reviews eat the IR reading quota", () => {
+    const record = createEmptyIRDailyStatsRecord("r", "p", "2026-01-10")
+    // 统一会话：3 条阅读 + 24 张记忆卡都算进 completedCount
+    record.totals.completedCount = 27
+    record.totals.reviewProcessed = 24
+    const gate = requireIRDailyStatsForSession({
+      ok: true,
+      record,
+      fromStorage: true
+    })
+    expect(gate).toEqual({ ok: true, usedCompletedCount: 3 })
+    expect(
+      irDailyQuotaUsedFromTotals({ completedCount: 2, reviewProcessed: 9 })
+    ).toBe(0)
   })
 })

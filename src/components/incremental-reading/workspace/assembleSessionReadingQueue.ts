@@ -1,6 +1,6 @@
 /**
  * 会话阅读队列装配（纯函数）：focus 插队 + dailyLimit 截断。
- * 不写 block 属性；供时间盒会话加载与确定性回归测试共用。
+ * 不写 block 属性；供今日队列会话加载与确定性回归测试共用。
  */
 
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
@@ -11,7 +11,7 @@ export type AssembleSessionReadingQueueOptions = {
   /** 已解析的 focus 卡；null/undefined 表示无 focus */
   focusCard?: IRCard | null
   /**
-   * 单次时间盒队列硬上限；`0` 表示不截断。
+   * 单次今日队列队列硬上限；`0` 表示不截断。
    * 仅在插入 focus 后可能使队列变长时再截断，保留 policy 原有截断语义。
    */
   dailyLimit: number

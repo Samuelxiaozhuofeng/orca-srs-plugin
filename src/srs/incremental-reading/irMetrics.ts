@@ -133,7 +133,15 @@ export class IRSessionMetrics {
         if (s.sessionStartedAt != null) {
           s.durationMs = event.at - s.sessionStartedAt
         }
-        if (typeof event.value === "number") s.completedCount = event.value
+        // 只向上对账，绝不覆盖已累加的真实处理数。
+        // 会话内短期重学回流时，处理次数会超过启动时的 planned，而调用方传入的
+        // progress.completed 被 markSessionItemCompleted 封顶在 planned；若直接覆盖，
+        // completedCount 会小于逐次累加的 reviewProcessed，使
+        // irDailyQuotaUsedFromTotals(= completedCount − reviewProcessed) 每回流一次
+        // 就少算一条阅读，侵蚀 IR 日额度。
+        if (typeof event.value === "number") {
+          s.completedCount = Math.max(s.completedCount, event.value)
+        }
         break
       case "queue.load":
         s.queueLoadMs = typeof event.value === "number" ? event.value : s.queueLoadMs

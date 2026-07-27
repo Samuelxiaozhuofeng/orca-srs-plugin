@@ -206,7 +206,7 @@ describe("openIRWorkspaceWithDeps", () => {
     expect(consumePendingIRWorkspaceMode("panel-b", 42, "reading")).toBe("reading")
   })
 
-  it("opens with autoStart launch request (mixed + minutes) once", async () => {
+  it("opens with autoStart launch request (mixed) once", async () => {
     const deps = createDeps()
 
     await openIRWorkspaceWithDeps(deps, {
@@ -214,7 +214,6 @@ describe("openIRWorkspaceWithDeps", () => {
       mode: "reading",
       openInCurrentPanel: true,
       autoStart: true,
-      timeBudgetMinutes: 30,
       sessionLaunchMode: "mixed"
     })
 
@@ -222,7 +221,6 @@ describe("openIRWorkspaceWithDeps", () => {
     expect(request).toEqual({
       mode: "reading",
       autoStart: true,
-      timeBudgetMinutes: 30,
       sessionLaunchMode: "mixed"
     })
     expect(

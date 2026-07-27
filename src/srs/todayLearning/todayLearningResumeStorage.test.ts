@@ -4,7 +4,6 @@ import {
   loadTodayLearningResume,
   parseSessionBlockId,
   parseTodayLearningResumeMarker,
-  parseTodayLearningTimeBudget,
   resumeMarkerHasTrustedTasks,
   writeIrTodayLearningResume,
   writeSrsTodayLearningResume,
@@ -62,7 +61,6 @@ describe("resumeMarkerHasTrustedTasks", () => {
   const irMarker: TodayLearningResumeMarker = {
     ...base,
     kind: "ir",
-    timeBudgetMinutes: 20,
     sessionLaunchMode: "mixed"
   }
 
@@ -77,17 +75,6 @@ describe("resumeMarkerHasTrustedTasks", () => {
     expect(resumeMarkerHasTrustedTasks(null, { srs: 1, ir: 1 })).toBe(false)
     expect(resumeMarkerHasTrustedTasks(srsMarker, { ir: 1 })).toBe(false)
     expect(resumeMarkerHasTrustedTasks(irMarker, { srs: 1 })).toBe(false)
-  })
-})
-
-describe("parseTodayLearningTimeBudget", () => {
-  it("accepts 10/20/30 only", () => {
-    expect(parseTodayLearningTimeBudget(20)).toEqual({
-      ok: true,
-      minutes: 20
-    })
-    expect(parseTodayLearningTimeBudget(15).ok).toBe(false)
-    expect(parseTodayLearningTimeBudget("20").ok).toBe(false)
   })
 })
 
@@ -138,7 +125,7 @@ describe("parseTodayLearningResumeMarker", () => {
     ).toBe(false)
   })
 
-  it("rejects illegal IR minutes", () => {
+  it("ignores a legacy timeBudgetMinutes field on stored IR markers", () => {
     const parsed = parseTodayLearningResumeMarker({
       version: 1,
       repo: "r",
@@ -148,6 +135,23 @@ describe("parseTodayLearningResumeMarker", () => {
       updatedAt: 1,
       timeBudgetMinutes: 25,
       sessionLaunchMode: "mixed"
+    })
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.marker.kind).toBe("ir")
+      expect("timeBudgetMinutes" in parsed.marker).toBe(false)
+    }
+  })
+
+  it("still rejects an IR marker with a non-mixed launch mode", () => {
+    const parsed = parseTodayLearningResumeMarker({
+      version: 1,
+      repo: "r",
+      pluginName: "p",
+      dateKey: "2026-01-10",
+      kind: "ir",
+      updatedAt: 1,
+      sessionLaunchMode: "read-only"
     })
     expect(parsed.ok).toBe(false)
   })
@@ -214,7 +218,6 @@ describe("loadTodayLearningResume", () => {
     const storage = memoryStorage()
     await writeIrTodayLearningResume({
       pluginName: "orca-srs",
-      timeBudgetMinutes: 20,
       repo: "repo-a",
       now: new Date(2026, 0, 9, 12),
       storage
@@ -284,16 +287,19 @@ describe("loadTodayLearningResume", () => {
     if (!result.ok) expect(result.error.message).toContain("setData full")
   })
 
-  it("writeIr rejects illegal minutes without writing", async () => {
+  it("writeIr stores a mixed marker without any time box", async () => {
     const storage = memoryStorage()
     const result = await writeIrTodayLearningResume({
       pluginName: "orca-srs",
-      timeBudgetMinutes: 99,
       repo: "repo-a",
       now,
       storage
     })
-    expect(result.ok).toBe(false)
-    expect(storage.store["today-learning-resume"]).toBeUndefined()
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.marker.kind).toBe("ir")
+      expect("timeBudgetMinutes" in result.marker).toBe(false)
+    }
+    expect(storage.store["today-learning-resume"]).toBeTruthy()
   })
 })

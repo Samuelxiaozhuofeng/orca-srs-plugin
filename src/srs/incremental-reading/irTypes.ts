@@ -111,7 +111,6 @@ export type IRSessionProgress = {
   remaining: number
 }
 
-export type IRTimeBudgetMinutes = 10 | 20 | 30
 
 export type IRPriorityTier = "low" | "medium" | "high"
 

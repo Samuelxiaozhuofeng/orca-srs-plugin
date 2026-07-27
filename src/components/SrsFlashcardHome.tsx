@@ -17,8 +17,7 @@ import {
 import {
   loadTodayLearningResume,
   resumeMarkerHasTrustedTasks,
-  type TodayLearningResumeMarker,
-  type TodayLearningTimeBudget
+  type TodayLearningResumeMarker
 } from "../srs/todayLearning/todayLearningResumeStorage"
 import FlashHomePage from "./flashcard-home/FlashHomePage"
 import CardListView from "./flashcard-home/CardListView"
@@ -154,7 +153,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const [resumeMarker, setResumeMarker] = useState<TodayLearningResumeMarker | null>(null)
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null)
   const [resumeActionError, setResumeActionError] = useState<string | null>(null)
-  const [selectedMinutes, setSelectedMinutes] = useState<TodayLearningTimeBudget>(20)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentFilter, setCurrentFilter] = useState<FilterType>("all")
@@ -167,9 +165,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       if (result.status === "ok") {
         setResumeMarker(result.marker)
         setResumeLoadError(null)
-        if (result.marker.kind === "ir") {
-          setSelectedMinutes(result.marker.timeBudgetMinutes)
-        }
       } else if (result.status === "stale" || result.status === "absent") {
         setResumeMarker(null)
         setResumeLoadError(null)
@@ -346,8 +341,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       const irRem = todayLearning?.irRemaining
       const srsRem = todayLearning?.srsRemaining
 
-      // 优先启动精确可读的 IR；否则精确 SRS；禁止用 partial 假数字
-      if (irRem != null && irRem > 0) {
+      // 统一推送：只要任一侧有精确可读的待办，就进同一个「今日学习」会话，
+      // 阅读条目与记忆卡在同一面板交错出现；禁止用 partial 假数字
+      if ((irRem != null && irRem > 0) || (srsRem != null && srsRem > 0)) {
         const { openIRWorkspace } = await import(
           "../srs/incremental-reading/irWorkspacePanelLaunch"
         )
@@ -356,15 +352,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
           pluginName,
           mode: "reading",
           autoStart: true,
-          timeBudgetMinutes: selectedMinutes,
           sessionLaunchMode: "mixed"
         })
-        return
-      }
-
-      if (srsRem != null && srsRem > 0) {
-        const { startReviewSession } = await import("../main")
-        await startReviewSession()
         return
       }
 
@@ -382,7 +371,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [
     pluginName,
-    selectedMinutes,
     todayLearning,
     loadResume,
     loadTodayLearning
@@ -453,7 +441,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         pluginName,
         mode: "reading",
         autoStart: true,
-        timeBudgetMinutes: resumeMarker.timeBudgetMinutes,
         sessionLaunchMode: "mixed"
       })
     } catch (error) {
@@ -698,8 +685,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             todayStats={todayStats}
             todayLearning={todayLearning}
             todayLearningLoading={todayLearningLoading}
-            selectedMinutes={selectedMinutes}
-            onSelectMinutes={setSelectedMinutes}
             canContinue={canContinue}
             canStart={canStart}
             actionBusy={actionBusy}

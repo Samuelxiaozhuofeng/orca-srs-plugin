@@ -1,21 +1,16 @@
 import type { DbId } from "../../../orca.d.ts"
 import type { IRWorkspaceMode } from "./irWorkspaceTypes"
 import type { IRSessionLaunchMode } from "./irSessionLaunchMode"
-import {
-  isTodayLearningTimeBudget,
-  type TodayLearningTimeBudget
-} from "../../../srs/todayLearning/todayLearningResumeStorage"
 
 export const IR_WORKSPACE_MODE_EVENT = "orca-srs:ir-workspace-mode"
 
 /**
- * 一次性启动请求：兼容旧 API（仅 mode），并可携带 autoStart + 时长 + mixed。
+ * 一次性启动请求：兼容旧 API（仅 mode），并可携带 autoStart + mixed。
  * 消费后即清除；不得残留跨次启动。
  */
 export type IRWorkspaceLaunchRequest = {
   mode: IRWorkspaceMode
   autoStart?: boolean
-  timeBudgetMinutes?: TodayLearningTimeBudget
   sessionLaunchMode?: IRSessionLaunchMode
 }
 
@@ -38,14 +33,6 @@ function normalizeLaunchRequest(
   const request: IRWorkspaceLaunchRequest = { mode: modeOrRequest.mode }
   if (modeOrRequest.autoStart === true) {
     request.autoStart = true
-  }
-  if (modeOrRequest.timeBudgetMinutes !== undefined) {
-    if (!isTodayLearningTimeBudget(modeOrRequest.timeBudgetMinutes)) {
-      throw new Error(
-        `IR 启动时长非法: ${String(modeOrRequest.timeBudgetMinutes)}（仅 10/20/30）`
-      )
-    }
-    request.timeBudgetMinutes = modeOrRequest.timeBudgetMinutes
   }
   if (modeOrRequest.sessionLaunchMode !== undefined) {
     request.sessionLaunchMode = modeOrRequest.sessionLaunchMode

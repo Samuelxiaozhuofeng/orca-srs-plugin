@@ -64,11 +64,11 @@ describe("buildMixedEligibleReviewCardsFromDailyBudget", () => {
       now
     })
     expect(result.remainingLimits.reviewCardsPerDay).toBe(1)
-    expect(result.eligibleReviewCards).toHaveLength(1)
-    expect(result.eligibleReviewCards.every((c) => !c.isNew)).toBe(true)
+    // 旧卡受 review remaining=1 截断，新卡另走 new remaining
+    expect(result.eligibleReviewCards.filter((c) => !c.isNew)).toHaveLength(1)
   })
 
-  it("excludes new cards even if new quota remains", () => {
+  it("keeps new cards when new quota remains (统一推送)", () => {
     const result = buildMixedEligibleReviewCardsFromDailyBudget({
       allCards: [
         card(1, { isNew: true, due: new Date(2026, 0, 10, 9) }),
@@ -79,6 +79,21 @@ describe("buildMixedEligibleReviewCardsFromDailyBudget", () => {
       rawReviewCardsPerDay: 200,
       now
     })
+    expect(result.eligibleReviewCards.map((c) => c.id).sort()).toEqual([1, 2])
+  })
+
+  it("drops new cards once the new daily quota is used up", () => {
+    const result = buildMixedEligibleReviewCardsFromDailyBudget({
+      allCards: [
+        card(1, { isNew: true, due: new Date(2026, 0, 10, 9) }),
+        card(2, { isNew: false, due: new Date(2026, 0, 10, 9) })
+      ],
+      todayLogs: [log(98, "new")],
+      rawNewCardsPerDay: 1,
+      rawReviewCardsPerDay: 200,
+      now
+    })
+    expect(result.remainingLimits.newCardsPerDay).toBe(0)
     expect(result.eligibleReviewCards.map((c) => c.id)).toEqual([2])
   })
 })

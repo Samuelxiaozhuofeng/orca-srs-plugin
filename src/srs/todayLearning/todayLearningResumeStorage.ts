@@ -14,13 +14,6 @@ import { resolveOrcaRepo } from "../incremental-reading/irDailyStatsStorage"
 export const TODAY_LEARNING_RESUME_STORAGE_KEY = "today-learning-resume"
 export const TODAY_LEARNING_RESUME_VERSION = 1 as const
 
-/** 今日学习时间盒：仅允许 10 / 20 / 30 */
-export type TodayLearningTimeBudget = 10 | 20 | 30
-
-export const TODAY_LEARNING_TIME_BUDGETS: readonly TodayLearningTimeBudget[] = [
-  10, 20, 30
-]
-
 export type TodayLearningResumeKind = "srs" | "ir"
 
 export type TodayLearningSrsResumeMarker = {
@@ -42,7 +35,6 @@ export type TodayLearningIrResumeMarker = {
   readonly dateKey: string
   readonly kind: "ir"
   readonly updatedAt: number
-  readonly timeBudgetMinutes: TodayLearningTimeBudget
   readonly sessionLaunchMode: "mixed"
 }
 
@@ -83,31 +75,6 @@ export type TodayLearningResumeStorageApi = {
     key: string,
     value: string
   ) => Promise<void>
-}
-
-export function isTodayLearningTimeBudget(
-  value: unknown
-): value is TodayLearningTimeBudget {
-  return value === 10 || value === 20 || value === 30
-}
-
-/**
- * 解析时长：仅接受 10/20/30。非法时返回显式错误，不静默默认。
- */
-export function parseTodayLearningTimeBudget(
-  value: unknown
-):
-  | { ok: true; minutes: TodayLearningTimeBudget }
-  | { ok: false; error: Error } {
-  if (isTodayLearningTimeBudget(value)) {
-    return { ok: true, minutes: value }
-  }
-  return {
-    ok: false,
-    error: new Error(
-      `非法今日学习时长: ${String(value)}（仅允许 10 / 20 / 30）`
-    )
-  }
 }
 
 /**
@@ -261,10 +228,6 @@ export function parseTodayLearningResumeMarker(
   }
 
   if (kind === "ir") {
-    const budget = parseTodayLearningTimeBudget(record.timeBudgetMinutes)
-    if (!budget.ok) {
-      return budget
-    }
     if (record.sessionLaunchMode !== "mixed") {
       return {
         ok: false,
@@ -282,7 +245,6 @@ export function parseTodayLearningResumeMarker(
         dateKey,
         kind: "ir",
         updatedAt,
-        timeBudgetMinutes: budget.minutes,
         sessionLaunchMode: "mixed" as const
       })
     }
@@ -382,7 +344,6 @@ export type WriteSrsResumeInput = {
 
 export type WriteIrResumeInput = {
   pluginName: string
-  timeBudgetMinutes: unknown
   repo?: string
   now?: Date
   storage?: TodayLearningResumeStorageApi
@@ -442,11 +403,6 @@ export async function writeIrTodayLearningResume(
   const now = input.now ?? new Date()
   const storage = input.storage ?? defaultStorageApi()
 
-  const budget = parseTodayLearningTimeBudget(input.timeBudgetMinutes)
-  if (!budget.ok) {
-    return budget
-  }
-
   const marker: TodayLearningIrResumeMarker = Object.freeze({
     version: TODAY_LEARNING_RESUME_VERSION,
     repo,
@@ -454,7 +410,6 @@ export async function writeIrTodayLearningResume(
     dateKey: formatLocalDateKey(now),
     kind: "ir",
     updatedAt: now.getTime(),
-    timeBudgetMinutes: budget.minutes,
     sessionLaunchMode: "mixed"
   })
 

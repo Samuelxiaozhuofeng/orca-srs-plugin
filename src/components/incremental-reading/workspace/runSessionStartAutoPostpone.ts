@@ -1,7 +1,7 @@
 /**
  * 会话启动 auto-postpone 编排（SuperMemo「每天首次学习开始时自动整理积压」）。
  *
- * 关键架构约束：本步骤只在**用户显式启动 IR 会话**时执行（时间盒开始 / 今日学习恢复 /
+ * 关键架构约束：本步骤只在**用户显式启动 IR 会话**时执行（今日队列开始 / 今日学习恢复 /
  * 资料库选卡阅读），是一个**独立的、先于队列装配（selectQueueWithPolicy）的显式步骤**。
  * 因此它**不能**落在只读装配路径 `useIRWorkspaceSession.loadReadingQueue` 内
  * （B1「会话装配只读」原则，见 assembleSessionReadingQueue.test.ts 结构守卫）——

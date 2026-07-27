@@ -18,33 +18,25 @@ describe("incrementalReadingSettingsSchema mixed learning", () => {
     }
   })
 
-  it("defaults mixed learning to disabled with 30% ratio", () => {
+  it("defaults mixed learning to disabled", () => {
     const settings = getIncrementalReadingSettings(pluginName)
     expect(settings.mixedLearningEnabled).toBe(false)
-    expect(settings.mixedLearningReviewRatio).toBe(30)
   })
 
-  it("normalizes invalid legacy ratio to 30", () => {
+  it("ignores the removed mixed ratio setting (无时间盒后不再分时间)", () => {
     ;(orca.state.plugins[pluginName] as { settings: Record<string, unknown> }).settings = {
-      [INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio]: 25
+      mixedLearningReviewRatio: 40
     }
     const settings = getIncrementalReadingSettings(pluginName)
-    expect(settings.mixedLearningReviewRatio).toBe(30)
-  })
-
-  it("keeps valid ratio options", () => {
-    ;(orca.state.plugins[pluginName] as { settings: Record<string, unknown> }).settings = {
-      [INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio]: 40
-    }
-    expect(getIncrementalReadingSettings(pluginName).mixedLearningReviewRatio).toBe(40)
+    expect("mixedLearningReviewRatio" in settings).toBe(false)
+    expect(
+      "mixedLearningReviewRatio" in INCREMENTAL_READING_SETTINGS_KEYS
+    ).toBe(false)
   })
 
   it("exposes schema defaults for restore", () => {
     expect(
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue
     ).toBe(false)
-    expect(
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio].defaultValue
-    ).toBe(30)
   })
 })

@@ -22,7 +22,6 @@ import {
   type IRWorkspaceLaunchRequest,
   type IRWorkspaceModeEventDetail
 } from "./irWorkspaceLaunch"
-import { isTodayLearningTimeBudget } from "../../../srs/todayLearning/todayLearningResumeStorage"
 import { resolveBlockDisplayTitle } from "./resolveBlockDisplayTitle"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
@@ -128,7 +127,7 @@ export default function IRWorkspaceShell({
       setAutoPostponeInfo(null)
       if (reading.session.ready) {
         // 撤销后重载只读队列，恢复的旧积压重新参与今日装配
-        void reading.loadReadingQueue({ timeBudgetMinutes: reading.session.timeBudgetMinutes })
+        void reading.loadReadingQueue({})
       }
     } catch (error) {
       console.error("[IR Workspace] 撤销自动推迟失败:", error)
@@ -158,19 +157,6 @@ export default function IRWorkspaceShell({
       }
 
       if (request.autoStart === true) {
-        let minutes = request.timeBudgetMinutes ?? 20
-        if (!isTodayLearningTimeBudget(minutes)) {
-          console.error(
-            "[IR Workspace] autoStart 时长非法，拒绝装配:",
-            minutes
-          )
-          orca.notify(
-            "error",
-            `启动时长非法（${String(minutes)}），仅允许 10/20/30`,
-            { title: "今日学习" }
-          )
-          return
-        }
         const sessionLaunchMode = request.sessionLaunchMode ?? "mixed"
         // 真实 autoStart 时写 IR resume（失败可见，仍继续 load）
         void (async () => {
@@ -181,10 +167,7 @@ export default function IRWorkspaceShell({
             } = await import(
               "../../../srs/todayLearning/todayLearningResumeStorage"
             )
-            const writeResult = await writeIrTodayLearningResume({
-              pluginName,
-              timeBudgetMinutes: minutes
-            })
+            const writeResult = await writeIrTodayLearningResume({ pluginName })
             if (!writeResult.ok) {
               reportTodayLearningResumeWriteFailure(
                 pluginName,
@@ -204,10 +187,7 @@ export default function IRWorkspaceShell({
           }
           // 先于队列装配的显式步骤：当日一次自动整理积压（写入允许）
           await runStartAutoPostpone()
-          await reading.loadReadingQueue({
-            timeBudgetMinutes: minutes,
-            sessionLaunchMode
-          })
+          await reading.loadReadingQueue({ sessionLaunchMode })
         })()
       }
     },
@@ -328,7 +308,7 @@ export default function IRWorkspaceShell({
     if (mode === "library") void library.loadLibrary()
     else if (reading.session.ready) {
       // 省略 sessionLaunchMode：复用本次会话已记录的模式（或全局回退）
-      void reading.loadReadingQueue({ timeBudgetMinutes: reading.session.timeBudgetMinutes })
+      void reading.loadReadingQueue({})
     } else {
       void library.loadLibrary()
     }
@@ -356,10 +336,10 @@ export default function IRWorkspaceShell({
       return `显示 ${visibleCount}/${library.summary.total}`
     }
     if (reading.session.loading) return "队列加载中…"
-    if (!reading.session.ready) return "选择时间盒"
+    if (!reading.session.ready) return "待开始"
     if (reading.session.collectResult?.status === "error") return "队列读取失败"
     if (reading.queueSnapshot.queue.length === 0 && reading.session.ready) return "会话结束或空队列"
-    return `阅读中 ${reading.queueSnapshot.currentIndex + 1}/${reading.queueSnapshot.queue.length || reading.session.entries.length}`
+    return `学习中 ${reading.queueSnapshot.currentIndex + 1}/${reading.queueSnapshot.queue.length || reading.session.entries.length}`
   }, [mode, library, reading])
 
   const detailsTitle = library.detailsCard
@@ -468,14 +448,6 @@ export default function IRWorkspaceShell({
             sessionReady={reading.session.ready}
             sessionLoading={reading.session.loading}
             sessionEntries={reading.session.entries}
-            timeBudgetMinutes={reading.session.timeBudgetMinutes}
-            todayReadingSummary={{
-              total: library.todayQueueInfo.totalDueCount,
-              topics: library.todayQueueInfo.topicCount,
-              extracts: library.todayQueueInfo.extractCount
-            }}
-            todayReadingSummaryLoading={library.libraryLoading}
-            todayReadingSummaryAvailable={!library.libraryError}
             collectResult={reading.session.collectResult}
             autoPostponeLabel={autoPostponeInfo?.label ?? null}
             onUndoAutoPostpone={
@@ -483,16 +455,21 @@ export default function IRWorkspaceShell({
             }
             mixedDegradedNotice={reading.session.mixedDegradedNotice}
             sessionGeneration={reading.session.generation}
-            onStartSession={(minutes, sessionLaunchMode) =>
+            onStartSession={(sessionLaunchMode) =>
               void (async () => {
                 // 先于队列装配的显式步骤：当日一次自动整理积压
                 await runStartAutoPostpone()
-                await reading.loadReadingQueue({ timeBudgetMinutes: minutes, sessionLaunchMode })
+                await reading.loadReadingQueue({ sessionLaunchMode })
               })()
             }
-            onRetryLoad={() => void reading.loadReadingQueue({
-              timeBudgetMinutes: reading.session.timeBudgetMinutes
-            })}
+            onContinueSession={() =>
+              void (async () => {
+                // 省略 sessionLaunchMode：沿用本次会话模式（资料库只读会话不会被改成 mixed）
+                await runStartAutoPostpone()
+                await reading.loadReadingQueue({})
+              })()
+            }
+            onRetryLoad={() => void reading.loadReadingQueue({})}
             onBackToLibrary={() => handleModeChange("library")}
             onQueueSnapshot={reading.setQueueSnapshot}
             onOpenQueue={() => setDrawer("queue")}

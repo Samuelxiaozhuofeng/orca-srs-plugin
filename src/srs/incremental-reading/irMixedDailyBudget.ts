@@ -23,10 +23,10 @@ export type MixedDailyBudgetResult = {
 }
 
 /**
- * 从已收集卡片 + 今日日志构建 mixed 可混入的旧复习卡（已扣日额度）。
- * - buildReviewQueue 应用 new/review remaining
- * - 再排除新卡（mixed 不混新卡）
- * - 结果长度 ≤ remaining.reviewCardsPerDay
+ * 从已收集卡片 + 今日日志构建统一会话可推送的复习卡（已扣日额度）。
+ * - buildReviewQueue 应用 new/review remaining，并按 2 旧 : 1 新交织
+ * - 新卡同属「今日学习」，不再单独剔除（否则新卡永远只能另开复习面板）
+ * - 结果长度 ≤ remaining.newCardsPerDay + remaining.reviewCardsPerDay
  */
 export function buildMixedEligibleReviewCardsFromDailyBudget(input: {
   allCards: readonly ReviewCard[]
@@ -52,10 +52,8 @@ export function buildMixedEligibleReviewCardsFromDailyBudget(input: {
     },
     now
   )
-  // mixed 规则：只混入已到期旧卡；新卡虽在日额度内也不进 mixed
-  const eligibleReviewCards = queue.filter((card) => !card.isNew)
   return {
-    eligibleReviewCards,
+    eligibleReviewCards: queue,
     remainingLimits: remaining,
     configuredNew: configured.newCardsPerDay,
     configuredReview: configured.reviewCardsPerDay

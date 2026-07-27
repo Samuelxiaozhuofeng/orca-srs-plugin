@@ -230,6 +230,21 @@ export function irReadingCompletedFromTotals(
 }
 
 /**
+ * IR 日额度已用量：完成条目数扣掉统一会话里的 SRS 复习。
+ *
+ * `completedCount` 对阅读推进 / 推迟 / 归档与 mixed 复习一视同仁地 +1，
+ * 但复习卡受 SRS 自己的 new/review 日额度约束，不应再吃掉阅读额度
+ * （统一推送后一次会话可能复习几十张，否则当天阅读队列会被直接清零）。
+ */
+export function irDailyQuotaUsedFromTotals(
+  totals: Pick<IRDailyStatsTotals, "completedCount" | "reviewProcessed">
+): number {
+  const completed = Math.max(0, Math.floor(totals.completedCount))
+  const reviewed = Math.max(0, Math.floor(totals.reviewProcessed))
+  return Math.max(0, completed - reviewed)
+}
+
+/**
  * 日统计读取失败时 fail-closed：不得按 0 已用额度继续。
  */
 export function requireIRDailyStatsForSession(
@@ -248,10 +263,7 @@ export function requireIRDailyStatsForSession(
   }
   return {
     ok: true,
-    usedCompletedCount: Math.max(
-      0,
-      Math.floor(result.record.totals.completedCount)
-    )
+    usedCompletedCount: irDailyQuotaUsedFromTotals(result.record.totals)
   }
 }
 
@@ -512,10 +524,7 @@ export async function loadTodayLearningSummary(
       completedSide = { status: "error", error: err }
       irUsedCompleted = null
     } else {
-      irUsedCompleted = Math.max(
-        0,
-        Math.floor(stats.record.totals.completedCount)
-      )
+      irUsedCompleted = irDailyQuotaUsedFromTotals(stats.record.totals)
       completedSide = {
         status: "ok",
         data: irReadingCompletedFromTotals(stats.record.totals)

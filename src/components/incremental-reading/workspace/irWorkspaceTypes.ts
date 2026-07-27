@@ -25,7 +25,6 @@ export type IRWorkspaceSessionState = {
   ready: boolean
   loading: boolean
   entries: IRSessionEntry[]
-  timeBudgetMinutes: number
   collectResult: IRCollectResult | null
   autoPostponeLabel: string | null
   autoBatchId: string | null
@@ -57,7 +56,6 @@ export const EMPTY_SESSION_STATE: IRWorkspaceSessionState = {
   ready: false,
   loading: false,
   entries: [],
-  timeBudgetMinutes: 20,
   collectResult: null,
   autoPostponeLabel: null,
   autoBatchId: null,
