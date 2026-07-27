@@ -94,6 +94,7 @@ borderRadius / boxShadow）已全部迁移到 `src/styles/srs-review.css` 的 `s
 | `src/srs/sessionProgressFinalize.ts` | 完成态一次性 finalize |
 | `src/hooks/useSessionProgressTracker.ts` | 进度 Hook |
 | `src/srs/pendingDueRequeue.ts` | F2-04 again/hard 短期重入队 |
+| `src/hooks/viewportScrollReset.ts` | 视图切换归零真实纵向滚动 owner（与 IR 共用） |
 
 ### 组件层次
 
@@ -396,6 +397,15 @@ stateDiagram-v2
 | 只读诊断 | `src/test/diagnose-review-tab-focus.js` 粘贴 Console：Tab/Shift+Tab/Enter 前后 CursorData / selection / state / `get-block` | 用户手动 |
 | Orca 实例 | 显示答案 → 编辑子块 → Tab 缩进后可输入 → Enter 建块；Shift+Tab 后同理 | **待用户验证**；本文不宣称运行时已修复 |
 
+### 切卡 / 完成页视口归零（2026-07-27）
+
+长卡片评分后，视图整体替换但**滚动位置不会自己回到顶部**：新卡片与「本次复习结束」摘要都会停在上一张卡的滚动位置，用户得手动上滚。
+
+- `currentIndex` 变化或进入完成态时，Demo 调用 `resetViewportScrollTop`（`src/hooks/viewportScrollReset.ts`）归零**真实纵向滚动 owner**，解析复用 IR 的 `resolveVerticalScrollOwner`：从 `.srs-review-session-body`（`scrollBodyRef`）起沿祖先链找最近一个 `overflow-y: auto|scroll|overlay` 且 `scrollHeight > clientHeight` 的节点。内部节点随内容撑开时，实际滚动的是 host `.orca-block-editor` 祖先——**不硬编码类名**
+- **祖先 owner 归零与宿主 chrome 同一个 gate**：`allowAncestorOwner = manageHostEditorChrome`。嵌入 Journal「当日创建的」/ 查询结果 / 引用预览时为 false——只归零会话自己的滚动节点，**不得**替用户滚动外层宿主
+- 完成页（`ReviewSessionCompletedView`，侧栏为 `.srs-review-center`，全屏为 ModalOverlay）已卸载 `containerRef` / `scrollBodyRef`，故 Demo 用 `scrollOwnerRef` 记住上一次解析到的 owner 作为回退目标（宿主编辑器在会话期间始终存活）
+- 只在**切卡 / 完成**时归零；「显示答案」等同卡内变化不动滚动位置
+
 ### 宿主 chrome 最大化
 
 仅当 `shouldManageHostEditorChrome(panel, panelId, blockId)` 为 true（面板主视图 `view === "block"` 且 `viewArgs.blockId === 会话块`）时，Demo 可设置 `.orca-block-editor[maximize="1"]` 并隐藏 query tabs / go buttons / sidetools 等。嵌入 Journal、引用、查询结果时 `manageHostEditorChrome=false`，**不得**改外层宿主 DOM。实现：`src/srs/registry/panelTreeUtils.ts`。
@@ -464,6 +474,7 @@ stateDiagram-v2
 | 评分 | `src/srs/reviewCardGrading.test.ts` |
 | 描述 / scope | `reviewSessionDescriptor.test.ts`、`reviewSessionScope.test.ts` |
 | pending | `src/srs/pendingDueRequeue.test.ts` |
+| 视口归零 | `src/hooks/viewportScrollReset.test.ts` |
 
 ## 相关文件
 

@@ -29,6 +29,8 @@ import {
 import { useIRReadingBreakpoint } from "../../hooks/useIRReadingBreakpoint"
 import { useIRShortcuts } from "../../hooks/useIRShortcuts"
 import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
+import { resetViewportScrollTop } from "../../hooks/viewportScrollReset"
+import { resolveIRSessionViewportResetKey } from "./irSessionViewportReset"
 import IRMixedReviewPane from "./IRMixedReviewPane"
 import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
@@ -579,9 +581,30 @@ export default function IRSessionShell({
     return formatIRReadingSourceLabel(currentCard)
   }, [currentCard])
 
+  /**
+   * 视图整体替换时归零真实纵向滚动 owner（常见为 host `.orca-block-editor` 祖先）。
+   * 结束最后一张长阅读卡后完成页只占一屏，但 owner 仍停在原阅读位置，
+   * 用户必须手动上滚才能看到「今日学习完毕」。阅读条目不在此归零：
+   * 由断点恢复统一「先归零再对齐」。
+   */
+  const viewportResetKey = resolveIRSessionViewportResetKey({
+    loadFailed,
+    showSummary,
+    queueLength: queue.length,
+    isReviewEntry,
+    currentEntryKey: currentEntry?.key
+  })
+
+  useEffect(() => {
+    if (viewportResetKey == null) return
+    // 会话内滚动节点优先：它自身可能被 React 复用而保留 scrollTop；
+    // 解析祖先 owner 仍能覆盖「内部无滚动范围、host 才是滚动容器」的运行时形态
+    resetViewportScrollTop(scrollContainerRef.current ?? sessionRootRef.current)
+  }, [viewportResetKey])
+
   if (loadFailed) {
     return (
-      <div className="ir-reading__launch" role="alert">
+      <div ref={sessionRootRef} className="ir-reading__launch" role="alert">
         <div className="ir-reading__launch-error">
           数据读取失败{loadErrorMessage ? `：${loadErrorMessage}` : ""}
         </div>
@@ -599,7 +622,12 @@ export default function IRSessionShell({
     // effect 结算前用会话快照占位；空队列无活动时为零，结算后为今日累计
     const displayMetrics = summaryMetrics ?? metricsRef.current.getSnapshot()
     return (
-      <div className="ir-reading" data-ir-theme={theme} style={readerWidthStyle}>
+      <div
+        ref={sessionRootRef}
+        className="ir-reading"
+        data-ir-theme={theme}
+        style={readerWidthStyle}
+      >
         <IRSessionSummary
           metrics={displayMetrics}
           autoPostponeCount={0}
@@ -632,7 +660,7 @@ export default function IRSessionShell({
           onOpenQueue={onOpenQueue}
           compact={embedded}
         />
-        <div className="ir-reading__scroll">
+        <div className="ir-reading__scroll" ref={scrollContainerRef}>
           <IRMixedReviewPane
             card={currentEntry.card}
             panelId={panelId}

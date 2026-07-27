@@ -175,6 +175,7 @@
 
 ## 更新记录
 
+- **2026-07-27（视图切换视口归零）**：修复「结束最后一张阅读卡后，『今日学习完毕』完成页仍停在上一张卡的滚动位置」——真实纵向滚动 owner 常是 host `.orca-block-editor` 祖先，React 换子树不会让它回顶。新增 `src/hooks/viewportScrollReset.ts`（复用 `resolveVerticalScrollOwner`），IR 会话按视图 key（`summary` / `review:<entryKey>` / `load-failed`，阅读条目仍交给断点恢复）归零；SRS 复习会话在切卡 / 进完成摘要时归零，祖先 owner 受 `manageHostEditorChrome` gate 约束。见 [渐进阅读.md](渐进阅读.md)、[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)、[问题经验.md](问题经验.md)
 - **2026-07-27（死代码清理）**：删除零引用的 `src/components/IRCardList.tsx` / `IRStatistics.tsx`，以及仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats` 与 `.ir-cardlist-*` / `.ir-stats-card-*` 样式；`IR_GROUP_DEFAULT_EXPANDED` 同为零引用但早于本次改动即已死，未在本次范围内处理。见 [渐进阅读.md](渐进阅读.md)
 - **2026-07-27（全插件 UI 设计基线落地 · 整合收口）**：新增 [SRS_UI设计规范.md](SRS_UI设计规范.md)（Apple HIG 基准，反推自 Flash Home）与令牌层 `src/styles/srs-design-tokens.css`（`src/main.ts` **最先**导入，含 `prefers-reduced-motion` 统一降级）。四个面板并行对齐后由整合方收口：
   - **令牌层补档**：`--srs-text-display/subtitle/callout`、图标阶梯 `--srs-icon-sm/md/empty`（图标是几何量，与字号阶梯**刻意分离**）、`--srs-measure-narrow`、`--srs-duration-gauge`、状态色 `--srs-accent-warn/success/danger`
