@@ -152,6 +152,7 @@ flowchart TD
 | 仅 IR 精确且 > 0，SRS 为 `null` | IR 工作区 `sessionLaunchMode: "read-only"`；不读 SRS 日志/额度 |
 | 无受信任正任务 | 不启动；沿用完成/错误展示 |
 
+- **从 Home 进入 IR（开始/继续 → mixed / ir-read-only）**：`openIrLearningFromHome` → `openIRWorkspace({ openInCurrentPanel: true, autoStart: true, … })`，在 **当前 Home 面板** 内 `goTo` IR 会话块（Home 内容被替换，不再残留并排的 Flash Home 面板块）。若已有 IR 面板被聚焦（`activePanel !== panelId`），再 `onClose` / `orca.nav.close(panelId)` 关闭 Home 面板。导航失败不关 Home；成功离开后不再刷新 Home 摘要（组件可能已卸载）。
 - **resume 写入时机**：不在队列装配前写 IR marker。仅当非空队列装配成功后写 `kind: "ir"`（失败可见，不撤销可用队列）；失败/空队列不得覆盖先前有效的 SRS marker。
 - **继续**：`kind: "srs"` → 验证会话块 + 导航；`kind: "ir"` → 按**当前** remaining 再走上表路由（不信任过期 launchMode）。`resumeMarkerHasTrustedTasks`：srs 仅看 SRS remaining；ir 统一 marker 在精确正 IR **或** 精确正 SRS 时均可继续。
 - 主按钮：有有效当日 resume 且仍有任务 →「继续上次学习」；否则「开始今日学习」

@@ -332,11 +332,43 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
 
   const canStart = hasTrustedTasks
 
+  /**
+   * 从 Flash Home 进入渐进阅读工作区：
+   * - 默认在当前面板 goTo IR 会话块（Home 内容被替换，等价于离开 Home）
+   * - 若已有 IR 面板被聚焦（activePanel 已离开 Home），再关闭 Home 面板，避免残留
+   * 不预写 resume；非空队列装配成功后再写。
+   */
+  const openIrLearningFromHome = useCallback(
+    async (sessionLaunchMode: "mixed" | "read-only") => {
+      const { openIRWorkspace } = await import(
+        "../srs/incremental-reading/irWorkspacePanelLaunch"
+      )
+      await openIRWorkspace({
+        pluginName,
+        mode: "reading",
+        openInCurrentPanel: true,
+        autoStart: true,
+        sessionLaunchMode
+      })
+      // goTo 同面板时 active 仍是 Home 面板（现已显示 IR），不可 close
+      // 仅当焦点跳到既有 IR 面板时关闭 Home
+      if (orca.state.activePanel !== panelId) {
+        if (onClose) {
+          onClose()
+        } else {
+          orca.nav.close(panelId)
+        }
+      }
+    },
+    [pluginName, panelId, onClose]
+  )
+
   const startFreshLearning = useCallback(async () => {
     if (actionBusyRef.current) return
     actionBusyRef.current = true
     setActionBusy(true)
     setResumeActionError(null)
+    let leftHomeForIr = false
     try {
       const { decideTodayLearningLaunch } = await import(
         "../srs/todayLearning/todayLearningLaunch"
@@ -347,16 +379,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       })
 
       if (decision.kind === "mixed") {
-        const { openIRWorkspace } = await import(
-          "../srs/incremental-reading/irWorkspacePanelLaunch"
-        )
-        // 不预写 resume；非空队列装配成功后再写
-        await openIRWorkspace({
-          pluginName,
-          mode: "reading",
-          autoStart: true,
-          sessionLaunchMode: "mixed"
-        })
+        await openIrLearningFromHome("mixed")
+        leftHomeForIr = true
         return
       }
 
@@ -367,15 +391,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       }
 
       if (decision.kind === "ir-read-only") {
-        const { openIRWorkspace } = await import(
-          "../srs/incremental-reading/irWorkspacePanelLaunch"
-        )
-        await openIRWorkspace({
-          pluginName,
-          mode: "reading",
-          autoStart: true,
-          sessionLaunchMode: "read-only"
-        })
+        await openIrLearningFromHome("read-only")
+        leftHomeForIr = true
         return
       }
 
@@ -387,15 +404,19 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       orca.notify("error", `开始失败：${message}`, { title: "今日学习" })
     } finally {
       actionBusyRef.current = false
-      setActionBusy(false)
-      void loadResume()
-      void loadTodayLearning(true)
+      // 已导航离开 Home 时组件可能卸载，避免无意义刷新与卸载后 setState
+      if (!leftHomeForIr) {
+        setActionBusy(false)
+        void loadResume()
+        void loadTodayLearning(true)
+      }
     }
   }, [
     pluginName,
     todayLearning,
     loadResume,
-    loadTodayLearning
+    loadTodayLearning,
+    openIrLearningFromHome
   ])
 
   const continueLearning = useCallback(async () => {
@@ -407,6 +428,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     actionBusyRef.current = true
     setActionBusy(true)
     setResumeActionError(null)
+    let leftHomeForIr = false
     try {
       if (resumeMarker.kind === "srs") {
         const { resolveReviewSessionBlock } = await import(
@@ -471,28 +493,14 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       }
 
       if (decision.kind === "ir-read-only") {
-        const { openIRWorkspace } = await import(
-          "../srs/incremental-reading/irWorkspacePanelLaunch"
-        )
-        await openIRWorkspace({
-          pluginName,
-          mode: "reading",
-          autoStart: true,
-          sessionLaunchMode: "read-only"
-        })
+        await openIrLearningFromHome("read-only")
+        leftHomeForIr = true
         return
       }
 
       if (decision.kind === "mixed") {
-        const { openIRWorkspace } = await import(
-          "../srs/incremental-reading/irWorkspacePanelLaunch"
-        )
-        await openIRWorkspace({
-          pluginName,
-          mode: "reading",
-          autoStart: true,
-          sessionLaunchMode: "mixed"
-        })
+        await openIrLearningFromHome("mixed")
+        leftHomeForIr = true
         return
       }
 
@@ -504,9 +512,11 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       orca.notify("error", `无法继续上次学习：${message}`, { title: "今日学习" })
     } finally {
       actionBusyRef.current = false
-      setActionBusy(false)
+      if (!leftHomeForIr) {
+        setActionBusy(false)
+      }
     }
-  }, [resumeMarker, pluginName, todayLearning])
+  }, [resumeMarker, pluginName, todayLearning, openIrLearningFromHome])
 
   const handleRetryResumeLoad = useCallback(() => {
     setResumeLoadError(null)

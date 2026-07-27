@@ -67,6 +67,7 @@
 10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-27 更新
     - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
     - 统一 remaining（SRS 日额度 + IR due）、预计分钟、开始/继续；**日额度队列**（无 10/20/30）；受信任 remaining 显式降级（mixed / 独立 SRS / 只读 IR）
+    - 从 Home 点开始/继续进入 IR：`openInCurrentPanel` 替换 Home；已有 IR 面板则聚焦后关闭 Home
     - resume 非队列快照；统一 `kind:"ir"` marker 在纯 SRS 剩余时也可继续；装配成功后才写 IR marker
     - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡
     - 删除为**变体感知**（`deleteReviewCardBackendData`：仍有存活变体只删该变体前缀属性、保留 `#card`）；今日摘要经 deps 注入复用同轮 cards
