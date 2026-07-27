@@ -326,8 +326,29 @@ export default function IRWorkspaceShell({
       ))
     : ""
 
+  /**
+   * mixed 当前项为普通复习卡：收起渐进阅读 chrome（纸张主题 / 品牌顶栏），
+   * 让界面贴近独立 SRS 复习表面，方便聚焦刷卡。
+   */
+  const reviewFocusMode = useMemo(() => {
+    if (mode !== "reading" || !reading.session.ready) return false
+    const queue =
+      reading.queueSnapshot.queue.length > 0
+        ? reading.queueSnapshot.queue
+        : reading.session.entries
+    const entry = queue[reading.queueSnapshot.currentIndex]
+    return entry?.kind === "review"
+  }, [mode, reading.queueSnapshot, reading.session.ready, reading.session.entries])
+
   return (
-    <div ref={rootRef} className="ir-workspace">
+    <div
+      ref={rootRef}
+      className={
+        reviewFocusMode
+          ? "ir-workspace ir-workspace--review-focus"
+          : "ir-workspace"
+      }
+    >
       <IRWorkspaceHeader
         workspaceId={workspaceId}
         mode={mode}
@@ -338,6 +359,7 @@ export default function IRWorkspaceShell({
         onRefresh={handleRefresh}
         onClose={handleClose}
         showQueue={mode === "reading" && reading.session.ready}
+        reviewFocus={reviewFocusMode}
       />
 
       <div className="ir-workspace__body">

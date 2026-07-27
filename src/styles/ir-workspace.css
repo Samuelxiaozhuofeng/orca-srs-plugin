@@ -1577,10 +1577,31 @@
   color: var(--orca-color-text-3);
 }
 
+/*
+ * mixed 当前项 = 普通复习卡：中性 SRS 复习表面。
+ * 明确不继承绿茶/书卷/文献纸张主题（会话壳也不再挂 data-ir-theme）。
+ */
+.ir-reading--mixed-review {
+  background: var(--orca-color-bg-0, var(--orca-color-bg-1)) !important;
+  color: var(--orca-color-text-1);
+  /* 取消阅读纸面宽度/阴影语境，记忆卡用全宽会话区 */
+  --ir-reading-content-max-width: none;
+}
+
 .ir-reading--mixed-review .ir-reading__scroll {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
+  background: transparent !important;
+}
+
+.ir-reading--mixed-review .ir-reading__banner--review-focus {
+  color: var(--orca-color-text-2);
+  background: var(--srs-surface-base);
+  border-bottom: 1px solid var(--srs-hairline);
+  padding: var(--srs-space-3) var(--srs-space-4);
+  font-family: var(--srs-font-family);
 }
 
 .ir-reading__mixed-review {
@@ -1588,12 +1609,49 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  background: transparent;
 }
 
 .ir-reading__mixed-review-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* 对齐独立复习会话 body，让 SrsCardDemo 全宽聚焦 */
+  background: var(--orca-color-bg-0, var(--orca-color-bg-1));
+  padding: var(--srs-space-3) var(--srs-space-4) var(--srs-space-6);
+  font-family: var(--srs-font-family);
+}
+
+/* 工作区：复习聚焦时收起阅读 chrome 背景与顶栏厚度 */
+.ir-workspace--review-focus {
+  background: var(--orca-color-bg-0, var(--orca-color-bg-1));
+}
+
+.ir-workspace--review-focus > .ir-workspace__body {
+  background: var(--orca-color-bg-0, var(--orca-color-bg-1));
+}
+
+.ir-workspace-header--review-focus {
+  min-height: 48px;
+  padding: var(--srs-space-2) var(--srs-space-4);
+  background: var(--srs-surface-base);
+  border-bottom: 1px solid var(--srs-hairline);
+}
+
+.ir-workspace-header__brand--review {
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+  font-weight: var(--srs-weight-medium);
+  gap: var(--srs-space-2);
+}
+
+.ir-workspace-header__brand--review .ir-workspace-header__brand-icon {
+  color: var(--orca-color-primary-5);
+}
+
+/* 嵌套的外层 .ir-reading（IRReadingView 包裹）在聚焦复习时不要另铺一层阅读底色 */
+.ir-workspace--review-focus .ir-workspace__pane > .ir-reading {
+  background: var(--orca-color-bg-0, var(--orca-color-bg-1)) !important;
 }
 
 /*

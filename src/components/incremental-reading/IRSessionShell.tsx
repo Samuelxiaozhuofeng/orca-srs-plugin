@@ -1042,12 +1042,12 @@ export default function IRSessionShell({
   if (!currentEntry) return null
 
   if (isReviewEntry && currentEntry.kind === "review") {
+    // 不挂 data-ir-theme / 阅读正文宽度：避免绿茶/书卷等纸张主题与 max-width 纸面
+    // 污染记忆卡 UI；表面样式对齐独立 SRS 复习（见 ir-workspace.css --mixed-review）
     return (
       <div
         ref={sessionRootRef}
         className="ir-reading ir-reading--mixed-review"
-        data-ir-theme={theme}
-        style={readerWidthStyle}
       >
         <IRSessionHeader
           progress={progress}
@@ -1059,6 +1059,7 @@ export default function IRSessionShell({
           onClose={embedded ? undefined : () => void handleClose()}
           onOpenQueue={onOpenQueue}
           compact={embedded}
+          reviewFocus
         />
         <div className="ir-reading__scroll" ref={scrollContainerRef}>
           <IRMixedReviewPane

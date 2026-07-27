@@ -20,6 +20,8 @@ type Props = {
   onClose?: () => void
   onOpenQueue?: () => void
   compact?: boolean
+  /** mixed 复习卡：中性进度条样式，弱化阅读横幅感 */
+  reviewFocus?: boolean
 }
 
 export default function IRSessionHeader({
@@ -31,11 +33,18 @@ export default function IRSessionHeader({
   onUndoNext,
   onClose,
   onOpenQueue,
-  compact = false
+  compact = false,
+  reviewFocus = false
 }: Props) {
   return (
     <>
-      <div className="ir-reading__banner ir-reading__banner--info">
+      <div
+        className={
+          reviewFocus
+            ? "ir-reading__banner ir-reading__banner--review-focus"
+            : "ir-reading__banner ir-reading__banner--info"
+        }
+      >
         <span className="ir-session-header__progress">
           已完成 {formatSessionProgress(progress)}
           <span className="ir-session-header__remaining">
@@ -48,7 +57,7 @@ export default function IRSessionHeader({
           ) : null}
         </span>
         <span className="ir-session-header__spacer" />
-        {autoPostponeLabel ? (
+        {autoPostponeLabel && !reviewFocus ? (
           <>
             <span className="ir-session-header__note">
               {autoPostponeLabel}
@@ -60,7 +69,7 @@ export default function IRSessionHeader({
             ) : null}
           </>
         ) : null}
-        {onUndoNext ? (
+        {onUndoNext && !reviewFocus ? (
           <Button
             tabIndex={0}
             variant="outline"
