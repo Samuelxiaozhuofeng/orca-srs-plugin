@@ -1,9 +1,16 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-07-26
-> 变更说明：`aiQuickInteract.ts`（原 1317 行）按职责拆为 **`aiQuickPrompt.ts`**（选区/prompt/纯文本请求）+ **`aiQuickResultBlocks.ts`**（结果块状态机 + 串行锁），`aiQuickInteract.ts` 缩为稳定入口（151 行，纯 re-export，函数体逐字节一致）；**外部消费方一律仍从 `aiQuickInteract.ts` 导入**（`aiQuickInteractJobs` / `AIQuickInteractMount` / `commands.ts` 零改动）。`aiQuickInteract.test.ts` 未随拆分（仍测入口面）。
-> 2026-07-24：Quick AI 提示词新增 `resultTags`（结果自动打标）与 `reuseSameResultBlock`（同源块合并到同一结果根）；`directWriteBelow` 与属性写失败可见。
-> **未宣称**：真机多选预览操作栏、跨层级批量移动顺序与多 model 路由的端到端验收；`insertTag` 在宿主对未知标签名的创建行为以 Orca 真机为准。
+> 文档同步日期：2026-07-27
+> 本次变更（分支 ai-1…ai-5，已合并 main）：
+> 1. **传输层统一**：五处调用点（aiService / aiQuickPrompt / aiBlockExplain / webAiSummary / aiConfigValidator）各自 70~90 行的 timeout + abort 桥接 + HTTP 错误读取 + 字节上限 + 脱敏 + choices 提取，收敛到 `aiChatClient.callChatCompletions` 单一出口。
+> 2. **请求策略**：有限次退避重试、全局并发闸门、按路径分级超时、usage 采集、会话内请求日志。
+> 3. **制卡弹窗 v2**：详细程度取代固定张数、自定义指令、卡片语言、再来一批。
+> 4. **卡型扩展**：新增选择题卡，卡型改为多选混合生成。
+> 5. **队列承接**：同批聚簇（`srs.batchId`）+ 待激活状态（`CardStatus.pending`）。
+>
+> **未宣称（真机待验）**：选择题卡的 `_repr` 经 valtio state 赋值的持久化行为；多 model 路由与聚簇在真实队列下的端到端表现。
+>
+> **已搁置（分支 `ai-6-scope`，未合并）**：有界子树源范围、保存后清空原文、术语独立块 + 行内引用。代码与单测完整但产品价值未获确认，保留在分支上不进 main。
 
 ## 概述
 
@@ -11,7 +18,7 @@ AI 模块提供基于 **OpenAI 兼容 Chat Completions** 的能力。产品路�
 
 | 路径 | 入口 | 行为 |
 | --- | --- | --- |
-| **AI 生成闪卡** | `${pluginName}.makeAICard`（别名 `interactiveAICard`） | 读当前光标块 → 弹窗配置 → **一次** AI 请求 → 校验/预览/编辑/勾选 → 确认后分组写入 |
+| **AI 生成闪卡** | `${pluginName}.makeAICard`（别名 `interactiveAICard`） | 读当前光标块 → 弹窗配置（卡型多选 · 详细程度 · 语言 · 自定义指令）→ AI 请求 → 校验/预览/编辑/勾选（可「再来一批」）→ 确认后分组写入 |
 | **块解释** | 渐进阅读会话：移到块右侧隐形热区出「?」或 `Alt+E` | 读目标块 → 白话/名词内联；可选举例/反驳/追问；用户点「+」才写入普通子块 |
 | **AI 快捷交互** | 编辑器工具栏 sparkles 按钮 | 选中同块文本 → 选提示词；见下「快捷交互」 |
 
@@ -31,7 +38,10 @@ AI 模块提供基于 **OpenAI 兼容 Chat Completions** 的能力。产品路�
 
 ```text
 src/srs/ai/
-├── aiSettingsSchema.ts      # apiKey / apiUrl / model / enableNativeWebSearch / reasoningEffort
+├── aiChatClient.ts          # 【唯一出口】callChatCompletions：并发闸门 + 重试 + 日志
+├── aiChatPolicy.ts          # Semaphore / 重试判定 / Retry-After / 可中断退避
+├── aiRequestLog.ts          # 会话内环形缓冲（50 条）+ usage 累计
+├── aiSettingsSchema.ts      # apiKey / apiUrl / model / enableNativeWebSearch / reasoningEffort / webSearchToolType
 ├── aiChatRequest.ts         # buildChatCompletionsBody（tools / reasoning_effort）
 ├── aiService.ts             # generateFlashcardDrafts
 ├── aiBlockExplain.ts        # 解释 / 举例 / 反驳 / 追问
@@ -55,7 +65,11 @@ src/srs/http/
 ├── safeResponse.ts          # Content-Length 预检 + 流式字节上限
 └── redactSecrets.ts         # exact key / Bearer / 常见认证字段
 
+src/srs/
+├── cardBatch.ts             # srs.batchId 读写与生成
+
 src/components/
+├── AIRequestLogSection.tsx  # 设置面板「用量与最近请求」
 ├── AIDialogMount.tsx
 ├── AICardGenerationDialog.tsx
 ├── AICardDraftCard.tsx
@@ -145,6 +159,36 @@ makeAICard / interactiveAICard（别名）
       → writeAICardDrafts
 ```
 
+### 制卡配置（弹窗 v2）
+
+| 项 | 取值 | 说明 |
+| --- | --- | --- |
+| 卡片类型 | `basic` / `cloze` / `choice` **多选** | 选多种时由模型按内容特点分配；`type` 字段成为必需的路由依据，缺失即计入 rejected（否则 cloze/choice 会被静默误判成 basic）。只允许一种时可省略 type |
+| 详细程度 | `summary` / `key`(默认) / `exhaustive` | 取代旧的固定张数 1/3/5。硬上限 2/5/12 只作闸门，prompt 明确标注 "a limit, not a target"。**档位不再决定 `max_tokens`**——输出预算统一走设置项 |
+| 卡片语言 | `auto`(默认) / `zh` / `en` / `ja` | **只改题干措辞**。answer / sourceQuote / cloze text 必须逐字取自源文本（接地校验前提），prompt 显式禁止翻译 |
+| 自定义指令 | ≤500 字 | 追加在 SOURCE 分隔符**之外**（受信输入；混进 untrusted 区会被 system prompt 明令忽略） |
+| 再来一批 | — | 已有草稿题干作为排除清单送进 prompt，结果**追加**而非替换。追加时重新分配 id（模型每批都从 draft_1 编号，直接 concat 会撞号导致勾选/编辑串卡），跨批重复计入提示 |
+| 保存为待激活 | 默认关 | 写 `#card` 标签 `status=pending`，卡片不进复习队列也不占当日额度。放行走命令 `${pluginName}.activatePendingCards`（斜杠「SRS: 激活待激活卡片」）批量清回正常态 |
+
+### 选择题卡（`choice`）
+
+输出契约：`{"type":"choice","question":"…","options":[{"text":"…","correct":true},…],"sourceQuote":"…"}`
+
+| 规则 | 取舍理由 |
+| --- | --- |
+| 选项 3~6 项 | 少于 3 没有测验价值，多于 6 在复习界面不可读 |
+| 至少一个正确、不得全部正确 | 全对等于没考点，复习时任选皆对 |
+| **干扰项允许模型合成** | 干扰项生成正是 LLM 相对人工最省时间的部分；强求逐字摘录只会让整批卡失败。接地要求落在 `sourceQuote` 上 |
+| 去重按题干 | 同一考点换一组干扰项不算新卡 |
+
+写入结构与手工的 `createChoiceCardFromBlock` **完全一致**（题干块 `#card type=choice` + `#choice` + `_repr = srs.choice-card`，选项为直接子块、正确项打 `#correct`），否则复习渲染器与 `extractChoiceOptions` 认不出来。
+
+### 队列承接（`srs.batchId` + `pending`）
+
+- **同批聚簇**：`clusterCardsByBatch` 以每批最早到期成员为锚点就地展开整批。批次之间与无批次卡的 due 升序不变，因此不会把晚到期的卡提前到别的批次之前。**放在限额之后**——否则整批卡会一起挤进额度，把当日队列变成单一材料
+- **待激活**：`CardStatus` 增加 `pending`。与 `suspend` 的区别是刻意的——suspend 在 `reviewCardFactory` 处直接返回空数组、对所有消费方不可见；pending 仍会被收集成 `ReviewCard`，只是被 `partitionDueAndNewCards` 排除，这样才能统计并批量激活。pending 卡也不占当日额度
+- 未知 `status` 值一律回落 `normal`：宁可多复习一张，也不要因为一个笔误静默吞掉卡片
+
 ### 设置项（独立面板，不在原生设置页）
 
 入口：Headbar 插头图标 / 命令 `${pluginName}.openAIServiceSettings` / 斜杠「AI / Firecrawl 服务设置」。
@@ -154,7 +198,9 @@ makeAICard / interactiveAICard（别名）
 | plugin **data** `ai.connection` | `apiKey` | `""` | Bearer |
 | 同上 | `apiUrl` | OpenAI chat/completions | 须 OpenAI 兼容；**拒绝** Ollama 原生 `/api/chat` |
 | 同上 | `model` | `gpt-3.5-turbo` | 可「拉取模型」自 `/models` 列表选择 |
-| 同上 | `enableNativeWebSearch` | `false` | 为 true 且 model 含 `grok-4.5` 时附带 `tools: [{ type: "web_search" }]`；其它 model 忽略开关 |
+| 同上 | `enableNativeWebSearch` | `false` | 联网 tool 总开关 |
+| 同上 | `webSearchToolType` | `auto` | `auto` = 按 model 推荐（仅 `grok-4.5`，沿用旧行为）；`web_search` / `google_search` 为显式指定，**不看 model id**。此前硬编码字符串匹配，新版本号一发布即失效且覆盖不到其它厂商形态 |
+| 同上 | `maxOutputTokens` | `16384` | 单次响应**输出**上限（与上下文窗口无关；百万上下文的模型输出上限通常仍是 8k~64k，填超会被网关 400）。推理模型把 reasoning token 计入 completion_tokens，旧的写死 2000 会被思考吃光 |
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
 
@@ -204,6 +250,22 @@ makeAICard / interactiveAICard（别名）
 5. backend-first 校验删除；`orphanBlockIds` 为仍存在的 ID；若校验无法执行则保守报告候选
 6. UI 在有残留时展示块 ID，提示手动检查删除
 
+### 请求策略（`aiChatClient` + `aiChatPolicy`）
+
+所有 Chat Completions 请求经 `callChatCompletions` 单一出口，横切能力只实现一次。
+
+| 能力 | 规则 |
+| --- | --- |
+| **重试** | 仅 `HTTP_429` / `500` / `502` / `503` / `504` / `NETWORK_ERROR`；默认额外 2 次，指数退避 800ms→1.6s→3.2s（上限 8s）。尊重 `Retry-After`（整数秒或 HTTP 日期）。退避期间可被用户取消打断 |
+| **不重试** | `CANCELLED`（用户意图）、`TIMEOUT`（deadline 就是 deadline，重试等于让用户等两倍）、其余 4xx（鉴权/参数错，重试必然同样失败）、`RESPONSE_PARSE_ERROR`、`RESPONSE_TOO_LARGE` |
+| **并发闸门** | 全局信号量默认 3，FIFO 唤醒（避免后台任务饿死交互请求）。**排队期间不计入超时**，deadline 从真正发请求起算。连接测试 `bypassConcurrencyGate: true` + `maxRetries: 0` |
+| **超时分级** | 制卡 60s / 块解释 40s / 快捷交互 30s / 网页总结 90s / 测连 15s（此前一律 40s） |
+| **输出预算** | 统一取设置项 `maxOutputTokens`（默认 16384），不再按用途写死 1600/900/2000。推理模型把 reasoning token 计入 `completion_tokens`，任何写死的小值都可能被思考吃光 |
+| **截断检测** | `finish_reason === "length"` 在解析前拦下，返回 `RESPONSE_TRUNCATED` 并报出实际花费与其中的推理 token 数。此前截断的 JSON 会报成「不是合法 JSON」、完全没生成会报成「返回内容为空」——两条都把预算问题说成模型返回问题 |
+| **请求日志** | 环形缓冲最近 50 条（**会话内存，不写笔记库**）：时间、用途、model、endpoint host、耗时、重试次数、HTTP 状态、脱敏错误正文、usage。`NO_API_KEY` 是配置问题不占并发名额也不进日志 |
+
+`Retry-After` 解析上的一个坑：畸形值（如 `-1`）不能落到 `Date.parse`——它会被解析成远古日期从而返回 0ms，等于让畸形头绕过退避。因此纯数字非法形态与不含字母的串一律判为畸形返回 null。
+
 ### HTTP
 
 - 生成：`temperature: 0.2`，约 40s 超时，可取消
@@ -220,6 +282,7 @@ makeAICard / interactiveAICard（别名）
 | `makeAICard` | 主编辑器命令 |
 | `interactiveAICard` | 兼容别名（无独立斜杠） |
 | `testAIConnection` | 连接测试 |
+| `activatePendingCards` | 批量激活「待激活」卡片（backend-first 解析 + 写后失效两套缓存；逐张串行，单张失败不中止整批） |
 
 斜杠：仅 `aiCard` → `makeAICard`。
 
@@ -245,4 +308,4 @@ AI 对话框与导入向导的视觉层统一遵循 [SRS_UI设计规范.md](SRS_
 
 ## 相关测试
 
-`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow`/`resultTags`/`reuseSameResultBlock` + `insertQuickResult` 打标/合并写入 + 候选选择归一化）、`aiQuickInteractJobs.test.ts`（后台 preview/direct/tags/reuse 跳过预览 / 多选与离开面板取消）
+`aiChatClient.test.ts`（并发闸门 / 重试判定 / 日志 / 脱敏）、`aiChatPolicy.test.ts`（Semaphore FIFO 与 abort-release 竞态 / Retry-After 解析 / 可中断退避）、`aiDialogState.test.ts`（再来一批的 id 重分配与跨批去重）、`cardBatch.test.ts`、`reviewQueueBatchCluster.test.ts`（聚簇不丢不重 / pending 不进队列不占额度）、`cardStatusPending.test.ts`、`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow`/`resultTags`/`reuseSameResultBlock` + `insertQuickResult` 打标/合并写入 + 候选选择归一化）、`aiQuickInteractJobs.test.ts`（后台 preview/direct/tags/reuse 跳过预览 / 多选与离开面板取消）
