@@ -191,6 +191,7 @@ flowchart TD
 
 - `src/srs/blockExistence.ts`：`resolveBlockExistence` / 超时 / 身份校验
 - `src/srs/reviewSessionBlockLoad.ts`：`decideRequiredBlocksOutcome` / `shouldApplyBlockLoadResult` / `decidePrefetchBlockOutcome` / `requiredBlocksForCard`
+- mixed 复用同一套决策：`src/components/incremental-reading/irMixedReviewAvailability.ts`（`preflightMixedReviewCard`）；回归 `irMixedReviewAvailability.test.ts`
 
 ---
 
@@ -365,6 +366,11 @@ stateDiagram-v2
 ```
 
 ### SrsCardDemo 路由
+
+`SrsCardDemo` 是**纯渲染器**：只读 `orca.state.blocks[blockId]` 路由到对应 ReviewRenderer。**不**自发 `get-block`、**不**写 state、**不**因 missing 自动 `onSkip`。块可用性由会话层负责：
+
+- 独立复习：`useReviewCardAvailability`（`writeToState: true`）
+- mixed（IR 面板）：`IRMixedReviewPane` → `preflightMixedReviewCard`（同三态）
 
 | 条件 | 渲染器 |
 | ---- | ------ |

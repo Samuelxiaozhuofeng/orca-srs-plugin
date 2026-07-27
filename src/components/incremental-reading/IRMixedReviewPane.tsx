@@ -1,9 +1,13 @@
 /**
  * 混合会话中的单张 SRS 复习卡渲染
+ *
+ * 挂载 SrsCardDemo 前对 required 块做三态 preflight（writeToState），
+ * 与独立复习 useReviewCardAvailability 语义对齐，避免 state miss 永久「加载中」。
  */
 
 import type { DbId } from "../../orca.d.ts"
 import type { Grade, ReviewCard } from "../../srs/types"
+import { cardKeyFromReviewCard } from "../../srs/cardIdentity"
 import {
   gradeReviewCard,
   postponeReviewCard,
@@ -14,6 +18,11 @@ import {
   IR_MIXED_REVIEW_AUTO_ADVANCE_MS,
   shouldRequeueReviewInSession
 } from "../../srs/incremental-reading/irMixedQueuePolicy"
+import { shouldApplyBlockLoadResult } from "../../srs/reviewSessionBlockLoad"
+import {
+  preflightMixedReviewCard,
+  type MixedReviewLoadPhase
+} from "./irMixedReviewAvailability"
 import SrsCardDemo from "../SrsCardDemo"
 
 const { useCallback, useEffect, useRef, useState } = window.React
@@ -29,6 +38,11 @@ type Props = {
    * （仅正式评分路径可能给出；推迟 / 暂停一律不回流）。
    */
   onComplete: (requeueCard?: ReviewCard) => void
+  /**
+   * 后端明确 missing：从队列剔除，**不计**复习完成 / action.review。
+   * 同一 cardKey 仅应调用一次（pane 内 autoDropped 守卫）。
+   */
+  onMissing?: (info: { cardKey: string; userMessage: string }) => void
   onFailure?: (message: string) => void
 }
 
@@ -38,17 +52,31 @@ export default function IRMixedReviewPane({
   pluginName,
   nextBlockId,
   onComplete,
+  onMissing,
   onFailure
 }: Props) {
   const [isGrading, setIsGrading] = useState(false)
   const [lastLog, setLastLog] = useState<string | null>(null)
   const [showContinue, setShowContinue] = useState(false)
+  const [loadPhase, setLoadPhase] = useState<MixedReviewLoadPhase>({
+    status: "loading"
+  })
+  const [retryNonce, setRetryNonce] = useState(0)
+
   const cardStartedAtRef = useRef(Date.now())
   const advancingRef = useRef(false)
   const actionInFlightRef = useRef(false)
   const actionCompletedRef = useRef(false)
   const mountedRef = useRef(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const requeueCardRef = useRef<ReviewCard | null>(null)
+  const autoDroppedCardKeysRef = useRef(new Set<string>())
+  const onMissingRef = useRef(onMissing)
+  onMissingRef.current = onMissing
+
+  const cardKey = cardKeyFromReviewCard(card)
+  const currentCardKeyRef = useRef(cardKey)
+  currentCardKeyRef.current = cardKey
 
   useEffect(() => {
     cardStartedAtRef.current = Date.now()
@@ -58,11 +86,12 @@ export default function IRMixedReviewPane({
     advancingRef.current = false
     actionInFlightRef.current = false
     actionCompletedRef.current = false
+    setLoadPhase({ status: "loading" })
     if (timerRef.current) {
       clearTimeout(timerRef.current)
       timerRef.current = null
     }
-  }, [card])
+  }, [cardKey])
 
   useEffect(() => {
     mountedRef.current = true
@@ -72,7 +101,62 @@ export default function IRMixedReviewPane({
     }
   }, [])
 
-  const requeueCardRef = useRef<ReviewCard | null>(null)
+  // required 块三态 preflight：exists → writeToState → ready 后才挂 SrsCardDemo
+  useEffect(() => {
+    if (autoDroppedCardKeysRef.current.has(cardKey)) return
+
+    let cancelled = false
+    setLoadPhase({ status: "loading" })
+
+    void (async () => {
+      const phase = await preflightMixedReviewCard(card)
+      if (
+        !shouldApplyBlockLoadResult({
+          cancelled,
+          expectedCardKey: cardKey,
+          currentCardKey: currentCardKeyRef.current
+        })
+      ) {
+        return
+      }
+      if (!mountedRef.current) return
+
+      if (phase.status === "missing") {
+        if (autoDroppedCardKeysRef.current.has(phase.cardKey)) return
+        autoDroppedCardKeysRef.current.add(phase.cardKey)
+        console.log(
+          `[${pluginName}] mixed 复习卡 missing，自动剔除: ${phase.diagnostic}`
+        )
+        setLoadPhase(phase)
+        onMissingRef.current?.({
+          cardKey: phase.cardKey,
+          userMessage: phase.userMessage
+        })
+        orca.notify("info", phase.userMessage, { title: "SRS 复习" })
+        return
+      }
+
+      if (phase.status === "unknown") {
+        console.error(
+          `[${pluginName}] mixed 复习卡块 unknown，保留队列: ${phase.diagnostic}`
+        )
+        setLoadPhase(phase)
+        orca.notify("error", phase.userMessage, { title: "SRS 复习" })
+        return
+      }
+
+      setLoadPhase(phase)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [card, cardKey, pluginName, retryNonce])
+
+  const handleRetryLoad = useCallback(() => {
+    setLoadPhase({ status: "loading" })
+    setRetryNonce((n: number) => n + 1)
+  }, [])
 
   const advanceOnce = useCallback(() => {
     if (advancingRef.current) return
@@ -156,6 +240,60 @@ export default function IRMixedReviewPane({
       return result
     })
   }, [card, finishAction])
+
+  if (loadPhase.status === "loading") {
+    return (
+      <div className="ir-reading__mixed-review">
+        <div
+          className="ir-reading__mixed-review-body"
+          role="status"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "200px",
+            color: "var(--orca-color-text-2)"
+          }}
+        >
+          正在加载卡片...
+        </div>
+      </div>
+    )
+  }
+
+  if (loadPhase.status === "unknown") {
+    return (
+      <div className="ir-reading__mixed-review">
+        <div className="ir-reading__banner ir-reading__banner--error" role="alert">
+          <span>{loadPhase.userMessage}</span>
+          <Button tabIndex={0} variant="solid" onClick={handleRetryLoad}>
+            重试
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadPhase.status === "missing") {
+    // onMissing 已触发剔除；短暂占位避免空闪
+    return (
+      <div className="ir-reading__mixed-review">
+        <div
+          className="ir-reading__mixed-review-body"
+          role="status"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "120px",
+            color: "var(--orca-color-text-2)"
+          }}
+        >
+          {loadPhase.userMessage}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="ir-reading__mixed-review">

@@ -2,6 +2,7 @@
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
+import { buildCardKey, inferCardType } from "../srs/cardIdentity"
 import { extractCardType } from "../srs/deckUtils"
 import {
   detectChoiceMode,
@@ -17,7 +18,7 @@ import DirectionCardReviewRenderer from "./DirectionCardReviewRenderer"
 import ListCardReviewRenderer from "./ListCardReviewRenderer"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
-const { useEffect, useMemo, useState } = window.React
+const { useMemo } = window.React
 const { useSnapshot } = window.Valtio
 
 export type SrsCardDemoProps = {
@@ -48,6 +49,35 @@ export type SrsCardDemoProps = {
   readOnlyStatusText?: string
 }
 
+/**
+ * 渲染用稳定 key：走 cardIdentity，禁止手拼 identity 字符串。
+ * 字段不齐时回退 pending 键（仍不得用 substring 匹配身份）。
+ */
+function demoCardKey(props: {
+  blockId?: DbId
+  clozeNumber?: number
+  directionType?: "forward" | "backward"
+  listItemId?: DbId
+}): string {
+  if (props.blockId == null) return "demo:no-block"
+  try {
+    const cardType = inferCardType({
+      clozeNumber: props.clozeNumber,
+      directionType: props.directionType,
+      listItemId: props.listItemId
+    })
+    return buildCardKey({
+      blockId: props.blockId,
+      cardType,
+      clozeNumber: props.clozeNumber,
+      directionType: props.directionType,
+      listItemId: props.listItemId
+    })
+  } catch {
+    return `demo:pending:${props.blockId}`
+  }
+}
+
 export default function SrsCardDemo(props: SrsCardDemoProps) {
   const {
     blockId,
@@ -57,13 +87,10 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     listItemIndex,
     listItemIds,
     pluginName = "orca-srs",
-    onSkip,
     readOnly = false
   } = props
   const snapshot = useSnapshot(orca.state)
-  const [isBlockLoading, setIsBlockLoading] = useState(false)
-  const [blockLoadAttempted, setBlockLoadAttempted] = useState(false)
-  const cardKey = `${blockId}-${clozeNumber ?? 0}-${directionType ?? "basic"}-${listItemId ?? 0}`
+  const cardKey = demoCardKey({ blockId, clozeNumber, directionType, listItemId })
 
   const { questionBlock, totalChildCount, inferredCardType } = useMemo(() => {
     const block = blockId ? snapshot?.blocks?.[blockId] : null
@@ -75,33 +102,8 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     }
   }, [snapshot?.blocks, blockId])
 
-  useEffect(() => {
-    if (!blockId || questionBlock || isBlockLoading || blockLoadAttempted) return
-    setIsBlockLoading(true)
-    void orca.invokeBackend("get-block", blockId)
-      .then((block: unknown) => {
-        if (!block) console.log(`[SRS Card Demo] 卡片 #${blockId} 确实已被删除`)
-        setBlockLoadAttempted(true)
-        setIsBlockLoading(false)
-      })
-      .catch((error: unknown) => {
-        console.warn(`[SRS Card Demo] 加载卡片 #${blockId} 失败:`, error)
-        setBlockLoadAttempted(true)
-        setIsBlockLoading(false)
-      })
-  }, [blockId, questionBlock, isBlockLoading, blockLoadAttempted])
-
-  useEffect(() => {
-    setBlockLoadAttempted(false)
-  }, [cardKey])
-
-  useEffect(() => {
-    if (blockId && !questionBlock && blockLoadAttempted && !isBlockLoading && onSkip) {
-      console.log(`[SRS Card Demo] 卡片 #${blockId} 已被删除，自动跳过`)
-      onSkip()
-    }
-  }, [blockId, questionBlock, blockLoadAttempted, isBlockLoading, onSkip])
-
+  // 纯渲染器：块写入 state 由会话层 preflight（独立复习 useReviewCardAvailability /
+  // mixed 的 IRMixedReviewPane）。此处仅在 state miss 时被动兜底 loading。
   if (blockId && !questionBlock) {
     return (
       <div style={{
@@ -111,7 +113,7 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
         height: "200px",
         color: "var(--orca-color-text-2)"
       }}>
-        加载中...
+        正在加载卡片...
       </div>
     )
   }

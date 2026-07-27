@@ -74,7 +74,7 @@ import {
   shouldDismissIRMorePanel
 } from "./irMorePanelDismiss"
 
-const { useEffect, useMemo, useRef, useState } = window.React
+const { useCallback, useEffect, useMemo, useRef, useState } = window.React
 const { Button } = orca.components
 
 export type IRSessionShellProps = {
@@ -697,6 +697,28 @@ export default function IRSessionShell({
     removeCurrent({ metric: "action.review" })
   }
 
+  /**
+   * 混合复习卡 required 块明确 missing：只从队列剔除。
+   * 不得走 handleReviewEntryComplete（会记 action.review / 完成数）。
+   * planned 保留（计划中有一项不可用）；completed / reviewProcessed 不增加。
+   */
+  const handleReviewEntryMissing = useCallback(
+    (info: { cardKey: string; userMessage: string }) => {
+      console.log(
+        `[${pluginName}] mixed 跳过不存在的复习卡 cardKey=${info.cardKey}: ${info.userMessage}`
+      )
+      setQueue((prev: IRSessionEntry[]) => {
+        const kept = prev.filter((_: IRSessionEntry, idx: number) => idx !== currentIndex)
+        const nextIndex = kept.length === 0 ? 0 : Math.min(currentIndex, kept.length - 1)
+        setCurrentIndex(nextIndex)
+        setProgress((p: IRSessionProgress) => syncSessionRemaining(p, kept.length))
+        if (kept.length === 0) setShowSummary(true)
+        return kept
+      })
+    },
+    [currentIndex, pluginName]
+  )
+
   const {
     handleNext,
     handlePostpone,
@@ -1045,6 +1067,7 @@ export default function IRSessionShell({
             pluginName={pluginName}
             nextBlockId={nextReadingBlockId}
             onComplete={handleReviewEntryComplete}
+            onMissing={handleReviewEntryMissing}
           />
         </div>
       </div>
