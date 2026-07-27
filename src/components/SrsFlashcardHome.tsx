@@ -17,8 +17,7 @@ import {
 import {
   loadTodayLearningResume,
   resumeMarkerHasTrustedTasks,
-  type TodayLearningResumeMarker,
-  type TodayLearningTimeBudget
+  type TodayLearningResumeMarker
 } from "../srs/todayLearning/todayLearningResumeStorage"
 import FlashHomePage from "./flashcard-home/FlashHomePage"
 import CardListView from "./flashcard-home/CardListView"
@@ -154,7 +153,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const [resumeMarker, setResumeMarker] = useState<TodayLearningResumeMarker | null>(null)
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null)
   const [resumeActionError, setResumeActionError] = useState<string | null>(null)
-  const [selectedMinutes, setSelectedMinutes] = useState<TodayLearningTimeBudget>(20)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentFilter, setCurrentFilter] = useState<FilterType>("all")
@@ -167,9 +165,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       if (result.status === "ok") {
         setResumeMarker(result.marker)
         setResumeLoadError(null)
-        if (result.marker.kind === "ir") {
-          setSelectedMinutes(result.marker.timeBudgetMinutes)
-        }
       } else if (result.status === "stale" || result.status === "absent") {
         setResumeMarker(null)
         setResumeLoadError(null)
@@ -343,28 +338,44 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     setActionBusy(true)
     setResumeActionError(null)
     try {
-      const irRem = todayLearning?.irRemaining
-      const srsRem = todayLearning?.srsRemaining
+      const { decideTodayLearningLaunch } = await import(
+        "../srs/todayLearning/todayLearningLaunch"
+      )
+      const decision = decideTodayLearningLaunch({
+        ir: todayLearning?.irRemaining ?? null,
+        srs: todayLearning?.srsRemaining ?? null
+      })
 
-      // 优先启动精确可读的 IR；否则精确 SRS；禁止用 partial 假数字
-      if (irRem != null && irRem > 0) {
+      if (decision.kind === "mixed") {
         const { openIRWorkspace } = await import(
           "../srs/incremental-reading/irWorkspacePanelLaunch"
         )
-        // 不预写 resume；autoStart 成功处理时再写
+        // 不预写 resume；非空队列装配成功后再写
         await openIRWorkspace({
           pluginName,
           mode: "reading",
           autoStart: true,
-          timeBudgetMinutes: selectedMinutes,
           sessionLaunchMode: "mixed"
         })
         return
       }
 
-      if (srsRem != null && srsRem > 0) {
+      if (decision.kind === "srs-independent") {
         const { startReviewSession } = await import("../main")
         await startReviewSession()
+        return
+      }
+
+      if (decision.kind === "ir-read-only") {
+        const { openIRWorkspace } = await import(
+          "../srs/incremental-reading/irWorkspacePanelLaunch"
+        )
+        await openIRWorkspace({
+          pluginName,
+          mode: "reading",
+          autoStart: true,
+          sessionLaunchMode: "read-only"
+        })
         return
       }
 
@@ -382,7 +393,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     }
   }, [
     pluginName,
-    selectedMinutes,
     todayLearning,
     loadResume,
     loadTodayLearning
@@ -445,17 +455,48 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         return
       }
 
-      // ir / mixed：autoStart 时再写 resume
-      const { openIRWorkspace } = await import(
-        "../srs/incremental-reading/irWorkspacePanelLaunch"
+      // ir 统一 marker：按**当前**受信任 remaining 路由，不信任过期 launchMode
+      const { decideTodayLearningLaunch } = await import(
+        "../srs/todayLearning/todayLearningLaunch"
       )
-      await openIRWorkspace({
-        pluginName,
-        mode: "reading",
-        autoStart: true,
-        timeBudgetMinutes: resumeMarker.timeBudgetMinutes,
-        sessionLaunchMode: "mixed"
+      const decision = decideTodayLearningLaunch({
+        ir: todayLearning?.irRemaining ?? null,
+        srs: todayLearning?.srsRemaining ?? null
       })
+
+      if (decision.kind === "srs-independent") {
+        const { startReviewSession } = await import("../main")
+        await startReviewSession()
+        return
+      }
+
+      if (decision.kind === "ir-read-only") {
+        const { openIRWorkspace } = await import(
+          "../srs/incremental-reading/irWorkspacePanelLaunch"
+        )
+        await openIRWorkspace({
+          pluginName,
+          mode: "reading",
+          autoStart: true,
+          sessionLaunchMode: "read-only"
+        })
+        return
+      }
+
+      if (decision.kind === "mixed") {
+        const { openIRWorkspace } = await import(
+          "../srs/incremental-reading/irWorkspacePanelLaunch"
+        )
+        await openIRWorkspace({
+          pluginName,
+          mode: "reading",
+          autoStart: true,
+          sessionLaunchMode: "mixed"
+        })
+        return
+      }
+
+      orca.notify("info", "今天已完成，没有可继续的内容", { title: "今日学习" })
     } catch (error) {
       console.error(`[${pluginName}] 继续今日学习失败:`, error)
       const message = error instanceof Error ? error.message : String(error)
@@ -465,7 +506,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       actionBusyRef.current = false
       setActionBusy(false)
     }
-  }, [resumeMarker, pluginName])
+  }, [resumeMarker, pluginName, todayLearning])
 
   const handleRetryResumeLoad = useCallback(() => {
     setResumeLoadError(null)
@@ -698,8 +739,6 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             todayStats={todayStats}
             todayLearning={todayLearning}
             todayLearningLoading={todayLearningLoading}
-            selectedMinutes={selectedMinutes}
-            onSelectMinutes={setSelectedMinutes}
             canContinue={canContinue}
             canStart={canStart}
             actionBusy={actionBusy}

@@ -26,11 +26,10 @@ describe("irWorkspaceLaunch", () => {
     expect(consumePendingIRWorkspaceMode("panel-a", undefined, "library")).toBe("reading")
   })
 
-  it("passes and one-shot consumes autoStart + minutes + mixed", () => {
+  it("passes and one-shot consumes autoStart + mixed", () => {
     setPendingIRWorkspaceLaunch("panel-a", {
       mode: "reading",
       autoStart: true,
-      timeBudgetMinutes: 20,
       sessionLaunchMode: "mixed"
     })
 
@@ -38,21 +37,10 @@ describe("irWorkspaceLaunch", () => {
     expect(first).toEqual({
       mode: "reading",
       autoStart: true,
-      timeBudgetMinutes: 20,
       sessionLaunchMode: "mixed"
     })
     const second = consumePendingIRWorkspaceLaunch("panel-a", undefined, "library")
     expect(second).toEqual({ mode: "library" })
     expect(second.autoStart).toBeUndefined()
-  })
-
-  it("rejects illegal timeBudgetMinutes when setting launch request", () => {
-    expect(() =>
-      setPendingIRWorkspaceLaunch("panel-a", {
-        mode: "reading",
-        autoStart: true,
-        timeBudgetMinutes: 15 as 10
-      })
-    ).toThrow(/非法/)
   })
 })

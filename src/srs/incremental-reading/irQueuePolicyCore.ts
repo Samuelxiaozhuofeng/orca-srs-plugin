@@ -5,12 +5,12 @@
  */
 
 import type { IRCard } from "../incrementalReadingCollector"
-import type { IRTimeBudgetMinutes } from "./irTypes"
 
 export type QueueCostEstimateSeconds = number
 
 export type IRQueuePolicyConfig = {
-  timeBudgetMinutes: IRTimeBudgetMinutes | number
+  /** 分钟；传 UNLIMITED_TIME_BUDGET_MINUTES 表示不按时间截断（今日学习主路径） */
+  timeBudgetMinutes: number
   dailyLimit: number
   topicMinRatio: number
   topicMinCount: number
@@ -104,7 +104,17 @@ export function estimateCardCostSeconds(card: IRCard): QueueCostEstimateSeconds 
   return card.isNew || card.readCount <= 1 ? 90 : 180
 }
 
+/**
+ * 无时间盒：队列长度只由每日上限决定（今日学习主路径，2026-07-27 起）。
+ *
+ * 时间盒原本只是"按固定估时反推排多长队列"的旋钮，估时（卡 45s / 摘录 30-60s /
+ * 主题 90-180s）对每个人都不准，而计时器到点又不打断，等于用一个猜出来的数字
+ * 白砍队列。真正的闸门是各自的每日上限（SRS new/review、IR dailyLimit）。
+ */
+export const UNLIMITED_TIME_BUDGET_MINUTES = Number.POSITIVE_INFINITY
+
 export function budgetSeconds(timeBudgetMinutes: number): number {
+  if (!Number.isFinite(timeBudgetMinutes)) return Number.POSITIVE_INFINITY
   return Math.max(60, Math.floor(timeBudgetMinutes * 60))
 }
 

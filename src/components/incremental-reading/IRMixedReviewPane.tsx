@@ -10,7 +10,10 @@ import {
   suspendReviewCard
 } from "../../srs/reviewCardGrading"
 import { showNotification } from "../../srs/settings/reviewSettingsSchema"
-import { IR_MIXED_REVIEW_AUTO_ADVANCE_MS } from "../../srs/incremental-reading/irMixedQueuePolicy"
+import {
+  IR_MIXED_REVIEW_AUTO_ADVANCE_MS,
+  shouldRequeueReviewInSession
+} from "../../srs/incremental-reading/irMixedQueuePolicy"
 import SrsCardDemo from "../SrsCardDemo"
 
 const { useCallback, useEffect, useRef, useState } = window.React
@@ -21,7 +24,11 @@ type Props = {
   panelId: string
   pluginName: string
   nextBlockId?: DbId
-  onComplete: () => void
+  /**
+   * 本条目处理完毕。`requeueCard` 非空表示短期重学：该卡应在本次会话内回流队尾
+   * （仅正式评分路径可能给出；推迟 / 暂停一律不回流）。
+   */
+  onComplete: (requeueCard?: ReviewCard) => void
   onFailure?: (message: string) => void
 }
 
@@ -47,6 +54,7 @@ export default function IRMixedReviewPane({
     cardStartedAtRef.current = Date.now()
     setLastLog(null)
     setShowContinue(false)
+    requeueCardRef.current = null
     advancingRef.current = false
     actionInFlightRef.current = false
     actionCompletedRef.current = false
@@ -64,6 +72,8 @@ export default function IRMixedReviewPane({
     }
   }, [])
 
+  const requeueCardRef = useRef<ReviewCard | null>(null)
+
   const advanceOnce = useCallback(() => {
     if (advancingRef.current) return
     advancingRef.current = true
@@ -71,7 +81,7 @@ export default function IRMixedReviewPane({
       clearTimeout(timerRef.current)
       timerRef.current = null
     }
-    onComplete()
+    onComplete(requeueCardRef.current ?? undefined)
   }, [onComplete])
 
   const scheduleAutoAdvance = useCallback(() => {
@@ -113,6 +123,17 @@ export default function IRMixedReviewPane({
     await finishAction(async () => {
       const result = await gradeReviewCard(card, grade, pluginName, cardStartedAtRef.current)
       if (!result.ok) return result
+      // Again/Hard 且新 due 落在短期重学窗口内：本次会话队尾回流，
+      // 与独立复习会话口径一致，不必回首页另开面板
+      if (
+        shouldRequeueReviewInSession({
+          grade,
+          updatedCard: result.updatedCard,
+          nowMs: Date.now()
+        })
+      ) {
+        requeueCardRef.current = result.updatedCard
+      }
       showNotification("orca-srs", "success", result.logMessage, { title: "SRS 复习" })
       return result
     })
@@ -143,7 +164,7 @@ export default function IRMixedReviewPane({
           <span>{lastLog}</span>
           {showContinue ? (
             <Button tabIndex={0} variant="solid" onClick={advanceOnce}>
-              继续阅读
+              继续学习
             </Button>
           ) : null}
         </div>

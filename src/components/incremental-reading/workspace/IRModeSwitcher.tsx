@@ -1,5 +1,5 @@
 /**
- * 资料库 / 专注阅读 分段切换
+ * 资料库 / 今日学习 分段切换
  */
 
 import type { IRWorkspaceMode } from "./irWorkspaceTypes"
@@ -50,7 +50,7 @@ export default function IRModeSwitcher({ workspaceId, mode, onChange, readingEna
         onClick={() => onChange("reading")}
         onKeyDown={(event) => handleKeyDown(event, "library")}
       >
-        专注阅读
+        今日学习
       </button>
     </div>
   )

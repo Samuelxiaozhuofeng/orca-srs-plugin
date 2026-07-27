@@ -9,7 +9,8 @@ const { Button } = orca.components
 
 type Props = {
   progress: IRSessionProgress
-  remainingTimeLabel?: string | null
+  /** 已投入时长（只陈述，不是倒计时） */
+  elapsedTimeLabel?: string | null
   autoPostponeLabel?: string | null
   /** 事实型会话提示（如混合退化为纯阅读） */
   sessionNotice?: string | null
@@ -23,7 +24,7 @@ type Props = {
 
 export default function IRSessionHeader({
   progress,
-  remainingTimeLabel,
+  elapsedTimeLabel,
   autoPostponeLabel,
   sessionNotice = null,
   onUndoAutoPostpone,
@@ -40,9 +41,9 @@ export default function IRSessionHeader({
           <span className="ir-session-header__remaining">
             剩余 {progress.remaining}
           </span>
-          {remainingTimeLabel ? (
-            <span className="ir-session-header__eta">
-              <i className="ti ti-clock" aria-hidden="true" /> {remainingTimeLabel}
+          {elapsedTimeLabel ? (
+            <span className="ir-session-header__eta" title="本次已投入时长">
+              <i className="ti ti-clock" aria-hidden="true" /> {elapsedTimeLabel}
             </span>
           ) : null}
         </span>

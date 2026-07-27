@@ -1,6 +1,5 @@
 import type { TodayStats } from "../../srs/types"
 import type { TodayLearningSummary } from "../../srs/todayLearning/todayLearningSummary"
-import type { TodayLearningTimeBudget } from "../../srs/todayLearning/todayLearningResumeStorage"
 import type { HomeStatKind } from "./homeStatNav"
 import TodayProgressRing from "./TodayProgressRing"
 
@@ -10,8 +9,6 @@ export type HomeSummaryBarProps = {
   todayStats: TodayStats
   todayLearning: TodayLearningSummary | null
   todayLearningLoading: boolean
-  selectedMinutes: TodayLearningTimeBudget
-  onSelectMinutes: (minutes: TodayLearningTimeBudget) => void
   canContinue: boolean
   canStart: boolean
   actionBusy: boolean
@@ -38,8 +35,6 @@ export default function HomeSummaryBar({
   todayStats,
   todayLearning,
   todayLearningLoading,
-  selectedMinutes,
-  onSelectMinutes,
   canContinue,
   canStart,
   actionBusy,
@@ -157,9 +152,8 @@ export default function HomeSummaryBar({
                       </span>
                     </div>
                     <div className="srs-today-learning__eta">
-                      <i className="ti ti-clock-hour-4" />
-                      预计约{" "}
-                      {formatExactCount(todayLearning?.estimatedMinutes)} 分钟
+                      <i className="ti ti-player-play" />
+                      点开就学，随时可以停
                     </div>
                   </>
                 ) : (
@@ -213,31 +207,6 @@ export default function HomeSummaryBar({
 
             <div className="srs-today-learning__recommendation">
               {todayLearning?.recommendation ?? "—"}
-            </div>
-
-            <div
-              className="srs-today-learning__timebox"
-              role="radiogroup"
-              aria-label="本次学习时长"
-            >
-              {([10, 20, 30] as const).map((mins) => (
-                <button
-                  type="button"
-                  key={mins}
-                  role="radio"
-                  className={
-                    "srs-today-learning__timebox-btn" +
-                    (selectedMinutes === mins
-                      ? " srs-today-learning__timebox-btn--selected"
-                      : "")
-                  }
-                  aria-checked={selectedMinutes === mins}
-                  disabled={actionBusy || isDone}
-                  onClick={() => onSelectMinutes(mins)}
-                >
-                  {mins} 分钟
-                </button>
-              ))}
             </div>
 
             {resumeLoadError ? (

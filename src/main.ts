@@ -409,7 +409,7 @@ async function startIncrementalReadingSession(
   workspaceMode: IRWorkspaceMode = "reading"
 ) {
   try {
-    // 仅打开工作区，不预写 resume；真实启动（autoStart / 点 10/20/30）时再写
+    // 仅打开工作区，不预写 resume；非空队列装配成功后再写
     await openIRWorkspace({
       pluginName,
       mode: workspaceMode,

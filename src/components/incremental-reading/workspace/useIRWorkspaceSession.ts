@@ -1,5 +1,5 @@
 /**
- * 专注阅读队列加载（会话创建 / 打开 / 刷新 / 重试为只读装配，不写 block 属性）
+ * 今日学习队列加载（会话创建 / 打开 / 刷新 / 重试为只读装配，不写 block 属性）
  */
 
 import type { DbId } from "../../../orca.d.ts"
@@ -14,7 +14,7 @@ import {
 import { advanceDueToToday } from "../../../srs/incrementalReadingStorage"
 import {
   DEFAULT_QUEUE_POLICY,
-  budgetSeconds,
+  UNLIMITED_TIME_BUDGET_MINUTES,
   formatLocalDateKey,
   selectQueueWithPolicy,
   topicQuotaPercentToMinRatio
@@ -24,7 +24,6 @@ import {
   type IRSessionEntry
 } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import { loadMixedEligibleReviewCards } from "../../../srs/incremental-reading/irMixedDailyBudget"
-import { estimateCardCostSecondsCalibrated } from "../../../srs/incremental-reading/irCostCalibration"
 import { buildCollectError, buildCollectOk } from "../../../srs/incremental-reading/irCollectResult"
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import { getIncrementalReadingSettings } from "../../../srs/settings/incrementalReadingSettingsSchema"
@@ -37,7 +36,7 @@ import {
 import { requireIRDailyStatsForSession } from "../../../srs/todayLearning/todayLearningSummary"
 import { assembleSessionReadingQueue } from "./assembleSessionReadingQueue"
 import {
-  buildMixedDegradedNotice,
+  buildUnifiedSessionNotice,
   resolveSessionMixedEnabled,
   type IRSessionLaunchMode
 } from "./irSessionLaunchMode"
@@ -47,7 +46,6 @@ import { EMPTY_SESSION_STATE } from "./irWorkspaceTypes"
 const { useCallback, useRef, useState } = window.React
 
 export type LoadReadingQueueOptions = {
-  timeBudgetMinutes: number
   focusCardId?: DbId | null
   /**
    * 传入时覆盖/设定本次启动模式；省略时复用上一次会话模式（刷新/重试）。
@@ -193,17 +191,14 @@ export function useIRWorkspaceSession(
           return
         }
       }
-      const readingBudgetMinutes = eligibleReviewCards.length > 0
-        ? options.timeBudgetMinutes * (1 - settings.mixedLearningReviewRatio / 100)
-        : options.timeBudgetMinutes
-
       // limited + remaining=0：policy 空队列（dailyLimit=0 在 policy 里表示不限制，不能直接传入）
       const policyQueue =
         effectiveLimit.kind === "limited" && effectiveLimit.remaining === 0
           ? { queue: [] as IRCard[], diagnostics: [] }
           : selectQueueWithPolicy(result.cards, {
             ...DEFAULT_QUEUE_POLICY,
-            timeBudgetMinutes: readingBudgetMinutes,
+            // 无时间盒：阅读队列长度只由 IR dailyLimit 决定
+            timeBudgetMinutes: UNLIMITED_TIME_BUDGET_MINUTES,
             dailyLimit: sessionDailyLimit,
             // Source Topic 在纯 IR reading queue 中的最低比例（0..1）；非 mixed SRS 比例
             topicMinRatio: topicQuotaPercentToMinRatio(settings.topicQuotaPercent),
@@ -254,31 +249,23 @@ export function useIRWorkspaceSession(
         dailyLimit: assembleLimit
       })
 
-      const readingCostSeconds = focusedQueue.reduce(
-        (sum, card) => sum + estimateCardCostSecondsCalibrated(card),
-        0
-      )
       const mixed = buildMixedSessionQueue({
         enabled: mixedEnabledForSession,
         readingQueue: focusedQueue,
         reviewCards: eligibleReviewCards,
-        reviewRatioPercent: settings.mixedLearningReviewRatio,
-        budgetSeconds: budgetSeconds(options.timeBudgetMinutes),
-        readingCostSeconds,
-        seed,
         now: sessionStartedAt
       })
       const sessionEntries: IRSessionEntry[] = mixed.entries
-      const mixedDegradedNotice = buildMixedDegradedNotice({
+      const mixedDegradedNotice = buildUnifiedSessionNotice({
         mixedEnabledForSession,
-        selectedReviewCount: mixed.selectedReviewCount
+        readingCount: focusedQueue.length,
+        reviewCount: mixed.selectedReviewCount
       })
 
       setSession({
         ready: true,
         loading: false,
         entries: sessionEntries,
-        timeBudgetMinutes: options.timeBudgetMinutes,
         collectResult: result,
         // 会话启动不再自动顺延；字段保留以兼容会话 UI 接线
         autoPostponeLabel: null,
@@ -287,6 +274,33 @@ export function useIRWorkspaceSession(
         sessionLaunchMode: launchMode,
         mixedDegradedNotice
       })
+
+      // 仅在非空队列装配成功后写 IR resume；失败可见但不撤销已可用的队列。
+      // 空队列/失败路径不得覆盖先前有效的 SRS marker。
+      if (sessionEntries.length > 0) {
+        try {
+          const {
+            writeIrTodayLearningResume,
+            reportTodayLearningResumeWriteFailure
+          } = await import(
+            "../../../srs/todayLearning/todayLearningResumeStorage"
+          )
+          const writeResult = await writeIrTodayLearningResume({ pluginName: name })
+          if (!writeResult.ok) {
+            reportTodayLearningResumeWriteFailure(name, writeResult.error)
+          }
+        } catch (resumeError) {
+          console.error(
+            "[IR Workspace] 队列装配后写 resume 失败（队列仍可用）:",
+            resumeError
+          )
+          orca.notify(
+            "error",
+            `学习可继续，但恢复点未保存：${resumeError instanceof Error ? resumeError.message : String(resumeError)}`,
+            { title: "今日学习" }
+          )
+        }
+      }
     } catch (error) {
       console.error("[IR Workspace] 加载阅读队列失败:", error)
       const errResult = buildCollectError(error)
@@ -318,7 +332,6 @@ export function useIRWorkspaceSession(
       await setNextIRSessionFocusCardId(name, cardId)
       // 资料库选卡：不带本次模式，混合行为回退全局设置
       await loadReadingQueue({
-        timeBudgetMinutes: session.timeBudgetMinutes || 20,
         focusCardId: cardId,
         sessionLaunchMode: null
       })
@@ -326,7 +339,7 @@ export function useIRWorkspaceSession(
       console.error("[IR Workspace] 开始阅读失败:", error)
       orca.notify("error", "开始阅读失败", { title: "渐进阅读" })
     }
-  }, [loadPluginName, loadReadingQueue, session.timeBudgetMinutes])
+  }, [loadPluginName, loadReadingQueue])
 
   const handleAdvanceDueOnly = useCallback(async (cardId: DbId, onDone?: () => void) => {
     if (advancingRef.current.has(cardId)) return

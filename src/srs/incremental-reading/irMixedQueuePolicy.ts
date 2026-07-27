@@ -1,31 +1,33 @@
 /**
- * 阅读与复习混合会话队列策略（纯函数、可测试）
+ * 阅读与复习统一会话队列策略（纯函数、可测试）
+ *
+ * 统一推送语义（2026-07-27）：
+ * - **没有时间盒**：今天到期的就是今天该学的，队列长度只由各自的每日上限决定
+ *   （SRS `newCardsPerDay`/`reviewCardsPerDay` 由 `irMixedDailyBudget` 先扣；
+ *   IR 由 `dailyLimit` 在 `selectQueueWithPolicy` 里截断）。
+ *   旧口径先按分钟数换算预算、再 `floor(R*p/(1-p))` 由阅读条目数反推复习张数，
+ *   阅读队列短时会把到期卡整体挤出会话，用户必须回首页另开 SRS 复习面板。
+ * - 阅读队列为空时产出纯复习队列（同一面板继续学习）
+ * - 交错保证：条目一张都不丢；阅读条目数 ≥ 复习数时不出现连续复习
  */
 
 import type { IRCard } from "../incrementalReadingCollector"
 import { getCardKey } from "../childCardCollector"
+import { shouldTrackFormalShortRelearn } from "../pendingDueRequeue"
 import type { ReviewCard } from "../types"
-import { stableUnitRandom } from "./irQueuePolicy"
 
 export type IRSessionEntry =
   | { kind: "reading"; card: IRCard; key: string }
   | { kind: "review"; card: ReviewCard; key: string }
 
-export const MIXED_LEARNING_RATIO_OPTIONS = [20, 30, 40] as const
-export type MixedLearningReviewRatio = (typeof MIXED_LEARNING_RATIO_OPTIONS)[number]
-
-export const DEFAULT_MIXED_LEARNING_REVIEW_RATIO: MixedLearningReviewRatio = 30
-
-/** 单张复习卡默认耗时估算（秒），用于时间盒预算 */
+/**
+ * 单张复习卡默认耗时估算（秒）。
+ * 仅用于「今日学习」摘要的 ETA 展示，**不**再参与队列长度决策。
+ */
 export const DEFAULT_REVIEW_CARD_COST_SECONDS = 45
 
 /** 混合会话中复习评分成功后的自动前进停留时长（毫秒） */
 export const IR_MIXED_REVIEW_AUTO_ADVANCE_MS = 800
-
-export function normalizeMixedLearningRatio(value: unknown): MixedLearningReviewRatio {
-  if (value === 20 || value === 30 || value === 40) return value
-  return DEFAULT_MIXED_LEARNING_REVIEW_RATIO
-}
 
 export function readingEntryKey(card: IRCard): string {
   return `reading-${card.id}`
@@ -43,131 +45,87 @@ export function readingCardsToEntries(cards: IRCard[]): IRSessionEntry[] {
   }))
 }
 
-/**
- * 过滤会话启动时可混入的复习卡：已到期、非新卡（collectReviewCards 已排除暂停卡）
- */
-export function filterEligibleReviewCards(cards: ReviewCard[], now: Date = new Date()): ReviewCard[] {
-  const nowTime = now.getTime()
-  return cards.filter(card => {
-    if (card.isNew) return false
-    return card.srs.due.getTime() <= nowTime
-  })
+export function reviewCardsToEntries(cards: ReviewCard[]): IRSessionEntry[] {
+  return cards.map(card => ({
+    kind: "review" as const,
+    card,
+    key: reviewEntryKey(card)
+  }))
 }
 
 /**
- * 目标复习数量：p 为占比（0-1），R 为阅读条目数
- * targetReviewCount = floor(R * p / (1 - p))
+ * 过滤统一会话可推送的复习卡：已到期即可（含新卡）。
+ * 新卡/旧卡的每日额度与 2:1 交织由上游 `buildReviewQueue` 完成，
+ * 此处只做「未到期不推」这一条判定；collectReviewCards 已排除暂停卡。
  */
-export function computeTargetReviewCount(readingCount: number, ratioPercent: number): number {
-  if (readingCount <= 0 || ratioPercent <= 0 || ratioPercent >= 100) return 0
-  const p = ratioPercent / 100
-  return Math.floor((readingCount * p) / (1 - p))
-}
-
-export function estimateReviewCardCostSeconds(_card?: ReviewCard): number {
-  return DEFAULT_REVIEW_CARD_COST_SECONDS
-}
-
-function compareReviewCardsStable(a: ReviewCard, b: ReviewCard, seed: string): number {
-  const keyA = getCardKey(a)
-  const keyB = getCardKey(b)
-  if (keyA !== keyB) {
-    return stableUnitRandom(seed, hashString(keyA)) - stableUnitRandom(seed, hashString(keyB))
-  }
-  return 0
-}
-
-function hashString(text: string): number {
-  let h = 0
-  for (let i = 0; i < text.length; i++) {
-    h = (h * 31 + text.charCodeAt(i)) | 0
-  }
-  return Math.abs(h)
-}
-
-/**
- * 在预算内选取复习卡（确定性排序，不随机）
- */
-export function selectReviewCardsForMixedQueue(
-  cards: ReviewCard[],
-  targetCount: number,
-  remainingBudgetSeconds: number,
-  seed: string
+export function filterEligibleReviewCards(
+  cards: readonly ReviewCard[],
+  now: Date = new Date()
 ): ReviewCard[] {
-  if (targetCount <= 0 || cards.length === 0) return []
-
-  const sorted = [...cards].sort((a, b) => compareReviewCardsStable(a, b, seed))
-  const selected: ReviewCard[] = []
-  let cost = 0
-
-  for (const card of sorted) {
-    if (selected.length >= targetCount) break
-    const cardCost = estimateReviewCardCostSeconds(card)
-    if (cost + cardCost > remainingBudgetSeconds) break
-    selected.push(card)
-    cost += cardCost
-  }
-
-  return selected
+  const nowTime = now.getTime()
+  return cards.filter(card => card.srs.due.getTime() <= nowTime)
 }
 
 /**
- * 计算复习卡应插入在哪张阅读卡之后（0-based reading index）
- * 保证不连续复习、首项必为阅读
+ * 均匀交错阅读与复习：两侧各自按 [0,1) 归一化位置摊开后合并。
+ *
+ * - 阅读位置 i/R 使首项在有阅读条目时必为阅读
+ * - 复习位置 (j+1)/(V+1) 保证复习均匀落在阅读之间
+ * - 位置相同时阅读优先
+ * - 任一侧为空时直接返回另一侧；**任何情况下都不丢条目**
+ *   （复习数 > 阅读数时必然出现连续复习，这是队列构成决定的，不再截断）
  */
-export function computeReviewInsertAfterIndices(readingCount: number, reviewCount: number): number[] {
-  if (reviewCount <= 0 || readingCount <= 0) return []
-
-  const indices: number[] = []
-  const used = new Set<number>()
-
-  for (let k = 0; k < reviewCount; k++) {
-    let after = Math.floor(((k + 1) * readingCount) / (reviewCount + 1)) - 1
-    after = Math.max(0, Math.min(readingCount - 1, after))
-
-    while (used.has(after) && after < readingCount - 1) after += 1
-    if (used.has(after)) {
-      after = Math.max(0, after - 1)
-      while (used.has(after) && after > 0) after -= 1
-    }
-
-    if (!used.has(after)) {
-      used.add(after)
-      indices.push(after)
-    }
-  }
-
-  return indices.sort((a, b) => a - b)
-}
-
 export function interleaveReadingAndReviews(
   readings: IRCard[],
   reviews: ReviewCard[]
 ): IRSessionEntry[] {
-  if (readings.length === 0) return []
   if (reviews.length === 0) return readingCardsToEntries(readings)
+  if (readings.length === 0) return reviewCardsToEntries(reviews)
 
-  const insertAfter = computeReviewInsertAfterIndices(readings.length, reviews.length)
-  const entries: IRSessionEntry[] = []
-  let reviewIdx = 0
-
-  for (let r = 0; r < readings.length; r++) {
-    entries.push({
-      kind: "reading",
-      card: readings[r],
-      key: readingEntryKey(readings[r])
-    })
-    while (reviewIdx < insertAfter.length && insertAfter[reviewIdx] === r) {
-      entries.push({
-        kind: "review",
-        card: reviews[reviewIdx],
-        key: reviewEntryKey(reviews[reviewIdx])
-      })
-      reviewIdx += 1
-    }
+  const slots: { position: number; readingIndex: number; reviewIndex: number }[] = []
+  for (let i = 0; i < readings.length; i++) {
+    slots.push({ position: i / readings.length, readingIndex: i, reviewIndex: -1 })
   }
+  for (let j = 0; j < reviews.length; j++) {
+    slots.push({ position: (j + 1) / (reviews.length + 1), readingIndex: -1, reviewIndex: j })
+  }
+  slots.sort((a, b) => {
+    if (a.position !== b.position) return a.position - b.position
+    // 同位置阅读优先，保证首项与整体节奏以阅读为骨架
+    return a.readingIndex >= 0 ? -1 : 1
+  })
 
-  return entries
+  return slots.map(slot =>
+    slot.readingIndex >= 0
+      ? {
+        kind: "reading" as const,
+        card: readings[slot.readingIndex],
+        key: readingEntryKey(readings[slot.readingIndex])
+      }
+      : {
+        kind: "review" as const,
+        card: reviews[slot.reviewIndex],
+        key: reviewEntryKey(reviews[slot.reviewIndex])
+      }
+  )
+}
+
+/**
+ * 统一会话内的短期重学回流：Again/Hard 后 due 落在短期窗口内的卡，
+ * 追加到当前队列尾部，本次会话内再出现一次（与独立复习会话同一口径）。
+ * 仅评分路径调用；推迟 / 暂停不得回流。
+ */
+export function shouldRequeueReviewInSession(params: {
+  grade: string
+  updatedCard: ReviewCard
+  nowMs: number
+}): boolean {
+  return shouldTrackFormalShortRelearn({
+    grade: params.grade,
+    dueTimeMs: params.updatedCard.srs.due.getTime(),
+    nowMs: params.nowMs,
+    isAuxiliaryPreview: params.updatedCard.isAuxiliaryPreview === true
+  })
 }
 
 export function hasConsecutiveReviews(entries: IRSessionEntry[]): boolean {
@@ -180,57 +138,36 @@ export function hasConsecutiveReviews(entries: IRSessionEntry[]): boolean {
 export type BuildMixedSessionQueueInput = {
   enabled: boolean
   readingQueue: IRCard[]
+  /** 已扣完 SRS 今日 new/review 额度的复习候选（见 irMixedDailyBudget） */
   reviewCards: ReviewCard[]
-  reviewRatioPercent: number
-  budgetSeconds: number
-  readingCostSeconds: number
-  seed: string
   now?: Date
 }
 
 export type BuildMixedSessionQueueResult = {
   entries: IRSessionEntry[]
   selectedReviewCount: number
-  targetReviewCount: number
+  /** 到期且可推送的复习卡总数；无时间盒后恒等于 selectedReviewCount */
+  eligibleReviewCount: number
 }
 
 export function buildMixedSessionQueue(input: BuildMixedSessionQueueInput): BuildMixedSessionQueueResult {
-  const {
-    enabled,
-    readingQueue,
-    reviewCards,
-    reviewRatioPercent,
-    budgetSeconds,
-    readingCostSeconds,
-    seed,
-    now = new Date()
-  } = input
+  const { enabled, readingQueue, reviewCards, now = new Date() } = input
 
-  if (!enabled || readingQueue.length === 0) {
+  if (!enabled) {
     return {
       entries: readingCardsToEntries(readingQueue),
       selectedReviewCount: 0,
-      targetReviewCount: 0
+      eligibleReviewCount: 0
     }
   }
 
-  const ratio = normalizeMixedLearningRatio(reviewRatioPercent)
+  // 不再按时间预算截断：今日额度内的到期卡全部进队列，用户想停随时可停
   const eligible = filterEligibleReviewCards(reviewCards, now)
-  const targetReviewCount = computeTargetReviewCount(readingQueue.length, ratio)
-  const remainingBudget = Math.max(0, budgetSeconds - readingCostSeconds)
-
-  const selectedReviews = selectReviewCardsForMixedQueue(
-    eligible,
-    targetReviewCount,
-    remainingBudget,
-    seed
-  )
-
-  const entries = interleaveReadingAndReviews(readingQueue, selectedReviews)
+  const entries = interleaveReadingAndReviews(readingQueue, eligible)
 
   return {
     entries,
-    selectedReviewCount: selectedReviews.length,
-    targetReviewCount
+    selectedReviewCount: eligible.length,
+    eligibleReviewCount: eligible.length
   }
 }

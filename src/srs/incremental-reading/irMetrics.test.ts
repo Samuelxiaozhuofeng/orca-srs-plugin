@@ -4,6 +4,12 @@ import {
   computeBreakpointRestoreRate,
   IRSessionMetrics
 } from "./irMetrics"
+import {
+  addSessionPlannedItem,
+  createSessionProgress,
+  markSessionItemCompleted
+} from "./irSessionProgress"
+import { irDailyQuotaUsedFromTotals } from "../todayLearning/todayLearningSummary"
 
 describe("IRSessionMetrics", () => {
   it("aggregates session load and action events without storing content", () => {
@@ -67,5 +73,79 @@ describe("IRSessionMetrics", () => {
     const snap = metrics.getSnapshot()
     expect(computeBreakpointRestoreRate(snap)).toBeCloseTo(2 / 3)
     expect(computeActionFailureRate(snap)).toBeCloseTo(0.5)
+  })
+
+  it("uses active time for durationMs: pause/resume excludes hidden gaps", () => {
+    const metrics = new IRSessionMetrics()
+    const t0 = 1_000_000
+    const realNow = Date.now
+    let fakeNow = t0
+    Date.now = () => fakeNow
+    try {
+      metrics.record("session.start", 2)
+      fakeNow = t0 + 10_000
+      metrics.record("session.pause")
+      // 隐藏 1 小时
+      fakeNow = t0 + 10_000 + 3_600_000
+      metrics.record("session.resume")
+      fakeNow = t0 + 10_000 + 3_600_000 + 5_000
+      metrics.record("session.end", 1)
+      const snap = metrics.getSnapshot()
+      // 仅 10s + 5s = 15s，不含 1 小时
+      expect(snap.durationMs).toBe(15_000)
+    } finally {
+      Date.now = realNow
+    }
+  })
+
+  it("increments plannedCount once per session.plan_more", () => {
+    const metrics = new IRSessionMetrics()
+    metrics.record("session.start", 3)
+    metrics.record("session.plan_more", 1)
+    expect(metrics.getSnapshot().plannedCount).toBe(4)
+  })
+
+  /**
+   * 回归：会话内短期重学回流不得侵蚀 IR 阅读日额度。
+   * session.end 曾用被 planned 封顶的 progress.completed 覆盖 completedCount，
+   * 而 reviewProcessed 逐次累加不封顶 → 每回流一次，
+   * irDailyQuotaUsedFromTotals 就少算一条阅读。
+   */
+  it("keeps the IR reading quota intact when review cards requeue mid-session", () => {
+    const metrics = new IRSessionMetrics()
+    // 队列：1 条阅读 + 2 张复习
+    let progress = createSessionProgress(3)
+    metrics.record("session.start", 3)
+
+    metrics.record("action.next", 1000, { cardType: "topic" })
+    progress = markSessionItemCompleted(progress)
+
+    metrics.record("action.review")
+    progress = markSessionItemCompleted(progress)
+
+    // 第 2 张评 Again → 回流队尾：计划 +1，再处理一次
+    metrics.record("action.review")
+    progress = markSessionItemCompleted(addSessionPlannedItem(progress))
+
+    metrics.record("action.review")
+    progress = markSessionItemCompleted(progress)
+
+    metrics.record("session.end", progress.completed)
+
+    const snap = metrics.getSnapshot()
+    expect(snap.reviewProcessed).toBe(3)
+    expect(snap.completedCount).toBe(4)
+    expect(snap.topicProcessed).toBe(1)
+    // 真实读了 1 条 → 额度只能扣 1
+    expect(irDailyQuotaUsedFromTotals(snap)).toBe(1)
+  })
+
+  it("never lets session.end shrink the accumulated completed count", () => {
+    const metrics = new IRSessionMetrics()
+    metrics.record("action.next", 1000, { cardType: "topic" })
+    metrics.record("action.review")
+    metrics.record("action.review")
+    metrics.record("session.end", 1)
+    expect(metrics.getSnapshot().completedCount).toBe(3)
   })
 })

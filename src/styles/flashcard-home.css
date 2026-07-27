@@ -463,58 +463,6 @@
   max-width: var(--srs-measure-prose);
 }
 
-/* iOS-style segmented control: a track with a lifted selected pill. */
-.srs-today-learning__timebox {
-  display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: var(--srs-radius-lg);
-  background: var(--srs-surface-sunken);
-  border: 1px solid var(--srs-hairline);
-}
-
-.srs-today-learning__timebox-btn {
-  border: none;
-  background: transparent;
-  color: var(--orca-color-text-2);
-  border-radius: var(--srs-radius-md);
-  padding: 7px 18px;
-  font-size: var(--srs-text-secondary);
-  font-weight: var(--srs-weight-medium);
-  cursor: pointer;
-  transition:
-    background-color var(--srs-duration-slow) var(--srs-ease),
-    color var(--srs-duration-slow) var(--srs-ease),
-    box-shadow var(--srs-duration-slow) var(--srs-ease);
-}
-
-.srs-today-learning__timebox-btn:hover:not(:disabled):not(
-    .srs-today-learning__timebox-btn--selected
-  ) {
-  color: var(--orca-color-text-1);
-}
-
-.srs-today-learning__timebox-btn:active:not(:disabled) {
-  transform: translateY(0.5px);
-}
-
-.srs-today-learning__timebox-btn:focus-visible {
-  outline: 2px solid var(--orca-color-primary-5);
-  outline-offset: 2px;
-}
-
-.srs-today-learning__timebox-btn--selected {
-  color: var(--orca-color-text-1);
-  background: var(--srs-surface-base);
-  font-weight: var(--srs-weight-semibold);
-  box-shadow: var(--srs-shadow-pill);
-}
-
-.srs-today-learning__timebox-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .srs-today-learning__resume-error {
   display: flex;
   flex-direction: column;

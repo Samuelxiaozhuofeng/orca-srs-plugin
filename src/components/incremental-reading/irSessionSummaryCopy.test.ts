@@ -32,7 +32,7 @@ describe("IR session summary copy", () => {
       resolve(__dirname, "IRSessionShell.tsx"),
       "utf8"
     )
-    expect(src).toContain("finalizeSessionMetricsOnce")
+    expect(src).toContain("settleActiveSegment")
     expect(src).toContain("commitIRSessionToDailyStats")
     // 完成页 render 不得直接 record session.end
     const summaryBranch = src.slice(src.indexOf("if (showSummary || queue.length === 0)"))

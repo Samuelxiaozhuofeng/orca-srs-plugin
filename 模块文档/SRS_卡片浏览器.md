@@ -1,6 +1,6 @@
 # SRS Flashcard Home（闪卡主页 / 卡片浏览器）
 
-> **文档同步日期：2026-07-26**
+> **文档同步日期：2026-07-27**
 > 现状以代码为准。产品主入口称为 **「今日学习」**（块类型 / 命令 ID 仍为 `srs.flashcard-home` / `openFlashcardHome` 以兼容）。
 > 历史上称「卡片浏览器 / Flash Home」；旧组件 `SrsCardBrowser.tsx` **已不存在**。
 
@@ -8,7 +8,7 @@
 
 「今日学习」主页是插件的统一学习入口，以块类型 `srs.flashcard-home` 嵌入 Orca 面板。它聚合：
 
-- **今日学习摘要**（统一 remaining：复习 + 阅读、预计分钟、建议动作、10/20/30 时间盒、开始/继续）
+- **今日学习摘要**（统一 remaining：复习 + 阅读、预计分钟、建议动作、开始/继续；**无** 10/20/30 时间盒）
 - **卡库次级区**（新卡 / 今日到期 / 积压三卡 + 卡组列表）
 - **卡片列表**（按 Deck 筛选、重置/删除/跳转）
 - **困难卡**（全页次级视图；fixed 会话，**不**写今日 resume）
@@ -30,7 +30,8 @@
 | `src/components/flashcard-home/FlashHomePage.tsx` | 单页主页：HomeSummaryBar + DeckListView |
 | `src/components/flashcard-home/HomeSummaryBar.tsx` | 今日学习区 + 卡库次级三统计 + 困难卡 / 刷新 |
 | `src/srs/todayLearning/todayLearningSummary.ts` | 统一今日 remaining / 估时 / 完成数（防双算） |
-| `src/srs/todayLearning/todayLearningResumeStorage.ts` | 版本化 resume marker（srs block / ir 时长） |
+| `src/srs/todayLearning/todayLearningResumeStorage.ts` | 版本化 resume marker（srs block / 统一 ir 入口；不存时间盒时长） |
+| `src/srs/todayLearning/todayLearningLaunch.ts` | 受信任 remaining → mixed / 独立 SRS / 只读 IR 路由 |
 | `src/components/flashcard-home/DeckListView.tsx` | 卡组搜索与表格（新卡 / 今日到期 / 积压） |
 | `src/components/flashcard-home/DeckRow.tsx` | 单卡组行 |
 | `src/components/flashcard-home/CardListView.tsx` | 单 Deck 卡片列表（列表托盘 + 分页） |
@@ -130,7 +131,7 @@ flowchart TD
 
 ## FlashHomePage（单页主页）
 
-- 上半：`HomeSummaryBar` — **今日学习**（统一 remaining、预计分钟、建议、10/20/30、开始/继续）+ 次级卡库统计细带（`StatChip`）
+- 上半：`HomeSummaryBar` — **今日学习**（统一 remaining、预计分钟、建议、开始/继续）+ 次级卡库统计细带（`StatChip`）
 - 下半：`DeckListView` — 搜索 + 卡组表
 
 ### 动作层级与入口（2026-07-27 调整）
@@ -140,14 +141,26 @@ flowchart TD
 1. `.srs-home-summary__actions`（主 CTA 行）：主按钮「开始今日学习 / 继续上次学习」（`srs-home-primary-btn`）+ 可选「重新开始」（`srs-home-linkbtn`，仅 `canContinue && canStart`）。
 2. `.srs-home-summary__nav`（次级入口行）：**「阅读资料库」**（`srs-home-nav-btn--library` 强调色调，`onOpenReadingLibrary` → `openIRWorkspace({ mode: "library" })`，经 `FlashHomePage` 由 `SrsFlashcardHome.handleOpenReadingLibrary` 透传，失败可见 notify）· 「困难卡」· 刷新图标。
 
+### 启动路由（受信任 remaining 降级）
+
+由 `decideTodayLearningLaunch`（`todayLearningLaunch.ts`）纯函数决策；首页警告/错误保留，降级 = 只用可信侧，不假装失败侧成功：
+
+| 条件 | 行为 |
+| ---- | ---- |
+| IR、SRS **均为精确 number**（0 合法），且至少一侧 > 0 | 打开统一 IR 工作区，`sessionLaunchMode: "mixed"`（日额度队列，可纯复习） |
+| 仅 SRS 精确且 > 0，IR 为 `null` | 独立 `startReviewSession()`；不碰 IR 收集/日统计 |
+| 仅 IR 精确且 > 0，SRS 为 `null` | IR 工作区 `sessionLaunchMode: "read-only"`；不读 SRS 日志/额度 |
+| 无受信任正任务 | 不启动；沿用完成/错误展示 |
+
+- **resume 写入时机**：不在队列装配前写 IR marker。仅当非空队列装配成功后写 `kind: "ir"`（失败可见，不撤销可用队列）；失败/空队列不得覆盖先前有效的 SRS marker。
+- **继续**：`kind: "srs"` → 验证会话块 + 导航；`kind: "ir"` → 按**当前** remaining 再走上表路由（不信任过期 launchMode）。`resumeMarkerHasTrustedTasks`：srs 仅看 SRS remaining；ir 统一 marker 在精确正 IR **或** 精确正 SRS 时均可继续。
+- 主按钮：有有效当日 resume 且仍有任务 →「继续上次学习」；否则「开始今日学习」
+
 ### 视觉（2026-07-27）
 
 - 内容居中于最大宽度列（`.srs-flash-home-page/…-view/…-difficult-cards-view` `max-width: 720px`），`.srs-flash-home-root` flex 居中 + 大留白。
-- 「今日学习」升级为主卡片：大圆角 + 分层柔和阴影；剩余数 44px tabular-nums；时长选择为 iOS 分段控件（轨道 + 抬升选中态）。
+- 「今日学习」升级为主卡片：大圆角 + 分层柔和阴影；剩余数 44px tabular-nums。
 - 全部用 Orca CSS tokens，深浅色自适应。样式集中在 `src/styles/flashcard-home.css`。
-- 主按钮：有有效当日 resume 且仍有任务 →「继续上次学习」；否则「开始今日学习」
-- 开始：有 IR 今日内容 → IR reading 自动 `mixed` + 所选时长；仅 SRS → 普通复习会话；都无 → 禁用并显示完成
-- 继续：SRS → 验证会话块 + 导航；IR → 打开工作区 autoStart 重装队列（断点靠既有 `ir.resumeBlockId` / breakpoint）
 - **恢复语义不是**字节级队列快照：SRS 用冻结 descriptor + 当前状态/日志重建；IR 用当日调度 + breakpoint 重建
 - loading 不显示临时 0；完整失败「暂时无法读取今日学习」+ 重试；partial 明示「部分内容暂时无法读取」
 - 卡组备注、搜索见权威文档

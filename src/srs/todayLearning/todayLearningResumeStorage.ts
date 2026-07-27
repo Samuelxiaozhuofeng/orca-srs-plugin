@@ -3,7 +3,9 @@
  *
  * 语义（非队列快照）：
  * - srs：记住 session blockId；重开后由 Renderer 用冻结 descriptor + 当前状态/日志重建剩余
- * - ir：记住时长与 mixed；重开后只读重装当日剩余队列，断点靠 ir.resumeBlockId / ir.breakpoint
+ * - ir：统一学习入口标记（version-1 仍为 kind:"ir"）；重开时按**当前**受信任 remaining
+ *   决定 mixed / read-only / 独立 SRS，不把过期 launchMode 当真理；断点靠
+ *   ir.resumeBlockId / ir.breakpoint。不再存储时间盒时长。
  *
  * 无 marker 与读取失败是不同状态；损坏 JSON / 未知版本返回 error，不得 null 冒充 absent。
  */
@@ -13,13 +15,6 @@ import { resolveOrcaRepo } from "../incremental-reading/irDailyStatsStorage"
 
 export const TODAY_LEARNING_RESUME_STORAGE_KEY = "today-learning-resume"
 export const TODAY_LEARNING_RESUME_VERSION = 1 as const
-
-/** 今日学习时间盒：仅允许 10 / 20 / 30 */
-export type TodayLearningTimeBudget = 10 | 20 | 30
-
-export const TODAY_LEARNING_TIME_BUDGETS: readonly TodayLearningTimeBudget[] = [
-  10, 20, 30
-]
 
 export type TodayLearningResumeKind = "srs" | "ir"
 
@@ -42,7 +37,6 @@ export type TodayLearningIrResumeMarker = {
   readonly dateKey: string
   readonly kind: "ir"
   readonly updatedAt: number
-  readonly timeBudgetMinutes: TodayLearningTimeBudget
   readonly sessionLaunchMode: "mixed"
 }
 
@@ -61,7 +55,11 @@ export type TodayLearningResumeWriteResult =
   | { ok: true; marker: TodayLearningResumeMarker }
   | { ok: false; error: Error }
 
-/** 只允许与恢复点类型一致的精确剩余数启用“继续”。 */
+/**
+ * 是否应用「继续」按钮。
+ * - kind:"srs"：仅精确且 >0 的 SRS remaining
+ * - kind:"ir"（统一 marker）：精确正 IR **或** 精确正 SRS 任一即可（另一侧可 null）
+ */
 export function resumeMarkerHasTrustedTasks(
   marker: TodayLearningResumeMarker | null,
   remaining: { readonly srs?: number; readonly ir?: number }
@@ -70,7 +68,9 @@ export function resumeMarkerHasTrustedTasks(
     return remaining.srs != null && remaining.srs > 0
   }
   if (marker?.kind === "ir") {
-    return remaining.ir != null && remaining.ir > 0
+    const irOk = remaining.ir != null && remaining.ir > 0
+    const srsOk = remaining.srs != null && remaining.srs > 0
+    return irOk || srsOk
   }
   return false
 }
@@ -83,31 +83,6 @@ export type TodayLearningResumeStorageApi = {
     key: string,
     value: string
   ) => Promise<void>
-}
-
-export function isTodayLearningTimeBudget(
-  value: unknown
-): value is TodayLearningTimeBudget {
-  return value === 10 || value === 20 || value === 30
-}
-
-/**
- * 解析时长：仅接受 10/20/30。非法时返回显式错误，不静默默认。
- */
-export function parseTodayLearningTimeBudget(
-  value: unknown
-):
-  | { ok: true; minutes: TodayLearningTimeBudget }
-  | { ok: false; error: Error } {
-  if (isTodayLearningTimeBudget(value)) {
-    return { ok: true, minutes: value }
-  }
-  return {
-    ok: false,
-    error: new Error(
-      `非法今日学习时长: ${String(value)}（仅允许 10 / 20 / 30）`
-    )
-  }
 }
 
 /**
@@ -261,10 +236,6 @@ export function parseTodayLearningResumeMarker(
   }
 
   if (kind === "ir") {
-    const budget = parseTodayLearningTimeBudget(record.timeBudgetMinutes)
-    if (!budget.ok) {
-      return budget
-    }
     if (record.sessionLaunchMode !== "mixed") {
       return {
         ok: false,
@@ -282,7 +253,6 @@ export function parseTodayLearningResumeMarker(
         dateKey,
         kind: "ir",
         updatedAt,
-        timeBudgetMinutes: budget.minutes,
         sessionLaunchMode: "mixed" as const
       })
     }
@@ -382,7 +352,6 @@ export type WriteSrsResumeInput = {
 
 export type WriteIrResumeInput = {
   pluginName: string
-  timeBudgetMinutes: unknown
   repo?: string
   now?: Date
   storage?: TodayLearningResumeStorageApi
@@ -442,11 +411,6 @@ export async function writeIrTodayLearningResume(
   const now = input.now ?? new Date()
   const storage = input.storage ?? defaultStorageApi()
 
-  const budget = parseTodayLearningTimeBudget(input.timeBudgetMinutes)
-  if (!budget.ok) {
-    return budget
-  }
-
   const marker: TodayLearningIrResumeMarker = Object.freeze({
     version: TODAY_LEARNING_RESUME_VERSION,
     repo,
@@ -454,7 +418,6 @@ export async function writeIrTodayLearningResume(
     dateKey: formatLocalDateKey(now),
     kind: "ir",
     updatedAt: now.getTime(),
-    timeBudgetMinutes: budget.minutes,
     sessionLaunchMode: "mixed"
   })
 

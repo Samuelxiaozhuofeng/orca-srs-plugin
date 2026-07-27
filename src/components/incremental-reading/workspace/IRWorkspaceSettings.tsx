@@ -10,7 +10,6 @@ import {
   incrementalReadingSettingsSchema,
   type IncrementalReadingSettings
 } from "../../../srs/settings/incrementalReadingSettingsSchema"
-import { MIXED_LEARNING_RATIO_OPTIONS } from "../../../srs/incremental-reading/irMixedQueuePolicy"
 import { startAutoMarkExtract, stopAutoMarkExtract } from "../../../srs/incrementalReadingAutoMark"
 import IRFunnelDiagnosticsPanel from "../IRFunnelDiagnosticsPanel"
 import type { IRCard } from "../../../srs/incrementalReadingCollector"
@@ -103,9 +102,6 @@ export default function IRWorkspaceSettings({
       if (patch.mixedLearningEnabled !== undefined) {
         toSave[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled] = patch.mixedLearningEnabled
       }
-      if (patch.mixedLearningReviewRatio !== undefined) {
-        toSave[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio] = patch.mixedLearningReviewRatio
-      }
 
       await orca.plugins.setSettings("app", pluginName, toSave)
       setSettings((prev: IncrementalReadingSettings | null) => ({
@@ -170,9 +166,7 @@ export default function IRWorkspaceSettings({
     enableAutoDefer:
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue,
     mixedLearningEnabled:
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue,
-    mixedLearningReviewRatio:
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningReviewRatio].defaultValue
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue
   } satisfies IncrementalReadingSettings
 
   const busy = isSaving || isResetting
@@ -281,33 +275,13 @@ export default function IRWorkspaceSettings({
                       )
                     }}
                   />
-                  <span>专注阅读时均匀混入已到期 SRS 复习卡</span>
+                  <span>学习会话中均匀混入今日到期的记忆卡</span>
                 </label>
-                <div className="ir-drawer__hint">默认关闭；不影响独立 SRS 复习入口</div>
-              </div>
-
-              {settings.mixedLearningEnabled ? (
-                <div className="ir-drawer__field">
-                  <label>SRS 占比</label>
-                  <div className="ir-settings__row ir-settings__row--wrap">
-                    {MIXED_LEARNING_RATIO_OPTIONS.map(ratio => (
-                      <Button
-                        key={ratio}
-                        tabIndex={0}
-                        variant={settings.mixedLearningReviewRatio === ratio ? "solid" : "outline"}
-                        onClick={() => {
-                          if (settings.mixedLearningReviewRatio !== ratio) {
-                            void saveSettings({ mixedLearningReviewRatio: ratio }, { notify: true })
-                          }
-                        }}
-                      >
-                        {ratio}%
-                      </Button>
-                    ))}
-                  </div>
-                  <div className="ir-drawer__hint">目标比例：复习条目占整个混合队列的 {settings.mixedLearningReviewRatio}%</div>
+                <div className="ir-drawer__hint">
+                  默认关闭，仅作「从资料库直接开始读某张卡」时的回退；「今日学习」入口始终按混合启动。
+                  队列长度由各自的每日上限决定，不再有时间盒。
                 </div>
-              ) : null}
+              </div>
 
               <div className="ir-drawer__field">
                 <label htmlFor="ir-setting-auto-defer">溢出推后按钮</label>

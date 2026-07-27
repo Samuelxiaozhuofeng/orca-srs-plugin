@@ -1,75 +1,84 @@
 /**
- * 会话时间预算计时
+ * 会话已投入时长计时（只陈述，不打断）
+ *
+ * 无时间盒：不存在「到期」，因此不再有 budget / onExpire。
+ * `running=false` 时冻结累计，不把资料库/隐藏时间算进去。
  */
 
-import type { IRTimeBudgetMinutes } from "../srs/incremental-reading/irTypes"
-import { calculateElapsedSeconds, shouldFireExpire } from "./irSessionTimerUtils"
+import {
+  calculateActiveElapsedSeconds,
+  formatElapsedLabel
+} from "./irSessionTimerUtils"
 
 const { useEffect, useMemo, useState, useCallback, useRef } = window.React
 
 export type UseIRSessionTimerOptions = {
-  budgetMinutes: IRTimeBudgetMinutes | number
+  /** false 时暂停累计（库模式 display:none、完成页等） */
   running?: boolean
-  onExpire?: () => void
 }
 
 export type UseIRSessionTimerResult = {
-  remainingSeconds: number
   elapsedSeconds: number
-  budgetSeconds: number
-  isExpired: boolean
-  formattedRemaining: string
+  formattedElapsed: string
   reset: () => void
 }
 
-function formatSeconds(total: number): string {
-  const safe = Math.max(0, Math.floor(total))
-  const m = Math.floor(safe / 60)
-  const s = safe % 60
-  return `${m}:${String(s).padStart(2, "0")}`
-}
-
-export function useIRSessionTimer(options: UseIRSessionTimerOptions): UseIRSessionTimerResult {
-  const budgetSeconds = Math.max(60, Math.floor(options.budgetMinutes * 60))
+export function useIRSessionTimer(
+  options: UseIRSessionTimerOptions = {}
+): UseIRSessionTimerResult {
   const running = options.running !== false
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [startedAt, setStartedAt] = useState(() => Date.now())
-  const expireFiredRef = useRef(false)
-  const onExpireRef = useRef(options.onExpire)
-  onExpireRef.current = options.onExpire
+  const accumulatedRef = useRef(0)
+  const segmentStartedAtRef = useRef<number | null>(running ? Date.now() : null)
+  const runningRef = useRef(running)
+
+  // running 边沿：pause 冻结；resume 开新区间
+  useEffect(() => {
+    const wasRunning = runningRef.current
+    runningRef.current = running
+    const now = Date.now()
+    if (wasRunning && !running) {
+      if (segmentStartedAtRef.current != null) {
+        accumulatedRef.current = calculateActiveElapsedSeconds({
+          accumulatedSeconds: accumulatedRef.current,
+          currentSegmentStartedAt: segmentStartedAtRef.current,
+          now
+        })
+        segmentStartedAtRef.current = null
+      }
+      setElapsedSeconds(accumulatedRef.current)
+      return
+    }
+    if (!wasRunning && running) {
+      segmentStartedAtRef.current = now
+    }
+  }, [running])
 
   useEffect(() => {
     if (!running) return
     const timer = window.setInterval(() => {
-      const next = calculateElapsedSeconds(startedAt, Date.now())
-      setElapsedSeconds(next)
+      setElapsedSeconds(
+        calculateActiveElapsedSeconds({
+          accumulatedSeconds: accumulatedRef.current,
+          currentSegmentStartedAt: segmentStartedAtRef.current,
+          now: Date.now()
+        })
+      )
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [running, startedAt])
-
-  useEffect(() => {
-    if (!shouldFireExpire(elapsedSeconds, budgetSeconds, expireFiredRef.current)) return
-    expireFiredRef.current = true
-    onExpireRef.current?.()
-  }, [elapsedSeconds, budgetSeconds])
-
-  const remainingSeconds = Math.max(0, budgetSeconds - elapsedSeconds)
-  const isExpired = remainingSeconds <= 0
+  }, [running])
 
   const reset = useCallback(() => {
-    expireFiredRef.current = false
-    setStartedAt(Date.now())
+    accumulatedRef.current = 0
+    segmentStartedAtRef.current = runningRef.current ? Date.now() : null
     setElapsedSeconds(0)
   }, [])
 
   return useMemo(() => ({
-    remainingSeconds,
     elapsedSeconds,
-    budgetSeconds,
-    isExpired,
-    formattedRemaining: formatSeconds(remainingSeconds),
+    formattedElapsed: formatElapsedLabel(elapsedSeconds),
     reset
-  }), [remainingSeconds, elapsedSeconds, budgetSeconds, isExpired, reset])
+  }), [elapsedSeconds, reset])
 }
 
 export default useIRSessionTimer

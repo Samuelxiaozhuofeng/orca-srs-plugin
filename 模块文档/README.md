@@ -64,12 +64,13 @@
    - 「卡片信息」面板统一为 `review-card/CardInfoPanel.tsx`（五渲染器共用；`showSchedulingDetails` prop）
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
 
-10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-26 更新
+10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-27 更新
     - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
-    - 统一 remaining（SRS 日额度 + IR due）、预计分钟、10/20/30、开始/继续；resume 非队列快照
+    - 统一 remaining（SRS 日额度 + IR due）、预计分钟、开始/继续；**日额度队列**（无 10/20/30）；受信任 remaining 显式降级（mixed / 独立 SRS / 只读 IR）
+    - resume 非队列快照；统一 `kind:"ir"` marker 在纯 SRS 剩余时也可继续；装配成功后才写 IR marker
     - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡
     - 删除为**变体感知**（`deleteReviewCardBackendData`：仍有存活变体只删该变体前缀属性、保留 `#card`）；今日摘要经 deps 注入复用同轮 cards
-    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`src/srs/todayLearning/*`、`styles/flashcard-home.css`
+    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`src/srs/todayLearning/*`（含 `todayLearningLaunch.ts`）、`styles/flashcard-home.css`
 
 11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** ⭐ 2026-07-26 收窄 — 仅维护三 `StatCard`（新卡/今日到期/积压）的 `calculateHomeStats` 计算口径；三卡已降级为次级「卡库概览」区，主页布局/主按钮/数据流以 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) 为权威
 12. **[SRS_困难卡片.md](SRS_困难卡片.md)** — 困难集合与 fixed repeat 专项复习（零引用门面 `getDifficultCardsForReview` 已于 2026-07-26 删除）
@@ -104,11 +105,13 @@
     - **模块级总线** `srsBroadcastBus`：Orca 每类型单 handler + 订阅者扇出；Flash Home 经总线订阅；unload `teardown`
     - 关联：`srsEvents.ts`、`srsBroadcastBus.ts`、`reviewCardGrading.ts`
 
-23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-26 更新 — IR 分散/排队、时间盒队列最终配额与诊断、本地日 seed、会话装配只读（B1，装配阶段本身）+ **会话启动 auto-postpone 接回主路径**（当日一次、反复推迟降权）、迟到补偿、队列排序改老化 + 探索真随机（含已落地 vs 计划状态说明）；§6.4 补混合会话 SRS 复习日额度扣减（`irMixedDailyBudget.ts`，日志失败 fail-closed 阻断装配）
+23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-27 更新 — §6.4 **统一推送 + 移除时间盒**（队列长度改由每日上限决定、纳入新卡、纯复习队列、IR 日额度扣减剔除 `reviewProcessed`）； IR 分散/排队、时间盒队列最终配额与诊断、本地日 seed、会话装配只读（B1，装配阶段本身）+ **会话启动 auto-postpone 接回主路径**（当日一次、反复推迟降权）、迟到补偿、队列排序改老化 + 探索真随机（含已落地 vs 计划状态说明）；§6.4 补混合会话 SRS 复习日额度扣减（`irMixedDailyBudget.ts`，日志失败 fail-closed 阻断装配）
 
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-27 更新
+    - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
+    - **统一交付修复**（2026-07-27）：Again/Hard **按真实 FSRS due**  pending 回流（800ms 只离卡不立刻入队，`irMixedPendingDue` / `useIRMixedPendingDueQueue`）；**部分退出**同步结算 IR 日统计（分段 delta + sessionId 轮换，不双计）；首页 **受信任侧降级**（`decideTodayLearningLaunch`）；活跃计时 pause（资料库 `display:none` 不计时）；统一 ir marker 识别纯 SRS 剩余
     - **误点回撤 + 文末防呆**（2026-07-27）：会话内**单步**「撤销上一篇」（`performNext` 回传动作前 IR 快照 → `undoPerformNext` 整体写回真回滚排期，队列按原下标回插并按快照修正断点/新卡判定；入口=会话头部按钮 + `Alt+U` + **「下一篇」成功通知 action**（ref 接到最新 `handleUndoNext`，失效再点可见 info）；当前篇一旦有写库动作即失效，完成页不提供）；读到文末（触底或一屏装下全文）且停留 ≥4s 时「下一篇」先确认「以后再复习 / 完成，移出队列 / 取消」，完成分支仍走既有二次确认，本会话处理一次后不再弹。新增 `irNextUndo.ts` / `irEndOfContentGate.ts` / `useIRReadingEndZone.ts` / `IREndOfContentDialog.tsx`
     - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：新增「视觉规范（Apple HIG 基线）」小节；`ir-workspace.css` 全面令牌化——52 处裸圆角（4/5/6/7/8/9/10/12/14/16px 十档）归一到 `--srs-radius-*` 六档阶梯、18 处自定义阴影收敛为 `--srs-shadow-1/2/hero/overlay/pill`、37 处裸秒数动效改 `--srs-duration-*`；排版走 `--srs-text-*` / `--srs-weight-*` 且统计数字统一 `tabular-nums`；徽章/筛选 chip/次级按钮/托盘/空态按规范统一；IR 组件 ~150 处视觉内联样式迁移到 CSS 类（仅保留动作栏与正文宽度等运行时几何量）。**边界**：专注阅读保持块宿主（面板宿主深树死循环，见 [问题经验.md](问题经验.md)）；`*-host-chrome-managed` 作用域选择器原样保留；正文宽度仍是用户偏好（`irReaderWidthStorage`），未被 `--srs-measure` 覆盖；阅读纸张主题（mint/sepia/academic）改为每主题一份 `--ir-paper-*` 调色板（无法由 Orca 主题变量派生）
     - 2026-07-27（死代码清理）：`IRCardList.tsx` / `IRStatistics.tsx`（零引用旧平面列表/统计 UI）已删，随之删除 `incrementalReadingManagerUtils.ts` 中仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats`，以及 `ir-workspace.css` 中仅服务于它们的 `.ir-cardlist-*` / `.ir-stats-card-*`（41 条规则）；资料库分组由 `workspace/irLibraryFilters.ts` 承担，`getIRDateGroup` / `IR_GROUP_ORDER` / `IRCardGroup` 仍在使用

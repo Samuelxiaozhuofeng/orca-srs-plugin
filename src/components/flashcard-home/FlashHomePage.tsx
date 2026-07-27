@@ -1,6 +1,5 @@
 import type { DeckStats, TodayStats } from "../../srs/types"
 import type { TodayLearningSummary } from "../../srs/todayLearning/todayLearningSummary"
-import type { TodayLearningTimeBudget } from "../../srs/todayLearning/todayLearningResumeStorage"
 import type { HomeStatKind } from "./homeStatNav"
 import HomeSummaryBar from "./HomeSummaryBar"
 import DeckListView from "./DeckListView"
@@ -10,8 +9,6 @@ export type FlashHomePageProps = {
   todayStats: TodayStats
   todayLearning: TodayLearningSummary | null
   todayLearningLoading: boolean
-  selectedMinutes: TodayLearningTimeBudget
-  onSelectMinutes: (minutes: TodayLearningTimeBudget) => void
   canContinue: boolean
   canStart: boolean
   actionBusy: boolean
@@ -37,8 +34,6 @@ export default function FlashHomePage({
   todayStats,
   todayLearning,
   todayLearningLoading,
-  selectedMinutes,
-  onSelectMinutes,
   canContinue,
   canStart,
   actionBusy,
@@ -64,8 +59,6 @@ export default function FlashHomePage({
         todayStats={todayStats}
         todayLearning={todayLearning}
         todayLearningLoading={todayLearningLoading}
-        selectedMinutes={selectedMinutes}
-        onSelectMinutes={onSelectMinutes}
         canContinue={canContinue}
         canStart={canStart}
         actionBusy={actionBusy}

@@ -15,6 +15,17 @@ export function createSessionProgress(planned: number): IRSessionProgress {
   }
 }
 
+/**
+ * 会话内短期重学回流：该条目会被再处理一次，计划数随之 +1。
+ * 不加这一条，回流后 completed 会被封顶在旧 planned，进度显示与额度对账都失真。
+ */
+export function addSessionPlannedItem(progress: IRSessionProgress): IRSessionProgress {
+  return {
+    ...progress,
+    planned: progress.planned + 1
+  }
+}
+
 export function markSessionItemCompleted(progress: IRSessionProgress): IRSessionProgress {
   const completed = Math.min(progress.planned, progress.completed + 1)
   const remaining = Math.max(0, progress.remaining - 1)

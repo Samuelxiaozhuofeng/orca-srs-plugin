@@ -13,6 +13,10 @@ type Props = {
   reviewCompleted?: number
   onClose?: () => void
   closeLabel?: string
+  /** 在同一面板里重新装配今日队列（阅读 + 记忆卡） */
+  onContinue?: () => void
+  /** 本次装配即为空队列：今天已无更多到期内容 */
+  allDoneForToday?: boolean
   /** localStorage 日统计失败时的非阻断提示 */
   storageWarning?: string | null
 }
@@ -23,6 +27,8 @@ export default function IRSessionSummary({
   reviewCompleted = 0,
   onClose,
   closeLabel = "关闭",
+  onContinue,
+  allDoneForToday = false,
   storageWarning = null
 }: Props) {
   const readingCompleted = Math.max(0, metrics.completedCount - reviewCompleted)
@@ -82,6 +88,13 @@ export default function IRSessionSummary({
           ) : null}
         </div>
 
+        {allDoneForToday ? (
+          <div className="ir-session-summary__hint" role="status">
+            <i className="ti ti-circle-check" aria-hidden="true" />
+            今天没有更多到期内容了
+          </div>
+        ) : null}
+
         {autoPostponeCount > 0 ? (
           <div className="ir-session-summary__hint">
             <i className="ti ti-info-circle" aria-hidden="true" />
@@ -89,12 +102,25 @@ export default function IRSessionSummary({
           </div>
         ) : null}
 
-        {onClose ? (
+        {onContinue || onClose ? (
           <div className="ir-session-summary__actions">
-            <Button tabIndex={0} variant="solid" onClick={onClose} className="ir-summary-close-btn">
-              <i className="ti ti-arrow-left ir-summary-close-btn__icon" aria-hidden="true" />
-              {closeLabel}
-            </Button>
+            {onContinue ? (
+              <Button tabIndex={0} variant="solid" onClick={onContinue} className="ir-summary-close-btn">
+                <i className="ti ti-player-play ir-summary-close-btn__icon" aria-hidden="true" />
+                再学一轮
+              </Button>
+            ) : null}
+            {onClose ? (
+              <Button
+                tabIndex={0}
+                variant={onContinue ? "plain" : "solid"}
+                onClick={onClose}
+                className="ir-summary-close-btn"
+              >
+                <i className="ti ti-arrow-left ir-summary-close-btn__icon" aria-hidden="true" />
+                {closeLabel}
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>

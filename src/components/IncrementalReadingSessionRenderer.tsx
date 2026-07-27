@@ -1,6 +1,6 @@
 /**
  * 渐进阅读原生块面板渲染器
- * 实际 UI 统一为 IRWorkspaceShell，阅读入口默认进入专注阅读
+ * 实际 UI 统一为 IRWorkspaceShell，阅读入口默认进入今日学习
  */
 
 import type { DbId } from "../orca.d.ts"

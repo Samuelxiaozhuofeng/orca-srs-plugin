@@ -22,6 +22,7 @@ export {
   clampUnitRatio,
   estimateCardCostSeconds,
   budgetSeconds,
+  UNLIMITED_TIME_BUDGET_MINUTES,
   stableUnitRandom,
   EXPLORATION_SEED_SALT,
   explorationUnitRandom,

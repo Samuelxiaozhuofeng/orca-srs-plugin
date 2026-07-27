@@ -13,10 +13,6 @@ import {
 } from "../../components/incremental-reading/workspace/irWorkspaceLaunch"
 import { getOrCreateIncrementalReadingSessionBlock } from "../incrementalReadingSessionManager"
 import { findPanelIdByBlockView, type PanelTreeNode } from "../registry/panelTreeUtils"
-import {
-  isTodayLearningTimeBudget,
-  type TodayLearningTimeBudget
-} from "../todayLearning/todayLearningResumeStorage"
 
 export type IRWorkspaceNav = {
   goTo: (view: string, viewArgs: Record<string, unknown>, panelId: string) => void
@@ -32,9 +28,8 @@ export type OpenIRWorkspaceOptions = {
   pluginName: string
   mode: IRWorkspaceMode
   openInCurrentPanel?: boolean
-  /** 打开后自动以时间盒装配队列（今日学习 / 继续） */
+  /** 打开后自动装配今日队列（今日学习 / 继续） */
   autoStart?: boolean
-  timeBudgetMinutes?: TodayLearningTimeBudget
   sessionLaunchMode?: "mixed" | "read-only"
 }
 
@@ -50,24 +45,7 @@ function buildLaunchRequest(options: OpenIRWorkspaceOptions): IRWorkspaceLaunchR
   const request: IRWorkspaceLaunchRequest = { mode: options.mode }
   if (options.autoStart === true) {
     request.autoStart = true
-    if (options.timeBudgetMinutes !== undefined) {
-      if (!isTodayLearningTimeBudget(options.timeBudgetMinutes)) {
-        throw new Error(
-          `IR 启动时长非法: ${String(options.timeBudgetMinutes)}（仅 10/20/30）`
-        )
-      }
-      request.timeBudgetMinutes = options.timeBudgetMinutes
-    } else {
-      request.timeBudgetMinutes = 20
-    }
     request.sessionLaunchMode = options.sessionLaunchMode ?? "mixed"
-  } else if (options.timeBudgetMinutes !== undefined) {
-    if (!isTodayLearningTimeBudget(options.timeBudgetMinutes)) {
-      throw new Error(
-        `IR 启动时长非法: ${String(options.timeBudgetMinutes)}（仅 10/20/30）`
-      )
-    }
-    request.timeBudgetMinutes = options.timeBudgetMinutes
   }
   if (options.sessionLaunchMode !== undefined && !request.sessionLaunchMode) {
     request.sessionLaunchMode = options.sessionLaunchMode
