@@ -23,6 +23,8 @@ export type IRShortcutHandlers = {
   onPostpone?: () => void
   onPriority?: () => void
   onEscape?: () => void
+  /** 撤销上一篇（Alt+U）；不可撤销时由调用方传 undefined */
+  onUndoNext?: () => void
 }
 
 export type UseIRShortcutsOptions = {
@@ -84,6 +86,15 @@ export function useIRShortcuts(options: UseIRShortcutsOptions): void {
       event.preventDefault()
       event.stopPropagation()
       h.onPriority?.()
+      return
+    }
+
+    // Alt+U：撤销上一篇（不占用宿主编辑器的 Cmd/Ctrl+Z）
+    if (alt && (key === "u" || key === "U")) {
+      if (!h.onUndoNext) return
+      event.preventDefault()
+      event.stopPropagation()
+      h.onUndoNext()
       return
     }
 

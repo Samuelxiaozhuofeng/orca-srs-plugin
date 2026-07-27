@@ -10,6 +10,7 @@ export type IRMetricEventName =
   | "queue.load"
   | "queue.load_error"
   | "action.next"
+  | "action.next.undo"
   | "action.review"
   | "action.postpone"
   | "action.archive"
@@ -148,6 +149,16 @@ export class IRSessionMetrics {
         if (typeof event.value === "number") {
           s.dwellMsTotal += event.value
           s.dwellSamples += 1
+        }
+        break
+      // 撤销上一篇：回退已计入的完成量，避免会话摘要与今日统计把误点算成阅读
+      case "action.next.undo":
+        s.completedCount = Math.max(0, s.completedCount - 1)
+        if (event.tags?.cardType === "topic") {
+          s.topicProcessed = Math.max(0, s.topicProcessed - 1)
+        }
+        if (event.tags?.cardType === "extracts") {
+          s.extractProcessed = Math.max(0, s.extractProcessed - 1)
         }
         break
       case "action.review":

@@ -17,8 +17,17 @@ import {
 import {
   createSessionProgress,
   markSessionItemCompleted,
-  syncSessionRemaining
+  syncSessionRemaining,
+  unmarkSessionItemCompleted
 } from "../../srs/incremental-reading/irSessionProgress"
+import { undoPerformNext } from "../../srs/incremental-reading/irSessionService"
+import {
+  applyIRStateToCard,
+  canUndoNext,
+  reinsertUndoEntry,
+  type IRNextUndoRecord
+} from "../../srs/incremental-reading/irNextUndo"
+import { shouldGateNext } from "../../srs/incremental-reading/irEndOfContentGate"
 import { loadSequentialSessionMeta } from "../../srs/incremental-reading/irSequentialSessionMeta"
 import { resolveSessionItemizeIntercept } from "../../srs/incremental-reading/irSessionActionsLogic"
 import type { IRSessionProgress } from "../../srs/incremental-reading/irTypes"
@@ -27,6 +36,7 @@ import {
   type IRSessionEntry
 } from "../../srs/incremental-reading/irMixedQueuePolicy"
 import { useIRReadingBreakpoint } from "../../hooks/useIRReadingBreakpoint"
+import { useIRReadingEndZone } from "../../hooks/useIRReadingEndZone"
 import { useIRShortcuts } from "../../hooks/useIRShortcuts"
 import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
 import IRMixedReviewPane from "./IRMixedReviewPane"
@@ -34,6 +44,7 @@ import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
 import IRSessionSummary from "./IRSessionSummary"
 import IRSessionChrome from "./IRSessionChrome"
+import IREndOfContentDialog from "./IREndOfContentDialog"
 import { createIRSessionCardActions } from "./useIRSessionCardActions"
 import { useIRReadingContext } from "./useIRReadingContext"
 import { formatIRReadingSourceLabel } from "./irReadingLabels"
@@ -124,6 +135,12 @@ export default function IRSessionShell({
   const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
   /** 非顺序 / 摘录「完成」确认 */
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  /** 读到文末的「下一篇」确认门闩 */
+  const [endGateOpen, setEndGateOpen] = useState(false)
+  /** 会话级一次性抑制：用户处理过一次门闩后不再反复打断主路径 */
+  const endGateSuppressedRef = useRef(false)
+  /** 会话内「撤销上一篇」单步记录（离开会话即随组件状态清空） */
+  const [undoRecord, setUndoRecord] = useState<IRNextUndoRecord | null>(null)
   const [isSequentialActive, setIsSequentialActive] = useState(false)
   const [sequentialHasNext, setSequentialHasNext] = useState(true)
   const themeStorageWarnedRef = useRef(false)
@@ -239,6 +256,13 @@ export default function IRSessionShell({
     onRestoreFailure: () => metricsRef.current.record("breakpoint.restore_failure")
   })
 
+  const endZone = useIRReadingEndZone({
+    cardId: currentCard?.id ?? null,
+    containerRef: currentCardContainerRef,
+    scrollContainerRef,
+    enabled: Boolean(currentCard) && !showSummary && !isReviewEntry
+  })
+
   useEffect(() => {
     cardEnteredAtRef.current = Date.now()
   }, [currentEntry?.key])
@@ -290,6 +314,9 @@ export default function IRSessionShell({
     setViewMode("reading")
     setSummaryMetrics(null)
     setSummaryStorageWarning(null)
+    setUndoRecord(null)
+    setEndGateOpen(false)
+    endGateSuppressedRef.current = false
     sessionMetricsFinalizedRef.current = false
     dailyStatsSettledRef.current = false
     if (!startedRef.current && nextEntries.length > 0) {
@@ -385,7 +412,7 @@ export default function IRSessionShell({
       } | undefined
       if (!detail?.action || showSummary || loadFailed) return
       if (detail.panelId !== panelId) return
-      if (detail.action === "next") void handleNext()
+      if (detail.action === "next") requestNext()
       if (detail.action === "postpone") {
         setPostponeOpen(true)
         setMoreOpen(false)
@@ -426,6 +453,8 @@ export default function IRSessionShell({
   const removeCurrent = (options?: { metric?: "action.review" }) => {
     if (options?.metric === "action.review") {
       metricsRef.current.record("action.review")
+      // 复习评分是会写库的动作：撤销只覆盖最近一次「下一篇」，其后不再提供
+      setUndoRecord(null)
     }
     setQueue((prev: IRSessionEntry[]) => {
       const next = prev.filter((_: IRSessionEntry, idx: number) => idx !== currentIndex)
@@ -450,6 +479,7 @@ export default function IRSessionShell({
     handleImportanceNudge
   } = createIRSessionCardActions({
     currentCard,
+    currentEntry,
     currentIndex,
     isTopic,
     isWorking,
@@ -465,8 +495,95 @@ export default function IRSessionShell({
     setMoreOpen,
     setCompleteChapterOpen,
     setArchiveConfirmOpen,
+    setUndoRecord,
     removeCurrent
   })
+
+  const undoAvailable = canUndoNext({
+    record: undoRecord,
+    showSummary,
+    queueLength: queue.length,
+    isWorking
+  })
+
+  /**
+   * 撤销上一篇：先回滚排期（写库），成功后再回插队列并切回。
+   * 顺序反过来会出现「UI 已回去但排期仍被污染」的假撤销；失败保留记录以便重试。
+   */
+  const handleUndoNext = async () => {
+    if (!undoRecord || !undoAvailable) return
+    setIsWorking(true)
+    try {
+      // 撤销同样是离开当前卡：先排空当前卡断点。断点失败可见（banner + 日志）但不阻断撤销，
+      // 否则一次无关的断点写入错误就会把用户困在误点结果里。
+      try {
+        await breakpoint.flush()
+      } catch (flushError) {
+        const flushMessage = flushError instanceof Error ? flushError.message : String(flushError)
+        console.error("[IR Session] 撤销前断点保存失败:", flushError)
+        setBreakpointError(flushMessage)
+      }
+      await undoPerformNext(undoRecord.cardId, undoRecord.snapshot)
+      const restoredEntry = undoRecord.entry.kind === "reading"
+        ? {
+          ...undoRecord.entry,
+          card: applyIRStateToCard(undoRecord.entry.card, undoRecord.snapshot)
+        }
+        : undoRecord.entry
+      const cardType = undoRecord.entry.kind === "reading"
+        ? undoRecord.entry.card.cardType
+        : undefined
+      setQueue((prev: IRSessionEntry[]) => {
+        const result = reinsertUndoEntry(prev, restoredEntry, undoRecord.index)
+        setCurrentIndex(result.index)
+        if (result.inserted) {
+          setProgress((p: IRSessionProgress) =>
+            syncSessionRemaining(unmarkSessionItemCompleted(p), result.queue.length))
+        }
+        return result.queue
+      })
+      metricsRef.current.record("action.next.undo", undefined, cardType ? { cardType } : undefined)
+      setUndoRecord(null)
+      setEndGateOpen(false)
+      orca.notify("success", "已回到上一篇", { title: "渐进阅读" })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error("[IR Session] 撤销上一篇失败:", error)
+      orca.notify("error", `撤销上一篇失败：${message}`, { title: "渐进阅读" })
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  /**
+   * 「下一篇」统一入口：读到文末且停留足够久时先确认，其余情况与既有行为完全一致。
+   */
+  const requestNext = () => {
+    if (isWorking || endGateOpen) return
+    if (!currentCard) {
+      handleNext()
+      return
+    }
+    const gate = shouldGateNext({
+      state: endZone.measureNow(),
+      now: Date.now(),
+      suppressed: endGateSuppressedRef.current
+    })
+    if (!gate) {
+      handleNext()
+      return
+    }
+    setMoreOpen(false)
+    setPostponeOpen(false)
+    setImportanceOpen(false)
+    setEndGateOpen(true)
+  }
+
+  const closeEndGate = () => {
+    // 任一分支都视为用户已明确处理：本会话不再反复弹
+    endGateSuppressedRef.current = true
+    setEndGateOpen(false)
+  }
 
   const openImportanceMenu = () => {
     setImportanceOpen((v: boolean) => {
@@ -531,18 +648,25 @@ export default function IRSessionShell({
   }
 
   useIRShortcuts({
-    enabled: !showSummary && !loadFailed && !isReviewEntry,
+    // 确认类对话框打开时停用会话快捷键：Enter 只应作用于对话框，不得穿透触发下一篇
+    enabled: !showSummary
+      && !loadFailed
+      && !isReviewEntry
+      && !endGateOpen
+      && !completeChapterOpen
+      && !archiveConfirmOpen,
     panelId,
     sessionRootRef,
     handlers: {
-      onNext: handleNext,
+      onNext: requestNext,
       onPostpone: openPostponeMenu,
       onPriority: openImportanceMenu,
       onEscape: () => {
         setPostponeOpen(false)
         setMoreOpen(false)
         setImportanceOpen(false)
-      }
+      },
+      onUndoNext: undoAvailable ? () => void handleUndoNext() : undefined
     }
   })
 
@@ -628,6 +752,7 @@ export default function IRSessionShell({
           autoPostponeLabel={autoPostponeLabel}
           sessionNotice={sessionNotice}
           onUndoAutoPostpone={onUndoAutoPostpone}
+          onUndoNext={undoAvailable ? () => void handleUndoNext() : undefined}
           onClose={embedded ? undefined : () => void handleClose()}
           onOpenQueue={onOpenQueue}
           compact={embedded}
@@ -664,6 +789,7 @@ export default function IRSessionShell({
         autoPostponeLabel={autoPostponeLabel}
         sessionNotice={sessionNotice}
         onUndoAutoPostpone={onUndoAutoPostpone}
+        onUndoNext={undoAvailable ? () => void handleUndoNext() : undefined}
         onClose={embedded ? undefined : () => void handleClose()}
         onOpenQueue={onOpenQueue}
         compact={embedded}
@@ -721,7 +847,7 @@ export default function IRSessionShell({
         completeChapterOpen={completeChapterOpen}
         archiveConfirmOpen={archiveConfirmOpen}
         showReturn={readingContext.showReturn}
-        onNext={handleNext}
+        onNext={requestNext}
         onExtract={handleExtract}
         onItemize={handleItemize}
         onConvertToQA={handleConvertToQA}
@@ -744,6 +870,22 @@ export default function IRSessionShell({
         onCompleteChapterTomorrow={() => void handleArchive({ nextChapterSchedule: "tomorrow" })}
         onArchiveConfirmClose={() => setArchiveConfirmOpen(false)}
         onArchiveConfirm={() => void handleArchive()}
+      />
+
+      <IREndOfContentDialog
+        open={endGateOpen}
+        isWorking={isWorking}
+        isSequentialActive={isSequentialActive}
+        onClose={closeEndGate}
+        onLater={() => {
+          closeEndGate()
+          handleNext()
+        }}
+        onComplete={() => {
+          closeEndGate()
+          // 走现有完成主路径：顺序激活章仍进解锁对话框，其余进归档确认
+          handleCompleteRequest()
+        }}
       />
     </div>
   )

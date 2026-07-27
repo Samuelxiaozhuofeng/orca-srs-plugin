@@ -19,6 +19,11 @@ import type { NextChapterSchedule } from "../../importers/epub/types"
 export type SessionActionOutcome = {
   state: IRState | null
   /**
+   * 动作执行前的完整 IR 状态快照。
+   * 仅 `performNext` 提供：会话内「撤销上一篇」用它整体写回，避免只回 UI 而排期仍被污染。
+   */
+  previousState?: IRState
+  /**
    * Whether the session should leave/remove the current card from the queue UI.
    * For sequential partial results, false when the current chapter was not stripped
    * (plan-save fail / strip fail) so the user can retry without losing the card.
@@ -60,9 +65,23 @@ export async function performNext(
       lastAction: transition.lastAction as any
     }
     await saveIRState(blockId, withStage)
-    return { state: withStage, leftCard: true }
+    return { state: withStage, leftCard: true, previousState: prev }
   }
-  return { state: nextState, leftCard: true }
+  return { state: nextState, leftCard: true, previousState: prev }
+}
+
+/**
+ * 撤销最近一次「下一篇」的写库副作用：把 `performNext` 之前的快照整体写回。
+ *
+ * 覆盖 intervalDays / due / readCount / lastRead / stage / lastAction / 断点 / SAC 计数——
+ * `saveIRState` 是全量写入，因此不需要逐字段回滚。失败必须可见（调用方保留撤销入口以便重试）。
+ */
+export async function undoPerformNext(
+  blockId: DbId,
+  snapshot: IRState
+): Promise<IRState> {
+  await saveIRState(blockId, snapshot)
+  return snapshot
 }
 
 export async function performPostpone(
