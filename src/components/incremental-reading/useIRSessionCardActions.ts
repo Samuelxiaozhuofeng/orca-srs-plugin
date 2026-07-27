@@ -39,10 +39,16 @@ import {
 } from "../../srs/incremental-reading/irSessionCompleteCopy"
 import { postponeDaysForChoice } from "../../srs/incrementalReadingStorage"
 import type { IRSessionEntry } from "../../srs/incremental-reading/irMixedQueuePolicy"
+import {
+  createNextUndoRecord,
+  type IRNextUndoRecord
+} from "../../srs/incremental-reading/irNextUndo"
 import type { PostponeChoice } from "./IRPostponeMenu"
 
 export type IRSessionCardActionsDeps = {
   currentCard: IRCard | null | undefined
+  /** 当前队列条目：撤销上一篇需要原条目与其 key */
+  currentEntry: IRSessionEntry | null | undefined
   currentIndex: number
   isTopic: boolean
   isWorking: boolean
@@ -58,6 +64,11 @@ export type IRSessionCardActionsDeps = {
   setMoreOpen: (v: boolean) => void
   setCompleteChapterOpen: (v: boolean) => void
   setArchiveConfirmOpen: (v: boolean) => void
+  /**
+   * 会话内「撤销上一篇」单步记录。
+   * 「下一篇」写入；任何其它会写库的动作清空（撤销只覆盖最近一次且无后续污染的情况）。
+   */
+  setUndoRecord: (record: IRNextUndoRecord | null) => void
   removeCurrent: (options?: { metric?: "action.review" }) => void
 }
 
@@ -77,6 +88,7 @@ export type IRSessionCardActions = {
 export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSessionCardActions {
   const {
     currentCard,
+    currentEntry,
     currentIndex,
     isTopic,
     isWorking,
@@ -92,6 +104,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     setMoreOpen,
     setCompleteChapterOpen,
     setArchiveConfirmOpen,
+    setUndoRecord,
     removeCurrent
   } = deps
 
@@ -104,6 +117,12 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
       setIsWorking(false)
     }
   }
+
+  /**
+   * 当前篇一旦发生会写库的动作，就不再提供「撤销上一篇」——
+   * 撤销只保证回滚最近一次「下一篇」，不承诺清理其后的写入。
+   */
+  const invalidateUndo = () => setUndoRecord(null)
 
   const recordDwell = (card: IRCard) => {
     const dwellMs = Math.max(0, Date.now() - cardEnteredAtRef.current)
@@ -120,10 +139,23 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     try {
       await breakpoint.flush()
       const dwellMs = recordDwell(currentCard)
-      await performNext(currentCard.id, { dwellMs })
+      const outcome = await performNext(currentCard.id, { dwellMs })
       metricsRef.current.record("action.next", dwellMs, { cardType: currentCard.cardType })
       removeCurrent()
-      orca.notify("success", "已进入下一篇", { title: "渐进阅读" })
+      // 单步撤销：只有拿到动作前快照才可回滚排期，否则不提供入口（不做只回 UI 的假撤销）
+      const undoRecord = outcome.previousState && currentEntry
+        ? createNextUndoRecord({
+          entry: currentEntry,
+          index: currentIndex,
+          snapshot: outcome.previousState
+        })
+        : null
+      setUndoRecord(undoRecord)
+      orca.notify(
+        "success",
+        undoRecord ? "已进入下一篇（顶部可撤销上一篇）" : "已进入下一篇",
+        { title: "渐进阅读" }
+      )
     } catch (error) {
       metricsRef.current.record("action.failure", undefined, { kind: "next" })
       console.error("[IR Session] 下一篇失败:", error)
@@ -133,6 +165,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
 
   const handlePostpone = (choice?: PostponeChoice) => withWork(async () => {
     if (!currentCard) return
+    invalidateUndo()
     try {
       await breakpoint.flush()
       recordDwell(currentCard)
@@ -157,6 +190,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
       orca.notify("warn", "请先选择要摘录的文本", { title: "渐进阅读" })
       return
     }
+    invalidateUndo()
     try {
       const result = await createExtract(cursor, pluginName)
       if (!result) {
@@ -185,6 +219,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
       orca.notify("warn", formatItemizeNeedInExtract(), { title: "渐进阅读" })
       return
     }
+    invalidateUndo()
     try {
       await breakpoint.flush()
       const result = await convertExtractToItem({
@@ -209,6 +244,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
 
   const handleConvertToQA = () => withWork(async () => {
     if (!currentCard || isTopic) return
+    invalidateUndo()
     try {
       await breakpoint.flush()
       setMoreOpen(false)
@@ -247,6 +283,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
       orca.notify("warn", formatDirectionNeedInExtract(), { title: "渐进阅读" })
       return
     }
+    invalidateUndo()
     try {
       await breakpoint.flush()
       setMoreOpen(false)
@@ -273,6 +310,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
 
   const handleArchive = (options?: { nextChapterSchedule?: NextChapterSchedule }) => withWork(async () => {
     if (!currentCard) return
+    invalidateUndo()
     try {
       await breakpoint.flush()
       const outcome = await performArchive(currentCard.id, pluginName, options)
@@ -309,6 +347,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
 
   const handleSkipChapter = () => withWork(async () => {
     if (!currentCard) return
+    invalidateUndo()
     try {
       await breakpoint.flush()
       const outcome = await performSkipChapter(currentCard.id, pluginName)
@@ -342,6 +381,7 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
         setImportanceOpen(false)
         return
       }
+      invalidateUndo()
       const next = await performPriorityAdjust(currentCard.id, nudge.nextPriority)
       setQueue((prev: IRSessionEntry[]) => prev.map((entry: IRSessionEntry, i: number) => {
         if (i !== currentIndex || entry.kind !== "reading") return entry

@@ -109,6 +109,7 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-27 更新
+    - **误点回撤 + 文末防呆**（2026-07-27）：会话内**单步**「撤销上一篇」（`performNext` 回传动作前 IR 快照 → `undoPerformNext` 整体写回真回滚排期，队列按原下标回插并按快照修正断点/新卡判定；入口=会话头部按钮 + `Alt+U`；当前篇一旦有写库动作即失效，完成页不提供）；读到文末（触底或一屏装下全文）且停留 ≥4s 时「下一篇」先确认「以后再复习 / 完成，移出队列 / 取消」，完成分支仍走既有二次确认，本会话处理一次后不再弹。新增 `irNextUndo.ts` / `irEndOfContentGate.ts` / `useIRReadingEndZone.ts` / `IREndOfContentDialog.tsx`
     - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：新增「视觉规范（Apple HIG 基线）」小节；`ir-workspace.css` 全面令牌化——52 处裸圆角（4/5/6/7/8/9/10/12/14/16px 十档）归一到 `--srs-radius-*` 六档阶梯、18 处自定义阴影收敛为 `--srs-shadow-1/2/hero/overlay/pill`、37 处裸秒数动效改 `--srs-duration-*`；排版走 `--srs-text-*` / `--srs-weight-*` 且统计数字统一 `tabular-nums`；徽章/筛选 chip/次级按钮/托盘/空态按规范统一；IR 组件 ~150 处视觉内联样式迁移到 CSS 类（仅保留动作栏与正文宽度等运行时几何量）。**边界**：专注阅读保持块宿主（面板宿主深树死循环，见 [问题经验.md](问题经验.md)）；`*-host-chrome-managed` 作用域选择器原样保留；正文宽度仍是用户偏好（`irReaderWidthStorage`），未被 `--srs-measure` 覆盖；阅读纸张主题（mint/sepia/academic）改为每主题一份 `--ir-paper-*` 调色板（无法由 Orca 主题变量派生）
     - 2026-07-27（死代码清理）：`IRCardList.tsx` / `IRStatistics.tsx`（零引用旧平面列表/统计 UI）已删，随之删除 `incrementalReadingManagerUtils.ts` 中仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats`，以及 `ir-workspace.css` 中仅服务于它们的 `.ir-cardlist-*` / `.ir-stats-card-*`（41 条规则）；资料库分组由 `workspace/irLibraryFilters.ts` 承担，`getIRDateGroup` / `IR_GROUP_ORDER` / `IRCardGroup` 仍在使用
     - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话装配只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
@@ -116,7 +117,7 @@
     - 2026-07-26：**Extract→Q&A / Direction 原子转化**（`convertExtractToQA` / `convertExtractToDirection`，与 Cloze 共用事务脚手架；会话 ⋯更多「问答」「方向」）
     - 2026-07-26：断点**交互捕获守卫**（`irBreakpointInteractiveCapture.ts`，切卡清交互 debounce、过期捕获丢弃）；收集索引路径批量 `get-blocks`（批 50/并发 4）、`preheatIrBlockCache` 仅后端块、`mapPool` 并发 8
     - 2026-07-26（低危批次）：兜底仅查询失败触发；索引失败可见告警；autoMark 重入守卫/世代计数；快捷键一次性播种（`ir.defaultShortcutsSeeded`）；卸载排空断点在途写入；会话块 `resolveBlock` 三态；`IncrementalReadingSessionDemo` 已删；两套块缓存不合并决策固化
-    - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
+    - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IREndOfContentDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)** ⭐ 2026-07-26 更新
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression（完成主路径 / skip 兼容）、整本/章节移出、完成本章后大纲保留「已完成」结构、顺序徽标与 toast 文案
