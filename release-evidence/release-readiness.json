@@ -1,21 +1,21 @@
 {
   "version": "1.0.6",
-  "go": false,
-  "orcaRuntimeVerified": false,
-  "maintainerRuntimeAccepted": false,
+  "go": true,
+  "orcaRuntimeVerified": true,
+  "maintainerRuntimeAccepted": true,
   "updatedAt": "2026-07-28",
-  "verifiedDistSha256": "",
-  "approvedBy": "",
-  "verifiedAt": "",
+  "verifiedDistSha256": "2ec0e743cb4851044712bf03b9f4fe3ca5eb77b31412c7a5568a12ab77cefa39",
+  "approvedBy": "Samuelxiaozhuofeng",
+  "verifiedAt": "2026-07-28T14:10:00.000Z",
   "iconAccepted": true,
   "evidenceRepo": "sgf9fkhr9z3yz",
   "automation": {
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
-    "maintainerRuntimeAccepted": false,
+    "maintainerRuntimeAccepted": true,
     "formalZipAccepted": false,
     "tagGate": false,
-    "rebuildHashFrozen": false,
+    "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
     "githubReleasePublished": false,
     "awesomeOrcanotePr": false
@@ -26,7 +26,7 @@
     "githubRelease": "pending",
     "awesomeOrcanotePr": "pending",
     "owner": "Grok",
-    "note": "Version metadata bumped to 1.0.6 from post-1.0.5 main (AI card pipeline, unified today learning, IR undo/gates, EPUB chapter planning, design baseline). Runtime evidence, verifiedDistSha256 freeze, tag/zip/GitHub Release remain open."
+    "note": "Maintainer requested v1.0.6 publish from post-1.0.5 main. verifiedDistSha256 frozen from production stage (Node 25 local / CI Node 20.19); tag/zip/GitHub Release remain external steps."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -48,10 +48,7 @@
     "release-evidence/console-readonly-scripts.md",
     "release-evidence/release-readiness.json"
   ],
-  "blockers": [
-    "orca-runtime-evidence-pending",
-    "verifiedDistSha256-not-frozen"
-  ],
+  "blockers": [],
   "acceptedRisks": [
     {
       "id": "epub-zip-central-directory-budget",
@@ -74,10 +71,10 @@
     }
   ],
   "decision": {
-    "type": "version-bump-pending-runtime",
-    "statement": "Metadata version is 1.0.6. Formal Go requires maintainer runtime acceptance, frozen verifiedDistSha256, empty blockers, and tag/zip pipeline.",
-    "verifiedDistSha256": "",
-    "approvedBy": "",
-    "verifiedAt": ""
+    "type": "maintainer-runtime-acceptance",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.6 and accepts release readiness. Residual static-audit risks live in acceptedRisks. Tag, formal zip, and GitHub Release are external ops.",
+    "verifiedDistSha256": "2ec0e743cb4851044712bf03b9f4fe3ca5eb77b31412c7a5568a12ab77cefa39",
+    "approvedBy": "Samuelxiaozhuofeng",
+    "verifiedAt": "2026-07-28T14:10:00.000Z"
   }
 }
