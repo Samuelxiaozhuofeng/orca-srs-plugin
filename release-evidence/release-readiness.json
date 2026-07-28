@@ -18,15 +18,15 @@
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
     "githubReleasePublished": true,
-    "awesomeOrcanotePr": false
+    "awesomeOrcanotePr": true
   },
   "externalOps": {
     "tag": "completed: v1.0.6",
     "formalZip": "completed: orca-srs-1.0.6.zip",
     "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.6",
-    "awesomeOrcanotePr": "not-updated-for-1.0.6",
+    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/103",
     "owner": "Grok",
-    "note": "GitHub Release v1.0.6 is published with orca-srs-1.0.6.zip and SHA256SUMS.txt. awesome-orcanote listing was not updated in this release."
+    "note": "GitHub Release v1.0.6 is published. awesome-orcanote PR #103 is submitted and awaits upstream review/merge."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-published"
+    "WP-13": "release-published-upstream-pr-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
@@ -72,7 +72,7 @@
   ],
   "decision": {
     "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.6 and accepts release readiness. The v1.0.6 GitHub Release is published. Residual static-audit risks live in acceptedRisks.",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.6 and accepts release readiness. The v1.0.6 GitHub Release is published and awesome-orcanote PR #103 is submitted. Residual static-audit risks live in acceptedRisks.",
     "verifiedDistSha256": "2ec0e743cb4851044712bf03b9f4fe3ca5eb77b31412c7a5568a12ab77cefa39",
     "approvedBy": "Samuelxiaozhuofeng",
     "verifiedAt": "2026-07-28T14:10:00.000Z"
