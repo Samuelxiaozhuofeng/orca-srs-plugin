@@ -120,7 +120,7 @@ describe("createCloze", () => {
       cardRef,
       [{ name: "type", value: "cloze" }]
     )
-    expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 1, 0)
+    expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 1, 0, undefined)
   })
 
   it("撤销后 originalContent 使 getMaxClozeNumber 归零，再挖空仍为 c1", async () => {
@@ -180,7 +180,7 @@ describe("createCloze", () => {
     expect(newFragment?.clozeNumber).toBe(2)
     // 新编号 c2 初始写入；旧前缀 c1 走 ensure，不覆盖
     expect(writeInitialClozeSrsState).toHaveBeenCalledTimes(1)
-    expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 2, 1)
+    expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 2, 1, undefined)
     expect(ensureClozeSrsState).toHaveBeenCalledTimes(1)
     expect(ensureClozeSrsState).toHaveBeenCalledWith(1, 1, 0)
   })
@@ -214,7 +214,7 @@ describe("createCloze", () => {
     expect(ensureClozeSrsState).toHaveBeenCalledWith(1, 1, 0)
     // 新建的 c2：仅初始写入（daysOffset = 1）
     expect(writeInitialClozeSrsState).toHaveBeenCalledTimes(1)
-    expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 2, 1)
+    expect(writeInitialClozeSrsState).toHaveBeenCalledWith(1, 2, 1, undefined)
     expect(writeInitialClozeSrsState).not.toHaveBeenCalledWith(1, 1, expect.anything())
   })
 
@@ -242,5 +242,34 @@ describe("createCloze", () => {
       "card",
       expect.any(Array)
     )
+  })
+
+  it("ir_item 路径把 absolute due 传给 writeInitialClozeSrsState（1–14 天）", async () => {
+    const before = Date.now()
+    const result = await createCloze(
+      {
+        panelId: "p1",
+        rootBlockId: 1,
+        anchor: { blockId: 1, isInline: true, index: 0, offset: 0 },
+        focus: { blockId: 1, isInline: true, index: 0, offset: 8 },
+        isForward: true
+      },
+      "orca-srs",
+      { initialDueOrigin: "ir_item", irPriority: 50 }
+    )
+
+    expect(result?.clozeNumber).toBe(1)
+    expect(writeInitialClozeSrsState).toHaveBeenCalledTimes(1)
+    const args = vi.mocked(writeInitialClozeSrsState).mock.calls[0]
+    expect(args[0]).toBe(1)
+    expect(args[1]).toBe(1)
+    expect(args[2]).toBe(0)
+    const absoluteDue = args[3] as Date
+    expect(absoluteDue).toBeInstanceOf(Date)
+    const delayDays = (absoluteDue.getTime() - before) / (24 * 60 * 60 * 1000)
+    // dispersed：至少约 1 天，不超过 14 天（允许少量时钟误差）
+    expect(delayDays).toBeGreaterThanOrEqual(0.99)
+    expect(delayDays).toBeLessThanOrEqual(14.01)
+    expect(result?.initialDue?.getTime()).toBe(absoluteDue.getTime())
   })
 })

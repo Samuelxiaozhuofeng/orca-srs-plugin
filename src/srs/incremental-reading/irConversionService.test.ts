@@ -284,7 +284,13 @@ describe("convertExtractToQA", () => {
       expect(result.source.selectedText).toBe("question")
     }
     expect(deps.createQAOnBlock).toHaveBeenCalled()
-    expect(deps.initQASrs).toHaveBeenCalledWith(10)
+    expect(deps.initQASrs).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        initialDueOrigin: "ir_item",
+        pluginName: "orca-srs"
+      })
+    )
     expect(deps.writeSourceMeta).toHaveBeenCalled()
     expect(deps.deleteIrOnly).toHaveBeenCalledWith(10)
   })

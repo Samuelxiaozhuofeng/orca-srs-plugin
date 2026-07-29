@@ -35,7 +35,10 @@ function statusBadgeClass(status: ReturnType<typeof getCardDueStatus>): string {
 }
 
 function statusBadgeLabel(card: ReviewCard, status: ReturnType<typeof getCardDueStatus>): string {
-  if (status === "new") return "新卡"
+  if (status === "new") {
+    // 新卡也可能 due 在未来（IR Item 分散首 due）；badge 仍标「新卡」
+    return "新卡"
+  }
   return formatDueDate(card.srs.due)
 }
 
@@ -100,7 +103,11 @@ export default function CardListItem({
           <span className={statusBadgeClass(status)}>
             {statusBadgeLabel(card, status)}
           </span>
-          {!card.isNew && (
+          {card.isNew ? (
+            <span className="srs-card-badge srs-card-badge--meta">
+              首次 {formatDueDate(card.srs.due)}
+            </span>
+          ) : (
             <>
               <span className="srs-card-badge srs-card-badge--meta">
                 下次 {formatNextReviewDate(card.srs.due)}

@@ -1,8 +1,12 @@
 import type { Block, ContentFragment, CursorData, DbId } from "../../orca.d.ts"
 import { cloneBlockContent, createCloze } from "../clozeUtils"
 import { extractCardType } from "../deckUtils"
+import { getIrItemCreateOptionsForBlock } from "../irItemCreateContext"
 import { convertExtractToItem } from "./irConversionService"
-import { blockHasLiveIRScheduling } from "./irHybridExtract"
+import {
+  blockHasLiveIRScheduling,
+  isConvertExtractTarget
+} from "./irHybridExtract"
 
 export type ClozeCommandResult = {
   blockId: DbId
@@ -13,6 +17,8 @@ export type ClozeCommandResult = {
   addedCardTag?: boolean
   wroteInitialClozeSrs?: boolean
   isFirstClozeCard?: boolean
+  initialDue?: Date
+  initialDueHint?: string
 }
 
 export type IRClozeCommandDeps = {
@@ -43,13 +49,15 @@ export async function createClozeFromEditorCommand(
   const block = await deps.getBlock(blockId)
 
   const cardType = block ? extractCardType(block) : "basic"
-  // First dig: extracts. Later digs after keep_extract: type=cloze + live IR.
-  const useExtractConvert =
-    cardType === "extracts"
-    || (cardType === "cloze" && blockHasLiveIRScheduling(block))
+  const hasLiveIR = blockHasLiveIRScheduling(block)
+  // extracts 首次挖空；keep_extract 后 cloze/basic/direction + live IR 可继续挖
+  const useExtractConvert = isConvertExtractTarget(cardType, hasLiveIR)
+
+  // Topic/Extract 自身或其任意后代（正文子块/孙子块）→ ir_item 分散
+  const irOpts = await getIrItemCreateOptionsForBlock(block, blockId)
+
   if (!block || !useExtractConvert) {
-    // createCloze 返回含 originalContent 的 undoArgs，经 commands 原样透传
-    return deps.createRegularCloze(cursor, pluginName)
+    return deps.createRegularCloze(cursor, pluginName, irOpts)
   }
 
   // Extract 路径：convert 前快照正文，确保 Cmd+Z 能去掉残留 .cloze fragment
@@ -59,7 +67,10 @@ export async function createClozeFromEditorCommand(
     extractId: blockId,
     cursor,
     pluginName,
-    strategy: "keep_extract"
+    strategy: "keep_extract",
+    createClozeOptions: irOpts ?? {
+      initialDueOrigin: "ir_item"
+    }
   })
   if (!result.ok) {
     throw new Error(`Extract 制卡失败（${result.step}）：${result.error}`)
@@ -69,9 +80,10 @@ export async function createClozeFromEditorCommand(
     clozeNumber: result.clozeNumber,
     pluginName,
     originalContent,
-    // Extract 转化通常已在块上保留/写入 cloze；撤销只还原正文 + 本次编号 SRS
     wroteInitialClozeSrs: true,
     isFirstClozeCard: false,
-    addedCardTag: false
+    addedCardTag: false,
+    initialDue: result.initialDue,
+    initialDueHint: result.initialDueHint
   }
 }

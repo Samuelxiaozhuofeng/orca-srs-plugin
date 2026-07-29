@@ -44,6 +44,13 @@ export const FSRS_MAXIMUM_INTERVAL_MIN = 1
 /** maximum interval 有效闭区间上限（安全上限，与默认值一致） */
 export const FSRS_MAXIMUM_INTERVAL_MAX = 36500
 
+/** IR Topic/Extract 上新记忆卡的首次 due 模式 */
+export type IrItemInitialDueModeSetting = "dispersed" | "today" | "tomorrow"
+
+/** 默认：分散到未来 1..14 天（不当天扎堆） */
+export const DEFAULT_IR_ITEM_INITIAL_DUE_MODE: IrItemInitialDueModeSetting =
+  "dispersed"
+
 /** 设置键名（避免散落字符串） */
 export const REVIEW_SETTINGS_KEYS = {
   disableNotifications: "review.disableNotifications",
@@ -51,7 +58,9 @@ export const REVIEW_SETTINGS_KEYS = {
   reviewCardsPerDay: "review.reviewCardsPerDay",
   fsrsWeights: "review.fsrsWeights",
   fsrsRequestRetention: "review.fsrsRequestRetention",
-  fsrsMaximumInterval: "review.fsrsMaximumInterval"
+  fsrsMaximumInterval: "review.fsrsMaximumInterval",
+  /** Topic/Extract（及 live IR）上新建记忆卡的首次 due：dispersed | today | tomorrow */
+  irItemInitialDueMode: "review.irItemInitialDueMode"
 } as const
 
 export type ReviewSettingsKey =
@@ -154,6 +163,16 @@ export const reviewSettingsSchema = {
     defaultValue: DEFAULT_MAXIMUM_INTERVAL,
     description:
       "卡片复习的最大间隔天数（有限正整数 1-36500；默认 36500 天，约 100 年）"
+  },
+  [REVIEW_SETTINGS_KEYS.irItemInitialDueMode]: {
+    label: "IR 源记忆卡首次学习时间",
+    type: "string" as const,
+    defaultValue: DEFAULT_IR_ITEM_INITIAL_DUE_MODE,
+    description:
+      "仅影响在 Topic / Extract（及仍带渐进阅读排期的块）上新建的记忆卡。"
+      + "普通笔记制卡保持原行为。"
+      + "取值：dispersed（默认，按优先级分散到约 1–14 天后）、today、tomorrow。"
+      + "已有卡片的 due 不会因升级或改设置而重算。"
   }
 }
 
@@ -167,6 +186,44 @@ export interface ReviewSettings {
   fsrsWeights: string
   fsrsRequestRetention: number
   fsrsMaximumInterval: number
+  irItemInitialDueMode: IrItemInitialDueModeSetting
+}
+
+/**
+ * 解析 IR Item 首次 due 模式；非法值回退默认 dispersed 并保持可见。
+ */
+export function parseIrItemInitialDueMode(
+  raw: unknown
+): IrItemInitialDueModeSetting {
+  if (raw === "dispersed" || raw === "today" || raw === "tomorrow") {
+    return raw
+  }
+  if (raw !== undefined && raw !== null && raw !== "") {
+    console.warn(
+      `[SRS] 无效的 review.irItemInitialDueMode=${JSON.stringify(raw)}，`
+        + `回退为 ${DEFAULT_IR_ITEM_INITIAL_DUE_MODE}`
+    )
+  }
+  return DEFAULT_IR_ITEM_INITIAL_DUE_MODE
+}
+
+/**
+ * 读取 IR Item 首次 due 模式（带校验）。
+ */
+export function getIrItemInitialDueMode(
+  pluginName: string
+): IrItemInitialDueModeSetting {
+  try {
+    const settings =
+      typeof orca !== "undefined"
+        ? orca.state?.plugins?.[pluginName]?.settings
+        : undefined
+    return parseIrItemInitialDueMode(
+      settings?.[REVIEW_SETTINGS_KEYS.irItemInitialDueMode]
+    )
+  } catch {
+    return DEFAULT_IR_ITEM_INITIAL_DUE_MODE
+  }
 }
 
 /**
@@ -177,24 +234,43 @@ export interface ReviewSettings {
  * @returns 复习设置对象
  */
 export function getReviewSettings(pluginName: string): ReviewSettings {
-  const settings = orca.state.plugins[pluginName]?.settings
+  let settings: Record<string, unknown> | undefined
+  try {
+    settings =
+      typeof orca !== "undefined"
+        ? (orca.state?.plugins?.[pluginName]?.settings as
+            | Record<string, unknown>
+            | undefined)
+        : undefined
+  } catch {
+    settings = undefined
+  }
   return {
     disableNotifications:
-      settings?.[REVIEW_SETTINGS_KEYS.disableNotifications] ?? false,
+      (settings?.[REVIEW_SETTINGS_KEYS.disableNotifications] as
+        | boolean
+        | undefined) ?? false,
     newCardsPerDay:
-      settings?.[REVIEW_SETTINGS_KEYS.newCardsPerDay] ??
+      (settings?.[REVIEW_SETTINGS_KEYS.newCardsPerDay] as number | undefined) ??
       DEFAULT_NEW_CARDS_PER_DAY,
     reviewCardsPerDay:
-      settings?.[REVIEW_SETTINGS_KEYS.reviewCardsPerDay] ??
-      DEFAULT_REVIEW_CARDS_PER_DAY,
+      (settings?.[REVIEW_SETTINGS_KEYS.reviewCardsPerDay] as
+        | number
+        | undefined) ?? DEFAULT_REVIEW_CARDS_PER_DAY,
     fsrsWeights:
-      settings?.[REVIEW_SETTINGS_KEYS.fsrsWeights] ?? DEFAULT_FSRS_WEIGHTS,
+      (settings?.[REVIEW_SETTINGS_KEYS.fsrsWeights] as string | undefined) ??
+      DEFAULT_FSRS_WEIGHTS,
     fsrsRequestRetention:
-      settings?.[REVIEW_SETTINGS_KEYS.fsrsRequestRetention] ??
-      DEFAULT_REQUEST_RETENTION,
+      (settings?.[REVIEW_SETTINGS_KEYS.fsrsRequestRetention] as
+        | number
+        | undefined) ?? DEFAULT_REQUEST_RETENTION,
     fsrsMaximumInterval:
-      settings?.[REVIEW_SETTINGS_KEYS.fsrsMaximumInterval] ??
-      DEFAULT_MAXIMUM_INTERVAL
+      (settings?.[REVIEW_SETTINGS_KEYS.fsrsMaximumInterval] as
+        | number
+        | undefined) ?? DEFAULT_MAXIMUM_INTERVAL,
+    irItemInitialDueMode: parseIrItemInitialDueMode(
+      settings?.[REVIEW_SETTINGS_KEYS.irItemInitialDueMode]
+    )
   }
 }
 

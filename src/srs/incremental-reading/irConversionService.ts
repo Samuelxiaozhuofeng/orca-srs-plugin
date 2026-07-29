@@ -13,12 +13,14 @@
 import type { CursorData, DbId } from "../../orca.d.ts"
 import type { BlockWithRepr } from "../blockUtils"
 import { buildCardTagData } from "../cardTagDataBuilder"
-import { createCloze } from "../clozeUtils"
+import { createCloze, type CreateClozeOptions } from "../clozeUtils"
 import { extractCardType } from "../deckUtils"
 import {
   insertDirection,
-  type DirectionType
+  type DirectionType,
+  type InsertDirectionOptions
 } from "../directionUtils"
+import { formatInitialDueHint, resolveInitialDue } from "../initialDuePolicy"
 import {
   deleteIRSchedulingState,
   ensureIRState,
@@ -26,11 +28,12 @@ import {
   saveIRState,
   type IRState
 } from "../incrementalReadingStorage"
+import { getIrItemInitialDueMode } from "../settings/reviewSettingsSchema"
 import {
   ensureCardSrsState,
+  ensureCardSrsStateWithInitialDue,
   ensureClozeSrsState,
-  invalidateBlockCache,
-  writeInitialSrsState
+  invalidateBlockCache
 } from "../storage"
 import { ensureCardTagProperties } from "../tagPropertyInit"
 import { isCardTag } from "../tagUtils"
@@ -65,6 +68,8 @@ export type ConvertExtractToItemInput = {
   /** 默认 cloze；也可直接走 convertExtractToQA / convertExtractToDirection */
   itemType?: ConversionItemType
   direction?: DirectionType
+  /** 传入 createCloze；默认 ir_item + extract 优先级 */
+  createClozeOptions?: CreateClozeOptions
   deps?: Partial<ConversionDeps>
 }
 
@@ -95,6 +100,9 @@ export type ConvertExtractToItemSuccess = {
   extractId: DbId
   source: IRItemSourceMeta
   completedExtract: boolean
+  /** 本次新建记忆卡的首次 due（若创建路径写入） */
+  initialDue?: Date
+  initialDueHint?: string
 }
 
 export type ConvertExtractToItemFailure = {
@@ -118,8 +126,14 @@ export type ConversionDeps = {
   restoreBlock: (id: DbId, snapshot: BlockContentSnapshot) => Promise<void>
   createClozeOnBlock: (
     cursor: CursorData,
-    pluginName: string
-  ) => Promise<{ blockId: number; clozeNumber: number } | null>
+    pluginName: string,
+    options?: CreateClozeOptions
+  ) => Promise<{
+    blockId: number
+    clozeNumber: number
+    initialDue?: Date
+    initialDueHint?: string
+  } | null>
   initSrs: (blockId: DbId, clozeNumber: number) => Promise<void>
   deleteIncompleteItem: (blockId: DbId) => Promise<void>
   getCardType: (blockId: DbId) => Promise<string>
@@ -137,14 +151,25 @@ export type ConversionDeps = {
     pluginName: string,
     content: { front: string; back: string }
   ) => Promise<{ blockId: number } | null>
-  initQASrs: (blockId: DbId) => Promise<void>
+  initQASrs: (
+    blockId: DbId,
+    options?: {
+      pluginName?: string
+      irPriority?: number
+      initialDueOrigin?: "standard" | "ir_item"
+      initialDue?: Date
+    }
+  ) => Promise<void>
   verifyQACollectable: (itemId: DbId) => Promise<boolean>
   createDirectionOnBlock: (
     cursor: CursorData,
     pluginName: string,
-    direction: DirectionType
+    direction: DirectionType,
+    options?: InsertDirectionOptions
   ) => Promise<{ blockId: number } | null>
   verifyDirectionCollectable: (itemId: DbId) => Promise<boolean>
+  /** Q&A 初始化时的 IR 优先级（创建前冻结） */
+  irPriorityForInit?: number
 }
 
 const SOURCE_PROP_EXTRACT = "ir.sourceExtractId"
@@ -455,27 +480,51 @@ export async function defaultCreateQAOnBlock(
   return { blockId: extractId as number }
 }
 
-export async function defaultInitQASrs(blockId: DbId): Promise<void> {
-  const block = (await orca.invokeBackend("get-block", blockId)) as any
-  const props = block?.properties ?? []
-  const hasScheduling = props.some((p: any) =>
-    typeof p.name === "string"
-    && p.name.startsWith("srs.")
-    && p.name !== "srs.isCard"
-  )
-  if (!hasScheduling) {
-    await writeInitialSrsState(blockId)
-  } else {
-    await ensureCardSrsState(blockId)
+export async function defaultInitQASrs(
+  blockId: DbId,
+  options?: {
+    pluginName?: string
+    irPriority?: number
+    initialDueOrigin?: "standard" | "ir_item"
+    /** 若已算好绝对 due，优先使用（避免与返回值二次计算不一致） */
+    initialDue?: Date
   }
+): Promise<void> {
+  const origin = options?.initialDueOrigin ?? "ir_item"
+  const createdAt = new Date()
+  const mode = options?.pluginName
+    ? getIrItemInitialDueMode(options.pluginName)
+    : "dispersed"
+  const resolvedDue =
+    options?.initialDue
+    ?? resolveInitialDue({
+      origin,
+      mode,
+      identity: { blockId, cardType: "basic" },
+      createdAt,
+      legacyDue: createdAt,
+      priority: options?.irPriority
+    }).due
+
+  // IR Item：无真进度则写入/覆盖 dispersed（含 Extract 遗留顶层 srs 空壳）
+  if (origin === "ir_item") {
+    await ensureCardSrsStateWithInitialDue(blockId, resolvedDue, {
+      forceIfNoProgress: true
+    })
+    return
+  }
+
+  // standard：仅缺顶层调度时初始化
+  await ensureCardSrsState(blockId)
 }
 
 async function defaultCreateDirectionOnBlock(
   cursor: CursorData,
   pluginName: string,
-  direction: DirectionType
+  direction: DirectionType,
+  options?: InsertDirectionOptions
 ): Promise<{ blockId: number } | null> {
-  const result = await insertDirection(cursor, direction, pluginName)
+  const result = await insertDirection(cursor, direction, pluginName, options)
   if (!result) return null
   return { blockId: result.blockId as number }
 }
@@ -501,8 +550,11 @@ function resolveDeps(partial?: Partial<ConversionDeps>): ConversionDeps {
     deleteIrOnly: partial?.deleteIrOnly ?? deleteIRSchedulingState,
     snapshotBlock: partial?.snapshotBlock ?? snapshotConversionBlock,
     restoreBlock: partial?.restoreBlock ?? restoreConversionBlock,
-    createClozeOnBlock: partial?.createClozeOnBlock ?? createCloze,
+    createClozeOnBlock:
+      partial?.createClozeOnBlock
+      ?? ((cursor, pluginName, options) => createCloze(cursor, pluginName, options)),
     initSrs: partial?.initSrs ?? (async (id, clozeNumber) => {
+      // createCloze 已写过 due 时 ensure 不覆盖；仅补缺时用 legacy 偏移
       await ensureClozeSrsState(id, clozeNumber, Math.max(0, clozeNumber - 1))
     }),
     deleteIncompleteItem: partial?.deleteIncompleteItem ?? defaultDeleteIncompleteItem,
@@ -515,7 +567,7 @@ function resolveDeps(partial?: Partial<ConversionDeps>): ConversionDeps {
     writeSourceMeta: partial?.writeSourceMeta ?? writeSourceProperties,
     resolveQAContent: partial?.resolveQAContent ?? defaultResolveQAContent,
     createQAOnBlock: partial?.createQAOnBlock ?? defaultCreateQAOnBlock,
-    initQASrs: partial?.initQASrs ?? defaultInitQASrs,
+    initQASrs: partial?.initQASrs ?? ((id, opts) => defaultInitQASrs(id, opts)),
     verifyQACollectable: partial?.verifyQACollectable ?? defaultVerifyQACollectable,
     createDirectionOnBlock: partial?.createDirectionOnBlock ?? defaultCreateDirectionOnBlock,
     verifyDirectionCollectable:
@@ -528,6 +580,8 @@ type CreatePhaseResult = {
   clozeNumber: number
   mutatedSameBlock: boolean
   selectedText: string
+  initialDue?: Date
+  initialDueHint?: string
 }
 
 /**
@@ -558,7 +612,14 @@ async function finishConversionAfterCreate(params: {
     initSrsStep,
     verifyStep
   } = params
-  const { itemId: createdItemId, clozeNumber, mutatedSameBlock, selectedText } = created
+  const {
+    itemId: createdItemId,
+    clozeNumber,
+    mutatedSameBlock,
+    selectedText,
+    initialDue,
+    initialDueHint
+  } = created
 
   try {
     try {
@@ -630,7 +691,9 @@ async function finishConversionAfterCreate(params: {
       itemType,
       extractId,
       source,
-      completedExtract
+      completedExtract,
+      initialDue,
+      initialDueHint
     }
   } catch (error) {
     const cleanup = await safeCleanup(
@@ -672,6 +735,7 @@ export async function convertExtractToCloze(
     cursor,
     pluginName,
     strategy = "complete_extract",
+    createClozeOptions,
     deps: partialDeps
   } = input
   const deps = resolveDeps(partialDeps)
@@ -700,7 +764,16 @@ export async function convertExtractToCloze(
       return fail(extractId, "validate", "选区文本为空")
     }
 
-    const clozeResult = await deps.createClozeOnBlock(cursor, pluginName)
+    // 创建前冻结 priority；createCloze 第一次写 due 即用 ir_item 策略
+    const clozeOptions: CreateClozeOptions = {
+      initialDueOrigin: "ir_item",
+      irPriority: createClozeOptions?.irPriority ?? extractSnapshot.priority
+    }
+    const clozeResult = await deps.createClozeOnBlock(
+      cursor,
+      pluginName,
+      clozeOptions
+    )
     if (!clozeResult) {
       const cleanup = await safeCleanup(
         deps, null, extractId, extractSnapshot, contentSnapshot, true
@@ -720,7 +793,9 @@ export async function convertExtractToCloze(
         itemId: clozeResult.blockId,
         clozeNumber: clozeResult.clozeNumber,
         mutatedSameBlock: clozeResult.blockId === extractId,
-        selectedText
+        selectedText,
+        initialDue: clozeResult.initialDue,
+        initialDueHint: clozeResult.initialDueHint
       },
       initSrsStep: (itemId, n) => deps.initSrs(itemId, n),
       verifyStep: (itemId, n) => deps.verifyItemCollectable(itemId, n)
@@ -780,6 +855,16 @@ export async function convertExtractToQA(
     }
     createdItemId = qaResult.blockId
 
+    const createdAt = new Date()
+    const qaResolved = resolveInitialDue({
+      origin: "ir_item",
+      mode: getIrItemInitialDueMode(pluginName),
+      identity: { blockId: qaResult.blockId, cardType: "basic" },
+      createdAt,
+      legacyDue: createdAt,
+      priority: extractSnapshot.priority
+    })
+
     return finishConversionAfterCreate({
       extractId,
       pluginName,
@@ -792,10 +877,17 @@ export async function convertExtractToQA(
         itemId: qaResult.blockId,
         clozeNumber: 0,
         mutatedSameBlock: qaResult.blockId === extractId,
-        selectedText: qaContent.front.slice(0, 500)
+        selectedText: qaContent.front.slice(0, 500),
+        initialDue: qaResolved.due,
+        initialDueHint: formatInitialDueHint(qaResolved, createdAt)
       },
       initSrsStep: async (itemId) => {
-        await deps.initQASrs(itemId)
+        await deps.initQASrs(itemId, {
+          pluginName,
+          irPriority: extractSnapshot.priority,
+          initialDueOrigin: "ir_item",
+          initialDue: qaResolved.due
+        })
       },
       verifyStep: async (itemId) => deps.verifyQACollectable(itemId)
     })
@@ -865,7 +957,15 @@ export async function convertExtractToDirection(
       }
     })()
 
-    const dirResult = await deps.createDirectionOnBlock(cursor, pluginName, direction)
+    const dirResult = await deps.createDirectionOnBlock(
+      cursor,
+      pluginName,
+      direction,
+      {
+        initialDueOrigin: "ir_item",
+        irPriority: extractSnapshot.priority
+      }
+    )
     if (!dirResult) {
       // insertDirection 可能已改正文；强制同块回滚
       const cleanup = await safeCleanup(
@@ -888,6 +988,7 @@ export async function convertExtractToDirection(
         clozeNumber: 0,
         mutatedSameBlock: dirResult.blockId === extractId,
         selectedText: selectedText.slice(0, 500)
+        // createDirectionOnBlock 默认返回类型未带 due；insertDirection 已 toast
       },
       // insertDirection 已写入方向 SRS
       initSrsStep: async () => undefined,

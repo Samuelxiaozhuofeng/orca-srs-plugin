@@ -9,10 +9,24 @@
 
 import type { CursorData, Block, ContentFragment, DbId } from "../orca.d.ts"
 import type { BlockWithRepr } from "./blockUtils"
-import { writeInitialDirectionSrsState } from "./storage"
+import {
+  computeLegacyDueFromDaysOffset,
+  formatInitialDueHint,
+  resolveInitialDue,
+  type InitialDueOrigin
+} from "./initialDuePolicy"
+import { getIrItemCreateOptionsForBlock } from "./irItemCreateContext"
+import { getIrItemInitialDueMode } from "./settings/reviewSettingsSchema"
+import { ensureDirectionSrsState } from "./storage"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
+
+/** 方向卡首次 due 选项（由调用方判定 IR 来源） */
+export type InsertDirectionOptions = {
+  initialDueOrigin?: InitialDueOrigin
+  irPriority?: number
+}
 
 /**
  * 方向类型
@@ -49,10 +63,13 @@ const DIRECTION_SYMBOLS: Record<DirectionType, string> = {
 export async function insertDirection(
   cursor: CursorData,
   direction: DirectionType,
-  pluginName: string
+  pluginName: string,
+  options?: InsertDirectionOptions
 ): Promise<{
   blockId: DbId
   originalContent?: ContentFragment[]
+  initialDue?: Date
+  initialDueHint?: string
 } | null> {
   if (!cursor?.anchor?.blockId) {
     orca.notify("error", "无法获取光标位置")
@@ -161,12 +178,48 @@ export async function insertDirection(
       [{ name: "srs.isCard", value: true, type: 4 }]
     )
 
-    // 初始化 SRS 状态（分天推送）
+    // 初始化 SRS 状态（legacy 分天；IR Item 走 initialDuePolicy）
+    const createdAt = new Date()
+    const origin: InitialDueOrigin = options?.initialDueOrigin ?? "standard"
+    const mode = getIrItemInitialDueMode(pluginName)
+    let firstHint: string | undefined
+    let firstDue: Date | undefined
+
+    const writeDir = async (
+      dir: "forward" | "backward",
+      legacyOffset: number
+    ) => {
+      const legacyDue = computeLegacyDueFromDaysOffset(createdAt, legacyOffset)
+      const resolved = resolveInitialDue({
+        origin,
+        mode,
+        identity: {
+          blockId,
+          cardType: "direction",
+          directionType: dir
+        },
+        createdAt,
+        legacyDue,
+        priority: options?.irPriority
+      })
+      if (firstDue == null) {
+        firstDue = resolved.due
+        firstHint = formatInitialDueHint(resolved, createdAt)
+      }
+      // ensure：已有该方向前缀则不覆盖真进度
+      await ensureDirectionSrsState(
+        blockId,
+        dir,
+        legacyOffset,
+        origin === "ir_item" ? resolved.due : undefined
+      )
+    }
+
     if (direction === "bidirectional") {
-      await writeInitialDirectionSrsState(blockId, "forward", 0) // 今天
-      await writeInitialDirectionSrsState(blockId, "backward", 1) // 明天
+      await writeDir("forward", 0)
+      await writeDir("backward", 1)
     } else {
-      await writeInitialDirectionSrsState(blockId, direction, 0)
+      await writeDir(direction, 0)
     }
 
     // 将光标移动到方向标记右侧，方便继续输入答案
@@ -200,9 +253,18 @@ export async function insertDirection(
         : direction === "backward"
         ? "反向"
         : "双向"
-    orca.notify("success", `已创建${dirLabel}卡片`, { title: "方向卡" })
+    const dueSuffix =
+      origin === "ir_item" && firstHint ? `（${firstHint}）` : ""
+    orca.notify("success", `已创建${dirLabel}卡片${dueSuffix}`, {
+      title: "方向卡"
+    })
 
-    return { blockId, originalContent }
+    return {
+      blockId,
+      originalContent,
+      initialDue: firstDue,
+      initialDueHint: firstHint
+    }
   } catch (error) {
     console.error(`[${pluginName}] 创建方向卡失败:`, error)
     orca.notify("error", `创建方向卡失败: ${error}`)
@@ -264,13 +326,34 @@ export async function updateBlockDirection(
     }
   }
 
-  // 如果切换到双向，需要初始化反向卡的 SRS 状态
+  // 如果切换到双向，需要初始化反向卡的 SRS 状态（接入 IR Item 首次 due）
   if (newDirection === "bidirectional") {
     const hasBackward = block.properties?.some((p) =>
       p.name.startsWith("srs.backward.")
     )
     if (!hasBackward) {
-      await writeInitialDirectionSrsState(blockId, "backward", 1)
+      const createdAt = new Date()
+      const irOpts = await getIrItemCreateOptionsForBlock(block, blockId)
+      const origin = irOpts?.initialDueOrigin ?? "standard"
+      const legacyDue = computeLegacyDueFromDaysOffset(createdAt, 1)
+      const resolved = resolveInitialDue({
+        origin,
+        mode: getIrItemInitialDueMode(pluginName),
+        identity: {
+          blockId,
+          cardType: "direction",
+          directionType: "backward"
+        },
+        createdAt,
+        legacyDue,
+        priority: irOpts?.irPriority
+      })
+      await ensureDirectionSrsState(
+        blockId,
+        "backward",
+        1,
+        origin === "ir_item" ? resolved.due : undefined
+      )
     }
   }
 }

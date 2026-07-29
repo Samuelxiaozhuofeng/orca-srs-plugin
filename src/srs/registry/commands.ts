@@ -9,6 +9,7 @@ import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
 import { createChoiceCardFromBlock } from "../choiceCardCreator"
 import { createClozeFromEditorCommand } from "../incremental-reading/irClozeCommandService"
 import { insertDirection } from "../directionUtils"
+import { getIrItemCreateOptionsForBlock } from "../irItemCreateContext"
 import { createListCardFromBlock } from "../listCardCreator"
 import { createTopicCard } from "../topicCardCreator"
 import { createExtract } from "../extractUtils"
@@ -233,7 +234,15 @@ export function registerCommands(
         orca.notify("error", "无法获取光标位置")
         return null
       }
-      const result = await insertDirection(cursor, "forward", _pluginName)
+      const blockId = cursor.anchor.blockId
+      const block = (orca.state.blocks?.[blockId] as Block | undefined) ?? null
+      const irOpts = await getIrItemCreateOptionsForBlock(block, blockId)
+      const result = await insertDirection(
+        cursor,
+        "forward",
+        _pluginName,
+        irOpts
+      )
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
@@ -271,7 +280,15 @@ export function registerCommands(
         orca.notify("error", "无法获取光标位置")
         return null
       }
-      const result = await insertDirection(cursor, "backward", _pluginName)
+      const blockId = cursor.anchor.blockId
+      const block = (orca.state.blocks?.[blockId] as Block | undefined) ?? null
+      const irOpts = await getIrItemCreateOptionsForBlock(block, blockId)
+      const result = await insertDirection(
+        cursor,
+        "backward",
+        _pluginName,
+        irOpts
+      )
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {

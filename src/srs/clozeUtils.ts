@@ -10,6 +10,13 @@
 import type { CursorData, Block, ContentFragment } from "../orca.d.ts"
 import { BlockWithRepr } from "./blockUtils"
 import {
+  computeLegacyDueFromDaysOffset,
+  formatInitialDueHint,
+  resolveInitialDue,
+  type InitialDueOrigin
+} from "./initialDuePolicy"
+import { getIrItemInitialDueMode } from "./settings/reviewSettingsSchema"
+import {
   ensureClozeSrsState,
   invalidateBlockCache,
   writeInitialClozeSrsState
@@ -17,6 +24,16 @@ import {
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
+
+/**
+ * 创建 Cloze 时的首次 due 选项。
+ * origin 由调用方判定（Topic/Extract/live IR），本函数不猜 IR。
+ */
+export type CreateClozeOptions = {
+  initialDueOrigin?: InitialDueOrigin
+  /** ir_item 分散时使用的优先级（0..100，越大越优先） */
+  irPriority?: number
+}
 
 /**
  * 深拷贝 content 快照，供 undo 在 valtio 变异后仍还原挖空前正文。
@@ -206,11 +223,13 @@ function buildNewContent(
  * 
  * @param cursor - 当前光标位置和选中信息
  * @param pluginName - 插件名称
+ * @param options - 可选首次 due 来源（IR Item 路径由调用方传入）
  * @returns 转换结果或 null
  */
 export async function createCloze(
   cursor: CursorData,
-  pluginName: string
+  pluginName: string,
+  options?: CreateClozeOptions
 ): Promise<{
   blockId: number
   clozeNumber: number
@@ -221,6 +240,9 @@ export async function createCloze(
   isFirstClozeCard?: boolean
   /** 改写正文前的 content 深拷贝；undo 必须还原，否则残留 .cloze fragment */
   originalContent?: ContentFragment[]
+  /** 本次新建填空的首次 due（供 toast / 诊断） */
+  initialDue?: Date
+  initialDueHint?: string
 } | null> {
   // 验证光标数据
   if (!cursor || !cursor.anchor || !cursor.anchor.blockId) {
@@ -374,23 +396,56 @@ export async function createCloze(
     // 属性写入后使块缓存失效，确保下方 ensureClozeSrsState 读取到最新属性
     invalidateBlockCache(blockId)
 
-    // 为每个填空设置分天的初始 SRS 状态（daysOffset = clozeNumber - 1）：
+    // 为每个填空设置初始 SRS 状态：
     // - 仅本次新建的编号无条件写入初始状态（避免复用已删除编号时继承孤儿 srs.cN.* 旧状态）
     // - 已存在的编号只在缺少 srs.cN.* 属性时初始化，绝不覆盖已有复习进度
+    // - standard：legacy daysOffset = clozeNumber - 1
+    // - ir_item：按 initialDuePolicy 写绝对 due（默认分散 1..14 天），不叠加 clozeNumber-1
+    const createdAt = new Date()
+    const origin: InitialDueOrigin = options?.initialDueOrigin ?? "standard"
+    let newInitialDue: Date | undefined
+    let newInitialDueHint: string | undefined
+
     for (let i = 0; i < clozeNumbers.length; i++) {
       const clozeNumber = clozeNumbers[i]
       const daysOffset = clozeNumber - 1
+      const legacyDue = computeLegacyDueFromDaysOffset(createdAt, daysOffset)
+
       if (clozeNumber === nextClozeNumber) {
-        await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
+        const resolved = resolveInitialDue({
+          origin,
+          mode: getIrItemInitialDueMode(pluginName),
+          identity: {
+            blockId,
+            cardType: "cloze",
+            clozeNumber
+          },
+          createdAt,
+          legacyDue,
+          priority: options?.irPriority
+        })
+        newInitialDue = resolved.due
+        newInitialDueHint = formatInitialDueHint(resolved, createdAt)
+        await writeInitialClozeSrsState(
+          blockId,
+          clozeNumber,
+          daysOffset,
+          origin === "ir_item" ? resolved.due : undefined
+        )
       } else {
+        // 已有编号：ensure 仅补缺，仍用 legacy 偏移；有状态则完全不动
         await ensureClozeSrsState(blockId, clozeNumber, daysOffset)
       }
     }
 
     // 显示成功通知
+    const dueSuffix =
+      origin === "ir_item" && newInitialDueHint
+        ? `（${newInitialDueHint}）`
+        : ""
     orca.notify(
       "success",
-      `已创建填空 c${nextClozeNumber}: "${selectedText}"`,
+      `已创建填空 c${nextClozeNumber}: "${selectedText}"${dueSuffix}`,
       { title: "Cloze" }
     )
 
@@ -402,7 +457,9 @@ export async function createCloze(
       addedCardTag: !hasCardTagBefore,
       wroteInitialClozeSrs: true,
       isFirstClozeCard: !hasCardTagBefore,
-      originalContent
+      originalContent,
+      initialDue: newInitialDue,
+      initialDueHint: newInitialDueHint
     }
   } catch (error) {
     console.error(`[${pluginName}] 创建 cloze 失败:`, error)

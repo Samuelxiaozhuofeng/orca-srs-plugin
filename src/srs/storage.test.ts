@@ -42,6 +42,7 @@ import {
   deleteCardSrsData,
   deleteClozeCardSrsData,
   deleteDirectionCardSrsData,
+  ensureCardSrsStateWithInitialDue,
   ensureClozeSrsState,
   hasBlockCacheEntry,
   loadCardSrsState,
@@ -788,6 +789,87 @@ describe("storage 核心持久层", () => {
       const expectedDue = new Date(FIXED_NOW)
       expectedDue.setHours(0, 0, 0, 0)
       expect(ensured.due.getTime()).toBe(expectedDue.getTime())
+    })
+  })
+
+  // ==========================================================================
+  // ensureCardSrsStateWithInitialDue：空壳可覆盖 / 真进度不覆盖
+  // ==========================================================================
+
+  describe("ensureCardSrsStateWithInitialDue forceIfNoProgress", () => {
+    const targetDue = new Date(2026, 7, 1, 8, 0, 0, 0)
+
+    it("仅 srs.isCard（无顶层调度）→ 写入 initialDue", async () => {
+      const id = 701 as DbId
+      mockBlocks[id] = makeBlock({
+        id,
+        properties: [{ name: "srs.isCard", type: 4, value: true }] as any,
+      })
+
+      const ensured = await ensureCardSrsStateWithInitialDue(id, targetDue)
+      expect(ensured.due.getTime()).toBe(targetDue.getTime())
+      expect(ensured.reps).toBe(0)
+      expect(propNames(id)).toContain("srs.due")
+    })
+
+    it("Extract 空壳（有 srs.* 但 reps=0、无 lastReviewed）+ force → 覆盖 due", async () => {
+      const id = 702 as DbId
+      const oldDue = new Date(2026, 0, 1)
+      mockBlocks[id] = makeBlock({
+        id,
+        properties: [
+          { name: "srs.isCard", type: 4, value: true },
+          { name: "srs.due", type: 5, value: oldDue },
+          { name: "srs.reps", type: 3, value: 0 },
+          { name: "srs.stability", type: 3, value: 0 },
+          { name: "srs.difficulty", type: 3, value: 0 },
+          { name: "srs.interval", type: 3, value: 0 },
+          { name: "srs.lapses", type: 3, value: 0 },
+          { name: "srs.state", type: 3, value: 0 },
+          { name: "srs.resets", type: 3, value: 0 },
+          { name: "srs.lastReviewed", type: 5, value: null },
+        ] as any,
+      })
+      clearBlockCache()
+
+      const ensured = await ensureCardSrsStateWithInitialDue(id, targetDue, {
+        forceIfNoProgress: true,
+      })
+      expect(ensured.due.getTime()).toBe(targetDue.getTime())
+      const persisted = await loadCardSrsState(id)
+      expect(persisted.due.getTime()).toBe(targetDue.getTime())
+    })
+
+    it("有真进度（reps>0）+ force → 不覆盖", async () => {
+      const id = 703 as DbId
+      const oldDue = new Date(2026, 0, 15)
+      mockBlocks[id] = makeBlock({
+        id,
+        properties: [
+          { name: "srs.due", type: 5, value: oldDue },
+          { name: "srs.reps", type: 3, value: 3 },
+          { name: "srs.stability", type: 3, value: 10 },
+          { name: "srs.difficulty", type: 3, value: 5 },
+          { name: "srs.interval", type: 3, value: 7 },
+          { name: "srs.lapses", type: 3, value: 0 },
+          { name: "srs.state", type: 3, value: State.Review },
+          { name: "srs.resets", type: 3, value: 0 },
+          {
+            name: "srs.lastReviewed",
+            type: 5,
+            value: new Date(2026, 0, 10),
+          },
+        ] as any,
+      })
+      clearBlockCache()
+
+      const beforeWrites = setPropertiesCallCount()
+      const ensured = await ensureCardSrsStateWithInitialDue(id, targetDue, {
+        forceIfNoProgress: true,
+      })
+      expect(ensured.due.getTime()).toBe(oldDue.getTime())
+      expect(ensured.reps).toBe(3)
+      expect(setPropertiesCallCount()).toBe(beforeWrites)
     })
   })
 })

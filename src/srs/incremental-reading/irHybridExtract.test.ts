@@ -39,16 +39,20 @@ describe("irHybridExtract", () => {
     expect(blockHasLiveIRScheduling(block("cloze", []))).toBe(false)
   })
 
-  it("allows convert target for extracts and hybrid cloze", () => {
+  it("allows convert target for extracts and any live-IR hybrid (not topic)", () => {
     expect(isConvertExtractTarget("extracts", false)).toBe(true)
     expect(isConvertExtractTarget("cloze", true)).toBe(true)
+    expect(isConvertExtractTarget("basic", true)).toBe(true)
+    expect(isConvertExtractTarget("direction", true)).toBe(true)
     expect(isConvertExtractTarget("cloze", false)).toBe(false)
     expect(isConvertExtractTarget("topic", true)).toBe(false)
   })
 
-  it("resolves hybrid cloze as extracts for IR queue", () => {
+  it("resolves any live-IR hybrid as extracts for IR queue", () => {
     expect(resolveIRCardType(block("extracts", [{ name: "ir.due" }]))).toBe("extracts")
     expect(resolveIRCardType(block("cloze", [{ name: "ir.due" }]))).toBe("extracts")
+    expect(resolveIRCardType(block("basic", [{ name: "ir.due" }]))).toBe("extracts")
+    expect(resolveIRCardType(block("direction", [{ name: "ir.due" }]))).toBe("extracts")
     expect(resolveIRCardType(block("cloze", []))).toBeNull()
     expect(resolveIRCardType(block("topic", [{ name: "ir.due" }]))).toBe("topic")
   })

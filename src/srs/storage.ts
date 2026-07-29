@@ -253,6 +253,38 @@ export async function runBoundedConcurrency<T>(
 const hasPropertyWithPrefix = (block: Block | undefined, prefix: string): boolean =>
   !!block?.properties?.some(prop => prop.name.startsWith(prefix))
 
+/**
+ * 顶层普通卡调度属性（排除 srs.isCard、cloze/direction 命名空间）。
+ * 仅有 srs.isCard 不算“已初始化调度”。
+ */
+export function blockHasTopLevelSrsScheduling(
+  block: Block | null | undefined
+): boolean {
+  if (!block?.properties?.length) return false
+  return block.properties.some((prop) => {
+    const name = prop.name
+    if (typeof name !== "string" || !name.startsWith("srs.")) return false
+    if (name === "srs.isCard") return false
+    if (/^srs\.c\d+\./.test(name)) return false
+    if (name.startsWith("srs.forward.") || name.startsWith("srs.backward.")) {
+      return false
+    }
+    return true
+  })
+}
+
+/**
+ * 是否已有不可覆盖的顶层复习进度（至少复习过一次或有 lastReviewed）。
+ * Extract 自动标记写入的 reps=0 空壳不算真进度。
+ */
+export function cardSrsHasMeaningfulProgress(
+  state: Pick<SrsState, "reps" | "lastReviewed">
+): boolean {
+  if (state.reps > 0) return true
+  if (state.lastReviewed != null) return true
+  return false
+}
+
 
 // ============================================================================
 // 工具函数
@@ -500,18 +532,24 @@ export const saveClozeSrsState = (
  *
  * @param blockId - 块 ID
  * @param clozeNumber - 填空编号
- * @param daysOffset - 距离今天的天数偏移（c1=0, c2=1, c3=2...）
+ * @param daysOffset - 距离今天的天数偏移（c1=0, c2=1, c3=2...）；当 initialDue 缺省时使用
+ * @param initialDue - 可选绝对首次 due（IR Item 分散路径）；提供时忽略 daysOffset
  */
 export const writeInitialClozeSrsState = async (
   blockId: DbId,
   clozeNumber: number,
-  daysOffset: number = 0
+  daysOffset: number = 0,
+  initialDue?: Date
 ): Promise<SrsState> => {
-  const now = new Date()
-  // 设置到期时间为今天 + daysOffset 天
-  const dueDate = new Date(now)
-  dueDate.setDate(dueDate.getDate() + daysOffset)
-  dueDate.setHours(0, 0, 0, 0) // 设置为当天零点
+  let dueDate: Date
+  if (initialDue != null) {
+    dueDate = new Date(initialDue.getTime())
+  } else {
+    const now = new Date()
+    dueDate = new Date(now)
+    dueDate.setDate(dueDate.getDate() + daysOffset)
+    dueDate.setHours(0, 0, 0, 0) // 设置为当天零点
+  }
 
   const initial = createInitialSrsState(dueDate)
   await saveClozeSrsState(blockId, clozeNumber, initial)
@@ -625,18 +663,25 @@ export const saveDirectionSrsState = async (
  *
  * @param blockId - 块 ID
  * @param directionType - 方向类型
- * @param daysOffset - 距离今天的天数偏移（forward=0, backward=1）
+ * @param daysOffset - 距离今天的天数偏移（forward=0, backward=1）；initialDue 缺省时使用
+ * @param initialDue - 可选绝对首次 due（IR Item 分散路径）；提供时忽略 daysOffset
  * @returns 初始 SRS 状态
  */
 export const writeInitialDirectionSrsState = async (
   blockId: DbId,
   directionType: "forward" | "backward",
-  daysOffset: number = 0
+  daysOffset: number = 0,
+  initialDue?: Date
 ): Promise<SrsState> => {
-  const now = new Date()
-  const dueDate = new Date(now)
-  dueDate.setDate(dueDate.getDate() + daysOffset)
-  dueDate.setHours(0, 0, 0, 0)
+  let dueDate: Date
+  if (initialDue != null) {
+    dueDate = new Date(initialDue.getTime())
+  } else {
+    const now = new Date()
+    dueDate = new Date(now)
+    dueDate.setDate(dueDate.getDate() + daysOffset)
+    dueDate.setHours(0, 0, 0, 0)
+  }
 
   const initial = createInitialSrsState(dueDate)
   await saveDirectionSrsState(blockId, directionType, initial)
@@ -689,52 +734,75 @@ export const ensureCardSrsState = async (
 /**
  * 确保普通卡片存在 SRS 属性（支持自定义初始 due）
  *
- * 用于需要“按规则初始化 due”的场景（如列表卡条目：第 1 条今天到期，其余条目明天到期）。
- * 若块已存在任何 `srs.` 前缀属性，则不会覆盖现有状态。
+ * - 无顶层调度属性（可仅有 srs.isCard）→ 写入 initialDue
+ * - 有调度但无真进度（reps=0 且无 lastReviewed）且 forceIfNoProgress
+ *   → 覆盖写入 initialDue（用于 Extract 遗留壳 / IR Item 首次分散）
+ * - 已有真进度 → 绝不覆盖
  *
- * @param blockId - 块 ID
- * @param initialDue - 首次初始化时写入的 due 时间
+ * 列表卡等路径默认 forceIfNoProgress=false，保持旧行为（有任意顶层调度则不动）。
  */
 export const ensureCardSrsStateWithInitialDue = async (
   blockId: DbId,
-  initialDue: Date
+  initialDue: Date,
+  options?: { forceIfNoProgress?: boolean }
 ): Promise<SrsState> => {
   const block = await getBlockCached(blockId)
-  const hasAnySrsProps = hasPropertyWithPrefix(block, "srs.")
-  if (!hasAnySrsProps) {
+  const hasScheduling = blockHasTopLevelSrsScheduling(block)
+  if (!hasScheduling) {
     return await writeInitialSrsState(blockId, initialDue)
   }
-  return await loadCardSrsState(blockId)
+  const existing = await loadCardSrsState(blockId)
+  if (
+    options?.forceIfNoProgress === true
+    && !cardSrsHasMeaningfulProgress(existing)
+  ) {
+    return await writeInitialSrsState(blockId, initialDue)
+  }
+  return existing
 }
 
 /**
  * 确保 Cloze 某个填空编号存在 SRS 属性：若没有 `srs.cN.` 前缀属性，则写入初始状态（含分天偏移）。
+ * 已有 `srs.cN.*` 时绝不覆盖（升级插件不会重排旧卡）。
  */
 export const ensureClozeSrsState = async (
   blockId: DbId,
   clozeNumber: number,
-  daysOffset: number = 0
+  daysOffset: number = 0,
+  initialDue?: Date
 ): Promise<SrsState> => {
   const block = await getBlockCached(blockId)
   const prefix = `srs.c${clozeNumber}.`
   if (!hasPropertyWithPrefix(block, prefix)) {
-    return await writeInitialClozeSrsState(blockId, clozeNumber, daysOffset)
+    return await writeInitialClozeSrsState(
+      blockId,
+      clozeNumber,
+      daysOffset,
+      initialDue
+    )
   }
   return await loadClozeSrsState(blockId, clozeNumber)
 }
 
 /**
  * 确保 Direction 某个方向存在 SRS 属性：若没有 `srs.forward.` / `srs.backward.` 前缀属性，则写入初始状态（含分天偏移）。
+ * 已有前缀属性时绝不覆盖。
  */
 export const ensureDirectionSrsState = async (
   blockId: DbId,
   directionType: "forward" | "backward",
-  daysOffset: number = 0
+  daysOffset: number = 0,
+  initialDue?: Date
 ): Promise<SrsState> => {
   const block = await getBlockCached(blockId)
   const prefix = `srs.${directionType}.`
   if (!hasPropertyWithPrefix(block, prefix)) {
-    return await writeInitialDirectionSrsState(blockId, directionType, daysOffset)
+    return await writeInitialDirectionSrsState(
+      blockId,
+      directionType,
+      daysOffset,
+      initialDue
+    )
   }
   return await loadDirectionSrsState(blockId, directionType)
 }

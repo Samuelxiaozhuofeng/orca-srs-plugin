@@ -57,7 +57,7 @@
 
 ### 卡种
 
-5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-07-26 更新 — Cloze fragment / 分天 SRS / 复习渲染；`isClozeFragment` 共用谓词（兼容旧前缀）；创建仅新编号初始写入、已有编号 ensure 不覆盖
+5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-07-29 更新 — Cloze fragment / 首次 due（普通 legacy 分天；Topic·Extract·live IR 默认 1–14 天分散）/ 复习渲染；`isClozeFragment` 共用谓词；创建仅新编号初始写入、已有编号 ensure 不覆盖
 6. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-07-26 更新 — Direction 左右向、入队条件、渲染；direction 白名单双层防御（脏值回退 forward / `getDirectionList` 返回 `[]`）
 7. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
 8. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-26 更新
@@ -120,7 +120,7 @@
     - **模块级总线** `srsBroadcastBus`：Orca 每类型单 handler + 订阅者扇出；Flash Home 经总线订阅；unload `teardown`
     - 关联：`srsEvents.ts`、`srsBroadcastBus.ts`、`reviewCardGrading.ts`
 
-23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-27 更新 — §6.4 **统一推送 + 移除时间盒**（队列长度改由每日上限决定、纳入新卡、纯复习队列、IR 日额度扣减剔除 `reviewProcessed`）； IR 分散/排队、时间盒队列最终配额与诊断、本地日 seed、会话装配只读（B1，装配阶段本身）+ **会话启动 auto-postpone 接回主路径**（当日一次、反复推迟降权）、迟到补偿、队列排序改老化 + 探索真随机（含已落地 vs 计划状态说明）；§6.4 补混合会话 SRS 复习日额度扣减（`irMixedDailyBudget.ts`，日志失败 fail-closed 阻断装配）
+23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-29 更新 — **IR 源记忆卡首次 due 1–14 天分散**（`initialDuePolicy` / `review.irItemInitialDueMode`，仅新建、不迁旧卡）；§6.4 统一推送 + 移除时间盒；IR 分散/排队、本地日 seed、会话启动 auto-postpone、迟到补偿、队列老化 + 探索真随机；混合会话 SRS 复习日额度
 
 ### 渐进阅读与导入
 

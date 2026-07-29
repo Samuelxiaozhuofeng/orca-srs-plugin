@@ -1,8 +1,8 @@
 # SRS 填空卡（Cloze）
 
-> **文档同步日期**：2026-07-26  
-> **变更说明**：新增导出谓词 `isClozeFragment`（生成/读取侧共用宽松匹配，兼容旧前缀 `*.cloze`）；创建流程第 8 步改为「仅新建编号初始写入、已存在编号 ensure 不覆盖」，`srs.isCard` 写后补 `invalidateBlockCache`。  
-> 2026-07-26：撤销必须还原正文——`createCloze` 在 `setBlocksContent` 前深拷贝 `originalContent`；`undoClozeCardCreation` 先还原 content 再删 `srs.cN.*`（编辑器栈不会自动去掉 `.cloze` fragment，残留会导致再挖空编号变成 c2）。  
+> **文档同步日期**：2026-07-29  
+> **变更说明**：IR Topic/Extract（及 live IR）上挖空时，新建编号的首次 `srs.cN.due` 走 `initialDuePolicy`（默认按 priority 分散 1–14 天，设置 `review.irItemInitialDueMode`）；普通笔记挖空仍 legacy（c1 今天、c2 明天）。`createCloze(..., options?)` 由调用方传入 `initialDueOrigin`，不在工具内猜 IR。已有 `srs.cN.*` 永不覆盖。  
+> 2026-07-26：新增导出谓词 `isClozeFragment`；创建仅新编号初始写入、已有编号 ensure 不覆盖；撤销必须还原正文。  
 > 2026-07-13：由「实现过程/阶段计划」改写为以当前代码为准的实现文档；删除过时的 `{c1::}` 纯文本方案描述，统一为 ContentFragment 机制。
 
 ---
@@ -52,7 +52,14 @@
 | due / lastReviewed | 到期与上次复习 |
 | reps / lapses | 次数统计 |
 
-创建时分天推送：`daysOffset = clozeNumber - 1`（c1 今天、c2 明天……）。**仅本次新建的编号**由 `writeInitialClozeSrsState` 无条件写入初始状态；已存在的编号只经 `ensureClozeSrsState(blockId, clozeNumber, daysOffset)` 在缺属性时补齐，**绝不覆盖已有复习进度**（否则二次挖空会静默重置块内旧填空的 FSRS 状态，见 `问题经验.md` 2026-07-26 条目）。
+**首次 due：**
+
+| 路径 | 行为 |
+|------|------|
+| 普通笔记（`origin=standard`） | legacy：`daysOffset = clozeNumber - 1`（c1 今天、c2 明天……） |
+| Topic / Extract / live IR **自身或其后代块**（`origin=ir_item`） | 祖先 walk 找到最近 `#card type=topic|extracts`（或 hybrid live IR），用其 `ir.priority`；默认 `dispersed`（约 1–14 天）；不叠加 clozeNumber-1。设置键 `review.irItemInitialDueMode` |
+
+**仅本次新建的编号**由 `writeInitialClozeSrsState` 无条件写入初始状态；已存在的编号只经 `ensureClozeSrsState` 在缺属性时补齐，**绝不覆盖已有复习进度**（升级插件不会重排旧卡；见 `问题经验.md` 2026-07-26 二次挖空条目）。
 
 ### 身份（cardIdentity）
 
@@ -64,7 +71,8 @@
 
 ## 创建流程
 
-实现：`src/srs/clozeUtils.ts` → `createCloze(cursor, pluginName)`
+实现：`src/srs/clozeUtils.ts` → `createCloze(cursor, pluginName, options?)`  
+入口：`createClozeFromEditorCommand` → `getIrItemCreateOptionsForBlock`（向上找 Topic/Extract 祖先，正文子块挖空也算）。
 
 1. 校验光标：同一块、同一 fragment 内有非空选区（不支持跨 fragment/跨样式选区）
 2. `getMaxClozeNumberFromContent` → 下一编号（与读取侧共用 `isClozeFragment` 宽松判定，块内含旧前缀 `*.cloze` fragment 时不会重复分配其编号）
@@ -74,8 +82,8 @@
 6. 无 `#card` 则 `insertTag` + `buildCardTagData(..., "cloze")`；已有则 `setRefData` 将 `type` 设为 `cloze`
 7. `ensureCardTagProperties` 初始化标签属性定义
 8. 设置 `_repr`、`srs.isCard`；`srs.isCard` 写入后 `invalidateBlockCache(blockId)`，保证下一步 ensure 读到最新属性
-9. 遍历 `getAllClozeNumbers` 的全部编号：**仅新建编号**走 `writeInitialClozeSrsState`（避免复用已删除编号时继承孤儿 `srs.cN.*` 旧状态），**已存在编号**走 `ensureClozeSrsState`（缺属性才初始化，不覆盖已有进度）；`daysOffset = clozeNumber - 1` 不变
-10. 返回 undoArgs（含 `originalContent`、`clozeNumber`、`isFirstClozeCard` 等）
+9. 遍历 `getAllClozeNumbers`：**仅新建编号** `writeInitialClozeSrsState`（IR 路径传绝对 `initialDue`）；**已存在编号** `ensureClozeSrsState`（不覆盖）
+10. 返回 undoArgs（含 `originalContent`、`clozeNumber`、`isFirstClozeCard`、可选 `initialDue` / `initialDueHint`）
 
 ### 撤销（`undoClozeCardCreation`）
 

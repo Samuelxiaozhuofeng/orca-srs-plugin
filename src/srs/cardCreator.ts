@@ -7,7 +7,18 @@
 import type { Block, CursorData } from "../orca.d.ts"
 import { BlockWithRepr, resolveFrontBack } from "./blockUtils"
 import { extractDeckName, extractCardType } from "./deckUtils"
-import { ensureCardSrsState, writeInitialSrsState } from "./storage"
+import {
+  formatInitialDueHint,
+  resolveInitialDue
+} from "./initialDuePolicy"
+import { getIrItemCreateOptionsForBlock } from "./irItemCreateContext"
+import { resolveIRCardType } from "./incremental-reading/irHybridExtract"
+import { getIrItemInitialDueMode } from "./settings/reviewSettingsSchema"
+import {
+  ensureCardSrsState,
+  ensureCardSrsStateWithInitialDue,
+  writeInitialSrsState
+} from "./storage"
 import { cleanupSrsProperties } from "./tagCleanup"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
@@ -193,6 +204,33 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
   const originalRepr = block._repr ? { ...block._repr } : { type: "text" }
   const originalText = block.text || ""
 
+  // Topic / Extract 本身是阅读材料：不得就地写成「可收集 basic 复习卡」
+  // （会保留 type=topic 却写 srs.*，队列永远收集不到）。请在正文子块制卡。
+  const selfCardType = extractCardType(block)
+  if (selfCardType === "topic" || selfCardType === "extracts") {
+    orca.notify(
+      "warn",
+      selfCardType === "topic"
+        ? "Topic 是阅读材料，请在正文子块中制作记忆卡（填空/问答等）"
+        : "Extract 请使用「挖空 / 转问答」制成记忆卡，勿直接「制卡」覆盖阅读身份",
+      { title: "SRS" }
+    )
+    return null
+  }
+  // 已是 live IR 混合记忆身份（cloze/basic/direction + ir.due）时，勿再走 makeCard 改身份
+  if (resolveIRCardType(block) != null && selfCardType !== "basic") {
+    orca.notify(
+      "warn",
+      "该块已是渐进阅读中的记忆卡，请直接复习或继续挖空，勿重复「制卡」",
+      { title: "SRS" }
+    )
+    return null
+  }
+
+  // 自身或祖先为 Topic/Extract → ir_item 分散首次 due
+  const irCreateOpts = await getIrItemCreateOptionsForBlock(block, blockId)
+  const useIrItemDue = irCreateOpts?.initialDueOrigin === "ir_item"
+
   // 检查块是否已经有 #card 标签
   const hasCardTag = block.refs?.some(ref => 
     ref.type === 2 &&      // RefType.Property（标签引用）
@@ -246,13 +284,31 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
     cardType: cardType
   }
 
-  // 处理 SRS 状态
-  // 如果块之前没有 #card 标签（新创建卡片场景），需要先清理可能残留的旧 SRS 属性
+  // 处理 SRS 状态（升级不改已有 srs.*）
   if (!hasCardTag) {
     await cleanupSrsProperties(blockId, pluginName)
+  }
+
+  let dueHint = ""
+  if (useIrItemDue && irCreateOpts) {
+    const createdAt = new Date()
+    const resolved = resolveInitialDue({
+      origin: "ir_item",
+      mode: getIrItemInitialDueMode(pluginName),
+      // makeCard 产物按 basic 身份 seed（无 clozeNumber 时不得用 cloze key）
+      identity: { blockId, cardType: "basic" },
+      createdAt,
+      legacyDue: createdAt,
+      priority: irCreateOpts.irPriority
+    })
+    // 无真进度才写分散 due；仅 srs.isCard / Extract 空壳可覆盖
+    await ensureCardSrsStateWithInitialDue(blockId, resolved.due, {
+      forceIfNoProgress: true
+    })
+    dueHint = `（${formatInitialDueHint(resolved, createdAt)}）`
+  } else if (!hasCardTag) {
     await writeInitialSrsState(blockId)
   } else {
-    // 块已有标签，使用 ensureCardSrsState 保持现有状态
     await ensureCardSrsState(blockId)
   }
 
@@ -260,7 +316,7 @@ export async function makeCardFromBlock(cursor: CursorData, pluginName: string) 
   const cardTypeLabel = cardType === "cloze" ? "填空卡片" : "记忆卡片"
   orca.notify(
     "success",
-    `已添加 #card 标签并转换为 SRS ${cardTypeLabel}`,
+    `已添加 #card 标签并转换为 SRS ${cardTypeLabel}${dueHint}`,
     { title: "SRS" }
   )
 
