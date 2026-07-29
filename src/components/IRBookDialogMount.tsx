@@ -123,7 +123,8 @@ export function IRBookDialogMount({ pluginName }: IRBookDialogMountProps) {
       }
     } catch (error) {
       console.error("[IR Book Dialog] 批量初始化失败:", error)
-      orca.notify("error", "批量初始化失败，请重试", { title: "渐进阅读" })
+      const detail = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `批量初始化失败：${detail}`, { title: "渐进阅读" })
     } finally {
       setIsSubmitting(false)
     }

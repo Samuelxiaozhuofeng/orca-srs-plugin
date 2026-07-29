@@ -11,6 +11,11 @@
 > - [SRS_选择题卡.md](SRS_选择题卡.md)：斜杠「创建选择题」一步合规制卡
 > - [渐进阅读.md](渐进阅读.md) / [渐进阅读_优化路线.md](渐进阅读_优化路线.md) / [渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)：Extract→Q&A/Direction 原子转化 landed
 >
+> **索引增补：2026-07-29（#card 标签 schema 预初始化）**：
+> - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`ensureCardTagProperties` 幂等创建 alias + 补属性；并发共享 Promise；失败可重试；`tagPropertyInit.test.ts`
+> - [SRS_插件入口与命令.md](SRS_插件入口与命令.md)：`load` 后台调用；失败不阻断插件加载
+> - [渐进阅读_BookIR.md](渐进阅读_BookIR.md)：Book IR 提交前依赖 schema；全新用户资料库可见章节 Topic
+>
 > **索引增补：2026-07-28（Home/IR 块三态与 insertBlock 校验 + 扫描兜底 + 列表卡缓存 + React key）**：
 > - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：Flash Home `resolveBlock` 三态；`insertBlock` 有限正数校验；列表 React key 统一 `cardKeyFromReviewCard`
 > - [渐进阅读.md](渐进阅读.md)：IR 会话块 `insertBlock` ID 校验（与复习会话块对齐）
@@ -39,11 +44,12 @@
    - 核心持久层已有直测：`src/srs/storage.test.ts`（三卡型 save→load 往返、属性名与 type code、缓存失效、reset、按前缀删除、解析回退、`ensureClozeSrsState` 守卫）
    - 关联：`src/srs/storage.ts`、`blockExistence.ts`、`deletedCardCleanup.ts`、`reviewLogStorage.ts`、`sessionProgressStorage.ts` 等
 
-3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-07-28 更新
+3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-07-29 更新
    - 全卡种创建、标签、`_repr`、身份与转换入口；制卡对称撤销（只删本次新增）；选择题专用创建
    - `scanCardsFromTags`：成功空结果不兜底；仅标签查询 throw 才 `get-all-blocks`；双失败可见 error
    - 列表卡根 `srs.isCard` 写成功后 `invalidateBlockCache`
-   - 关联：`src/srs/cardCreator.ts`、`listCardCreator.ts`、`choiceCardCreator.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
+   - **`ensureCardTagProperties`**：缺失 `card` alias 时创建标签页并补齐 schema；全属性成功才缓存；并发共享 Promise；load + 制卡/Book IR 兜底
+   - 关联：`src/srs/cardCreator.ts`、`listCardCreator.ts`、`choiceCardCreator.ts`、`tagPropertyInit.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
 
 4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-07-26 更新
    - 收集、卡组、块工具等横切模块（**无** `cardBrowser.ts`；浏览侧见 Flash Home；`panelUtils.ts` 已删除）
@@ -91,9 +97,9 @@
 
 ### 基础设施
 
-18. **[SRS_插件入口与命令.md](SRS_插件入口与命令.md)** ⭐ 2026-07-26 更新
+18. **[SRS_插件入口与命令.md](SRS_插件入口与命令.md)** ⭐ 2026-07-29 更新
     - `load` / `unload`（`runPluginUnloadSequence`）、业务 export
-    - unload flush 现为两段：复习日志 → 断点在途写入（`breakpointFlushOk`）；`cleanupDeletedCards` 定时器卸载时取消
+    - load 后台 `ensureCardTagProperties`（失败 notify 不阻断）；unload flush 两段：复习日志 → 断点在途写入（`breakpointFlushOk`）；`cleanupDeletedCards` 定时器卸载时取消
     - 关联：`src/main.ts`、`pluginUnloadSequence.ts`、`registry/*`、settings schemas
 
 19. **[SRS_注册模块.md](SRS_注册模块.md)** ⭐ 2026-07-26 重写过时部分
@@ -134,9 +140,10 @@
     - 2026-07-26（低危批次）：兜底仅查询失败触发；索引失败可见告警；autoMark 重入守卫/世代计数；快捷键一次性播种（`ir.defaultShortcutsSeeded`）；卸载排空断点在途写入；会话块 `resolveBlock` 三态；`IncrementalReadingSessionDemo` 已删；两套块缓存不合并决策固化
     - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IREndOfContentDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
-25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)** ⭐ 2026-07-26 更新
+25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)** ⭐ 2026-07-29 更新
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression（完成主路径 / skip 兼容）、整本/章节移出、完成本章后大纲保留「已完成」结构、顺序徽标与 toast 文案
     - 每轮 reconcile 每章恰一次 strict `get-block`；死门面 `setupBookIR` 已删除
+    - 建书前 `ensureCardTagProperties`（load 预初始化 + 弹窗兜底），全新仓库资料库可发现章节 Topic
     - 关联：`src/srs/book-ir/*`、`bookIRCreator.ts`
 
 26. **[EPUB导入.md](EPUB导入.md)** ⭐ 2026-07-27 更新（章节粒度 auto：章+小节不展开 / chapterPlan 续传）

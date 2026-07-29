@@ -1,7 +1,8 @@
 # SRS 卡片创建与管理模块
 
-> **文档同步日期**：2026-07-28
-> **变更说明**：制卡 undo 对称清理；选择题专用创建命令；`scanCardsFromTags` 兜底门控（仅查询 throw 才全库扫描）；列表卡根 `srs.isCard` 写后 `invalidateBlockCache`。
+> **文档同步日期**：2026-07-29
+> **变更说明**：`ensureCardTagProperties` 幂等创建 `#card` 标签块（alias 缺失时 insertBlock + createAlias + backend 确认）、属性写全成功才缓存、并发共享 Promise、失败可重试；load 后台预初始化。
+> 2026-07-28：制卡 undo 对称清理；选择题专用创建命令；`scanCardsFromTags` 兜底门控（仅查询 throw 才全库扫描）；列表卡根 `srs.isCard` 写后 `invalidateBlockCache`。
 > 2026-07-26：`createCloze` 返回 `originalContent` 深拷贝；`undoClozeCardCreation` **必须先还原正文**再删 srs/标签（编辑器原生命令栈不会自动去掉 `.cloze` fragment）。
 
 ---
@@ -146,7 +147,17 @@
 
 ## 标签属性自动初始化
 
-`ensureCardTagProperties` 在 `#card` 标签块上补齐：
+`ensureCardTagProperties`（`src/srs/tagPropertyInit.ts`）保证仓库具备可用的 `#card` 标签 schema，使**全新用户无需先制普通卡**也能直接 Book IR / Topic / 资料库发现。
+
+### 行为契约
+
+1. **幂等**：`get-block-by-alias("card")` 已有块则只补缺失属性；已全部就绪则直接返回。
+2. **缺失 alias 时创建标签块**（不得假设稍后的 `insertTag` 会顺带初始化 schema）：
+   - `core.editor.insertBlock`（根级 heading，正文 `card`）→ 返回值必须是**有限正数**
+   - `core.editor.createAlias(null, "card", blockId, true)`（page alias）
+   - 再次 `get-block-by-alias("card")` **backend 确认**后才继续；不得凭命令返回值假装成功
+3. **对称清理**：仅当本轮**新建的块未能成为** `card` alias 时 `deleteBlocks` 清理孤立块；清理失败 `console.error` 且**原错误仍抛出**。不删除既有用户块或既有 `card` 标签。
+4. **属性补齐**（名称/类型固定，勿改）：
 
 | 属性 | 类型 | 说明 |
 | ---- | ---- | ---- |
@@ -154,6 +165,15 @@
 | `牌组` | BlockRefs | 初始 `undefined`（**勿**用 `[]`，会被 Orca 静默忽略） |
 | `status` | Text | 如 suspend |
 | `priority` | Number | IR 默认 50 |
+
+5. **成功缓存**：仅当全部缺失属性 `setProperties` 成功后才置 `cardTagInitialized`；**单个属性失败抛出**，不缓存，下次可重试。
+6. **并发**：in-flight 用共享 `Promise`（非 boolean 早退）；调用方全部 await 同一轮结果。
+7. **缓存失效**：每次 `setProperties` 成功后 `invalidateBlockCache(tagBlockId)`。标签 schema 块通常不经 `getBlockCached` 进入 SRS `blockCache`（收集器 preheat 的是带 `#card` 的内容块），但写后仍按契约失效，避免将来被预热后读到陈旧 schema。
+8. **调用点**：
+   - `main.load`：后台预初始化；失败 `console.error` + `orca.notify`，**不阻断**插件加载
+   - 制卡路径（`cardCreator` / cloze / direction / list / choice / topic）与 `IRBookDialogMount`（Book IR 提交前）：同步兜底；函数自身 **reject**，依赖 schema 的流程不得静默继续
+
+回归：`src/srs/tagPropertyInit.test.ts`。
 
 ---
 

@@ -132,6 +132,25 @@ export async function load(_name: string) {
     console.warn(`[${pluginName}] 注册渐进阅读默认快捷键失败:`, error)
   }
 
+  // 后台准备 #card 标签 schema：全新安装即可直接 Book IR / 制卡，无需先手动建卡。
+  // 失败不得阻断插件加载；ensureCardTagProperties 自身仍 reject，制卡/Book IR 路径会再试。
+  try {
+    const { ensureCardTagProperties } = await import("./srs/tagPropertyInit")
+    await ensureCardTagProperties(pluginName)
+  } catch (error) {
+    console.error(`[${pluginName}] 初始化 #card 标签属性失败（插件已加载，制卡/渐进阅读前将自动重试）:`, error)
+    const detail = error instanceof Error ? error.message : String(error)
+    try {
+      orca.notify(
+        "error",
+        `初始化 #card 标签失败：${detail}。插件仍可使用，首次制卡或导入 Book IR 时会重试。`,
+        { title: "SRS" }
+      )
+    } catch (notifyError) {
+      console.error(`[${pluginName}] #card 标签初始化失败通知也未能显示:`, notifyError)
+    }
+  }
+
   console.log(`[${pluginName}] 命令、UI 组件、渲染器、转换器、右键菜单已注册`)
 
   // 根据设置决定是否启动渐进阅读自动标记

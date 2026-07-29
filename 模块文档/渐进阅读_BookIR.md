@@ -1,6 +1,7 @@
 # 渐进阅读 Book IR（建书 / 顺序 / 退出）
 
-> **文档同步日期：2026-07-26**（删除 `setupBookIR` 死门面；补每轮 reconcile 每章单次 strict 读）  
+> **文档同步日期：2026-07-29**（`#card` 标签 schema 预初始化：全新用户 Book IR 前资料库可见 Topic）
+> 2026-07-26：删除 `setupBookIR` 死门面；补每轮 reconcile 每章单次 strict 读。
 > 以 `src/srs/book-ir/*`、`src/srs/bookIRCreator.ts`、会话内顺序推进与右键/命令入口为实现真相。  
 > 通用 IR 会话与工作区见 [`渐进阅读.md`](渐进阅读.md)。EPUB 纯笔记导入见 [`EPUB导入.md`](EPUB导入.md)。  
 > 排期写回细节见 [`记忆排期推送.md`](记忆排期推送.md)。  
@@ -82,6 +83,8 @@
 **每轮 reconcile 单次 strict 读（2026-07-26，`bookIRProgression.scanSequentialChapters`，低危#2）**：每轮 reconcile 对每个 selected 章节**恰好一次** strict 后端 `get-block`，两个判定谓词（fully-active / due-only 等）复用同一轮读取结果（谓词改为同步薄包装，导出签名不变）；`activateSequentialChapter` 支持 `preloaded` 复用同轮读取。`activeChapterId` 落在 selection 之外的边界情形才多一次读。回归：`bookIRService.test.ts` 新增 2 个读取次数回归测试。
 
 ## 章节初始化（`initializeChapterAsTopicIR`）
+
+**前置**：`IRBookDialogMount` 在 `initializeBookIR` 前 `await ensureCardTagProperties`；插件 `load` 也会后台预初始化。全新仓库若缺少 `card` alias，会创建标签页并补齐 schema（`type` / `牌组` / `status` / `priority`），否则资料库/收集器仅靠 `#card` 发现 Topic 时会漏掉章节。详见 [SRS_卡片创建与管理.md](./SRS_卡片创建与管理.md)「标签属性自动初始化」。
 
 对单个章节块：
 

@@ -30,10 +30,12 @@
 Orca 启用插件
   → inject CSS（PLUGIN_UI_STYLE_ROLE = "orca-srs-ui"）
   → setupL10N
-  → setSettingsSchema(AI + 复习 + 渐进阅读 + 网页导入)
+  → setSettingsSchema（复习 + 渐进阅读；AI/Firecrawl 独立服务面板 hydrate）
   → registerCommands / UI / Renderers / Converters / ContextMenu
   → startRecentDeckWatcher
+  → hydrate AI 提示词库 / AI 连接 / 快捷制卡偏好 / Firecrawl（失败仅 warn）
   → registerIRDefaultShortcuts（动态 import，失败仅 warn）
+  → ensureCardTagProperties（#card 标签 schema 预初始化；失败 console.error + notify，不阻断 load）
   → 若 enableAutoExtractMark → startAutoMarkExtract
   → setTimeout 3s → cleanupDeletedCards（不阻塞启动）
 ```
@@ -41,7 +43,8 @@ Orca 启用插件
 要点：
 
 - `registerCommands(pluginName)` **不再**接收 `openFlashcardHome` 等回调；命令内动态 import `main` 导出函数。
-- 设置合并：`aiSettingsSchema` + `reviewSettingsSchema` + `incrementalReadingSettingsSchema` + `webImportSettingsSchema`。
+- 设置合并：`reviewSettingsSchema` + `incrementalReadingSettingsSchema`（AI / Firecrawl 走独立 hydrate）。
+- **`ensureCardTagProperties`（2026-07-29）**：插件加载时后台确保 `card` alias 标签块存在并补齐 `type` / `牌组` / `status` / `priority` schema。全新安装可直接导入 EPUB + Book IR，无需先创建普通卡片。宿主数据初始化失败**不**导致整个插件无法加载；函数自身仍 reject，Book IR / 制卡路径（如 `IRBookDialogMount`）会再试并阻止依赖 schema 的流程静默继续。详见 [SRS_卡片创建与管理.md](./SRS_卡片创建与管理.md)「标签属性自动初始化」。
 
 ### unload 流程
 
