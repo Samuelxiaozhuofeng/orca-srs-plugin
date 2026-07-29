@@ -10,6 +10,11 @@
 > - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`scanCardsFromTags` 兜底判空修；`cardCreationUndo` 对称撤销；`createChoiceCard`
 > - [SRS_选择题卡.md](SRS_选择题卡.md)：斜杠「创建选择题」一步合规制卡
 > - [渐进阅读.md](渐进阅读.md) / [渐进阅读_优化路线.md](渐进阅读_优化路线.md) / [渐进阅读_低压体验优化计划.md](渐进阅读_低压体验优化计划.md)：Extract→Q&A/Direction 原子转化 landed
+>
+> **索引增补：2026-07-28（Home/IR 块三态与 insertBlock 校验 + 扫描兜底 + 列表卡缓存 + React key）**：
+> - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：Flash Home `resolveBlock` 三态；`insertBlock` 有限正数校验；列表 React key 统一 `cardKeyFromReviewCard`
+> - [渐进阅读.md](渐进阅读.md)：IR 会话块 `insertBlock` ID 校验（与复习会话块对齐）
+> - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`scanCardsFromTags` 仅 throw 走全库兜底；列表卡 `srs.isCard` 写后 `invalidateBlockCache`
 
 ## 文档分类
 
@@ -34,9 +39,11 @@
    - 核心持久层已有直测：`src/srs/storage.test.ts`（三卡型 save→load 往返、属性名与 type code、缓存失效、reset、按前缀删除、解析回退、`ensureClozeSrsState` 守卫）
    - 关联：`src/srs/storage.ts`、`blockExistence.ts`、`deletedCardCleanup.ts`、`reviewLogStorage.ts`、`sessionProgressStorage.ts` 等
 
-3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-07-26 更新
+3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-07-28 更新
    - 全卡种创建、标签、`_repr`、身份与转换入口；制卡对称撤销（只删本次新增）；选择题专用创建
-   - 关联：`src/srs/cardCreator.ts`、`choiceCardCreator.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
+   - `scanCardsFromTags`：成功空结果不兜底；仅标签查询 throw 才 `get-all-blocks`；双失败可见 error
+   - 列表卡根 `srs.isCard` 写成功后 `invalidateBlockCache`
+   - 关联：`src/srs/cardCreator.ts`、`listCardCreator.ts`、`choiceCardCreator.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
 
 4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-07-26 更新
    - 收集、卡组、块工具等横切模块（**无** `cardBrowser.ts`；浏览侧见 Flash Home；`panelUtils.ts` 已删除）
@@ -64,14 +71,15 @@
    - 「卡片信息」面板统一为 `review-card/CardInfoPanel.tsx`（五渲染器共用；`showSchedulingDetails` prop）
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
 
-10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-27 更新
+10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-28 更新
     - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
     - 统一 remaining（SRS 日额度 + IR due）、预计分钟、开始/继续；**日额度队列**（无 10/20/30）；受信任 remaining 显式降级（mixed / 独立 SRS / 只读 IR）
+    - Flash Home 块：`resolveBlock` 三态（throw 不新建）；`insertBlock` 有限正数校验；列表/困难卡 React key 用 `cardKeyFromReviewCard`
     - 从 Home 点开始/继续进入 IR：`openInCurrentPanel` 替换 Home；已有 IR 面板则聚焦后关闭 Home
     - resume 非队列快照；统一 `kind:"ir"` marker 在纯 SRS 剩余时也可继续；装配成功后才写 IR marker
     - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡
     - 删除为**变体感知**（`deleteReviewCardBackendData`：仍有存活变体只删该变体前缀属性、保留 `#card`）；今日摘要经 deps 注入复用同轮 cards
-    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`src/srs/todayLearning/*`（含 `todayLearningLaunch.ts`）、`styles/flashcard-home.css`
+    - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`flashcardHomeManager.ts`、`src/srs/todayLearning/*`（含 `todayLearningLaunch.ts`）、`styles/flashcard-home.css`
 
 11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** ⭐ 2026-07-26 收窄 — 仅维护三 `StatCard`（新卡/今日到期/积压）的 `calculateHomeStats` 计算口径；三卡已降级为次级「卡库概览」区，主页布局/主按钮/数据流以 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) 为权威
 12. **[SRS_困难卡片.md](SRS_困难卡片.md)** — 困难集合与 fixed repeat 专项复习（零引用门面 `getDifficultCardsForReview` 已于 2026-07-26 删除）
@@ -110,7 +118,8 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-27 更新
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-28 更新
+    - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
     - **mixed 复习卡块可用性**（2026-07-27）：`IRMixedReviewPane` 挂载前 `preflightMixedReviewCard`（`writeToState` + missing/unknown 三态），修复 state miss 永久「加载中」；`SrsCardDemo` 改为纯渲染器
     - **mixed 复习卡 UI 聚焦**（2026-07-27）：刷到普通记忆卡时取消阅读纸张主题 / 收起「渐进阅读」顶栏 chrome，中性 SRS 表面 +「记忆复习」精简顶栏

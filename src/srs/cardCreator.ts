@@ -32,56 +32,51 @@ export async function scanCardsFromTags(pluginName: string) {
 
   try {
     // 1. 获取所有带 #card 标签的块
-    const taggedBlocks = await orca.invokeBackend("get-blocks-with-tags", ["card"]) as Block[]
-    
-    // 如果 API 不支持层级标签查询，需要获取所有块然后过滤
-    let allTaggedBlocks = taggedBlocks
-    if (!taggedBlocks || taggedBlocks.length === 0) {
-      console.log(`[${pluginName}] 直接查询 #card 标签无结果，尝试获取所有块并过滤`)
-      try {
-        // 备用方案1：尝试获取所有块
-        const allBlocks = await orca.invokeBackend("get-all-blocks") as Block[] || []
-        console.log(`[${pluginName}] get-all-blocks 返回了 ${allBlocks.length} 个块`)
-        
-        // 备用方案2：查询 #card 标签
-        const possibleTags = ["card"]
-        let foundBlocks: Block[] = []
+    // tagQuerySucceeded 对齐 cardCollector：成功返回（含空数组）即成功，仅 throw 才走全库兜底
+    let allTaggedBlocks: Block[] = []
+    let tagQuerySucceeded = false
 
-        for (const tag of possibleTags) {
-          try {
-            const taggedWithSpecific = await orca.invokeBackend("get-blocks-with-tags", [tag]) as Block[] || []
-            console.log(`[${pluginName}] 标签 "${tag}" 找到 ${taggedWithSpecific.length} 个块`)
-            foundBlocks = [...foundBlocks, ...taggedWithSpecific]
-          } catch (e) {
-            console.log(`[${pluginName}] 查询标签 "${tag}" 失败:`, e)
+    try {
+      const taggedBlocks = await orca.invokeBackend(
+        "get-blocks-with-tags",
+        ["card"]
+      ) as Block[] | undefined
+      tagQuerySucceeded = true
+      allTaggedBlocks = Array.isArray(taggedBlocks) ? taggedBlocks : []
+    } catch (e) {
+      console.log(`[${pluginName}] 查询标签 "card" 失败:`, e)
+    }
+
+    // 仅当标签查询实际 throw 时才走 get-all-blocks 手工过滤；
+    // 成功空结果 = 仓库确实没有 #card，不得全库扫描，也不得重复查同一标签。
+    if (!tagQuerySucceeded) {
+      console.log(`[${pluginName}] 标签查询失败，使用 get-all-blocks 兜底`)
+      try {
+        const allBlocks = (await orca.invokeBackend("get-all-blocks") as Block[]) || []
+        console.log(`[${pluginName}] get-all-blocks 返回了 ${allBlocks.length} 个块`)
+
+        allTaggedBlocks = allBlocks.filter(block => {
+          if (!block.refs || block.refs.length === 0) {
+            return false
           }
-        }
-        
-        if (foundBlocks.length > 0) {
-          allTaggedBlocks = foundBlocks
-          console.log(`[${pluginName}] 多标签查询找到 ${allTaggedBlocks.length} 个带 #card 标签的块`)
-        } else {
-          // 最后备用方案：手动过滤所有块
-          allTaggedBlocks = allBlocks.filter(block => {
-            if (!block.refs || block.refs.length === 0) {
+
+          return block.refs.some(ref => {
+            if (ref.type !== 2) {
               return false
             }
-            
-            const hasCardTag = block.refs.some(ref => {
-              if (ref.type !== 2) {
-                return false
-              }
-              const tagAlias = ref.alias || ""
-              return isCardTag(tagAlias)
-            })
-            
-            return hasCardTag
+            const tagAlias = ref.alias || ""
+            return isCardTag(tagAlias)
           })
-          console.log(`[${pluginName}] 手动过滤找到 ${allTaggedBlocks.length} 个带 #card 标签的块`)
-        }
+        })
+        console.log(`[${pluginName}] 手动过滤找到 ${allTaggedBlocks.length} 个带 #card 标签的块`)
       } catch (error) {
+        // 标签查询与全库兜底均失败：必须可见失败，不得伪装成「没有卡片」
         console.error(`[${pluginName}] 备用方案失败:`, error)
-        allTaggedBlocks = []
+        throw error instanceof Error
+          ? error
+          : new Error(
+              `扫描 #card 标签失败：标签查询与全库兜底均失败: ${String(error)}`
+            )
       }
     }
 

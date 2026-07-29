@@ -1,6 +1,6 @@
 # SRS Flashcard Home（闪卡主页 / 卡片浏览器）
 
-> **文档同步日期：2026-07-27**
+> **文档同步日期：2026-07-28**
 > 现状以代码为准。产品主入口称为 **「今日学习」**（块类型 / 命令 ID 仍为 `srs.flashcard-home` / `openFlashcardHome` 以兼容）。
 > 历史上称「卡片浏览器 / Flash Home」；旧组件 `SrsCardBrowser.tsx` **已不存在**。
 
@@ -87,6 +87,9 @@ flowchart TD
 - **块类型**：`srs.flashcard-home`
 - **存储键**：`flashcardHomeBlockId`（`orca.plugins.getData/setData`）
 - **块属性**：`srs.isFlashcardHomeBlock`、`srs.pluginName`
+- **块生命周期**（`flashcardHomeManager.ts`）：
+  - **resolveBlock 三态**：state 命中或后端返回块 → 存在；后端**明确 null/undefined** → 不存在（允许新建）；后端 **throw → 读取失败向上抛**，瞬时故障绝不能新建或覆盖 `flashcardHomeBlockId`（与 IR 会话块 / 复习会话块对齐）。回归：`flashcardHomeManager.test.ts`
+  - **insertBlock ID 校验**：创建时要求有限正数；坏值（undefined/null/NaN/Infinity/对象/字符串/0/负数）抛带上下文错误，零 `setProperties`、零 `setData`、不污染内存指针
 - **打开逻辑**（`main.ts` → `openFlashcardHome`）：
   1. `getOrCreateFlashcardHomeBlock(pluginName)`
   2. 若某面板已打开该块 → `switchFocusTo`

@@ -81,7 +81,6 @@ beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {})
   vi.spyOn(console, "warn").mockImplementation(() => {})
 })
-
 describe("三级恢复：一级内存指针", () => {
   it("第二次调用复用内存指针（state 命中），不再读存储、不再新建", async () => {
     getDataMock.mockResolvedValue(undefined)
@@ -238,4 +237,36 @@ describe("getStoredIncrementalReadingSessionBlockId", () => {
       getStoredIncrementalReadingSessionBlockId(PLUGIN)
     ).resolves.toBeNull()
   })
+})
+
+describe("insertBlock 返回值校验", () => {
+  it.each([
+    ["undefined", undefined],
+    ["null", null],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["对象", { id: 1 }],
+    ["字符串", "123"],
+    ["零", 0],
+    ["负数", -5]
+  ])(
+    "insertBlock 返回 %s 时抛出带上下文错误且零 setProperties/setData",
+    async (_label, bad) => {
+      getDataMock.mockResolvedValue(undefined)
+      invokeEditorCommandMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "core.editor.insertBlock") return bad
+        return undefined
+      })
+
+      await expect(
+        getOrCreateIncrementalReadingSessionBlock(PLUGIN)
+      ).rejects.toThrow(/insertBlock 未返回有效块 ID/)
+      await expect(
+        getOrCreateIncrementalReadingSessionBlock(PLUGIN)
+      ).rejects.toThrow(/渐进阅读会话块/)
+
+      expect(setPropertiesCalls()).toHaveLength(0)
+      expect(setDataMock).not.toHaveBeenCalled()
+    }
+  )
 })

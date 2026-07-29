@@ -10,7 +10,7 @@
 import type { Block, CursorData, DbId } from "../orca.d.ts"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
-import { writeInitialSrsState } from "./storage"
+import { invalidateBlockCache, writeInitialSrsState } from "./storage"
 import { buildCardTagData } from "./cardTagDataBuilder"
 
 function getTodayMidnight(): Date {
@@ -91,7 +91,7 @@ export async function createListCardFromBlock(
     return null
   }
 
-  // 标记为卡片（确保被收集）
+  // 标记为卡片（确保被收集）；写成功后立即失效 blockCache（项目不变量）
   let wroteRootIsCard = false
   try {
     await orca.commands.invokeEditorCommand(
@@ -101,7 +101,9 @@ export async function createListCardFromBlock(
       [{ name: "srs.isCard", value: true, type: 4 }]
     )
     wroteRootIsCard = true
+    invalidateBlockCache(blockId)
   } catch (error) {
+    // 写失败：不得 invalidate，保持 wroteRootIsCard=false
     console.warn(`[${pluginName}] 设置 srs.isCard 失败（不影响主流程）:`, error)
   }
 

@@ -10,6 +10,7 @@
 import type { DbId } from "../orca.d.ts"
 import type { ReviewCard } from "../srs/types"
 import type { DifficultCardInfo, DifficultReason } from "../srs/difficultCardsManager"
+import { cardKeyFromReviewCard } from "../srs/cardIdentity"
 import SafeBlockPreview from "./SafeBlockPreview"
 
 import {
@@ -372,9 +373,9 @@ export default function DifficultCardsView({
           </div>
         ) : (
           <>
-            {visibleCards.map((info: DifficultCardInfo, index: number) => (
+            {visibleCards.map((info: DifficultCardInfo) => (
               <DifficultCardItem
-                key={`${info.card.id}-${info.card.clozeNumber || 0}-${info.card.directionType || "basic"}-${info.card.listItemId || 0}-${index}`}
+                key={cardKeyFromReviewCard(info.card)}
                 info={info}
                 panelId={panelId}
                 onCardClick={handleCardClick}

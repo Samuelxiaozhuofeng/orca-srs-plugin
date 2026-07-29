@@ -1,6 +1,7 @@
 import type { DbId } from "../../orca.d.ts"
 import type { ReviewCard } from "../../srs/types"
 import type { FilterType } from "../../srs/cardFilterUtils"
+import { cardKeyFromReviewCard } from "../../srs/cardIdentity"
 import CardListItem from "./CardListItem"
 import { isGlobalDeckScope, resolveCardListTitle } from "./homeStatNav"
 
@@ -137,9 +138,9 @@ export default function CardListView({
           </div>
         ) : (
           <>
-            {displayedCards.map((card, index) => (
+            {displayedCards.map((card) => (
               <CardListItem
-                key={`${card.id}-${card.clozeNumber || 0}-${card.directionType || "basic"}-${card.listItemId || 0}-${index}`}
+                key={cardKeyFromReviewCard(card)}
                 card={card}
                 panelId={panelId}
                 onCardClick={onCardClick}

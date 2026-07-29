@@ -52,14 +52,26 @@ export async function getOrCreateIncrementalReadingSessionBlock(
  * 创建渐进阅读会话块
  */
 async function createIncrementalReadingSessionBlock(pluginName: string): Promise<DbId> {
-  const blockId = await orca.commands.invokeEditorCommand(
+  const rawBlockId = (await orca.commands.invokeEditorCommand(
     "core.editor.insertBlock",
     null,
     null,
     null,
     [{ t: "t", v: `[渐进阅读会话 - ${pluginName}]` }],
     { type: "srs.ir-session" }
-  ) as DbId
+  )) as DbId | null | undefined
+
+  // 与 reviewSessionManager 对齐：insertBlock 未承诺非空返回；坏 ID 绝不能继续写属性/持久化。
+  if (
+    typeof rawBlockId !== "number" ||
+    !Number.isFinite(rawBlockId) ||
+    rawBlockId <= 0
+  ) {
+    throw new Error(
+      `[${pluginName}] 创建渐进阅读会话块失败：insertBlock 未返回有效块 ID（${String(rawBlockId)}）`
+    )
+  }
+  const blockId: DbId = rawBlockId
 
   await orca.commands.invokeEditorCommand(
     "core.editor.setProperties",

@@ -1,7 +1,7 @@
 # SRS 卡片创建与管理模块
 
-> **文档同步日期**：2026-07-26  
-> **变更说明**：制卡 undo 对称清理；选择题专用创建命令；`scanCardsFromTags` 兜底判空修复。  
+> **文档同步日期**：2026-07-28
+> **变更说明**：制卡 undo 对称清理；选择题专用创建命令；`scanCardsFromTags` 兜底门控（仅查询 throw 才全库扫描）；列表卡根 `srs.isCard` 写后 `invalidateBlockCache`。
 > 2026-07-26：`createCloze` 返回 `originalContent` 深拷贝；`undoClozeCardCreation` **必须先还原正文**再删 srs/标签（编辑器原生命令栈不会自动去掉 `.cloze` fragment）。
 
 ---
@@ -78,12 +78,16 @@
 
 ### `scanCardsFromTags(pluginName)`
 
-1. `get-blocks-with-tags(["card"])`，失败则备用全量过滤（结果写入 `allTaggedBlocks`）
-2. **判空使用 `allTaggedBlocks`**（勿用原始 `taggedBlocks`，否则兜底找到的块会被跳过）
-3. 对每块 `extractCardType`
-4. **跳过** conversion：`direction` / `list` / `extracts` / `topic`
-5. 其余：按类型设 `_repr`（cloze → `srs.cloze-card`，choice → `srs.choice-card`，else `srs.card`）
-6. `ensureCardSrsState`（不误重置已有进度）
+1. `get-blocks-with-tags(["card"])`：
+   - **成功返回**（含空数组）→ 有卡则继续转换；空 = 仓库没有 `#card`，**不得**调用 `get-all-blocks`
+   - **实际 throw** 才走 `get-all-blocks` 手工 `isCardTag` 过滤（对齐 `cardCollector.tagQuerySucceeded` 语义；已删除空结果下重复查同一标签）
+   - 标签查询失败 **且** 全库兜底也失败 → 可见 `error` 通知，**不得**伪装成「没有找到卡片」
+2. 对每块 `extractCardType`
+3. **跳过** conversion：`direction` / `list` / `extracts` / `topic`
+4. 其余：按类型设 `_repr`（cloze → `srs.cloze-card`，choice → `srs.choice-card`，else `srs.card`）
+5. `ensureCardSrsState`（不误重置已有进度）
+
+回归：`src/srs/cardCreator.scanCardsFromTags.test.ts`
 
 ### `makeCardFromBlock(cursor, pluginName)`
 
@@ -107,7 +111,7 @@
 | ---- | --------- |
 | `createCloze` | cloze + 分天 cloze SRS；undoArgs 含 `isFirstClozeCard` / `wroteInitialClozeSrs` |
 | `insertDirection` | direction + 方向 SRS（方向卡 undo 仍只还原 content） |
-| `createListCardFromBlock` | list + 子块初始 due；undoArgs 含 `initializedItemIds` / `wroteRootIsCard` |
+| `createListCardFromBlock` | list + 子块初始 due；根 `srs.isCard` **写成功后立即** `invalidateBlockCache`（写失败不 invalidate、`wroteRootIsCard=false`）；undoArgs 含 `initializedItemIds` / `wroteRootIsCard`。回归：`listCardCreator.test.ts` |
 | `createTopicCard` / `createTopicCardByBlockId` | topic + IR 状态；`createdFreshTopic` 控制完整 undo |
 | `createExtract` | extracts 摘录子块 + IR |
 
