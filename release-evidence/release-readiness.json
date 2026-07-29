@@ -1,32 +1,32 @@
 {
-  "version": "1.0.6",
-  "go": true,
-  "orcaRuntimeVerified": true,
-  "maintainerRuntimeAccepted": true,
-  "updatedAt": "2026-07-28",
-  "verifiedDistSha256": "2ec0e743cb4851044712bf03b9f4fe3ca5eb77b31412c7a5568a12ab77cefa39",
-  "approvedBy": "Samuelxiaozhuofeng",
-  "verifiedAt": "2026-07-28T14:10:00.000Z",
+  "version": "1.0.7",
+  "go": false,
+  "orcaRuntimeVerified": false,
+  "maintainerRuntimeAccepted": false,
+  "updatedAt": "2026-07-29",
+  "verifiedDistSha256": "",
+  "approvedBy": "",
+  "verifiedAt": "",
   "iconAccepted": true,
   "evidenceRepo": "sgf9fkhr9z3yz",
   "automation": {
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
-    "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": true,
-    "tagGate": true,
-    "rebuildHashFrozen": true,
+    "maintainerRuntimeAccepted": false,
+    "formalZipAccepted": false,
+    "tagGate": false,
+    "rebuildHashFrozen": false,
     "coldInstallMatrix": false,
-    "githubReleasePublished": true,
-    "awesomeOrcanotePr": true
+    "githubReleasePublished": false,
+    "awesomeOrcanotePr": false
   },
   "externalOps": {
-    "tag": "completed: v1.0.6",
-    "formalZip": "completed: orca-srs-1.0.6.zip",
-    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.6",
-    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/103",
+    "tag": "pending",
+    "formalZip": "pending",
+    "githubRelease": "pending",
+    "awesomeOrcanotePr": "pending",
     "owner": "Grok",
-    "note": "GitHub Release v1.0.6 is published. awesome-orcanote PR #103 is submitted and awaits upstream review/merge."
+    "note": "Version metadata bumped to 1.0.7 from post-1.0.6 main (initial due policy, #card tag init, IR session/card creation hardening). Runtime evidence, verifiedDistSha256 freeze, tag/zip/GitHub Release remain open."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,13 +42,16 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-published-upstream-pr-pending"
+    "WP-13": "release-1.0.7-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
     "release-evidence/release-readiness.json"
   ],
-  "blockers": [],
+  "blockers": [
+    "orca-runtime-evidence-pending",
+    "verifiedDistSha256-not-frozen"
+  ],
   "acceptedRisks": [
     {
       "id": "epub-zip-central-directory-budget",
@@ -56,8 +59,8 @@
         "WP-07"
       ],
       "summary": "EPUB ZIP 中央目录声明预算未独立预检",
-      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.6 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.6"
+      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.7 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.7"
     },
     {
       "id": "write-path-cancellation-not-unified",
@@ -66,15 +69,15 @@
         "WP-11"
       ],
       "summary": "EPUB/Web/AI 写入阶段取消未形成统一可中断事务",
-      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.6 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.6"
+      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.7 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.7"
     }
   ],
   "decision": {
-    "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.6 and accepts release readiness. The v1.0.6 GitHub Release is published and awesome-orcanote PR #103 is submitted. Residual static-audit risks live in acceptedRisks.",
-    "verifiedDistSha256": "2ec0e743cb4851044712bf03b9f4fe3ca5eb77b31412c7a5568a12ab77cefa39",
-    "approvedBy": "Samuelxiaozhuofeng",
-    "verifiedAt": "2026-07-28T14:10:00.000Z"
+    "type": "version-bump-pending-runtime",
+    "statement": "Metadata version is 1.0.7. Formal Go requires maintainer runtime acceptance, frozen verifiedDistSha256, empty blockers, and tag/zip pipeline.",
+    "verifiedDistSha256": "",
+    "approvedBy": "",
+    "verifiedAt": ""
   }
 }

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-07-29
+
+### 新增
+- IR 新建条目初始 due 策略：按优先级分散到期日，避免同日扎堆
+- 插件加载时 `ensureCardTagProperties`：新用户无需先建卡即可使用 Book IR / Topic
+- 挖空卡 / 方向卡 / IR 转卡等创建路径接入初始 due 策略（不覆盖已有卡排期）
+
+### 变更
+- `#card` 标签属性初始化：并发单飞、失败可见通知、初始化失败时插件仍可运行
+- 渐进阅读会话校验 `insertBlock` 返回值；列表卡写入 `srs.isCard` 后立即 invalidate cache
+- `scanCardsFromTags` 标签查询与 fallback 错误上报加固
+
+### 已知限制
+- EPUB ZIP 中央目录声明体积尚未独立预检，仍依赖实际解压预算限制。
+- EPUB、网页导入和 AI 保存的写入阶段尚未统一为可中断事务。
+
 ## [1.0.6] - 2026-07-28
 
 ### 新增
