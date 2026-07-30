@@ -238,7 +238,11 @@ export async function ensureIRState(blockId: DbId): Promise<IRState> {
     const preservePresetDue = Boolean(isLegacy && rawDue && state.readCount === 0 && !state.lastRead)
     const shouldRecomputeSchedule = !preservePresetDue && (isLegacy || !rawDue)
     const nextSchedule = shouldRecomputeSchedule
-      ? computeDispersedSchedule(blockId, cardType, now, intervalDays, { isNew: isNewCard(state) })
+      ? computeDispersedSchedule(blockId, cardType, now, intervalDays, {
+          isNew: isNewCard(state),
+          priority: normalizedPriority,
+          scheduleOrdinal: 0
+        })
       : null
     const due = preservePresetDue
       ? rawDue!

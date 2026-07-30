@@ -78,15 +78,19 @@ export async function markAsRead(
       // SAC 短节奏需可预期：非新卡不做 Topic 式 ± 分散（否则 6 天上限会被抖到 ~4.8）。
       // 新卡仅做小幅向前分散，避免同日多章扎堆。
       if (isNewCard(prev)) {
+        // SAC new: forward-only due offset; intentional interval stays short cadence.
         const dispersed = computeDispersedSchedule(blockId, cardType, now, sacBase, {
-          isNew: true
+          isNew: true,
+          priority: prev.priority,
+          scheduleOrdinal: prev.readCount
         })
         const intervalDays = clampSacIntervalDays(dispersed.intervalDays)
         schedule = {
           intervalDays,
-          due: computeDueFromIntervalDays(now, intervalDays)
+          due: computeDueFromIntervalDays(now, intervalDays + dispersed.dispersalDays)
         }
       } else {
+        // SAC non-new: no ordinary dispersal (interval-only short cadence).
         const intervalDays = clampSacIntervalDays(sacBase)
         schedule = {
           intervalDays,
@@ -101,7 +105,9 @@ export async function markAsRead(
       const effectiveBase = computeLatenessEffectiveBase(prev.intervalDays, elapsedDays)
       const baseIntervalDays = growIntervalDays(cardType, effectiveBase)
       schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
-        isNew: isNewCard(prev)
+        isNew: isNewCard(prev),
+        priority: prev.priority,
+        scheduleOrdinal: prev.readCount
       })
     }
 
@@ -156,12 +162,14 @@ export async function markAsReadWithPriority(
       const sacBase = computeSacIntervalDays(normalizedPriority, prev.sacStagnantCount ?? 0)
       if (isNewCard(prev)) {
         const dispersed = computeDispersedSchedule(blockId, cardType, now, sacBase, {
-          isNew: true
+          isNew: true,
+          priority: normalizedPriority,
+          scheduleOrdinal: prev.readCount
         })
         const intervalDays = clampSacIntervalDays(dispersed.intervalDays)
         schedule = {
           intervalDays,
-          due: computeDueFromIntervalDays(now, intervalDays)
+          due: computeDueFromIntervalDays(now, intervalDays + dispersed.dispersalDays)
         }
       } else {
         const intervalDays = clampSacIntervalDays(sacBase)
@@ -176,7 +184,9 @@ export async function markAsReadWithPriority(
         computeBaseIntervalDays(block, normalizedPriority)
       )
       schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
-        isNew: isNewCard(prev)
+        isNew: isNewCard(prev),
+        priority: normalizedPriority,
+        scheduleOrdinal: prev.readCount
       })
     }
 
@@ -230,7 +240,9 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
         : 0
       const schedule = computeDispersedSchedule(blockId, cardType, now, baseIntervalDays, {
         isNew: true,
-        queueDelayDays
+        queueDelayDays,
+        priority: normalizedPriority,
+        scheduleOrdinal: prev.readCount
       })
       const intervalDays = useSac
         ? clampSacIntervalDays(schedule.intervalDays)
@@ -243,7 +255,10 @@ export async function updatePriority(blockId: DbId, newPriority: number): Promis
         postponeCount: prev.postponeCount,
         stage: prev.stage,
         lastAction: "priority",
-        due: useSac ? computeDueFromIntervalDays(now, intervalDays) : schedule.due,
+        // SAC new init: keep forward-only due offset; non-SAC uses full schedule.due
+        due: useSac
+          ? computeDueFromIntervalDays(now, intervalDays + schedule.dispersalDays)
+          : schedule.due,
         position: prev.position,
         resumeBlockId: prev.resumeBlockId,
         readingBreakpoint: prev.readingBreakpoint ?? null,

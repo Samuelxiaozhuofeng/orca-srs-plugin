@@ -4,11 +4,27 @@ export type IRDispersalCardType = "topic" | "extracts"
 
 export const DAY_MS = 24 * 60 * 60 * 1000
 
+/** Priority at/above this uses the tighter high-priority dispersal window. */
+export const HIGH_IR_PRIORITY_THRESHOLD = 80
+
 export function computeDueFromIntervalDays(baseDate: Date, intervalDays: number): Date {
   return new Date(baseDate.getTime() + intervalDays * DAY_MS)
 }
 
-type DispersalParams = {
+export type DispersalOffsetParams = {
+  blockId: DbId
+  cardType: IRDispersalCardType
+  baseDate: Date
+  baseIntervalDays: number
+  isNew: boolean
+  /** 0–100; non-finite → 50. Affects window size only, not the RNG seed. */
+  priority?: number
+  /** Stable per-review counter (typically `readCount` before the write). */
+  scheduleOrdinal?: number
+  seedSalt?: string
+}
+
+type CompatDispersalParams = {
   blockId: DbId
   cardType: IRDispersalCardType
   baseDate: Date
@@ -21,6 +37,8 @@ type DispersalParams = {
    */
   queueDelayDays?: number
   seedSalt?: string
+  priority?: number
+  scheduleOrdinal?: number
 }
 
 function getLocalDayStartMs(date: Date): number {
@@ -48,47 +66,94 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-function getDispersalSpec(cardType: IRDispersalCardType): { ratio: number; maxAbsDays: number } {
-  if (cardType === "extracts") {
-    return { ratio: 0.35, maxAbsDays: 3 }
-  }
-  return { ratio: 0.2, maxAbsDays: 2 }
-}
-
-function getNewCardForwardMaxDays(cardType: IRDispersalCardType, baseIntervalDays: number): number {
-  const forward = Math.max(0, baseIntervalDays * 0.5)
-  // Topic 的“精确性”要求更高一些：保持与旧版本一致（最多 1 天），避免新 Topic 被随机拖得太远。
-  if (cardType === "topic") return Math.min(1, forward)
-  // Extract 是阅读材料：允许更大的“只向后”分散，避免同日大量摘录扎堆。
-  return forward
+function normalizeDispersalPriority(priority: number | undefined): number {
+  if (typeof priority !== "number" || !Number.isFinite(priority)) return 50
+  return Math.min(100, Math.max(0, priority))
 }
 
 /**
- * Intentional cadence only（写入 `ir.intervalDays` 的部分）。
- *
- * - 通过 “按天稳定” 的 seed（blockId + dayStart）保证同一天重复触发不会反复改变
- * - 新卡：只向后抖动 base（避免大量新摘录同日结块）
- * - 非新卡：±比例（Extract 更大、Topic 更小）
- * - **不**把 sibling `queueDelayDays` 计入返回值；一次性错峰只应加在首次 `due` 上，
- *   避免后续 ×1.35 / ×1.25 复利污染 intentional interval
+ * New-card forward window (days). High priority converges; normal expands slightly.
+ * Production uses this only as a **due** offset — never written into `ir.intervalDays`.
  */
-export function computeDispersedIntervalDays(params: DispersalParams): number {
+export function getNewForwardMaxDays(
+  cardType: IRDispersalCardType,
+  baseIntervalDays: number,
+  priority: number
+): number {
+  const base = Math.max(0, baseIntervalDays)
+  const p = normalizeDispersalPriority(priority)
+  const high = p >= HIGH_IR_PRIORITY_THRESHOLD
+  if (cardType === "topic") {
+    return high ? Math.min(1, base * 0.25) : Math.min(3, base * 0.35)
+  }
+  return high ? Math.min(1, base * 0.35) : Math.min(3, base * 0.5)
+}
+
+/**
+ * Non-new max absolute offset (days). Symmetric ± window around intentional base.
+ */
+export function getNonNewMaxAbsDays(
+  cardType: IRDispersalCardType,
+  baseIntervalDays: number,
+  priority: number
+): number {
+  const base = Math.max(0, baseIntervalDays)
+  const p = normalizeDispersalPriority(priority)
+  const high = p >= HIGH_IR_PRIORITY_THRESHOLD
+  if (cardType === "topic") {
+    return high ? Math.min(0.75, base * 0.15) : Math.min(2, base * 0.2)
+  }
+  return high ? Math.min(1, base * 0.2) : Math.min(3, base * 0.35)
+}
+
+/**
+ * Due-only dispersal offset (days). Random must **not** enter `ir.intervalDays`.
+ *
+ * - new: `offset = rand * maxForward` (always ≥ 0)
+ * - non-new: `offset = (rand * 2 - 1) * maxAbs`
+ * - seed: FNV-1a of
+ *   `blockId:localDayStartMs:cardType:scheduleOrdinal:salt`
+ *   then mulberry32; priority is **not** in the seed (window size only)
+ */
+export function computeDispersalOffsetDays(params: DispersalOffsetParams): number {
   const base = Number.isFinite(params.baseIntervalDays) ? params.baseIntervalDays : 1
-  const salt = params.seedSalt ?? "ir:dispersal"
+  const priority = normalizeDispersalPriority(params.priority)
+  const ordinal = Number.isFinite(params.scheduleOrdinal as number)
+    ? Math.floor(params.scheduleOrdinal as number)
+    : 0
+  const salt =
+    params.seedSalt
+    ?? (params.isNew ? "ir:dispersal:new" : "ir:dispersal:revisit")
   const dayStartMs = getLocalDayStartMs(params.baseDate)
-  const seed = hashStringToUint32(`${params.blockId}:${dayStartMs}:${params.cardType}:${salt}`)
+  const seed = hashStringToUint32(
+    `${params.blockId}:${dayStartMs}:${params.cardType}:${ordinal}:${salt}`
+  )
   const rand = mulberry32(seed)()
 
-  // Intentionally ignore params.queueDelayDays — due-only offset is applied by callers.
-  void params.queueDelayDays
-
   if (params.isNew) {
-    const maxForward = getNewCardForwardMaxDays(params.cardType, base)
-    return base + rand * maxForward
+    const maxForward = getNewForwardMaxDays(params.cardType, base, priority)
+    return rand * maxForward
   }
 
-  const spec = getDispersalSpec(params.cardType)
-  const maxAbs = Math.min(spec.maxAbsDays, Math.max(0, base * spec.ratio))
-  const delta = (rand * 2 - 1) * maxAbs
-  return base + delta
+  const maxAbs = getNonNewMaxAbsDays(params.cardType, base, priority)
+  return (rand * 2 - 1) * maxAbs
+}
+
+/**
+ * Compat: intentional cadence only. Returns `baseIntervalDays` (finite fallback 1);
+ * **no random**. Production scheduling uses `computeDispersalOffsetDays` +
+ * `computeDispersedSchedule` so jitter lands only on `due`.
+ *
+ * Still ignores `queueDelayDays` if passed.
+ */
+export function computeDispersedIntervalDays(params: CompatDispersalParams): number {
+  void params.queueDelayDays
+  void params.blockId
+  void params.cardType
+  void params.baseDate
+  void params.isNew
+  void params.seedSalt
+  void params.priority
+  void params.scheduleOrdinal
+  return Number.isFinite(params.baseIntervalDays) ? params.baseIntervalDays : 1
 }

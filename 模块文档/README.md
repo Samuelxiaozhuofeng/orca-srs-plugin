@@ -120,11 +120,11 @@
     - **模块级总线** `srsBroadcastBus`：Orca 每类型单 handler + 订阅者扇出；Flash Home 经总线订阅；unload `teardown`
     - 关联：`srsEvents.ts`、`srsBroadcastBus.ts`、`reviewCardGrading.ts`
 
-23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-29 更新 — **IR 源记忆卡首次 due 1–14 天分散**（`initialDuePolicy` / `review.irItemInitialDueMode`，仅新建、不迁旧卡）；§6.4 统一推送 + 移除时间盒；IR 分散/排队、本地日 seed、会话启动 auto-postpone、迟到补偿、队列老化 + 探索真随机；混合会话 SRS 复习日额度
+23. **[记忆排期推送.md](记忆排期推送.md)** ⭐ 2026-07-30 更新 — **IR Topic/Extract due-only 分散 Phase 0+1**（`computeDispersalOffsetDays`，priority 窗口、随机不进 `ir.intervalDays`）；**IR 源记忆卡首次 due 1–14 天分散**（`initialDuePolicy`，仅新建）；§6.4 统一推送；排队/auto-postpone/迟到补偿/老化
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-28 更新
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-30 更新 — due-only 分散 Phase 0+1 短记；
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
     - **mixed 复习卡块可用性**（2026-07-27）：`IRMixedReviewPane` 挂载前 `preflightMixedReviewCard`（`writeToState` + missing/unknown 三态），修复 state miss 永久「加载中」；`SrsCardDemo` 改为纯渲染器

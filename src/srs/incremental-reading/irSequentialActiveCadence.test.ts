@@ -369,14 +369,13 @@ describe("markAsRead non-SAC paths keep Topic growth", () => {
 
     invalidateIrBlockCache(1)
     const s1 = await markAsRead(1)
-    // 8 * 1.25 = 10, plus dispersal ±20% of 10 capped by maxAbs 2
-    expect(s1.intervalDays).toBeGreaterThanOrEqual(8)
-    expect(s1.intervalDays).toBeLessThanOrEqual(12)
+    // 8 * 1.25 = 10; random is due-only and must not enter intervalDays
+    expect(s1.intervalDays).toBe(10)
 
     invalidateIrBlockCache(1)
     const s2 = await markAsRead(1)
-    // roughly 10 * 1.25 = 12.5 with dispersal
-    expect(s2.intervalDays).toBeGreaterThan(s1.intervalDays * 0.9)
+    // 10 * 1.25 = 12.5
+    expect(s2.intervalDays).toBeCloseTo(12.5, 5)
   })
 
   it("distributed book chapters still use Topic growth", async () => {

@@ -68,27 +68,33 @@ describe("B2 queueDelay due-only + nested sourceTopicId", () => {
     vi.clearAllMocks()
   })
 
-  it("computeDispersedSchedule keeps interval free of queueDelay; due adds both", () => {
+  it("computeDispersedSchedule keeps interval free of queueDelay and random; due adds offset + delay", () => {
     const baseDate = new Date(2026, 6, 19, 12, 0, 0)
     const baseIntervalDays = 4
     const queueDelayDays = 1.5
     const schedule = computeDispersedSchedule(10 as DbId, "extracts", baseDate, baseIntervalDays, {
       isNew: true,
-      queueDelayDays
+      queueDelayDays,
+      priority: 50
     })
     const without = computeDispersedSchedule(10 as DbId, "extracts", baseDate, baseIntervalDays, {
       isNew: true,
-      queueDelayDays: 0
+      queueDelayDays: 0,
+      priority: 50
     })
-    // intentional interval identical whether or not queueDelay is present
+    // intentional interval identical whether or not queueDelay is present; no random
     expect(schedule.intervalDays).toBe(without.intervalDays)
+    expect(schedule.intervalDays).toBe(baseIntervalDays)
     expect(schedule.queueDelayDays).toBe(queueDelayDays)
-    // new extract forward jitter only: [base, base + 0.5*base]
-    expect(schedule.intervalDays).toBeGreaterThanOrEqual(baseIntervalDays)
-    expect(schedule.intervalDays).toBeLessThanOrEqual(baseIntervalDays + baseIntervalDays * 0.5)
+    expect(schedule.dispersalDays).toBe(without.dispersalDays)
+    expect(schedule.dispersalDays).toBeGreaterThanOrEqual(0)
     const dueOffsetDays = (schedule.due.getTime() - baseDate.getTime()) / DAY_MS
-    expect(dueOffsetDays).toBeCloseTo(schedule.intervalDays + queueDelayDays, 8)
-    // 下一次增长只从 intentional interval 起（不含 delay）
+    // ms round-trip can lose ~1e-8 day; 6 decimal places (~0.1s) is enough
+    expect(dueOffsetDays).toBeCloseTo(
+      schedule.intervalDays + schedule.dispersalDays + queueDelayDays,
+      6
+    )
+    // 下一次增长只从 intentional interval 起（不含 delay / dispersal）
     const grown = growIntervalDays("extracts", schedule.intervalDays)
     expect(grown).toBeCloseTo(
       Math.min(30, Math.max(1, schedule.intervalDays * 1.35)),

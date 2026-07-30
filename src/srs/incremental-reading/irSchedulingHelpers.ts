@@ -10,7 +10,7 @@
 import type { Block, DbId } from "../../orca.d.ts"
 import { extractCardType } from "../deckUtils"
 import {
-  computeDispersedIntervalDays,
+  computeDispersalOffsetDays,
   computeDueFromIntervalDays
 } from "../incrementalReadingDispersal"
 import {
@@ -82,31 +82,42 @@ export function isNewCard(state: Pick<IRState, "readCount" | "lastRead">): boole
 }
 
 /**
- * 分散排期：intentional `intervalDays` 与首次 `due` 分离。
- * - `intervalDays` = base 抖动后的长期节奏（不含 sibling queueDelay）
- * - `due` = now + intervalDays + queueDelayDays（queueDelay 仅推远首次 due）
+ * 分散排期：intentional `intervalDays` 与 due-only 偏移分离。
+ * - `intervalDays` = clamp(base) 长期节奏（**无**随机，不含 sibling queueDelay）
+ * - `dispersalDays` = priority-aware 抖动（只进 due）
+ * - `due` = baseDate + intervalDays + dispersalDays + queueDelayDays
  */
 export function computeDispersedSchedule(
   blockId: DbId,
   cardType: string,
   baseDate: Date,
   baseIntervalDays: number,
-  options: { isNew: boolean; queueDelayDays?: number }
-): { intervalDays: number; due: Date; queueDelayDays: number } {
+  options: {
+    isNew: boolean
+    queueDelayDays?: number
+    priority?: number
+    scheduleOrdinal?: number
+  }
+): { intervalDays: number; due: Date; queueDelayDays: number; dispersalDays: number } {
   const dispersalCardType = cardType === "extracts" ? "extracts" : "topic"
-  const dispersed = computeDispersedIntervalDays({
+  const intervalDays = clampIntervalDays(cardType, baseIntervalDays)
+  const dispersalDays = computeDispersalOffsetDays({
     blockId,
     cardType: dispersalCardType,
     baseDate,
-    baseIntervalDays,
-    isNew: options.isNew
+    baseIntervalDays: intervalDays,
+    isNew: options.isNew,
+    priority: options.priority,
+    scheduleOrdinal: options.scheduleOrdinal
   })
-  const intervalDays = clampIntervalDays(cardType, dispersed)
   const queueDelayDays = Number.isFinite(options.queueDelayDays)
     ? Math.max(0, options.queueDelayDays as number)
     : 0
-  const due = computeDueFromIntervalDays(baseDate, intervalDays + queueDelayDays)
-  return { intervalDays, due, queueDelayDays }
+  const due = computeDueFromIntervalDays(
+    baseDate,
+    intervalDays + dispersalDays + queueDelayDays
+  )
+  return { intervalDays, due, queueDelayDays, dispersalDays }
 }
 
 export function getInitialStage(cardType: string): IRStage {

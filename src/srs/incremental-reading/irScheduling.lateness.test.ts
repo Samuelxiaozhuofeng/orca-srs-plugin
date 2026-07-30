@@ -123,7 +123,9 @@ describe("markAsRead lateness compensation (non-SAC)", () => {
     const expectedBase = growIntervalDays("topic", 8)
     expect(expectedBase).toBe(10)
     const expected = computeDispersedSchedule(1 as DbId, "topic", FIXED_NOW, expectedBase, {
-      isNew: false
+      isNew: false,
+      priority: 50,
+      scheduleOrdinal: 3
     })
     expect(state.intervalDays).toBe(expected.intervalDays)
     expect(state.due.getTime()).toBe(expected.due.getTime())
@@ -141,7 +143,9 @@ describe("markAsRead lateness compensation (non-SAC)", () => {
 
     const expectedBase = growIntervalDays("topic", 8)
     const expected = computeDispersedSchedule(2 as DbId, "topic", FIXED_NOW, expectedBase, {
-      isNew: false
+      isNew: false,
+      priority: 50,
+      scheduleOrdinal: 3
     })
     expect(state.intervalDays).toBe(expected.intervalDays)
     expect(state.due.getTime()).toBe(expected.due.getTime())
@@ -162,13 +166,17 @@ describe("markAsRead lateness compensation (non-SAC)", () => {
     const expectedBase = growIntervalDays("topic", effectiveBase)
     expect(expectedBase).toBe(30)
     const expected = computeDispersedSchedule(3 as DbId, "topic", FIXED_NOW, expectedBase, {
-      isNew: false
+      isNew: false,
+      priority: 50,
+      scheduleOrdinal: 3
     })
     expect(state.intervalDays).toBe(expected.intervalDays)
     expect(state.due.getTime()).toBe(expected.due.getTime())
 
     // Regression guard: uncompensated growth (8 * 1.25 = 10) would have been much
     // shorter than the lateness-compensated result.
+    // intentional interval has no random; lateness base 30 stays exact
+    expect(state.intervalDays).toBe(30)
     expect(state.intervalDays).toBeGreaterThan(20)
   })
 
@@ -188,11 +196,13 @@ describe("markAsRead lateness compensation (non-SAC)", () => {
     const expectedBase = growIntervalDays("extracts", effectiveBase)
     expect(expectedBase).toBe(30)
     const expected = computeDispersedSchedule(4 as DbId, "extracts", FIXED_NOW, expectedBase, {
-      isNew: false
+      isNew: false,
+      priority: 50,
+      scheduleOrdinal: 3
     })
     expect(state.intervalDays).toBe(expected.intervalDays)
     expect(state.due.getTime()).toBe(expected.due.getTime())
-    expect(state.intervalDays).toBeLessThanOrEqual(30)
+    expect(state.intervalDays).toBe(30)
   })
 
   it("first read (no lastRead) applies no lateness compensation", async () => {
@@ -207,7 +217,9 @@ describe("markAsRead lateness compensation (non-SAC)", () => {
 
     const expectedBase = growIntervalDays("topic", 5)
     const expected = computeDispersedSchedule(5 as DbId, "topic", FIXED_NOW, expectedBase, {
-      isNew: true
+      isNew: true,
+      priority: 50,
+      scheduleOrdinal: 0
     })
     expect(state.intervalDays).toBe(expected.intervalDays)
     expect(state.due.getTime()).toBe(expected.due.getTime())
