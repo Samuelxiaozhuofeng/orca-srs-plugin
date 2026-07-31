@@ -12,6 +12,7 @@ import {
   type IRState
 } from "../incrementalReadingStorage"
 import { completeIRCard } from "../irSessionActions"
+import { extractCardType } from "../deckUtils"
 import { advanceIRStage } from "./irStageTransitions"
 import { parseOptionalNumber } from "./irPropertyCodec"
 import type { NextChapterSchedule } from "../../importers/epub/types"
@@ -159,9 +160,27 @@ type SequentialAdvanceOptions = {
 }
 
 /**
+ * Extract provenance: durable ir.sourceBookId on extracts is for library grouping only.
+ * These cards are never sequential Book IR chapters.
+ */
+function hasExtractProvenance(block: Block): boolean {
+  if (extractCardType(block) === "extracts") return true
+  const property = block.properties?.find((item) => item.name === "ir.sourceTopicId")
+  if (!property || property.value == null || property.value === "") return false
+  const raw = property.value
+  const scalar = Array.isArray(raw)
+    ? raw.length === 1
+      ? raw[0]
+      : undefined
+    : raw
+  if (scalar === undefined || scalar == null || scalar === "") return false
+  return parseOptionalNumber(scalar) !== null
+}
+
+/**
  * Attempt sequential book progression.
- * - not_applicable: no sourceBookId / no plan / non-sequential → caller may plain-complete
- * - sequential plan but block is not activeChapterId → throws visible not_active (never plain-complete)
+ * - not_applicable: no sourceBookId / extract provenance / no plan / non-sequential → caller may plain-complete
+ * - sequential chapter Topic but block is not activeChapterId → throws visible not_active (never plain-complete)
  * - advanced/partial: progression service ran (including partial next-init failure)
  * Throws on hard failure after progression started — do NOT plain-complete (plan may be mutated).
  */
@@ -177,6 +196,8 @@ async function tryAdvanceSequentialBook(
   const block = await loadBackendBlockForArchive(blockId)
   const bookId = readSourceBookIdForArchive(block, blockId)
   if (bookId === null) return { status: "not_applicable" }
+  // Extracts inherit ir.sourceBookId for library grouping; they are never sequential chapters.
+  if (hasExtractProvenance(block)) return { status: "not_applicable" }
 
   const { loadBookIRPlan } = await import("../book-ir/bookIRPlanRepository")
   let plan

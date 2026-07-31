@@ -11,6 +11,8 @@
 > 2026-07-19：**建书重要性 UI**——创建 Book IR 时用户选「重要性」三档（低 20 / 中 50 默认 / 高 80，`importanceSetupOptions`），不再暴露 0–100 数字输入；plan 字段名仍为 `priority`，写入各章 `ir.priority`。阅读中改重要性见 [`渐进阅读.md`](渐进阅读.md)。
 >
 > 2026-07-19：**顺序完成 UX（landed）**——阅读主路径用主栏 **「完成」** 打开简化完成本章对话框（今天/明天；末章仅完成）；**不再**在主栏/更多提供「跳过本章」。新操作 plan outcome 走 `completed`；`skipped` 与 `performSkipChapter` / 命令仅兼容。用户 toast 无 block id（「下一章已加入今天 / 从明天开始 / 本书阅读计划已结束」）。资料库徽标：**在读 / 未解锁 / 已完成 / 已跳过**（`irChapterPresentation`）。会话动作栏总表见 [`渐进阅读.md`](渐进阅读.md)。
+>
+> 2026-03-22：**Extract 完成 ≠ 顺序解锁（landed）**——摘录创建时会继承 `ir.sourceBookId`（资料库挂靠）；会话「完成」对 Extract / 带 `ir.sourceTopicId` 的 hybrid 走普通 `completeIRCard`，**不**进入 `advanceSequentialBook`。仅顺序书**当前激活章 Topic** 的「完成」才解锁下一章。
 
 ## 概述
 
@@ -98,9 +100,10 @@
 ## 顺序模式规则
 
 - **锁定章**：`pending` → 无卡身份 → 不会进入 IR 队列
-- **主路径**：阅读主栏 **「完成」** → `performArchive` + `advanceSequentialBook({ outcome: "completed", nextChapterSchedule })`
+- **主路径**：阅读主栏 **「完成」** 在**当前激活章 Topic** 上 → `performArchive` + `advanceSequentialBook({ outcome: "completed", nextChapterSchedule })`
+- **Extract / hybrid 摘录**：即使带有章节继承的 `ir.sourceBookId`，`tryAdvanceSequentialBook` 仍返回 `not_applicable`，走普通 `completeIRCard`（不推进 plan、不解锁下一章）
 - **兼容**：`performSkipChapter` / `skipSequentialChapter` 仍可写 `outcome: "skipped"`，**阅读 UI 主路径不暴露**
-- 打开/阅读、下一篇、推后、改重要性、**挖空** **不得**解锁下一章
+- 打开/阅读、下一篇、推后、改重要性、**挖空**、**完成摘录** **不得**解锁下一章
 - `completed` 与 `skipped` 在 plan 中可区分，但对解锁行为等价（都会尝试激活下一 `pending`）
 
 ### 资料库展示（大纲结构 vs 队列）

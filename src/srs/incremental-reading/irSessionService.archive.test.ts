@@ -3,6 +3,7 @@
  * - sequential active chapter passes nextChapterSchedule explicitly
  * - cancel is UI-only (not tested here): service is only called after user choice
  * - plain cards keep completeIRCard path
+ * - extracts with sequential sourceBookId plain-complete (library provenance only)
  * - failures surface (no silent plain-complete after sequential start)
  */
 
@@ -34,11 +35,18 @@ vi.mock("./irSchedulingHelpers", async () => {
 })
 
 const blockProps = new Map<DbId, Array<{ name: string; value: unknown }>>()
+const blockRefs = new Map<
+  DbId,
+  Array<{ type: number; alias?: string; data?: Array<{ name: string; value: unknown }> }>
+>()
 
 const mockOrca = {
   invokeBackend: vi.fn(async (command: string, id: DbId) => {
     if (command === "get-block") {
-      return { properties: blockProps.get(id) ?? [] }
+      return {
+        properties: blockProps.get(id) ?? [],
+        refs: blockRefs.get(id)
+      }
     }
     return undefined
   }),
@@ -54,11 +62,23 @@ import { performArchive, performSkipChapter } from "./irSessionService"
 beforeEach(() => {
   vi.clearAllMocks()
   blockProps.clear()
+  blockRefs.clear()
   mockOrca.state.blocks = {}
 })
 
+function seedCardType(blockId: DbId, type: string) {
+  blockRefs.set(blockId, [
+    {
+      type: 2,
+      alias: "card",
+      data: [{ name: "type", value: type }]
+    }
+  ])
+}
+
 function seedSequentialActive(chapterId: DbId, bookId: DbId) {
   blockProps.set(chapterId, [{ name: "ir.sourceBookId", value: bookId }])
+  seedCardType(chapterId, "topic")
   loadBookIRPlan.mockResolvedValue({
     version: 1,
     bookBlockId: bookId,
@@ -143,6 +163,7 @@ describe("performArchive sequential schedule", () => {
 
   it("distributed book card (non-sequential plan) uses plain complete", async () => {
     blockProps.set(10, [{ name: "ir.sourceBookId", value: 100 }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockResolvedValue({
       version: 1,
       bookBlockId: 100,
@@ -164,6 +185,7 @@ describe("performArchive sequential schedule", () => {
   it("refuses plain-complete when chapter belongs to sequential plan but is not active", async () => {
     // Stale dual-live / obsolete current after plan advanced or checkpoint left active=null
     blockProps.set(10, [{ name: "ir.sourceBookId", value: 100 }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockResolvedValue({
       version: 1,
       bookBlockId: 100,
@@ -184,8 +206,61 @@ describe("performArchive sequential schedule", () => {
     expect(completeIRCard).not.toHaveBeenCalled()
   })
 
+  it("plain-completes Extract with sequential sourceBookId (library provenance only)", async () => {
+    // Extract inherits durable ir.sourceBookId for library grouping; never a sequential chapter.
+    blockProps.set(20, [
+      { name: "ir.sourceBookId", value: 100 },
+      { name: "ir.sourceTopicId", value: 11 }
+    ])
+    seedCardType(20, "extracts")
+    loadBookIRPlan.mockResolvedValue({
+      version: 1,
+      bookBlockId: 100,
+      mode: "sequential",
+      priority: 50,
+      totalDays: 5,
+      selectedChapterIds: [11, 12],
+      activeChapterId: 11,
+      outcomes: { "11": "active", "12": "pending" },
+      lastError: null
+    })
+
+    const result = await performArchive(20, "orca-srs")
+
+    expect(result).toEqual({ state: null, leftCard: true })
+    expect(advanceSequentialBook).not.toHaveBeenCalled()
+    expect(completeIRCard).toHaveBeenCalledWith(20, "orca-srs")
+  })
+
+  it("plain-completes hybrid cloze extract provenance with sequential sourceBookId", async () => {
+    // keep_extract path may leave type=cloze while still carrying extract source* props.
+    blockProps.set(30, [
+      { name: "ir.sourceBookId", value: 100 },
+      { name: "ir.sourceTopicId", value: 11 }
+    ])
+    seedCardType(30, "cloze")
+    loadBookIRPlan.mockResolvedValue({
+      version: 1,
+      bookBlockId: 100,
+      mode: "sequential",
+      priority: 50,
+      totalDays: 5,
+      selectedChapterIds: [11, 12],
+      activeChapterId: 11,
+      outcomes: { "11": "active", "12": "pending" },
+      lastError: null
+    })
+
+    const result = await performArchive(30, "orca-srs")
+
+    expect(result).toEqual({ state: null, leftCard: true })
+    expect(advanceSequentialBook).not.toHaveBeenCalled()
+    expect(completeIRCard).toHaveBeenCalledWith(30, "orca-srs")
+  })
+
   it("refuses plain-complete when sequential plan activeChapterId is null", async () => {
     blockProps.set(10, [{ name: "ir.sourceBookId", value: 100 }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockResolvedValue({
       version: 1,
       bookBlockId: 100,
@@ -216,6 +291,7 @@ describe("performArchive sequential schedule", () => {
 
   it("surfaces malformed plan errors instead of plain-complete", async () => {
     blockProps.set(10, [{ name: "ir.sourceBookId", value: 100 }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockRejectedValue(new Error("Malformed ir.bookPlan JSON"))
 
     await expect(performArchive(10, "orca-srs")).rejects.toThrow(/Malformed ir.bookPlan/)
@@ -226,6 +302,7 @@ describe("performArchive sequential schedule", () => {
   it("coerces string ir.sourceBookId so sequential advance is not skipped", async () => {
     // Orca PropType.Number may surface as string in some state paths
     blockProps.set(10, [{ name: "ir.sourceBookId", value: "100" }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockResolvedValue({
       version: 1,
       bookBlockId: 100,
@@ -285,6 +362,7 @@ describe("performArchive sequential schedule", () => {
 
   it("accepts a single-element Orca array for ir.sourceBookId", async () => {
     blockProps.set(10, [{ name: "ir.sourceBookId", value: [100] }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockResolvedValue({
       version: 1,
       bookBlockId: 100,
@@ -315,6 +393,7 @@ describe("performArchive sequential schedule", () => {
 
   it("rejects an ambiguous multi-element sourceBookId instead of plain-completing", async () => {
     blockProps.set(10, [{ name: "ir.sourceBookId", value: [100, 200] }])
+    seedCardType(10, "topic")
 
     await expect(performArchive(10, "orca-srs")).rejects.toThrow(
       /属性形状不明确/
@@ -353,6 +432,7 @@ describe("performSkipChapter", () => {
 
   it("throws visible not_active when sequential chapter is not the plan active", async () => {
     blockProps.set(10, [{ name: "ir.sourceBookId", value: 100 }])
+    seedCardType(10, "topic")
     loadBookIRPlan.mockResolvedValue({
       version: 1,
       bookBlockId: 100,

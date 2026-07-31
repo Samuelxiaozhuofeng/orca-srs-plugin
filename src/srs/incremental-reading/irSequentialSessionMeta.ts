@@ -4,6 +4,7 @@
  */
 
 import type { Block, DbId } from "../../orca.d.ts"
+import { extractCardType } from "../deckUtils"
 import { getBlockCached } from "./irBlockCache"
 import { parseOptionalNumber, readProp } from "./irPropertyCodec"
 
@@ -25,6 +26,9 @@ export async function loadSequentialSessionMeta(
 ): Promise<SequentialSessionMeta> {
   const resolved = block ?? (await getBlockCached(blockId)) ?? null
   if (!resolved) return INACTIVE
+  // Extract provenance is library-only; never treat as sequential active chapter.
+  if (extractCardType(resolved) === "extracts") return INACTIVE
+  if (parseOptionalNumber(readProp(resolved, "ir.sourceTopicId")) !== null) return INACTIVE
 
   const sourceBookId = parseOptionalNumber(readProp(resolved, "ir.sourceBookId"))
   if (sourceBookId === null) return INACTIVE

@@ -300,6 +300,7 @@ export function nextSacStagnation(
 /**
  * 判断 block 是否为顺序 Book IR 的当前激活章。
  * 依赖 ir.sourceBookId + 书籍 ir.bookPlan（mode/activeChapterId）；
+ * Extract 仅继承 sourceBookId 作资料库挂靠，不算激活章；
  * plan 缺失 → false；plan 损坏 → 抛出（不静默吞错）。
  */
 export async function isSequentialActiveChapter(
@@ -311,6 +312,9 @@ export async function isSequentialActiveChapter(
     ?? (await getBlockCached(blockId))
     ?? null
   if (!resolved) return false
+  // Extract provenance is library-only; never treat as sequential active chapter.
+  if (extractCardType(resolved) === "extracts") return false
+  if (parseOptionalNumber(readProp(resolved, "ir.sourceTopicId")) !== null) return false
 
   const sourceBookId = parseOptionalNumber(readProp(resolved, "ir.sourceBookId"))
   if (sourceBookId === null) return false

@@ -49,3 +49,6 @@ AGENTS.md
 
 # Claude Code worktrees (local session isolation)
 .claude/worktrees/
+
+# Pi subagents local artifacts
+.pi-subagents/
