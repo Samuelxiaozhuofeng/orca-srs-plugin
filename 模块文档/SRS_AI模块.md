@@ -232,7 +232,7 @@ makeAICard / interactiveAICard（别名）
 
 ### 设置项（独立面板，不在原生设置页）
 
-入口：Headbar 插头图标 / 命令 `${pluginName}.openAIServiceSettings` / 斜杠「AI / Firecrawl 服务设置」。
+入口：Headbar 插头图标 / 命令 `${pluginName}.openAIServiceSettings` / 斜杠「AI / Firecrawl 服务设置」（面板标题「AI 与导入服务」）。
 
 | 存储 | 键 / 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
@@ -248,7 +248,11 @@ makeAICard / interactiveAICard（别名）
 
 - 读取：`getAISettings` / `getWebImportSettings`（内存缓存 → 旧 settings 迁移源 → 默认）
 - hydrate：插件 load + 打开面板；旧 settings 键自动迁移到 setData；缺省字段归一为默认（旧数据无联网/强度键时安全）
-- 面板：`AIServiceSettingsDialog`（本地表单 state + 测连 + 拉模型 + 联网开关 + 思考强度）
+- 面板：`AIServiceSettingsDialog` — **分段 Tab**（默认「连接」）
+  - **连接**：Key / URL / 模型 / 拉取 / 测连；模型 chips 默认 8 个，「浏览全部」展开
+  - **行为**：联网 / 思考强度 / max tokens；长说明「了解更多」折叠
+  - **快捷制卡** / **网页导入** / **诊断**（请求日志）各一页
+  - 保存仍一次提交整份 draft（ai + firecrawl + quickCard）
 - 请求：`buildChatCompletionsBody` 用于制卡 / 块解释 / 快捷交互 / 连接测试
   - 原生联网（`resolveWebSearchRoute` / `resolveWebSearchTool` / `materializeWebSearchTool`）：
     - UI 仅一个勾选 `enableNativeWebSearch`；**无**形态下拉

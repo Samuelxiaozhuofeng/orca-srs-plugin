@@ -1303,7 +1303,77 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--srs-space-4);
+  gap: var(--srs-space-3);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 分段 Tab —— 一次只露一个任务面 */
+.ai-service-settings__tabs {
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-pill);
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+}
+
+.ai-service-settings__tab {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--srs-radius-pill);
+  color: var(--orca-color-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1 1 auto;
+  font: inherit;
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-caption);
+  font-weight: var(--srs-weight-medium);
+  gap: 4px;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 4.5rem;
+  padding: 6px 10px;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease);
+  white-space: nowrap;
+}
+
+.ai-service-settings__tab:hover:not(:disabled):not(.is-active) {
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-1);
+}
+
+.ai-service-settings__tab.is-active {
+  background: var(--srs-surface-base);
+  box-shadow: var(--srs-shadow-1, 0 1px 2px rgb(0 0 0 / 6%));
+  color: var(--orca-color-primary-6, var(--orca-color-text-1));
+  font-weight: var(--srs-weight-semibold);
+}
+
+.ai-service-settings__tab:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 1px;
+}
+
+.ai-service-settings__tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ai-service-settings__tab .ti {
+  font-size: 0.95em;
+}
+
+.ai-service-settings__panels {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-height: 0;
   overflow-y: auto;
 }
@@ -1317,6 +1387,11 @@
   flex-direction: column;
   gap: var(--srs-space-3);
   padding: var(--srs-space-4);
+}
+
+.ai-service-settings__section--diagnostics {
+  /* 日志列表自带样式，少一层嵌套感 */
+  padding-bottom: var(--srs-space-3);
 }
 
 .ai-service-settings__section-title {
@@ -1431,12 +1506,52 @@
   min-width: 0;
 }
 
+.ai-service-settings__model-browser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
 .ai-service-settings__model-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--srs-space-2);
-  max-height: 120px;
+  max-height: 160px;
   overflow-y: auto;
+}
+
+.ai-service-settings__hint-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.ai-service-settings__more-toggle {
+  background: transparent;
+  border: none;
+  color: var(--orca-color-primary-5, var(--orca-color-text-2));
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--srs-font-family);
+  font-size: var(--srs-text-micro);
+  padding: 0;
+  text-align: left;
+}
+
+.ai-service-settings__more-toggle:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.ai-service-settings__more-toggle:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.ai-service-settings__more-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* 筛选 chip —— 规范第四节：radius-pill / 6px 12px / secondary */
@@ -1493,6 +1608,14 @@
   line-height: 1.35;
   margin: 0;
   max-width: var(--srs-measure-prose);
+}
+
+.ai-service-settings__hint--details {
+  margin-top: 2px;
+  padding: var(--srs-space-2);
+  background: var(--srs-surface-base);
+  border-radius: var(--srs-radius-sm);
+  border: 1px solid var(--srs-hairline);
 }
 
 .ai-service-settings__inline-error {

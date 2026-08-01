@@ -202,6 +202,7 @@
 
 ## 更新记录
 
+- **2026-08-01（AI 服务设置分段 Tab）**：`AIServiceSettingsDialog` 改为 连接 / 行为 / 快捷制卡 / 网页导入 / 诊断 五段；默认落地连接；模型列表折叠；长 hint「了解更多」。见 [SRS_AI模块.md](SRS_AI模块.md)
 - **2026-08-01（联网 tool 一键自动路由）**：设置面板去掉「联网 tool 形态」下拉，只保留「模型原生联网」勾选；开启后 `resolveWebSearchRoute` 按 model 自动：Grok 4.5 → 扁平 `web_search`，Gemini Flash → nested `google_search`；历史 `webSearchToolType` 忽略。见 [SRS_AI模块.md](SRS_AI模块.md)
 - **2026-08-01（Gemini google_search 联网形态）**：`materializeWebSearchTool` 将 Gemini 路线序列化为 `{ type: "google_search", google_search: {} }`（ROUTER9 实测仅扁平 `type` 不触发检索）；Grok 仍扁平 `web_search`。见 [SRS_AI模块.md](SRS_AI模块.md)
 - **2026-07-27（视图切换视口归零）**：修复「结束最后一张阅读卡后，『今日学习完毕』完成页仍停在上一张卡的滚动位置」——真实纵向滚动 owner 常是 host `.orca-block-editor` 祖先，React 换子树不会让它回顶。新增 `src/hooks/viewportScrollReset.ts`（复用 `resolveVerticalScrollOwner`），IR 会话按视图 key（`summary` / `review:<entryKey>` / `load-failed`，阅读条目仍交给断点恢复）归零；SRS 复习会话在切卡 / 进完成摘要时归零，祖先 owner 受 `manageHostEditorChrome` gate 约束。见 [渐进阅读.md](渐进阅读.md)、[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)、[问题经验.md](问题经验.md)
