@@ -19,6 +19,10 @@
 > **索引增补：2026-07-28（Home/IR 块三态与 insertBlock 校验 + 扫描兜底 + 列表卡缓存 + React key）**：
 > - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：Flash Home `resolveBlock` 三态；`insertBlock` 有限正数校验；列表 React key 统一 `cardKeyFromReviewCard`
 > - [渐进阅读.md](渐进阅读.md)：IR 会话块 `insertBlock` ID 校验（与复习会话块对齐）
+>
+> **索引增补：2026-08-01（Extract 摘录处理建议 AI 虚拟块）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：新增请求类型 `extract-coach`（标签「摘录处理建议」）；只读顾问，有界上下文 ≤8 块 / ≤8000 字符，严格 JSON 协议 + `cloze.quote` 接地校验，会话缓存 ≤50 条
+> - [渐进阅读.md](渐进阅读.md)：Extract 正文底部 AI 处理思路虚拟块（`enableExtractCoach` 默认关；仅 `extract_focus` 显示；不写库 / 不改排期 / 不建卡）
 > - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`scanCardsFromTags` 仅 throw 走全库兜底；列表卡 `srs.isCard` 写后 `invalidateBlockCache`
 
 ## 文档分类
@@ -124,7 +128,7 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-07-30 更新 — due-only 分散 Phase 0+1 短记；
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-01 更新 — due-only 分散 Phase 0+1 短记；Extract 摘录处理建议 AI 虚拟块；
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
     - **mixed 复习卡块可用性**（2026-07-27）：`IRMixedReviewPane` 挂载前 `preflightMixedReviewCard`（`writeToState` + missing/unknown 三态），修复 state miss 永久「加载中」；`SrsCardDemo` 改为纯渲染器
@@ -164,7 +168,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-07-27 更新 — 制卡 + 块解释 + Quick AI；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-01 更新 — 制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
     - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类

@@ -40,3 +40,36 @@ describe("incrementalReadingSettingsSchema mixed learning", () => {
     ).toBe(false)
   })
 })
+
+describe("incrementalReadingSettingsSchema extract coach", () => {
+  const pluginName = "test-plugin"
+
+  beforeEach(() => {
+    ;(globalThis as { orca?: unknown }).orca = {
+      state: {
+        plugins: {
+          [pluginName]: { settings: {} }
+        }
+      }
+    }
+  })
+
+  it("enableExtractCoach 默认关闭", () => {
+    const settings = getIncrementalReadingSettings(pluginName)
+    expect(settings.enableExtractCoach).toBe(false)
+  })
+
+  it("读取已保存的 enableExtractCoach 值", () => {
+    ;(orca.state.plugins[pluginName] as { settings: Record<string, unknown> }).settings = {
+      enableExtractCoach: true
+    }
+    const settings = getIncrementalReadingSettings(pluginName)
+    expect(settings.enableExtractCoach).toBe(true)
+  })
+
+  it("schema 暴露默认值供恢复", () => {
+    expect(
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableExtractCoach].defaultValue
+    ).toBe(false)
+  })
+})

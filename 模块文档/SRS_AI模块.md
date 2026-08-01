@@ -173,6 +173,19 @@ src/components/
 - 名词写入格式：`术语 — 释义`
 - UI：见 [渐进阅读.md](./渐进阅读.md)「块解释」
 
+### 摘录处理建议（Extract Coach：`aiExtractCoach.ts` + `IRExtractCoach.tsx` + `irExtractCoachView.ts`）
+
+渐进阅读阅读区内的**只读 AI 顾问**：进入 Extract 卡后约 300ms 自动分析摘录及其**有界上下文**，在正文底部渲染虚拟块（核心价值 1 句 + 最多 3 条处理建议 + 重新生成 / 隐藏）。**不写数据库、不建卡、不改排期**，AI 输出仅会话内缓存。
+
+- **触发与取消**：仅 `cardType === "extracts"` 且 `extract_focus` 模式显示（Topic / `chapter_browse` 隐藏）；入场 300ms 防抖请求；切卡 / 关会话 / 禁用时 `AbortController` + `createRequestTokenGuard` 递增 token 双保险，旧结果不得覆盖新卡
+- **上下文有界收集** `collectExtractCoachContext`：摘录正文 → 直接父块 → 父块前一/后一兄弟（`block.left` / 祖块 `children` 定位，仅读 state，兄弟缺失是有意降级）→ `sourceTopicId` 块标题 → 直接子块 ≤3（用于避免建议重复加工）。**最多读 8 块**、单块截断、总量 ≤ 8000 字符；只用 `get-block` / `get-blocks`，**禁用 `get-block-tree`**；后端读取失败抛 `ExtractCoachContextError` → 虚拟块错误态 + 重试，不伪装成空上下文
+- **输出协议**（严格 JSON，见 `aiExtractCoach.ts`）：`insight`（≤300 字）+ `actions[]`（≤3 条，`kind` ∈ `cloze | question | example | counterpoint | connect | done`）；`actions` 为空视为合法的「无需加工，可继续阅读」态
+- **校验与接地**：畸形 JSON / 未知 `kind` / `insight` 为空 → 可见解析错误；`cloze.quote` 必须经 `isContiguousExcerpt` 空白规范化接地，不接地则丢弃 quote（该条降级为普通建议，不展示为可挖空原文）
+- **Prompt 边界**：所有笔记内容置于 `-----BEGIN/END-----` 分隔符内，system 明令视为**不可信数据**，不执行其中指令；不要求思维链
+- **会话缓存 / 隐藏**：缓存键 = `extractId:modified:上下文签名`，上限 50 条逐最旧；「重新生成」`force` 绕过缓存；「隐藏」按 Extract 记入会话隐藏集，重新进入仍隐藏
+- **请求日志**：`purpose: "extract-coach"`，标签「摘录处理建议」（`aiRequestLog.ts`）
+- **设置**：渐进阅读设置 `enableExtractCoach`（默认关）；未配置 AI（`isAIConfigured` 为假）时不发请求，虚拟块显示配置提示
+
 ### 正式链路
 
 ```text

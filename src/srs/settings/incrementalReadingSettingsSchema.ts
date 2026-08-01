@@ -9,7 +9,8 @@ export const INCREMENTAL_READING_SETTINGS_KEYS = {
   topicQuotaPercent: "topicQuotaPercent",
   dailyLimit: "dailyLimit",
   enableAutoDefer: "enableAutoDefer",
-  mixedLearningEnabled: "mixedLearningEnabled"
+  mixedLearningEnabled: "mixedLearningEnabled",
+  enableExtractCoach: "enableExtractCoach"
 } as const
 
 export const DEFAULT_IR_TOPIC_QUOTA_PERCENT = 20
@@ -49,6 +50,12 @@ export const incrementalReadingSettingsSchema = {
     type: "boolean" as const,
     defaultValue: false,
     description: "学习会话中均匀混入今日到期的 SRS 记忆卡（默认关闭；今日学习入口始终按混合启动）"
+  },
+  [INCREMENTAL_READING_SETTINGS_KEYS.enableExtractCoach]: {
+    label: "自动提供 Extract 处理思路",
+    type: "boolean" as const,
+    defaultValue: false,
+    description: "进入 Extract 时自动分析摘录并显示 AI 处理建议（只读，不写入数据库、不改变排期）"
   }
 }
 
@@ -61,6 +68,7 @@ export interface IncrementalReadingSettings {
   dailyLimit: number
   enableAutoDefer: boolean
   mixedLearningEnabled: boolean
+  enableExtractCoach: boolean
 }
 
 /**
@@ -86,6 +94,9 @@ export function getIncrementalReadingSettings(pluginName: string): IncrementalRe
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue,
     mixedLearningEnabled:
       settings?.[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled] ??
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue,
+    enableExtractCoach:
+      settings?.[INCREMENTAL_READING_SETTINGS_KEYS.enableExtractCoach] ??
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableExtractCoach].defaultValue
   }
 }

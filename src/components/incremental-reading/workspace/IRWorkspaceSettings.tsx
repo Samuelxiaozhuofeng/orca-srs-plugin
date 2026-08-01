@@ -102,6 +102,9 @@ export default function IRWorkspaceSettings({
       if (patch.mixedLearningEnabled !== undefined) {
         toSave[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled] = patch.mixedLearningEnabled
       }
+      if (patch.enableExtractCoach !== undefined) {
+        toSave[INCREMENTAL_READING_SETTINGS_KEYS.enableExtractCoach] = patch.enableExtractCoach
+      }
 
       await orca.plugins.setSettings("app", pluginName, toSave)
       setSettings((prev: IncrementalReadingSettings | null) => ({
@@ -166,7 +169,9 @@ export default function IRWorkspaceSettings({
     enableAutoDefer:
       incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableAutoDefer].defaultValue,
     mixedLearningEnabled:
-      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.mixedLearningEnabled].defaultValue,
+    enableExtractCoach:
+      incrementalReadingSettingsSchema[INCREMENTAL_READING_SETTINGS_KEYS.enableExtractCoach].defaultValue
   } satisfies IncrementalReadingSettings
 
   const busy = isSaving || isResetting
@@ -280,6 +285,27 @@ export default function IRWorkspaceSettings({
                 <div className="ir-drawer__hint">
                   默认关闭，仅作「从资料库直接开始读某张卡」时的回退；「今日学习」入口始终按混合启动。
                   队列长度由各自的每日上限决定，不再有时间盒。
+                </div>
+              </div>
+
+              <div className="ir-drawer__field">
+                <label htmlFor="ir-setting-extract-coach">自动提供 Extract 处理思路</label>
+                <label className="ir-settings__checkbox-row">
+                  <input
+                    id="ir-setting-extract-coach"
+                    type="checkbox"
+                    checked={settings.enableExtractCoach}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                      void saveSettings(
+                        { enableExtractCoach: event.currentTarget.checked },
+                        { notify: true }
+                      )
+                    }}
+                  />
+                  <span>进入 Extract 时自动显示 AI 处理建议</span>
+                </label>
+                <div className="ir-drawer__hint">
+                  仅对 Extract 生效，需已配置 AI；只读分析，不写入数据库、不改变排期。
                 </div>
               </div>
 

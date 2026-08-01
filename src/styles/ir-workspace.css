@@ -3799,3 +3799,197 @@
   padding: 3px var(--srs-space-2);
   font-size: var(--srs-text-micro);
 }
+
+/* ---- 摘录处理建议（AI Extract Coach）虚拟块 ---- */
+.ir-extract-coach {
+  margin: var(--srs-space-3) 0 0;
+  padding: var(--srs-space-3) var(--srs-space-4);
+  border-radius: var(--srs-radius-md);
+  border: 1px solid var(--orca-color-border-1);
+  border-left: 3px solid var(--orca-color-primary-5);
+  background: var(--srs-surface-sunken);
+  color: var(--orca-color-text-2);
+  font-size: var(--srs-text-secondary);
+  line-height: 1.55;
+  min-height: 40px;
+}
+
+/* loading / no-key / error / done 等单行态尽量等高，减少正文跳动 */
+.ir-extract-coach__status,
+.ir-extract-coach__hint,
+.ir-extract-coach__error {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+}
+
+.ir-extract-coach__spinner {
+  animation: ir-extract-coach-spin 1s linear infinite;
+  font-style: normal;
+}
+
+@keyframes ir-extract-coach-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ir-extract-coach__hint {
+  color: var(--orca-color-text-3);
+}
+
+.ir-extract-coach__error {
+  color: var(--orca-color-danger-6);
+}
+
+.ir-extract-coach__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.ir-extract-coach__insight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--srs-space-2);
+  font-weight: var(--srs-weight-medium);
+  color: var(--orca-color-text-1);
+}
+
+.ir-extract-coach__actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.ir-extract-coach__action {
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-1);
+  border: 1px solid var(--orca-color-border-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+}
+
+.ir-extract-coach__action-head {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+}
+
+.ir-extract-coach__kind {
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-primary-6);
+  border: 1px solid var(--orca-color-primary-5);
+  border-radius: var(--srs-radius-pill);
+  padding: 0 var(--srs-space-2);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.ir-extract-coach__action-title {
+  font-weight: var(--srs-weight-medium);
+  color: var(--orca-color-text-1);
+}
+
+.ir-extract-coach__action-detail {
+  color: var(--orca-color-text-2);
+}
+
+.ir-extract-coach__quote {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  padding: var(--srs-space-1) var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  border-left: 2px solid var(--orca-color-primary-5);
+  background: var(--srs-surface-sunken);
+  overflow-wrap: anywhere;
+}
+
+.ir-extract-coach__done-note {
+  color: var(--orca-color-success-6);
+}
+
+.ir-extract-coach__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--srs-space-2);
+  margin-top: var(--srs-space-1);
+}
+
+.ir-extract-coach__btn {
+  cursor: pointer;
+  border-radius: var(--srs-radius-md);
+  border: 1px solid var(--orca-color-border-1);
+  background: var(--orca-color-bg-1);
+  color: var(--orca-color-text-1);
+  padding: var(--srs-space-1) var(--srs-space-3);
+  font-family: inherit;
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-medium);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
+}
+
+.ir-extract-coach__btn:hover:not(:disabled) {
+  background: var(--orca-color-bg-2);
+  border-color: var(--orca-color-border-2);
+}
+
+.ir-extract-coach__btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.ir-extract-coach__btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.ir-extract-coach__btn--primary {
+  background: var(--orca-color-primary-6);
+  border-color: var(--orca-color-primary-6);
+  color: var(--orca-color-bg-1);
+}
+
+.ir-extract-coach__btn--primary:hover:not(:disabled) {
+  background: var(--orca-color-primary-7);
+  border-color: var(--orca-color-primary-7);
+  color: var(--orca-color-bg-1);
+}
+
+.ir-extract-coach__icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--orca-color-text-3);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: var(--srs-space-1);
+  border-radius: var(--srs-radius-xs);
+  opacity: 0.7;
+  transition:
+    opacity var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease);
+}
+
+.ir-extract-coach__icon-btn:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--orca-color-text-1);
+}
+
+.ir-extract-coach__icon-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}

@@ -17,6 +17,8 @@ import {
 import { expandReadingModeBlocks } from "./irReadingExpand"
 import { applyContextHideSelf } from "./irReadingContextSuppress"
 import IRBlockExplainController from "./IRBlockExplainController"
+import IRExtractCoach from "./IRExtractCoach"
+import { canShowExtractCoach } from "./irExtractCoachView"
 
 const { useEffect } = window.React
 const { Block: OrcaBlock } = orca.components
@@ -40,6 +42,10 @@ export type IRReadingPaneProps = {
   /** AI 块解释（复用插件 AI 设置）；默认启用 */
   pluginName?: string
   enableBlockExplain?: boolean
+  /** Extract 的源 Topic id（摘录处理建议上下文用） */
+  sourceTopicId?: DbId
+  /** AI 摘录处理建议开关（由会话外壳从渐进阅读设置读入） */
+  enableExtractCoach?: boolean
 }
 
 function observeExpand(root: HTMLElement): () => void {
@@ -78,7 +84,9 @@ export default function IRReadingPane({
   nestedScroll = false,
   viewMode = "reading",
   pluginName = "orca-srs",
-  enableBlockExplain = true
+  enableBlockExplain = true,
+  sourceTopicId,
+  enableExtractCoach = true
 }: IRReadingPaneProps) {
   const nearRenderId = resolveNearContextRenderId(contextState, cardId)
   const bodyBlockId = resolveBodyBlockId(contextState, cardId)
@@ -201,6 +209,14 @@ export default function IRReadingPane({
           indentLevel={0}
           initiallyCollapsed={viewMode === "reading" ? false : undefined}
         />
+        {canShowExtractCoach({ cardType, mode: contextState.mode }) ? (
+          <IRExtractCoach
+            cardId={cardId}
+            pluginName={pluginName}
+            enabled={enableExtractCoach}
+            sourceTopicId={sourceTopicId}
+          />
+        ) : null}
         <IRBlockExplainController
           enabled={enableBlockExplain}
           pluginName={pluginName}

@@ -47,6 +47,7 @@ import {
   type IRSessionEntry
 } from "../../srs/incremental-reading/irMixedQueuePolicy"
 import type { ReviewCard } from "../../srs/types"
+import { getIncrementalReadingSettings } from "../../srs/settings/incrementalReadingSettingsSchema"
 import { useIRReadingBreakpoint } from "../../hooks/useIRReadingBreakpoint"
 import { useIRReadingEndZone } from "../../hooks/useIRReadingEndZone"
 import { useIRShortcuts } from "../../hooks/useIRShortcuts"
@@ -277,6 +278,7 @@ export default function IRSessionShell({
   const currentCard = currentEntry?.kind === "reading" ? currentEntry.card : undefined
   const isReviewEntry = currentEntry?.kind === "review"
   const isTopic = currentCard?.cardType === "topic"
+  const extractCoachEnabled = getIncrementalReadingSettings(pluginName).enableExtractCoach
   const nextEntry = queue[currentIndex + 1]
   const nextReadingBlockId = nextEntry?.kind === "reading"
     ? nextEntry.card.id
@@ -1133,6 +1135,8 @@ export default function IRSessionShell({
           viewMode={viewMode}
           pluginName={pluginName}
           enableBlockExplain
+          sourceTopicId={currentCard.sourceTopicId}
+          enableExtractCoach={extractCoachEnabled}
         />
       </div>
 

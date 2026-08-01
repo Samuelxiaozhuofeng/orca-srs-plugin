@@ -22,6 +22,7 @@ export type AiRequestPurpose =
   | "explain"
   | "web-summary"
   | "connection-test"
+  | "extract-coach"
   | "other"
 
 export const AI_REQUEST_PURPOSE_LABELS: Record<AiRequestPurpose, string> = {
@@ -30,6 +31,7 @@ export const AI_REQUEST_PURPOSE_LABELS: Record<AiRequestPurpose, string> = {
   explain: "块解释",
   "web-summary": "网页总结",
   "connection-test": "连接测试",
+  "extract-coach": "摘录处理建议",
   other: "其它"
 }
 
