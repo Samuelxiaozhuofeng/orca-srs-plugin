@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest"
 import {
   buildChatCompletionsBody,
+  isGeminiFlashGoogleSearchModel,
+  isGrokWebSearchModel,
   isNativeWebSearchSupportedModel,
   materializeWebSearchTool,
   NATIVE_GOOGLE_SEARCH_TOOL,
   NATIVE_WEB_SEARCH_TOOL,
   resolveReasoningEffort,
+  resolveWebSearchRoute,
   resolveWebSearchTool,
   shouldAttachNativeWebSearch
 } from "./aiChatRequest"
@@ -40,23 +43,57 @@ describe("aiChatRequest", () => {
     expect(body).not.toHaveProperty("reasoning_effort")
   })
 
-  it("attaches web_search only for grok-4.5 when enableNativeWebSearch is true", () => {
+  it("routes Grok 4.5 to flat web_search when enableNativeWebSearch is true", () => {
     const body = buildChatCompletionsBody({
       settings: { ...baseSettings, enableNativeWebSearch: true },
       messages: [{ role: "user", content: "news?" }]
     })
     expect(body.tools).toEqual([{ ...NATIVE_WEB_SEARCH_TOOL }])
+    expect(resolveWebSearchRoute("grok-4.5")).toBe("web_search")
+    expect(isGrokWebSearchModel("cpa/grok-4.5")).toBe(true)
   })
 
-  it("does not attach web_search for non-grok-4.5 even when setting is on", () => {
+  it("routes Gemini Flash to nested google_search when enableNativeWebSearch is true", () => {
     for (const model of [
       "gemini-3.6-flash",
       "cpa/gemini-3.6-flash",
+      "cpa/gemini-3.6-flash-high",
+      "ag/gemini-3-flash",
+      "openai-compatible-chat-xxx/gemini-3.6-flash"
+    ]) {
+      expect(isGeminiFlashGoogleSearchModel(model)).toBe(true)
+      expect(resolveWebSearchRoute(model)).toBe("google_search")
+      const body = buildChatCompletionsBody({
+        settings: {
+          model,
+          enableNativeWebSearch: true,
+          reasoningEffort: "default",
+          webSearchToolType: "auto"
+        },
+        messages: [{ role: "user", content: "news?" }]
+      })
+      expect(body.tools).toEqual([
+        { type: "google_search", google_search: {} }
+      ])
+    }
+  })
+
+  it("does not attach tools for unsupported models even when switch is on", () => {
+    for (const model of [
       "gpt-4.1",
       "grok-3",
       "grok-4",
-      "openai-compatible-chat-xxx/gemini-3.6-flash"
+      "cpa/grok-4.3",
+      "grok-4.50",
+      "cpa/gemini-3.1-pro-low",
+      "gemini-pro-agent",
+      // 前缀含 flash、leaf 是 pro → 不得当 Gemini Flash
+      "flash-router/gemini-3.1-pro",
+      // flash 不是独立 token
+      "gemini-flashcards-v1"
     ]) {
+      expect(isNativeWebSearchSupportedModel(model)).toBe(false)
+      expect(isGeminiFlashGoogleSearchModel(model)).toBe(false)
       const body = buildChatCompletionsBody({
         settings: {
           model,
@@ -70,8 +107,7 @@ describe("aiChatRequest", () => {
       expect(
         shouldAttachNativeWebSearch({
           model,
-          enableNativeWebSearch: true,
-          webSearchToolType: "auto"
+          enableNativeWebSearch: true
         })
       ).toBe(false)
     }
@@ -106,38 +142,33 @@ describe("aiChatRequest", () => {
     })
   })
 
-  it("explicit web_search stays flat and ignores model id", () => {
-    for (const model of ["gpt-4.1", "cpa/gemini-3.6-flash", "grok-4.5"]) {
-      const tool = resolveWebSearchTool({
-        model,
+  it("ignores legacy webSearchToolType overrides; model alone decides the route", () => {
+    // 旧数据写过 google_search，但当前 model 是 Grok → 仍走 web_search
+    expect(
+      resolveWebSearchTool({
+        model: "grok-4.5",
+        enableNativeWebSearch: true,
+        webSearchToolType: "google_search"
+      })
+    ).toEqual({ type: "web_search" })
+
+    // 旧数据写过 web_search，但当前 model 是 Gemini Flash → 仍走 nested google_search
+    expect(
+      resolveWebSearchTool({
+        model: "cpa/gemini-3.6-flash",
         enableNativeWebSearch: true,
         webSearchToolType: "web_search"
       })
-      expect(tool).toEqual({ type: "web_search" })
-      expect(tool).not.toHaveProperty("google_search")
-    }
-  })
+    ).toEqual({ type: "google_search", google_search: {} })
 
-  it("explicit google_search attaches nested grounding tool regardless of model", () => {
-    for (const model of [
-      "cpa/gemini-3.6-flash",
-      "gemini-3.6-flash",
-      "gpt-4.1",
-      "grok-4.5"
-    ]) {
-      const body = buildChatCompletionsBody({
-        settings: {
-          model,
-          enableNativeWebSearch: true,
-          reasoningEffort: "default",
-          webSearchToolType: "google_search"
-        },
-        messages: [{ role: "user", content: "news?" }]
+    // 旧数据写过 google_search，但 model 不支持 → 不挂 tools
+    expect(
+      resolveWebSearchTool({
+        model: "gpt-4.1",
+        enableNativeWebSearch: true,
+        webSearchToolType: "google_search"
       })
-      expect(body.tools).toEqual([
-        { type: "google_search", google_search: {} }
-      ])
-    }
+    ).toBeNull()
   })
 
   it("does not mutate shared google_search empty object across calls", () => {
@@ -168,8 +199,7 @@ describe("aiChatRequest", () => {
       resolveWebSearchTool(
         {
           model: "cpa/gemini-3.6-flash",
-          enableNativeWebSearch: true,
-          webSearchToolType: "google_search"
+          enableNativeWebSearch: true
         },
         false
       )

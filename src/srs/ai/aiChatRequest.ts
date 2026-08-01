@@ -11,7 +11,7 @@ import type {
 
 /**
  * 联网判定所需的最小设置面。
- * webSearchToolType 可选：旧调用点（含既有测试）无需同步改造，缺省按 "auto"。
+ * `webSearchToolType` 为历史字段，解析时**忽略**；形态只由 model id 决定。
  */
 export type WebSearchAwareSettings = Pick<
   AISettings,
@@ -57,27 +57,73 @@ export type ResolvedWebSearchTool =
   | { type: "web_search" }
   | { type: "google_search"; google_search: Record<string, never> }
 
+export type WebSearchToolRoute = "web_search" | "google_search"
+
+function normalizeModelId(model: string | undefined | null): string {
+  return typeof model === "string" ? model.trim().toLowerCase() : ""
+}
+
 /**
- * 「自动」档下认为支持原生 web_search 的模型。
- * 仅匹配 id 中含 `grok-4.5`（大小写不敏感；可含网关前缀）。
- *
- * 这条匹配天生脆弱：新版本号一发布即失效，也覆盖不到其它厂商的 tool 形态。
- * 因此它只作为「自动」档的推荐值，用户可在设置里显式指定 tool 形态覆盖它。
+ * 取网关前缀后的模型名段（最后一段 `/` 之后）。
+ * 例：`cpa/gemini-3.6-flash` → `gemini-3.6-flash`；`flash-router/gemini-pro` → `gemini-pro`。
+ */
+export function modelIdLeaf(model: string | undefined | null): string {
+  const id = normalizeModelId(model)
+  if (!id) return ""
+  const slash = id.lastIndexOf("/")
+  return slash >= 0 ? id.slice(slash + 1) : id
+}
+
+/** Grok 4.5 家族；`grok-4.50` 等更长数字版本不命中。 */
+export function isGrokWebSearchModel(
+  model: string | undefined | null
+): boolean {
+  // 在 leaf 上匹配，避免前缀脏数据；`(?!\d)` 防止 grok-4.50 误伤
+  return /(?:^|[^a-z0-9])grok-4\.5(?!\d)/.test(modelIdLeaf(model))
+}
+
+/**
+ * Gemini Flash 家族：leaf 须含 gemini，且 flash 作为独立 token
+ * （`-flash` / `.flash` / `_flash`，可后接后缀如 `-high`）。
+ * 排除：`gemini-pro`、`gemini-flashcards`、`flash-router/gemini-pro`。
+ */
+export function isGeminiFlashGoogleSearchModel(
+  model: string | undefined | null
+): boolean {
+  const leaf = modelIdLeaf(model)
+  if (!leaf.includes("gemini")) return false
+  return /(?:^|[-._])flash(?:[-._]|$)/.test(leaf)
+}
+
+/**
+ * 按 model 解析应走的联网路线；不支持则 null（开了总开关也不挂 tools）。
+ * Grok 4.5 优先于其它匹配（防极端 id 脏数据双命中）。
+ */
+export function resolveWebSearchRoute(
+  model: string | undefined | null
+): WebSearchToolRoute | null {
+  if (isGrokWebSearchModel(model)) return "web_search"
+  if (isGeminiFlashGoogleSearchModel(model)) return "google_search"
+  return null
+}
+
+/**
+ * 开启「模型原生联网」后是否会实际附带 tools。
+ * 仅 Grok 4.5 / Gemini Flash 为 true；其它 model 即使开关打开也不挂 tools。
  */
 export function isNativeWebSearchSupportedModel(
   model: string | undefined | null
 ): boolean {
-  const id = typeof model === "string" ? model.trim().toLowerCase() : ""
-  return id.includes("grok-4.5")
+  return resolveWebSearchRoute(model) !== null
 }
 
 /**
- * 把设置项里的 tool 形态解析为请求体 tools 条目。
+ * 把路线解析为请求体 tools 条目。
  * - `web_search` → 扁平 xAI 形态（Grok）
  * - `google_search` → Gemini grounding 形态（含 `google_search: {}`）
  */
 export function materializeWebSearchTool(
-  toolType: Exclude<AIWebSearchToolType, "auto">
+  toolType: WebSearchToolRoute
 ): ResolvedWebSearchTool {
   if (toolType === "google_search") {
     return {
@@ -91,10 +137,8 @@ export function materializeWebSearchTool(
 /**
  * 解析本次请求应附带的联网 tool；null = 不带 tools 走普通请求。
  *
- * 优先级：allowWebSearch（调用方硬性关闭）> 总开关 > tool 形态设置。
- * 显式形态（web_search / google_search）不再看 model id——
- * 用户比这里的字符串匹配更清楚自己的网关支持什么。
- * auto 仍只推荐 Grok 的 web_search，不自动给 Gemini 挂 google_search。
+ * 优先级：allowWebSearch（调用方硬性关闭）> 总开关 > **model 自动路线**。
+ * 历史字段 `webSearchToolType` 不再参与解析（UI 已去掉形态下拉）。
  */
 export function resolveWebSearchTool(
   settings: WebSearchAwareSettings,
@@ -103,13 +147,8 @@ export function resolveWebSearchTool(
   if (allowWebSearch !== true) return null
   if (settings.enableNativeWebSearch !== true) return null
 
-  const toolType = settings.webSearchToolType ?? "auto"
-  if (toolType === "auto") {
-    return isNativeWebSearchSupportedModel(settings.model)
-      ? materializeWebSearchTool("web_search")
-      : null
-  }
-  return materializeWebSearchTool(toolType)
+  const route = resolveWebSearchRoute(settings.model)
+  return route ? materializeWebSearchTool(route) : null
 }
 
 /**

@@ -168,7 +168,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-01 更新 — 制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网 tool：`web_search`（Grok 扁平）与 `google_search`（Gemini nested grounding）分形态序列化；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-01 更新 — 制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
     - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
@@ -202,7 +202,8 @@
 
 ## 更新记录
 
-- **2026-08-01（Gemini google_search 联网形态）**：`materializeWebSearchTool` 将显式 `google_search` 序列化为 `{ type: "google_search", google_search: {} }`（ROUTER9 Gemini 3.6 Flash 实测仅扁平 `type` 不触发检索）；Grok `web_search` / `auto→web_search` 仍保持扁平 `{ type: "web_search" }` 不变。见 [SRS_AI模块.md](SRS_AI模块.md)
+- **2026-08-01（联网 tool 一键自动路由）**：设置面板去掉「联网 tool 形态」下拉，只保留「模型原生联网」勾选；开启后 `resolveWebSearchRoute` 按 model 自动：Grok 4.5 → 扁平 `web_search`，Gemini Flash → nested `google_search`；历史 `webSearchToolType` 忽略。见 [SRS_AI模块.md](SRS_AI模块.md)
+- **2026-08-01（Gemini google_search 联网形态）**：`materializeWebSearchTool` 将 Gemini 路线序列化为 `{ type: "google_search", google_search: {} }`（ROUTER9 实测仅扁平 `type` 不触发检索）；Grok 仍扁平 `web_search`。见 [SRS_AI模块.md](SRS_AI模块.md)
 - **2026-07-27（视图切换视口归零）**：修复「结束最后一张阅读卡后，『今日学习完毕』完成页仍停在上一张卡的滚动位置」——真实纵向滚动 owner 常是 host `.orca-block-editor` 祖先，React 换子树不会让它回顶。新增 `src/hooks/viewportScrollReset.ts`（复用 `resolveVerticalScrollOwner`），IR 会话按视图 key（`summary` / `review:<entryKey>` / `load-failed`，阅读条目仍交给断点恢复）归零；SRS 复习会话在切卡 / 进完成摘要时归零，祖先 owner 受 `manageHostEditorChrome` gate 约束。见 [渐进阅读.md](渐进阅读.md)、[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)、[问题经验.md](问题经验.md)
 - **2026-07-27（死代码清理）**：删除零引用的 `src/components/IRCardList.tsx` / `IRStatistics.tsx`，以及仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats` 与 `.ir-cardlist-*` / `.ir-stats-card-*` 样式；`IR_GROUP_DEFAULT_EXPANDED` 同为零引用但早于本次改动即已死，未在本次范围内处理。见 [渐进阅读.md](渐进阅读.md)
 - **2026-07-27（全插件 UI 设计基线落地 · 整合收口）**：新增 [SRS_UI设计规范.md](SRS_UI设计规范.md)（Apple HIG 基准，反推自 Flash Home）与令牌层 `src/styles/srs-design-tokens.css`（`src/main.ts` **最先**导入，含 `prefers-reduced-motion` 统一降级）。四个面板并行对齐后由整合方收口：

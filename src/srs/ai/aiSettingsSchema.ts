@@ -36,8 +36,9 @@ export const MIN_AI_MAX_OUTPUT_TOKENS = 256
 export const MAX_AI_MAX_OUTPUT_TOKENS = 1_000_000
 
 /**
- * 联网 tool 形态。
- * `auto` = 按 model id 推荐（目前只认 grok-4.5）；其余为显式指定，不看 model。
+ * 历史联网 tool 形态字段（仍读写 plugin data，避免迁移断裂）。
+ * **运行时忽略**：开启 `enableNativeWebSearch` 后由 model id 自动选
+ * Grok `web_search` 或 Gemini Flash `google_search`。设置面板不再展示下拉。
  */
 export const AI_WEB_SEARCH_TOOL_TYPES = [
   "auto",
@@ -68,10 +69,9 @@ export interface AISettings {
   apiUrl: string
   model: string
   /**
-   * 是否在 Chat Completions 中附带原生联网 tool。
-   * `webSearchToolType=auto` 时仅 grok-4.5 会挂 `web_search`；
-   * 显式 `web_search` / `google_search` 时不看 model id。
-   * 默认 false。
+   * 是否启用模型原生联网。
+   * 开启后：Grok 4.5 → 扁平 `web_search`；Gemini Flash → nested `google_search`；
+   * 其它 model 不挂 tools。默认 false。
    */
   enableNativeWebSearch: boolean
   /**
@@ -82,10 +82,7 @@ export interface AISettings {
   /** 单次响应最大输出 token（含推理 token）。 */
   maxOutputTokens: number
   /**
-   * 联网 tool 形态。
-   * - `auto`：仅 model id 含 grok-4.5 时挂扁平 `web_search`
-   * - `web_search`：扁平 `{ type: "web_search" }`（xAI Grok）
-   * - `google_search`：`{ type: "google_search", google_search: {} }`（Gemini grounding）
+   * @deprecated 运行时忽略。保留仅为兼容旧 setData；新保存固定写 `auto`。
    */
   webSearchToolType: AIWebSearchToolType
 }
