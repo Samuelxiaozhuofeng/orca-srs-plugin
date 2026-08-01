@@ -1,32 +1,32 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
   "go": true,
   "orcaRuntimeVerified": true,
   "maintainerRuntimeAccepted": true,
-  "updatedAt": "2026-07-29",
-  "verifiedDistSha256": "3d77c12cc0f197c69f94dbd36039e08fa7e1b7875bfc980c402f449563fd9253",
+  "updatedAt": "2026-08-01",
+  "verifiedDistSha256": "c3d4f41f9b3158515e8d573aa768c3fb82bb42312ca83b1ebc9ccd18e17c050b",
   "approvedBy": "Samuelxiaozhuofeng",
-  "verifiedAt": "2026-07-29T14:50:00.000Z",
+  "verifiedAt": "2026-08-01T15:19:22.000Z",
   "iconAccepted": true,
   "evidenceRepo": "sgf9fkhr9z3yz",
   "automation": {
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
     "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": true,
-    "tagGate": true,
+    "formalZipAccepted": false,
+    "tagGate": false,
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
-    "githubReleasePublished": true,
-    "awesomeOrcanotePr": true
+    "githubReleasePublished": false,
+    "awesomeOrcanotePr": false
   },
   "externalOps": {
-    "tag": "completed: v1.0.7",
-    "formalZip": "completed: orca-srs-1.0.7.zip",
-    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.7",
-    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/106",
+    "tag": "pending",
+    "formalZip": "pending",
+    "githubRelease": "pending",
+    "awesomeOrcanotePr": "pending",
     "owner": "Grok",
-    "note": "GitHub Release v1.0.7 is published. awesome-orcanote PR #106 is submitted and awaits upstream review/merge."
+    "note": "Maintainer requested v1.0.8 publish from post-1.0.7 main. verifiedDistSha256 frozen from production stage (Node 25 local / CI Node 20.19); tag/zip/GitHub Release remain external steps."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-published-upstream-pr-pending"
+    "WP-13": "release-1.0.8-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
@@ -56,8 +56,8 @@
         "WP-07"
       ],
       "summary": "EPUB ZIP 中央目录声明预算未独立预检",
-      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.7 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.7"
+      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.8 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.8"
     },
     {
       "id": "write-path-cancellation-not-unified",
@@ -66,15 +66,15 @@
         "WP-11"
       ],
       "summary": "EPUB/Web/AI 写入阶段取消未形成统一可中断事务",
-      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.7 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.7"
+      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.8 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.8"
     }
   ],
   "decision": {
     "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.7 and accepts release readiness. The v1.0.7 GitHub Release is published and awesome-orcanote PR #106 is submitted. Residual static-audit risks live in acceptedRisks.",
-    "verifiedDistSha256": "3d77c12cc0f197c69f94dbd36039e08fa7e1b7875bfc980c402f449563fd9253",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.8 and accepts release readiness. Residual static-audit risks live in acceptedRisks. Tag, formal zip, and GitHub Release are external ops.",
+    "verifiedDistSha256": "c3d4f41f9b3158515e8d573aa768c3fb82bb42312ca83b1ebc9ccd18e17c050b",
     "approvedBy": "Samuelxiaozhuofeng",
-    "verifiedAt": "2026-07-29T14:50:00.000Z"
+    "verifiedAt": "2026-08-01T15:19:22.000Z"
   }
 }
