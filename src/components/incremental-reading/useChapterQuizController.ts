@@ -16,6 +16,7 @@ import {
   generateChapterQuizWithRetries,
   loadChapterQuizState,
   normalizeChapterQuizRepr,
+  requireQuizCardSourceBlockId,
   rewriteQuestionAsCloze,
   saveChapterQuizRepr,
   writeBasicCardFromQuizQuestion,
@@ -357,19 +358,28 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       setCardBusyId(target.id)
       setLocalError(null)
       try {
+        // 制卡父块必须是当前题 sourceBlockId（与「跳转原文」同一来源）
+        const parentBlockId = requireQuizCardSourceBlockId(target)
         // 写卡 + cardAdds persist 同在编辑器焦点上下文内（Custom Panel 需切左侧）
+        // 只剩小测 Panel 时自动在旁边打开原文块视图再写入，Custom Panel 不被顶掉
         const saved = await runWithChapterQuizEditorContext(
           writeContextPanelId,
           async () => {
             const id = await writeBasicCardFromQuizQuestion({
               pluginName: repr.pluginName,
-              parentBlockId: repr.topicBlockId,
+              parentBlockId,
               question: target
             })
             const nextAdds = mergeQuestionCardAdds(repr.cardAdds, target.id, {
               basicBlockId: id
             })
             return persist({ ...repr, cardAdds: nextAdds })
+          },
+          {
+            openPanel: {
+              view: "block",
+              viewArgs: { blockId: parentBlockId }
+            }
           }
         )
         if (!saved) {
@@ -436,12 +446,14 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       setLocalError(null)
       try {
         const preview = clozePreview
+        // 制卡父块必须是当前题 sourceBlockId（与「跳转原文」同一来源）
+        const parentBlockId = requireQuizCardSourceBlockId(target)
         const saved = await runWithChapterQuizEditorContext(
           writeContextPanelId,
           async () => {
             const id = await writeClozeCardFromQuizQuestion({
               pluginName: repr.pluginName,
-              parentBlockId: repr.topicBlockId,
+              parentBlockId,
               text: preview.text,
               clozeText: preview.clozeText
             })
@@ -449,6 +461,12 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
               clozeBlockId: id
             })
             return persist({ ...repr, cardAdds: nextAdds })
+          },
+          {
+            openPanel: {
+              view: "block",
+              viewArgs: { blockId: parentBlockId }
+            }
           }
         )
         setClozePreview(null)

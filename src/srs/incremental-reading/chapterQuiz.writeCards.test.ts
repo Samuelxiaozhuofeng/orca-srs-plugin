@@ -213,4 +213,26 @@ describe("chapterQuiz write cards without invokeGroup (Custom Panel)", () => {
     expect(parentBlock.children).not.toContain(100)
     expect(ensureCardSrsState).not.toHaveBeenCalled()
   })
+
+  it("parent block missing (deleted sourceBlockId) fails visibly without guessing", async () => {
+    // 父块不存在 = 当前题 sourceBlockId 对应原文块已被删除：
+    // 必须报错，绝不退回其它落点，也不创建任何块
+    await expect(
+      writeBasicCardFromQuizQuestion({
+        pluginName: "orca-srs",
+        parentBlockId: 999,
+        question: sampleQuestion
+      })
+    ).rejects.toThrow(/父块不存在，无法写入简答卡/)
+
+    expect(invokeEditorCommand).not.toHaveBeenCalledWith(
+      "core.editor.insertBlock",
+      null,
+      expect.anything(),
+      "lastChild",
+      expect.anything()
+    )
+    expect(deletedBatches).toHaveLength(0)
+    expect(ensureCardSrsState).not.toHaveBeenCalled()
+  })
 })

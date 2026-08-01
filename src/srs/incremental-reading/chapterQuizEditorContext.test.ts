@@ -4,6 +4,7 @@ import {
   resolveChapterQuizEditorHostPanelId,
   runWithChapterQuizEditorContext,
   waitForActivePanelId,
+  waitForPanelInTree,
   type ChapterQuizPanelTreeNode
 } from "./chapterQuizEditorContext"
 import { CHAPTER_QUIZ_PANEL_VIEW } from "./chapterQuiz"
@@ -330,6 +331,170 @@ describe("runWithChapterQuizEditorContext", () => {
       })
     ).rejects.toThrow(/无法定位可写编辑面板/)
     expect(task).not.toHaveBeenCalled()
+  })
+
+  it("只剩 Custom Panel 时 openPanel 自动打开 block ViewPanel 后写卡并恢复", async () => {
+    let active = "right-quiz"
+    const switches: string[] = []
+    const addCalls: Array<{
+      id: string
+      dir: string
+      src: Record<string, unknown>
+    }> = []
+    let root: ChapterQuizPanelTreeNode = {
+      id: "root",
+      direction: "row",
+      children: [
+        {
+          id: "right-quiz",
+          view: CHAPTER_QUIZ_PANEL_VIEW,
+          viewArgs: { quizBlockId: 1 }
+        }
+      ]
+    }
+    const task = vi.fn(async () => {
+      expect(active).toBe("auto-left")
+      return "card-ok"
+    })
+
+    const result = await runWithChapterQuizEditorContext(
+      "right-quiz",
+      task,
+      {
+        getPanelsRoot: () => root,
+        getActivePanel: () => active,
+        switchFocusTo: (id) => {
+          switches.push(id)
+          active = id
+        },
+        addToPanel: (id, dir, src) => {
+          addCalls.push({ id, dir, src })
+          root = {
+            id: "root",
+            direction: "row",
+            children: [
+              { id: "auto-left", view: "block", viewArgs: { blockId: 42 } },
+              {
+                id: "right-quiz",
+                view: CHAPTER_QUIZ_PANEL_VIEW,
+                viewArgs: { quizBlockId: 1 }
+              }
+            ]
+          }
+          return "auto-left"
+        },
+        openPanel: { view: "block", viewArgs: { blockId: 42 } },
+        sleep: async () => undefined,
+        now: () => 0,
+        timeoutMs: 100,
+        pollIntervalMs: 1,
+        settleMs: 150
+      }
+    )
+
+    expect(result).toBe("card-ok")
+    expect(addCalls).toEqual([
+      {
+        id: "right-quiz",
+        dir: "left",
+        src: { view: "block", viewArgs: { blockId: 42 } }
+      }
+    ])
+    expect(task).toHaveBeenCalledTimes(1)
+    expect(switches).toEqual(["auto-left", "right-quiz"])
+    expect(active).toBe("right-quiz")
+  })
+
+  it("openPanel 创建失败（addTo 返回 null）时 task 不执行且错误可见", async () => {
+    const task = vi.fn(async () => "nope")
+    await expect(
+      runWithChapterQuizEditorContext("right-quiz", task, {
+        getPanelsRoot: () => ({
+          id: "root",
+          direction: "row",
+          children: [
+            {
+              id: "right-quiz",
+              view: CHAPTER_QUIZ_PANEL_VIEW,
+              viewArgs: {}
+            }
+          ]
+        }),
+        getActivePanel: () => "right-quiz",
+        switchFocusTo: vi.fn(),
+        addToPanel: () => null,
+        openPanel: { view: "block", viewArgs: { blockId: 42 } }
+      })
+    ).rejects.toThrow(/无法创建可写编辑面板/)
+    expect(task).not.toHaveBeenCalled()
+  })
+
+  it("openPanel addTo 抛错时错误可见且 task 不执行", async () => {
+    const task = vi.fn(async () => "nope")
+    await expect(
+      runWithChapterQuizEditorContext("right-quiz", task, {
+        getPanelsRoot: () => ({
+          id: "root",
+          direction: "row",
+          children: [
+            {
+              id: "right-quiz",
+              view: CHAPTER_QUIZ_PANEL_VIEW,
+              viewArgs: {}
+            }
+          ]
+        }),
+        getActivePanel: () => "right-quiz",
+        switchFocusTo: vi.fn(),
+        addToPanel: () => {
+          throw new Error("nav boom")
+        },
+        openPanel: { view: "block", viewArgs: { blockId: 42 } }
+      })
+    ).rejects.toThrow(/创建可写编辑面板失败/)
+    expect(task).not.toHaveBeenCalled()
+  })
+
+  it("openPanel 后新面板未挂载时超时且 task 不执行", async () => {
+    let t = 0
+    const task = vi.fn(async () => "nope")
+    await expect(
+      runWithChapterQuizEditorContext("right-quiz", task, {
+        getPanelsRoot: () => ({
+          id: "root",
+          direction: "row",
+          children: [
+            {
+              id: "right-quiz",
+              view: CHAPTER_QUIZ_PANEL_VIEW,
+              viewArgs: {}
+            }
+          ]
+        }),
+        getActivePanel: () => "right-quiz",
+        switchFocusTo: vi.fn(),
+        addToPanel: () => "auto-left",
+        openPanel: { view: "block", viewArgs: { blockId: 42 } },
+        sleep: async (ms) => {
+          t += ms
+        },
+        now: () => t,
+        timeoutMs: 25,
+        pollIntervalMs: 10
+      })
+    ).rejects.toThrow(/等待自动打开的原文面板超时/)
+    expect(task).not.toHaveBeenCalled()
+  })
+
+  it("waitForPanelInTree 立即命中不 sleep", async () => {
+    const sleep = vi.fn(async () => undefined)
+    await waitForPanelInTree("p1", () => makeFlatRoot("l", "p1"), {
+      sleep,
+      now: () => 0,
+      timeoutMs: 100,
+      pollIntervalMs: 10
+    })
+    expect(sleep).not.toHaveBeenCalled()
   })
 
   it("无 customPanelId 时直接执行且不切换", async () => {

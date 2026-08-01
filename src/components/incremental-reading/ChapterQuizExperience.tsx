@@ -496,6 +496,9 @@ function DeepDiveSection(props: DeepDiveProps) {
     onFollowUp
   } = props
 
+  // 制卡落点是当前题 sourceBlockId（与「跳转原文」同一来源）；缺失时禁用制卡
+  const canAddCard = typeof question.sourceBlockId === "number"
+
   return (
     <div className="chapter-quiz-panel__deep">
       <button
@@ -614,17 +617,29 @@ function DeepDiveSection(props: DeepDiveProps) {
             </button>
             {reviewAddOpen ? (
               <div className="chapter-quiz-panel__review-add">
+                {!canAddCard ? (
+                  <div className="chapter-quiz__hint">
+                    {CHAPTER_QUIZ_COPY.cardSourceMissing}
+                  </div>
+                ) : null}
                 <div className="chapter-quiz__actions">
                   <Button
                     variant={cardAdds?.basicBlockId ? "outline" : "solid"}
                     className={
-                      cardAdds?.basicBlockId || cardBusyId === question.id
+                      !canAddCard ||
+                      cardAdds?.basicBlockId ||
+                      cardBusyId === question.id
                         ? "ir-button--blocked chapter-quiz__chip-btn"
                         : "chapter-quiz__chip-btn"
                     }
-                    title={CHAPTER_QUIZ_COPY.rememberPrompt}
+                    title={
+                      !canAddCard
+                        ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
+                        : CHAPTER_QUIZ_COPY.rememberPrompt
+                    }
                     onClick={() => {
                       if (
+                        !canAddCard ||
                         cardAdds?.basicBlockId ||
                         cardBusyId === question.id
                       ) {
@@ -640,15 +655,21 @@ function DeepDiveSection(props: DeepDiveProps) {
                   <Button
                     variant="outline"
                     className={
+                      !canAddCard ||
                       cardAdds?.clozeBlockId ||
                       clozeBusy ||
                       cardBusyId === question.id
                         ? "ir-button--blocked chapter-quiz__chip-btn"
                         : "chapter-quiz__chip-btn"
                     }
-                    title={CHAPTER_QUIZ_COPY.rememberPrompt}
+                    title={
+                      !canAddCard
+                        ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
+                        : CHAPTER_QUIZ_COPY.rememberPrompt
+                    }
                     onClick={() => {
                       if (
+                        !canAddCard ||
                         cardAdds?.clozeBlockId ||
                         clozeBusy ||
                         cardBusyId === question.id

@@ -14,6 +14,7 @@ import {
   parseChapterQuizQuestions,
   parseQuizBlockIdFromViewArgs,
   quizOptionLetter,
+  requireQuizCardSourceBlockId,
   resolveQuizBlockIdForPanel,
   toPlainJsonValue,
   type ChapterQuizQuestion
@@ -198,6 +199,28 @@ describe("answer helpers", () => {
     expect(card.question).toBe(sampleQuestions[0].text)
     expect(card.answer).toContain("分次阅读并提炼")
     expect(card.answer).toContain("渐进阅读强调分次加工")
+  })
+
+  it("requireQuizCardSourceBlockId returns valid sourceBlockId", () => {
+    const withSource: ChapterQuizQuestion = {
+      ...sampleQuestions[0],
+      sourceBlockId: 123
+    }
+    expect(requireQuizCardSourceBlockId(withSource)).toBe(123)
+  })
+
+  it("requireQuizCardSourceBlockId rejects missing/invalid ids", () => {
+    const missing: ChapterQuizQuestion = { ...sampleQuestions[0] }
+    const zero: ChapterQuizQuestion = { ...sampleQuestions[0], sourceBlockId: 0 }
+    const negative: ChapterQuizQuestion = {
+      ...sampleQuestions[0],
+      sourceBlockId: -5
+    }
+    expect(() => requireQuizCardSourceBlockId(missing)).toThrow(
+      /无法制卡/
+    )
+    expect(() => requireQuizCardSourceBlockId(zero)).toThrow(/无法制卡/)
+    expect(() => requireQuizCardSourceBlockId(negative)).toThrow(/无法制卡/)
   })
 })
 

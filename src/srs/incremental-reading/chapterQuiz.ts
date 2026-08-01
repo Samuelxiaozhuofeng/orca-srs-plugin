@@ -199,7 +199,9 @@ export const CHAPTER_QUIZ_COPY = {
   jumpToSourceFail: "无法在阅读区定位出处（块可能未展开或不在当前篇）",
   jumpToSourceMissing: "本题未标注出处块",
   jumpToSourceOk: "已在阅读区定位出处",
-  sourceBasis: "原文依据"
+  sourceBasis: "原文依据",
+  cardSourceMissing: "本题未标注原文出处块，无法制卡",
+  cardSourceMissingTitle: "制卡需要有效的原文出处块（与「跳转原文」一致）"
 } as const
 
 /** 小测结束后请求 IR 会话推进下一篇（完成后续停留模式） */
@@ -662,6 +664,25 @@ export function buildBasicCardFromQuestion(question: ChapterQuizQuestion): {
     question: question.text,
     answer: answerParts.join("\n\n")
   }
+}
+
+/**
+ * 制卡父块必须是当前题的 `sourceBlockId`（与「跳转原文」同一来源），
+ * 新卡作为该原文块的子 block 写入。缺失/非法时抛可见错误，
+ * 绝不退回 Topic 猜位置。
+ */
+export function requireQuizCardSourceBlockId(
+  question: ChapterQuizQuestion
+): number {
+  const id = question.sourceBlockId
+  if (
+    typeof id !== "number" ||
+    !Number.isFinite(id) ||
+    Math.trunc(id) <= 0
+  ) {
+    throw new Error(CHAPTER_QUIZ_COPY.cardSourceMissing)
+  }
+  return Math.trunc(id)
 }
 
 // ── AI generation ──────────────────────────────────────────

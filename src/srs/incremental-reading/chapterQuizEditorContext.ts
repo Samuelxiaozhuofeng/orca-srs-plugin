@@ -19,6 +19,19 @@ export type ChapterQuizPanelTreeNode = {
   children?: ChapterQuizPanelTreeNode[]
 }
 
+/** 新建面板的视图源（orca.nav.addTo 的 src 参数） */
+export type ChapterQuizPanelAddSrc = {
+  view: string
+  viewArgs?: Record<string, unknown>
+  viewState?: Record<string, unknown>
+}
+
+/** 找不到同布局可写 ViewPanel 时，自动在旁边打开一个普通 ViewPanel */
+export type ChapterQuizOpenPanelOptions = ChapterQuizPanelAddSrc & {
+  /** 相对答题 Custom Panel 的方向；默认 "left" */
+  dir?: "top" | "bottom" | "left" | "right"
+}
+
 export type ChapterQuizEditorContextDeps = {
   getPanelsRoot?: () => ChapterQuizPanelTreeNode | null | undefined
   getActivePanel?: () => string | null | undefined
@@ -31,6 +44,19 @@ export type ChapterQuizEditorContextDeps = {
   pollIntervalMs?: number
   /** activePanel 到位后留给宿主编辑器服务完成切换的稳定窗口 */
   settleMs?: number
+  /**
+   * 布局里只剩 Custom Panel（找不到可写 ViewPanel）时，
+   * 在 customPanel 旁边自动打开一个普通 ViewPanel（如 block 视图，
+   * viewArgs.blockId = 当前题 sourceBlockId）作为写入宿主。
+   * 不提供则沿用原「无法定位可写编辑面板」报错。
+   */
+  openPanel?: ChapterQuizOpenPanelOptions
+  /** 可注入：新建面板；默认 orca.nav.addTo */
+  addToPanel?: (
+    id: string,
+    dir: "top" | "bottom" | "left" | "right",
+    src: ChapterQuizPanelAddSrc
+  ) => string | null
 }
 
 const DEFAULT_TIMEOUT_MS = 2000
@@ -209,11 +235,105 @@ function defaultGetPanelsRoot(): ChapterQuizPanelTreeNode | null {
 }
 
 /**
+ * 有界等待新面板出现在面板树中（addTo 后宿主异步挂载）。
+ * 超时抛错（task 不得执行）。
+ */
+export async function waitForPanelInTree(
+  panelId: string,
+  getRoot: () => ChapterQuizPanelTreeNode | null | undefined,
+  deps: Pick<
+    ChapterQuizEditorContextDeps,
+    "sleep" | "now" | "timeoutMs" | "pollIntervalMs"
+  > = {}
+): Promise<void> {
+  const sleep = deps.sleep ?? defaultSleep
+  const now = deps.now ?? (() => Date.now())
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_MS
+
+  if (locatePanelById(getRoot() ?? ({} as ChapterQuizPanelTreeNode), panelId)) {
+    return
+  }
+
+  const deadline = now() + timeoutMs
+  while (now() < deadline) {
+    await sleep(pollIntervalMs)
+    if (
+      locatePanelById(getRoot() ?? ({} as ChapterQuizPanelTreeNode), panelId)
+    ) {
+      return
+    }
+  }
+
+  throw new Error(
+    `等待自动打开的原文面板超时（${panelId}），卡片写入中止`
+  )
+}
+
+function defaultAddToPanel(
+  id: string,
+  dir: "top" | "bottom" | "left" | "right",
+  src: ChapterQuizPanelAddSrc
+): string | null {
+  // orca.nav.addTo 的 src 要求 viewArgs/viewState 为必选字段；
+  // 构造时用空对象兜底，运行时宿主同样接受省略。
+  const target = {
+    view: src.view,
+    viewArgs: src.viewArgs ?? {},
+    viewState: src.viewState ?? {}
+  }
+  return orca.nav.addTo(id, dir, target) as string | null
+}
+
+/**
+ * 找不到同布局可写 ViewPanel 时，用 openPanel 在 Custom Panel 旁边
+ * 自动打开一个普通 ViewPanel（如 block 视图 → 当前题 sourceBlockId），
+ * 等待其挂载后作为写入宿主。失败路径全部显式抛错。
+ */
+async function resolveAutoOpenHostPanelId(
+  customPanelId: string,
+  getRoot: () => ChapterQuizPanelTreeNode | null | undefined,
+  deps: ChapterQuizEditorContextDeps,
+  open: ChapterQuizOpenPanelOptions
+): Promise<string> {
+  const addToPanel = deps.addToPanel ?? defaultAddToPanel
+  const dir = open.dir ?? "left"
+  const src: ChapterQuizPanelAddSrc = {
+    view: open.view,
+    ...(open.viewArgs ? { viewArgs: open.viewArgs } : {}),
+    ...(open.viewState ? { viewState: open.viewState } : {})
+  }
+
+  let newPanelId: string | null = null
+  try {
+    newPanelId = addToPanel(customPanelId, dir, src)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`创建可写编辑面板失败（${open.view}）：${message}`)
+  }
+  if (!newPanelId) {
+    throw new Error(
+      "无法创建可写编辑面板（在答题侧栏旁打开原文视图失败），卡片写入中止"
+    )
+  }
+
+  await waitForPanelInTree(newPanelId, getRoot, {
+    sleep: deps.sleep,
+    now: deps.now,
+    timeoutMs: deps.timeoutMs,
+    pollIntervalMs: deps.pollIntervalMs
+  })
+
+  return newPanelId
+}
+
+/**
  * 在可写编辑器焦点上下文中执行 task（写卡 + persist cardAdds 等）。
  * - 无 customPanelId：直接执行（块侧/非 Panel 路径）
  * - 已在 host 上：不切换
  * - 否则 switchFocusTo(host) → 等待到位 → 执行一次 task → finally 恢复原焦点
- * - 找不到 host / 切换超时：不执行 task，抛可见错误
+ * - 找不到 host 且提供 openPanel：自动在旁边打开普通 ViewPanel（如 block 视图）再写入
+ * - 找不到 host 且未提供 openPanel / 打开失败 / 切换超时：不执行 task，抛可见错误
  * - 恢复失败：console.error，不覆盖 task 错误
  * - 绝不重跑 task
  */
@@ -235,15 +355,25 @@ export async function runWithChapterQuizEditorContext<T>(
       orca.nav.switchFocusTo(id)
     })
 
-  const root = getRoot()
-  const hostId = resolveChapterQuizEditorHostPanelId(customPanelId, root)
+  // 捕获切换前的原焦点必须在 addTo 之前：
+  // 宿主可能在打开新面板后自动激活它，晚捕获会丢失「恢复右侧」的目标。
+  const original = getActive() ?? null
+
+  let hostId = resolveChapterQuizEditorHostPanelId(customPanelId, getRoot())
   if (!hostId) {
-    throw new Error(
-      "无法定位可写编辑面板（与答题侧栏同布局的左侧 ViewPanel），卡片写入中止"
+    if (!deps.openPanel) {
+      throw new Error(
+        "无法定位可写编辑面板（与答题侧栏同布局的左侧 ViewPanel），卡片写入中止"
+      )
+    }
+    hostId = await resolveAutoOpenHostPanelId(
+      customPanelId,
+      getRoot,
+      deps,
+      deps.openPanel
     )
   }
 
-  const original = getActive() ?? null
   if (original === hostId) {
     return await task()
   }
