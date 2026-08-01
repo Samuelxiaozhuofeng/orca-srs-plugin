@@ -77,10 +77,16 @@ import {
 import {
   CHAPTER_QUIZ_ADVANCE_EVENT,
   CHAPTER_QUIZ_COPY,
+  CHAPTER_QUIZ_LOCATE_EVENT,
   launchChapterQuiz,
-  type ChapterQuizAdvanceDetail
+  type ChapterQuizAdvanceDetail,
+  type ChapterQuizLocateDetail
 } from "../../srs/incremental-reading/chapterQuiz"
 import { isAIConfigured } from "../../srs/ai/aiSettingsSchema"
+import {
+  clearLocateHighlight,
+  scheduleLocateBlock
+} from "./irReadingContextLocate"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
 const { Button } = orca.components
@@ -878,6 +884,61 @@ export default function IRSessionShell({
         onAdvance as EventListener
       )
   }, [currentCard?.id, releasePostCompleteHoldAndAdvance])
+
+  // 小测「跳转原文」：在 ir-session 正文内定位，不离开渐进阅读
+  useEffect(() => {
+    let cancelLocate: (() => void) | null = null
+
+    const onLocate = (event: Event) => {
+      const detail = (event as CustomEvent<ChapterQuizLocateDetail>).detail
+      const sourceBlockId = detail?.sourceBlockId
+      if (
+        typeof sourceBlockId !== "number" ||
+        !Number.isFinite(sourceBlockId) ||
+        sourceBlockId <= 0
+      ) {
+        return
+      }
+
+      // 当前会话正在读的篇：优先正文容器，其次整块滚动区
+      const root =
+        currentCardContainerRef.current ??
+        scrollContainerRef.current ??
+        sessionRootRef.current
+      if (!root) return
+
+      detail.claimed = true
+      cancelLocate?.()
+      clearLocateHighlight(root)
+      cancelLocate = scheduleLocateBlock(root, sourceBlockId, {
+        maxAttempts: 24,
+        onFound: () => {
+          orca.notify("success", CHAPTER_QUIZ_COPY.jumpToSourceOk, {
+            title: "章末小测"
+          })
+        },
+        onMiss: () => {
+          // 未 claim 失败路径：让 jumpToQuizSourceBlock 的 DOM/goTo 兜底
+          // 这里已 claimed，需可见反馈
+          console.warn(
+            `[IR Session] 章末小测定位未找到块 #${sourceBlockId}（可能未展开或不在当前篇）`
+          )
+          orca.notify("warn", CHAPTER_QUIZ_COPY.jumpToSourceFail, {
+            title: "章末小测"
+          })
+        }
+      })
+    }
+
+    window.addEventListener(CHAPTER_QUIZ_LOCATE_EVENT, onLocate as EventListener)
+    return () => {
+      cancelLocate?.()
+      window.removeEventListener(
+        CHAPTER_QUIZ_LOCATE_EVENT,
+        onLocate as EventListener
+      )
+    }
+  }, [])
 
   const undoAvailable = canUndoNext({
     record: undoRecord,

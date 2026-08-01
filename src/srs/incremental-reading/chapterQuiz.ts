@@ -159,23 +159,34 @@ export const CHAPTER_QUIZ_COPY = {
   gotitNeedPage: "无法确定当前页面，请将光标放在页面内再试",
   gotitStarted: "已在页面底部插入小测",
   openSidePanel: "侧栏答题",
-  openSidePanelTitle: "右侧答题，左侧打开原文",
-  openSidePanelOk: "已分栏：左原文 · 右小测",
+  openSidePanelTitle: "右侧打开小测，左侧保持渐进阅读",
+  openSidePanelOk: "已在右侧打开答题；左侧仍在渐进阅读",
   openSidePanelFail: "无法创建右侧面板",
   rememberHint: "可选",
   followUpLabel: "追问 AI",
   jumpToSource: "跳转原文",
-  jumpToSourceTitle: "在左侧面板打开本题出处块",
-  jumpToSourceFail: "无法跳转到出处块",
-  jumpToSourceMissing: "本题未标注出处块"
+  jumpToSourceTitle: "在渐进阅读正文中定位本题出处",
+  jumpToSourceFail: "无法在阅读区定位出处（块可能未展开或不在当前篇）",
+  jumpToSourceMissing: "本题未标注出处块",
+  jumpToSourceOk: "已在阅读区定位出处"
 } as const
 
 /** 小测结束后请求 IR 会话推进下一篇（完成后续停留模式） */
 export const CHAPTER_QUIZ_ADVANCE_EVENT = "orca-srs:chapter-quiz-advance"
 
+/** 请求 IR 会话在正文内 scroll+高亮出处块（不离开 srs.ir-session） */
+export const CHAPTER_QUIZ_LOCATE_EVENT = "orca-srs:chapter-quiz-locate"
+
 export type ChapterQuizAdvanceDetail = {
   topicBlockId: number
   quizBlockId?: number
+}
+
+export type ChapterQuizLocateDetail = {
+  sourceBlockId: number
+  topicBlockId?: number
+  /** 同步：IR 会话监听到并开始定位后置 true */
+  claimed?: boolean
 }
 
 // ── Content collection ─────────────────────────────────────
@@ -1109,20 +1120,19 @@ export function resolveLeftPanelId(currentPanelId: string): string {
 }
 
 /**
- * 在右侧面板打开小测块，左侧打开原文 Topic（方案 B）。
- * 复用复习会话同款 `nav.addTo(..., "right")` 路径。
+ * 在右侧面板打开小测块；**左侧保持不动**（继续 srs.ir-session 渐进阅读）。
+ * 不调用 left goTo，避免把 IR 会话顶掉。
  */
 export function openChapterQuizInSidePanel(options: {
   hostPanelId: string
   quizBlockId: number
-  /** 默认 true：左侧打开 topicBlockId 原文 */
+  /** @deprecated 已忽略：永不改写左侧视图，始终保留渐进阅读 */
   alsoOpenSourceOnLeft?: boolean
   topicBlockId?: number
 }): string | null {
   // 若已在右侧分栏内点按钮，宿主取左侧 panel
   const hostPanelId = resolveLeftPanelId(options.hostPanelId)
   const quizBlockId = options.quizBlockId
-  const alsoLeft = options.alsoOpenSourceOnLeft !== false
   const panels = getPanelsFlat()
   let rightPanelId: string | null = null
 
@@ -1158,21 +1168,7 @@ export function openChapterQuizInSidePanel(options: {
     return null
   }
 
-  if (
-    alsoLeft &&
-    typeof options.topicBlockId === "number" &&
-    options.topicBlockId > 0
-  ) {
-    try {
-      orca.nav.goTo(
-        "block",
-        { blockId: options.topicBlockId },
-        hostPanelId
-      )
-    } catch (error) {
-      console.warn("[章末小测] 左侧打开原文失败（侧栏已打开）:", error)
-    }
-  }
+  // 刻意不 goTo 左侧：保留 srs.ir-session / 当前阅读篇
 
   window.setTimeout(() => {
     try {
@@ -1189,11 +1185,13 @@ export function openChapterQuizInSidePanel(options: {
 }
 
 /**
- * 跳转到题目出处块：优先在「左侧」面板打开，便于右栏继续答题。
+ * 在渐进阅读正文内定位出处块（优先）；找不到再降级为左栏 goTo。
+ * IR 会话通过 CHAPTER_QUIZ_LOCATE_EVENT 认领并 scheduleLocateBlock。
  */
 export function jumpToQuizSourceBlock(options: {
   sourceBlockId: number
   currentPanelId: string
+  topicBlockId?: number
 }): boolean {
   const { sourceBlockId, currentPanelId } = options
   if (
@@ -1208,6 +1206,58 @@ export function jumpToQuizSourceBlock(options: {
   }
 
   const leftPanelId = resolveLeftPanelId(currentPanelId)
+
+  // 1) 先发事件：IR 会话内定位（不离开 ir-session）
+  const detail: ChapterQuizLocateDetail = {
+    sourceBlockId,
+    topicBlockId: options.topicBlockId,
+    claimed: false
+  }
+  try {
+    window.dispatchEvent(
+      new CustomEvent(CHAPTER_QUIZ_LOCATE_EVENT, { detail })
+    )
+  } catch (error) {
+    console.warn("[章末小测] 派发 locate 事件失败:", error)
+  }
+
+  if (detail.claimed) {
+    try {
+      orca.nav.switchFocusTo(leftPanelId)
+    } catch {
+      /* 非关键 */
+    }
+    return true
+  }
+
+  // 2) 同步 DOM 兜底：任意可见 IR 滚动容器
+  const roots = document.querySelectorAll<HTMLElement>(
+    ".ir-reading__scroll, .ir-reading"
+  )
+  for (let i = 0; i < roots.length; i++) {
+    const root = roots[i]
+    const target = root.querySelector(
+      `.orca-block[data-id="${sourceBlockId}"], [data-id="${sourceBlockId}"]`
+    )
+    if (!(target instanceof HTMLElement)) continue
+    try {
+      target.scrollIntoView({ behavior: "smooth", block: "center" })
+      target.classList.add("ir-reading__locate-highlight")
+      try {
+        orca.nav.switchFocusTo(leftPanelId)
+      } catch {
+        /* 非关键 */
+      }
+      orca.notify("success", CHAPTER_QUIZ_COPY.jumpToSourceOk, {
+        title: "章末小测"
+      })
+      return true
+    } catch (error) {
+      console.warn("[章末小测] DOM 定位滚动失败:", error)
+    }
+  }
+
+  // 3) 最后降级：非 IR 场景（如 GOTIT 普通页）才 goTo 块视图
   try {
     orca.nav.goTo("block", { blockId: sourceBlockId }, leftPanelId)
     return true

@@ -442,11 +442,10 @@ export default function ChapterQuizBlock(props: Props) {
   const correctCount = countCorrectAnswers(questions, repr.answers ?? {})
 
   const handleOpenSidePanel = () => {
-    // 方案 B：右栏小测 + 左栏打开 Topic 原文
+    // 右栏小测；左栏保持 srs.ir-session（不 goTo 顶掉渐进阅读）
     openChapterQuizInSidePanel({
       hostPanelId: panelId,
       quizBlockId: blockId,
-      alsoOpenSourceOnLeft: true,
       topicBlockId: repr.topicBlockId
     })
   }
@@ -460,7 +459,8 @@ export default function ChapterQuizBlock(props: Props) {
     }
     jumpToQuizSourceBlock({
       sourceBlockId: question.sourceBlockId,
-      currentPanelId: panelId
+      currentPanelId: panelId,
+      topicBlockId: repr.topicBlockId
     })
   }
 
