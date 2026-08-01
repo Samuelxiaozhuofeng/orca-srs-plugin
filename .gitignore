@@ -55,3 +55,6 @@ AGENTS.md
 
 # Local git worktrees (do not commit as gitlinks)
 .worktrees/
+
+# Local reference material (not part of the plugin)
+参考/
