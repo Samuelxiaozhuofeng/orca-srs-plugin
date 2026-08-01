@@ -1,12 +1,20 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   buildBasicCardFromQuestion,
   buildInitialQuizRepr,
   buildMinimalQuizReprShell,
+  CHAPTER_QUIZ_PANEL_VIEW,
+  countAnsweredQuestions,
   countCorrectAnswers,
+  findPanelNodeById,
   isAnswerCorrect,
+  listWrongQuestions,
   normalizeChapterQuizRepr,
+  openChapterQuizInSidePanel,
   parseChapterQuizQuestions,
+  parseQuizBlockIdFromViewArgs,
+  quizOptionLetter,
+  resolveQuizBlockIdForPanel,
   toPlainJsonValue,
   type ChapterQuizQuestion
 } from "./chapterQuiz"
@@ -236,5 +244,211 @@ describe("repr helpers", () => {
       c: { d: "x" }
     })
     expect(plain).toEqual({ a: 1, c: { d: "x" } })
+  })
+})
+
+describe("panel viewArgs + progress helpers", () => {
+  it("parseQuizBlockIdFromViewArgs accepts number and numeric string", () => {
+    expect(parseQuizBlockIdFromViewArgs({ quizBlockId: 42 })).toBe(42)
+    expect(parseQuizBlockIdFromViewArgs({ quizBlockId: "99" })).toBe(99)
+    expect(parseQuizBlockIdFromViewArgs({ quizBlockId: 0 })).toBeNull()
+    expect(parseQuizBlockIdFromViewArgs({ quizBlockId: -1 })).toBeNull()
+    expect(parseQuizBlockIdFromViewArgs({ quizBlockId: "x" })).toBeNull()
+    expect(parseQuizBlockIdFromViewArgs(null)).toBeNull()
+    expect(parseQuizBlockIdFromViewArgs({})).toBeNull()
+  })
+
+  it("quizOptionLetter maps 0→A", () => {
+    expect(quizOptionLetter(0)).toBe("A")
+    expect(quizOptionLetter(2)).toBe("C")
+  })
+
+  it("countAnsweredQuestions counts revealed flags", () => {
+    expect(
+      countAnsweredQuestions(sampleQuestions, { q0: true, q1: false })
+    ).toBe(1)
+    expect(countAnsweredQuestions(sampleQuestions, { q0: true, q1: true })).toBe(
+      2
+    )
+  })
+
+  it("listWrongQuestions keeps order of wrong items only", () => {
+    const wrong = listWrongQuestions(sampleQuestions, { q0: 0, q1: 1 })
+    expect(wrong).toHaveLength(1)
+    expect(wrong[0].id).toBe("q0")
+  })
+
+  it("findPanelNodeById walks nested tree", () => {
+    const tree = {
+      id: "root",
+      children: [
+        {
+          id: "col",
+          children: [
+            {
+              id: "right-1",
+              view: CHAPTER_QUIZ_PANEL_VIEW,
+              viewArgs: { quizBlockId: 7 }
+            }
+          ]
+        }
+      ]
+    }
+    const node = findPanelNodeById(tree, "right-1")
+    expect(node?.viewArgs?.quizBlockId).toBe(7)
+    expect(findPanelNodeById(tree, "missing")).toBeNull()
+  })
+
+  it("resolveQuizBlockIdForPanel uses findViewPanel then tree", () => {
+    const findViewPanel = vi.fn(() => ({
+      id: "p1",
+      view: CHAPTER_QUIZ_PANEL_VIEW,
+      viewArgs: { quizBlockId: 55 },
+      viewState: {}
+    }))
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { findViewPanel },
+      state: { panels: { id: "root", children: [] } },
+      notify: vi.fn()
+    }
+    expect(resolveQuizBlockIdForPanel("p1")).toBe(55)
+    expect(findViewPanel).toHaveBeenCalled()
+  })
+})
+
+describe("openChapterQuizInSidePanel navigation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  function stubWindow() {
+    const events: CustomEvent[] = []
+    const dispatchEvent = vi.fn((evt: Event) => {
+      events.push(evt as CustomEvent)
+      return true
+    })
+    vi.stubGlobal("window", {
+      setTimeout: (fn: () => void) => {
+        fn()
+        return 0
+      },
+      dispatchEvent
+    })
+    return { dispatchEvent, events }
+  }
+
+  it("addTo right with custom panel view and quizBlockId", () => {
+    const { events } = stubWindow()
+    const addTo = vi.fn(() => "right-panel-id")
+    const goTo = vi.fn()
+    const switchFocusTo = vi.fn()
+    const notify = vi.fn()
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo, goTo, switchFocusTo },
+      state: { panels: {} },
+      notify
+    }
+
+    const id = openChapterQuizInSidePanel({
+      hostPanelId: "left-1",
+      quizBlockId: 123
+    })
+
+    expect(id).toBe("right-panel-id")
+    expect(addTo).toHaveBeenCalledWith("left-1", "right", {
+      view: CHAPTER_QUIZ_PANEL_VIEW,
+      viewArgs: { quizBlockId: 123 },
+      viewState: {}
+    })
+    expect(goTo).not.toHaveBeenCalled()
+    expect(events).toHaveLength(1)
+    expect(events[0]?.type).toBe("orca-srs:chapter-quiz-panel-nav")
+    expect(events[0]?.detail).toEqual({
+      panelId: "right-panel-id",
+      quizBlockId: 123
+    })
+  })
+
+  it("reuses existing right panel via goTo custom view", () => {
+    const { events } = stubWindow()
+    const addTo = vi.fn()
+    const goTo = vi.fn()
+    const switchFocusTo = vi.fn()
+    const notify = vi.fn()
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo, goTo, switchFocusTo },
+      state: {
+        panels: {
+          "left-1": { id: "left-1" },
+          "right-existing": {
+            id: "right-existing",
+            parentId: "left-1",
+            position: "right"
+          }
+        }
+      },
+      notify
+    }
+
+    const id = openChapterQuizInSidePanel({
+      hostPanelId: "left-1",
+      quizBlockId: 88
+    })
+
+    expect(id).toBe("right-existing")
+    expect(addTo).not.toHaveBeenCalled()
+    expect(goTo).toHaveBeenCalledWith(
+      CHAPTER_QUIZ_PANEL_VIEW,
+      { quizBlockId: 88 },
+      "right-existing"
+    )
+    expect(events[0]?.detail).toEqual({
+      panelId: "right-existing",
+      quizBlockId: 88
+    })
+  })
+
+  it("reused right panel dispatches new quizBlockId when switching A→B", () => {
+    const { events } = stubWindow()
+    const goTo = vi.fn()
+    const switchFocusTo = vi.fn()
+    const notify = vi.fn()
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo: vi.fn(), goTo, switchFocusTo },
+      state: {
+        panels: {
+          left: { id: "left" },
+          right: { id: "right", parentId: "left", position: "right" }
+        }
+      },
+      notify
+    }
+
+    openChapterQuizInSidePanel({ hostPanelId: "left", quizBlockId: 100 })
+    openChapterQuizInSidePanel({ hostPanelId: "left", quizBlockId: 200 })
+
+    expect(goTo).toHaveBeenLastCalledWith(
+      CHAPTER_QUIZ_PANEL_VIEW,
+      { quizBlockId: 200 },
+      "right"
+    )
+    expect(events).toHaveLength(2)
+    expect(events[1]?.detail).toEqual({ panelId: "right", quizBlockId: 200 })
+  })
+
+  it("rejects invalid quizBlockId without navigating", () => {
+    const addTo = vi.fn()
+    const notify = vi.fn()
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo },
+      state: { panels: {} },
+      notify
+    }
+    expect(
+      openChapterQuizInSidePanel({ hostPanelId: "x", quizBlockId: 0 })
+    ).toBeNull()
+    expect(addTo).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalled()
   })
 })

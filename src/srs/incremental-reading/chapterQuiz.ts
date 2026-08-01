@@ -27,10 +27,19 @@ import {
 import { ensureCardTagProperties } from "../tagPropertyInit"
 import type { BlockWithRepr } from "../blockUtils"
 import { resolveFrontBack } from "../blockUtils"
+import {
+  createChapterQuizPanelNavDetail,
+  dispatchChapterQuizPanelNav
+} from "./chapterQuizLive"
 
 // ── Constants ──────────────────────────────────────────────
 
 export const CHAPTER_QUIZ_REPR_TYPE = "srs.chapter-quiz"
+/**
+ * Orca Custom Panel view type for focused chapter-quiz answering.
+ * Registered via `orca.panels.registerPanel` / `unregisterPanel`.
+ */
+export const CHAPTER_QUIZ_PANEL_VIEW = "srs.chapter-quiz-panel"
 /** 题目/进度等重状态写在此属性；`_repr` 只保留渲染类型元数据 */
 export const CHAPTER_QUIZ_STATE_PROP = "srs.chapterQuiz"
 export const CHAPTER_QUIZ_DEFAULT_COUNT = 10
@@ -159,16 +168,38 @@ export const CHAPTER_QUIZ_COPY = {
   gotitNeedPage: "无法确定当前页面，请将光标放在页面内再试",
   gotitStarted: "已在页面底部插入小测",
   openSidePanel: "侧栏答题",
-  openSidePanelTitle: "右侧打开小测，左侧保持渐进阅读",
-  openSidePanelOk: "已在右侧打开答题；左侧仍在渐进阅读",
+  openSidePanelTitle: "右侧打开专注答题面板，左侧保持渐进阅读",
+  openSidePanelOk: "已在右侧打开专注答题；左侧仍在渐进阅读",
   openSidePanelFail: "无法创建右侧面板",
+  startQuiz: "开始答题",
+  continueQuiz: "继续答题",
+  startQuizTitle: "在右侧专注面板开始答题",
+  continueQuizTitle: "在右侧专注面板继续未完成的题目",
+  reviewDone: "查看结果",
+  reviewDoneTitle: "在右侧面板查看本轮结果与错题",
+  compactProgress: (answered: number, total: number) =>
+    `进度 ${answered} / ${total}`,
+  compactReady: "题目已就绪，请在侧栏专注作答。",
+  compactInProgress: "作答进行中；完整选项与讲解仅在侧栏面板显示。",
   rememberHint: "可选",
   followUpLabel: "追问 AI",
+  deepDive: "深入理解",
+  deepDiveTitle: "展开原文、追问与加入复习（可选）",
+  addToReview: "加入复习",
+  addToReviewTitle: "展开简答卡 / 填空卡选项",
+  reviewWrong: "回看错题",
+  reviewWrongTitle: "只读回看本轮错题，可展开深入理解",
+  backToSummary: "返回总结",
+  wrongCountLabel: (n: number) => (n === 0 ? "全部正确" : `${n} 道错题`),
+  reviewModeLabel: "错题回看",
+  panelMissingId: "无法打开小测：缺少有效的测验块 ID",
+  panelLoadError: "无法加载小测状态",
   jumpToSource: "跳转原文",
   jumpToSourceTitle: "在渐进阅读正文中定位本题出处",
   jumpToSourceFail: "无法在阅读区定位出处（块可能未展开或不在当前篇）",
   jumpToSourceMissing: "本题未标注出处块",
-  jumpToSourceOk: "已在阅读区定位出处"
+  jumpToSourceOk: "已在阅读区定位出处",
+  sourceBasis: "原文依据"
 } as const
 
 /** 小测结束后请求 IR 会话推进下一篇（完成后续停留模式） */
@@ -500,6 +531,122 @@ export function countCorrectAnswers(
     if (typeof a === "number" && isAnswerCorrect(q, a)) n += 1
   }
   return n
+}
+
+/** 选项字母：0→A, 1→B, … */
+export function quizOptionLetter(i: number): string {
+  return String.fromCharCode(65 + i)
+}
+
+/**
+ * 从 Custom Panel `viewArgs` 解析 quizBlockId。
+ * 接受 number 或纯数字 string；非法返回 null。
+ */
+export function parseQuizBlockIdFromViewArgs(
+  viewArgs: Record<string, unknown> | null | undefined
+): number | null {
+  if (!viewArgs || typeof viewArgs !== "object") return null
+  const raw = viewArgs.quizBlockId
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return Math.floor(raw)
+  }
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    const n = Number(raw.trim())
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return null
+}
+
+/** 已揭晓（已作答）题数 */
+export function countAnsweredQuestions(
+  questions: ChapterQuizQuestion[],
+  revealed: Record<string, boolean> | undefined
+): number {
+  let n = 0
+  for (const q of questions) {
+    if (revealed?.[q.id] === true) n += 1
+  }
+  return n
+}
+
+/** 本轮错题列表（保持原题序） */
+export function listWrongQuestions(
+  questions: ChapterQuizQuestion[],
+  answers: Record<string, number> | undefined
+): ChapterQuizQuestion[] {
+  return questions.filter((q) => {
+    const a = answers?.[q.id]
+    return typeof a === "number" && !isAnswerCorrect(q, a)
+  })
+}
+
+type PanelTreeLike = {
+  id?: string
+  view?: string
+  viewArgs?: Record<string, unknown>
+  children?: PanelTreeLike[]
+}
+
+/** 在面板树中按 id 查找 ViewPanel 节点 */
+export function findPanelNodeById(
+  root: PanelTreeLike | null | undefined,
+  panelId: string
+): PanelTreeLike | null {
+  if (!root || !panelId) return null
+  if (root.id === panelId) return root
+  for (const child of root.children ?? []) {
+    const found = findPanelNodeById(child, panelId)
+    if (found) return found
+  }
+  return null
+}
+
+/**
+ * 从 panelId 解析章末小测 quizBlockId。
+ * 优先 `orca.nav.findViewPanel`，再递归面板树，再尝试 flat map。
+ */
+export function resolveQuizBlockIdForPanel(panelId: string): number | null {
+  if (!panelId) return null
+
+  try {
+    if (typeof orca?.nav?.findViewPanel === "function" && orca.state?.panels) {
+      const panel = orca.nav.findViewPanel(panelId, orca.state.panels)
+      const id = parseQuizBlockIdFromViewArgs(
+        panel?.viewArgs as Record<string, unknown> | undefined
+      )
+      if (id != null) return id
+    }
+  } catch (error) {
+    console.error("[章末小测] findViewPanel 读取 viewArgs 失败:", error)
+  }
+
+  try {
+    const node = findPanelNodeById(
+      orca.state?.panels as unknown as PanelTreeLike,
+      panelId
+    )
+    const fromTree = parseQuizBlockIdFromViewArgs(node?.viewArgs)
+    if (fromTree != null) return fromTree
+  } catch (error) {
+    console.error("[章末小测] 面板树查找 quizBlockId 失败:", error)
+  }
+
+  // 部分宿主把 panels 存为 id→entry 的 flat map
+  try {
+    const flat = orca.state?.panels as unknown as Record<
+      string,
+      { viewArgs?: Record<string, unknown> }
+    >
+    if (flat && typeof flat === "object" && !Array.isArray(flat)) {
+      const entry = flat[panelId]
+      const fromFlat = parseQuizBlockIdFromViewArgs(entry?.viewArgs)
+      if (fromFlat != null) return fromFlat
+    }
+  } catch (error) {
+    console.error("[章末小测] flat panels 查找 quizBlockId 失败:", error)
+  }
+
+  return null
 }
 
 export function buildBasicCardFromQuestion(question: ChapterQuizQuestion): {
@@ -1119,8 +1266,14 @@ export function resolveLeftPanelId(currentPanelId: string): string {
   return currentPanelId
 }
 
+type PanelNavEntryWithView = PanelNavEntry & {
+  view?: string
+  viewArgs?: Record<string, unknown>
+}
+
 /**
- * 在右侧面板打开小测块；**左侧保持不动**（继续 srs.ir-session 渐进阅读）。
+ * 在右侧打开章末小测 **Custom Panel**（专注答题）；**左侧保持不动**。
+ * view = CHAPTER_QUIZ_PANEL_VIEW，viewArgs.quizBlockId 供 Panel 解析。
  * 不调用 left goTo，避免把 IR 会话顶掉。
  */
 export function openChapterQuizInSidePanel(options: {
@@ -1130,10 +1283,20 @@ export function openChapterQuizInSidePanel(options: {
   alsoOpenSourceOnLeft?: boolean
   topicBlockId?: number
 }): string | null {
+  const quizBlockId = options.quizBlockId
+  if (
+    typeof quizBlockId !== "number" ||
+    !Number.isFinite(quizBlockId) ||
+    quizBlockId <= 0
+  ) {
+    console.error("[章末小测] openChapterQuizInSidePanel: 非法 quizBlockId", quizBlockId)
+    orca.notify("error", CHAPTER_QUIZ_COPY.panelMissingId, { title: "章末小测" })
+    return null
+  }
+
   // 若已在右侧分栏内点按钮，宿主取左侧 panel
   const hostPanelId = resolveLeftPanelId(options.hostPanelId)
-  const quizBlockId = options.quizBlockId
-  const panels = getPanelsFlat()
+  const panels = getPanelsFlat() as Record<string, PanelNavEntryWithView>
   let rightPanelId: string | null = null
 
   for (const [panelId, panel] of Object.entries(panels)) {
@@ -1143,18 +1306,21 @@ export function openChapterQuizInSidePanel(options: {
     }
   }
 
+  const viewArgs = { quizBlockId }
+
   try {
     if (!rightPanelId) {
       rightPanelId = orca.nav.addTo(hostPanelId, "right", {
-        view: "block",
-        viewArgs: { blockId: quizBlockId },
+        view: CHAPTER_QUIZ_PANEL_VIEW,
+        viewArgs,
         viewState: {}
       })
     } else {
-      orca.nav.goTo("block", { blockId: quizBlockId }, rightPanelId)
+      // 同一测验已在右侧时仍 goTo 以刷新/聚焦；不同内容则切到 Custom Panel
+      orca.nav.goTo(CHAPTER_QUIZ_PANEL_VIEW, viewArgs, rightPanelId)
     }
   } catch (error) {
-    console.error("[章末小测] 打开侧栏失败:", error)
+    console.error("[章末小测] 打开专注答题侧栏失败:", error)
     orca.notify("error", CHAPTER_QUIZ_COPY.openSidePanelFail, {
       title: "章末小测"
     })
@@ -1168,13 +1334,18 @@ export function openChapterQuizInSidePanel(options: {
     return null
   }
 
+  // 右栏复用时 Custom Panel 可能不 remount：显式广播 quizBlockId 切换
+  dispatchChapterQuizPanelNav(
+    createChapterQuizPanelNavDetail(rightPanelId, quizBlockId)
+  )
+
   // 刻意不 goTo 左侧：保留 srs.ir-session / 当前阅读篇
 
   window.setTimeout(() => {
     try {
       orca.nav.switchFocusTo(rightPanelId!)
-    } catch {
-      /* focus 非关键 */
+    } catch (error) {
+      console.warn("[章末小测] 聚焦答题侧栏失败:", error)
     }
   }, 100)
 
@@ -1224,8 +1395,8 @@ export function jumpToQuizSourceBlock(options: {
   if (detail.claimed) {
     try {
       orca.nav.switchFocusTo(leftPanelId)
-    } catch {
-      /* 非关键 */
+    } catch (error) {
+      console.warn("[章末小测] 聚焦阅读面板失败:", error)
     }
     return true
   }
@@ -1245,8 +1416,8 @@ export function jumpToQuizSourceBlock(options: {
       target.classList.add("ir-reading__locate-highlight")
       try {
         orca.nav.switchFocusTo(leftPanelId)
-      } catch {
-        /* 非关键 */
+      } catch (error) {
+        console.warn("[章末小测] DOM 定位后聚焦阅读面板失败:", error)
       }
       orca.notify("success", CHAPTER_QUIZ_COPY.jumpToSourceOk, {
         title: "章末小测"
@@ -1287,74 +1458,71 @@ export async function writeBasicCardFromQuizQuestion(options: {
   const parent = await resolveBlockBackendFirst(parentBlockId)
   if (!parent) throw new Error("父块不存在，无法写入简答卡")
 
+  // Custom Panel 无 Block Editor 事务上下文，不可用 invokeGroup（宿主内部会读到 undefined）。
+  // 顺序执行写入；失败时显式删除顶层新块，禁止“抛错后重跑 callback”以免重复卡。
   let createdId = 0
   try {
-    await orca.commands.invokeGroup(
-      async () => {
-        const parentLive = await resolveBlockBackendFirst(parentBlockId)
-        if (!parentLive) throw new Error("父块已不存在")
+    const parentLive = await resolveBlockBackendFirst(parentBlockId)
+    if (!parentLive) throw new Error("父块已不存在")
 
-        const questionBlockId = (await orca.commands.invokeEditorCommand(
-          "core.editor.insertBlock",
-          null,
-          parentLive,
-          "lastChild",
-          [{ t: "t", v: front }]
-        )) as number | null
+    const questionBlockId = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      parentLive,
+      "lastChild",
+      [{ t: "t", v: front }]
+    )) as number | null
 
-        if (
-          typeof questionBlockId !== "number" ||
-          !Number.isFinite(questionBlockId) ||
-          questionBlockId <= 0
-        ) {
-          throw new Error("创建问题块失败")
-        }
-        createdId = questionBlockId
+    if (
+      typeof questionBlockId !== "number" ||
+      !Number.isFinite(questionBlockId) ||
+      questionBlockId <= 0
+    ) {
+      throw new Error("创建问题块失败")
+    }
+    createdId = questionBlockId
 
-        const questionBlock = await resolveBlockBackendFirst(questionBlockId)
-        if (!questionBlock) throw new Error("无法获取问题块")
+    const questionBlock = await resolveBlockBackendFirst(questionBlockId)
+    if (!questionBlock) throw new Error("无法获取问题块")
 
-        const answerBlockId = (await orca.commands.invokeEditorCommand(
-          "core.editor.insertBlock",
-          null,
-          questionBlock,
-          "lastChild",
-          [{ t: "t", v: back }]
-        )) as number | null
+    const answerBlockId = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      questionBlock,
+      "lastChild",
+      [{ t: "t", v: back }]
+    )) as number | null
 
-        if (
-          typeof answerBlockId !== "number" ||
-          !Number.isFinite(answerBlockId) ||
-          answerBlockId <= 0
-        ) {
-          throw new Error("创建答案块失败")
-        }
+    if (
+      typeof answerBlockId !== "number" ||
+      !Number.isFinite(answerBlockId) ||
+      answerBlockId <= 0
+    ) {
+      throw new Error("创建答案块失败")
+    }
 
-        await orca.commands.invokeEditorCommand(
-          "core.editor.insertTag",
-          null,
-          questionBlockId,
-          "card",
-          await buildCardTagData(pluginName, questionBlockId, "basic", "")
-        )
-
-        const live = orca.state.blocks?.[questionBlockId] as
-          | BlockWithRepr
-          | undefined
-        if (live) {
-          const { front: f, back: b } = resolveFrontBack(live)
-          live._repr = {
-            type: "srs.card",
-            front: f,
-            back: b,
-            cardType: "basic"
-          }
-        }
-
-        await ensureCardSrsState(questionBlockId)
-      },
-      { undoable: true, topGroup: true }
+    await orca.commands.invokeEditorCommand(
+      "core.editor.insertTag",
+      null,
+      questionBlockId,
+      "card",
+      await buildCardTagData(pluginName, questionBlockId, "basic", "")
     )
+
+    const live = orca.state.blocks?.[questionBlockId] as
+      | BlockWithRepr
+      | undefined
+    if (live) {
+      const { front: f, back: b } = resolveFrontBack(live)
+      live._repr = {
+        type: "srs.card",
+        front: f,
+        back: b,
+        cardType: "basic"
+      }
+    }
+
+    await ensureCardSrsState(questionBlockId)
   } catch (error) {
     if (createdId > 0) {
       try {
@@ -1392,59 +1560,55 @@ export async function writeClozeCardFromQuizQuestion(options: {
   const parent = await resolveBlockBackendFirst(parentBlockId)
   if (!parent) throw new Error("父块不存在，无法写入填空卡")
 
+  // 同简答卡：Custom Panel 下顺序写，不用 invokeGroup；失败删顶层新块。
   let createdId = 0
   try {
-    await orca.commands.invokeGroup(
-      async () => {
-        const parentLive = await resolveBlockBackendFirst(parentBlockId)
-        if (!parentLive) throw new Error("父块已不存在")
+    const parentLive = await resolveBlockBackendFirst(parentBlockId)
+    if (!parentLive) throw new Error("父块已不存在")
 
-        const content = buildClozeContentFragments(
-          text,
-          clozeText,
-          pluginName,
-          1
-        )
-
-        const blockId = (await orca.commands.invokeEditorCommand(
-          "core.editor.insertBlock",
-          null,
-          parentLive,
-          "lastChild",
-          content
-        )) as number | null
-
-        if (
-          typeof blockId !== "number" ||
-          !Number.isFinite(blockId) ||
-          blockId <= 0
-        ) {
-          throw new Error("创建填空卡块失败")
-        }
-        createdId = blockId
-
-        await orca.commands.invokeEditorCommand(
-          "core.editor.insertTag",
-          null,
-          blockId,
-          "card",
-          await buildCardTagData(pluginName, blockId, "cloze", "")
-        )
-
-        const live = orca.state.blocks?.[blockId] as BlockWithRepr | undefined
-        if (live) {
-          live._repr = {
-            type: "srs.cloze-card",
-            front: text,
-            back: clozeText,
-            cardType: "cloze"
-          }
-        }
-
-        await writeInitialClozeSrsState(blockId, 1, 0)
-      },
-      { undoable: true, topGroup: true }
+    const content = buildClozeContentFragments(
+      text,
+      clozeText,
+      pluginName,
+      1
     )
+
+    const blockId = (await orca.commands.invokeEditorCommand(
+      "core.editor.insertBlock",
+      null,
+      parentLive,
+      "lastChild",
+      content
+    )) as number | null
+
+    if (
+      typeof blockId !== "number" ||
+      !Number.isFinite(blockId) ||
+      blockId <= 0
+    ) {
+      throw new Error("创建填空卡块失败")
+    }
+    createdId = blockId
+
+    await orca.commands.invokeEditorCommand(
+      "core.editor.insertTag",
+      null,
+      blockId,
+      "card",
+      await buildCardTagData(pluginName, blockId, "cloze", "")
+    )
+
+    const live = orca.state.blocks?.[blockId] as BlockWithRepr | undefined
+    if (live) {
+      live._repr = {
+        type: "srs.cloze-card",
+        front: text,
+        back: clozeText,
+        cardType: "cloze"
+      }
+    }
+
+    await writeInitialClozeSrsState(blockId, 1, 0)
   } catch (error) {
     if (createdId > 0) {
       try {

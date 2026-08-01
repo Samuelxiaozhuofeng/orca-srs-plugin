@@ -13,6 +13,9 @@ import ClozeInlineRenderer from "../../components/ClozeInlineRenderer"
 import DirectionInlineRenderer from "../../components/DirectionInlineRenderer"
 import ChoiceCardBlockRenderer from "../../components/ChoiceCardBlockRenderer"
 import ChapterQuizBlock from "../../components/incremental-reading/ChapterQuizBlock"
+import ChapterQuizPanel from "../../panels/ChapterQuizPanel"
+import { CHAPTER_QUIZ_PANEL_VIEW } from "../incremental-reading/chapterQuiz"
+import { bindChapterQuizPanelRegistration } from "../incremental-reading/chapterQuizLive"
 
 export function registerRenderers(pluginName: string): void {
   // 基本卡块渲染器
@@ -98,6 +101,13 @@ export function registerRenderers(pluginName: string): void {
     false
   )
 
+  // 章末小测专注答题 Custom Panel（侧栏唯一完整答题 UI）
+  bindChapterQuizPanelRegistration(
+    orca.panels,
+    CHAPTER_QUIZ_PANEL_VIEW,
+    ChapterQuizPanel
+  ).register()
+
   // Cloze inline 渲染器
   orca.renderers.registerInline(
     `${pluginName}.cloze`,
@@ -123,6 +133,11 @@ export function unregisterRenderers(pluginName: string): void {
   orca.renderers.unregisterBlock("srs.ir-session")
   orca.renderers.unregisterBlock("srs.ir-manager")
   orca.renderers.unregisterBlock("srs.chapter-quiz")
+  bindChapterQuizPanelRegistration(
+    orca.panels,
+    CHAPTER_QUIZ_PANEL_VIEW,
+    ChapterQuizPanel
+  ).unregister()
   orca.renderers.unregisterInline(`${pluginName}.cloze`)
   orca.renderers.unregisterInline(`${pluginName}.direction`)
 }

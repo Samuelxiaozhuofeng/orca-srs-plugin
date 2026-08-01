@@ -26,7 +26,7 @@
 > - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`scanCardsFromTags` 仅 throw 走全库兜底；列表卡 `srs.isCard` 写后 `invalidateBlockCache`
 >
 > **索引增补：2026-08-01（章末小测）**：
-> - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：Topic 完成后 / 更多菜单 → 本章全文单选小测；一题一题揭晓；可选简答/填空入队；与 `#choice` 路径独立
+> - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：Topic 完成后 / 更多菜单 → 本章全文单选小测；**Custom Panel 专注答题** + 块侧紧凑入口；渐进披露「深入理解」；可选简答/填空入队；与 `#choice` 路径独立
 
 ## 文档分类
 
@@ -132,7 +132,7 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-01 更新 — due-only 分散 Phase 0+1 短记；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
-24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-01 新增 — Topic 章末一次性单选小测（入口 / 生成 / 入卡 / 与 choice 边界）
+24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-01 更新 — Topic 章末小测；Custom Panel + 共享生成取消 / live 同步 / 错题回看制卡；panel 制卡不用 invokeGroup + 短暂切左侧编辑焦点；panel nav A→B
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
     - **mixed 复习卡块可用性**（2026-07-27）：`IRMixedReviewPane` 挂载前 `preflightMixedReviewCard`（`writeToState` + missing/unknown 三态），修复 state miss 永久「加载中」；`SrsCardDemo` 改为纯渲染器
