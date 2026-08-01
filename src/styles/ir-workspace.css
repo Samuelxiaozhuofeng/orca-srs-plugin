@@ -4162,7 +4162,7 @@
   box-shadow: var(--srs-shadow-2);
 }
 
-/* 深入理解中的内容自适应展开，取消局部的 max-height 强制二重滚动 */
+/* 意图面板内内容自适应展开，取消局部 max-height 二重滚动 */
 .chapter-quiz-panel__shell .chapter-quiz__explain {
   max-height: none;
   overflow: visible;
@@ -4215,21 +4215,33 @@
   border-radius: var(--srs-radius-lg);
 }
 
-/* 渐进披露：深入理解 */
-.chapter-quiz-panel__deep {
+/* 方案 A：揭晓后扁平意图动作条（加入复习 / 问 AI / 原文） */
+.chapter-quiz-panel__intent {
   display: flex;
   flex-direction: column;
-  gap: var(--srs-space-3);
+  gap: var(--srs-space-2);
   border-top: 1px dashed var(--srs-hairline);
   padding-top: var(--srs-space-3);
-  margin-top: var(--srs-space-2);
+  margin-top: var(--srs-space-1);
 }
 
-.chapter-quiz-panel__deep-toggle {
-  display: inline-flex;
+.chapter-quiz-panel__intent-bar {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--srs-space-2);
-  align-self: flex-start;
+}
+
+.chapter-quiz-panel__intent-item {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.chapter-quiz-panel__intent-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--srs-space-1);
   border: 1px solid var(--srs-hairline);
   background: var(--srs-surface-sunken);
   color: var(--orca-color-text-2);
@@ -4237,47 +4249,103 @@
   font-size: var(--srs-text-secondary);
   font-weight: 600;
   cursor: pointer;
-  padding: var(--srs-space-2) var(--srs-space-3);
+  padding: 6px 12px;
   border-radius: var(--srs-radius-md);
+  white-space: nowrap;
   transition:
     background var(--srs-duration-base) var(--srs-ease),
     color var(--srs-duration-base) var(--srs-ease),
     border-color var(--srs-duration-base) var(--srs-ease);
 }
 
-.chapter-quiz-panel__deep-toggle:hover {
+.chapter-quiz-panel__intent-chip:hover:not(:disabled) {
   background: var(--srs-surface-base);
   color: var(--orca-color-text-1);
   border-color: var(--srs-hairline-strong);
 }
 
-.chapter-quiz-panel__deep-toggle:focus-visible {
+.chapter-quiz-panel__intent-chip:focus-visible {
   outline: 2px solid var(--orca-color-primary-5);
   outline-offset: 2px;
 }
 
-.chapter-quiz-panel__deep-toggle--nested {
-  font-weight: 500;
-  background: transparent;
+.chapter-quiz-panel__intent-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chapter-quiz-panel__intent-chip.is-active {
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-1);
+  border-color: var(--orca-color-primary-5);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--orca-color-primary-5) 35%, transparent);
+}
+
+.chapter-quiz-panel__intent-chip.is-done {
+  color: var(--srs-accent-success);
+  border-color: color-mix(in srgb, var(--srs-accent-success) 40%, var(--srs-hairline));
+}
+
+.chapter-quiz-panel__intent-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 4px;
+  border-radius: var(--srs-radius-pill);
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--orca-color-primary-5) 18%, var(--srs-surface-base));
+  color: var(--orca-color-primary-5);
+}
+
+/* 加入复习 split：主按钮一键简答 + ▾ 展开填空等 */
+.chapter-quiz-panel__intent-split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--srs-radius-md);
+  overflow: hidden;
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-sunken);
+}
+
+.chapter-quiz-panel__intent-split.is-open {
+  border-color: var(--orca-color-primary-5);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--orca-color-primary-5) 35%, transparent);
+}
+
+.chapter-quiz-panel__intent-split.is-disabled {
+  opacity: 0.55;
+}
+
+.chapter-quiz-panel__intent-split .chapter-quiz-panel__intent-chip {
   border: none;
-  padding: var(--srs-space-1) 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-.chapter-quiz-panel__deep-chevron {
-  display: inline-block;
-  width: 1rem;
-  text-align: center;
+.chapter-quiz-panel__intent-split .chapter-quiz-panel__intent-chip--main {
+  padding-right: 10px;
+}
+
+.chapter-quiz-panel__intent-split .chapter-quiz-panel__intent-chip--caret {
+  padding: 6px 8px;
   color: var(--orca-color-text-3);
-  transition: transform var(--srs-duration-base) var(--srs-ease);
+  border-left: 1px solid var(--srs-hairline);
+  min-width: 2rem;
 }
 
-.chapter-quiz-panel__deep-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--srs-space-3);
+.chapter-quiz-panel__intent-split .chapter-quiz-panel__intent-chip:hover:not(:disabled) {
+  background: var(--srs-surface-base);
 }
 
-.chapter-quiz-panel__deep-block {
+.chapter-quiz-panel__intent-hint {
+  margin: 0;
+}
+
+.chapter-quiz-panel__intent-panel {
   display: flex;
   flex-direction: column;
   gap: var(--srs-space-3);
@@ -4291,7 +4359,45 @@
   display: flex;
   flex-direction: column;
   gap: var(--srs-space-2);
-  padding-top: var(--srs-space-1);
+}
+
+/* 旧 segmented 控件（若其它处复用可保留轻量样式） */
+.srs-segmented-control {
+  display: inline-flex;
+  align-items: center;
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  padding: 3px;
+  gap: 2px;
+}
+
+.srs-segmented-pill {
+  border: none;
+  background: transparent;
+  color: var(--orca-color-text-2);
+  font-family: inherit;
+  font-size: var(--srs-text-secondary);
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--srs-radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    box-shadow var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-segmented-pill:hover:not(.is-active) {
+  color: var(--orca-color-text-1);
+}
+
+.srs-segmented-pill.is-active {
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-1);
+  font-weight: 600;
+  box-shadow: var(--srs-shadow-pill, 0 1px 2px rgba(0, 0, 0, 0.08));
 }
 
 /* Completion Hero Card */

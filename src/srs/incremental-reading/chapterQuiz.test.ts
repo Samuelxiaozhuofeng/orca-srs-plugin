@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   buildBasicCardFromQuestion,
   buildInitialQuizRepr,
@@ -8,6 +8,7 @@ import {
   countCorrectAnswers,
   findPanelNodeById,
   isAnswerCorrect,
+  jumpToQuizSourceBlock,
   listWrongQuestions,
   normalizeChapterQuizRepr,
   openChapterQuizInSidePanel,
@@ -15,6 +16,7 @@ import {
   parseQuizBlockIdFromViewArgs,
   quizOptionLetter,
   requireQuizCardSourceBlockId,
+  resetQuizSourceSidePanelCacheForTests,
   resolveQuizBlockIdForPanel,
   toPlainJsonValue,
   type ChapterQuizQuestion
@@ -471,6 +473,129 @@ describe("openChapterQuizInSidePanel navigation", () => {
     expect(
       openChapterQuizInSidePanel({ hostPanelId: "x", quizBlockId: 0 })
     ).toBeNull()
+    expect(addTo).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalled()
+  })
+})
+
+describe("jumpToQuizSourceBlock (side panel)", () => {
+  beforeEach(() => {
+    resetQuizSourceSidePanelCacheForTests()
+    vi.stubGlobal("window", {
+      setTimeout: (fn: () => void) => {
+        fn()
+        return 0
+      }
+    })
+  })
+
+  afterEach(() => {
+    resetQuizSourceSidePanelCacheForTests()
+    vi.unstubAllGlobals()
+  })
+
+  it("opens a new right block side panel relative to quiz panel", () => {
+    const addTo = vi.fn(() => "source-side")
+    const goTo = vi.fn()
+    const switchFocusTo = vi.fn()
+    const notify = vi.fn()
+    const findViewPanel = vi.fn(() => null)
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo, goTo, switchFocusTo, findViewPanel },
+      state: { panels: { "quiz-p": { id: "quiz-p" } } },
+      notify
+    }
+
+    const ok = jumpToQuizSourceBlock({
+      sourceBlockId: 42,
+      currentPanelId: "quiz-p"
+    })
+
+    expect(ok).toBe(true)
+    expect(addTo).toHaveBeenCalledWith("quiz-p", "right", {
+      view: "block",
+      viewArgs: { blockId: 42 },
+      viewState: {}
+    })
+    expect(goTo).not.toHaveBeenCalled()
+    expect(switchFocusTo).toHaveBeenCalledWith("source-side")
+    expect(notify).toHaveBeenCalledWith(
+      "success",
+      expect.any(String),
+      expect.objectContaining({ title: "章末小测" })
+    )
+  })
+
+  it("reuses cached side panel via goTo on second jump", () => {
+    const addTo = vi.fn(() => "source-side")
+    const goTo = vi.fn()
+    const switchFocusTo = vi.fn()
+    const notify = vi.fn()
+    // 首次：树中无该块 → addTo；第二次：缓存侧栏仍存活 → goTo 换块
+    const findViewPanel = vi.fn((id: string) =>
+      id === "source-side" ? { id: "source-side", view: "block" } : null
+    )
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo, goTo, switchFocusTo, findViewPanel },
+      state: { panels: { "quiz-p": { id: "quiz-p" } } },
+      notify
+    }
+
+    expect(
+      jumpToQuizSourceBlock({ sourceBlockId: 42, currentPanelId: "quiz-p" })
+    ).toBe(true)
+    expect(addTo).toHaveBeenCalledTimes(1)
+
+    expect(
+      jumpToQuizSourceBlock({ sourceBlockId: 99, currentPanelId: "quiz-p" })
+    ).toBe(true)
+    expect(addTo).toHaveBeenCalledTimes(1)
+    expect(goTo).toHaveBeenCalledWith(
+      "block",
+      { blockId: 99 },
+      "source-side"
+    )
+  })
+
+  it("does not goTo left IR panel when opening source", () => {
+    const addTo = vi.fn(() => "source-side")
+    const goTo = vi.fn()
+    const switchFocusTo = vi.fn()
+    const notify = vi.fn()
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo, goTo, switchFocusTo, findViewPanel: () => null },
+      state: {
+        panels: {
+          "ir-left": { id: "ir-left", view: "block", viewArgs: { blockId: 1 } },
+          "quiz-p": {
+            id: "quiz-p",
+            parentId: "ir-left",
+            position: "right",
+            view: "srs.chapter-quiz-panel"
+          }
+        }
+      },
+      notify
+    }
+
+    jumpToQuizSourceBlock({ sourceBlockId: 99, currentPanelId: "quiz-p" })
+
+    expect(addTo).toHaveBeenCalledWith("quiz-p", "right", expect.any(Object))
+    // must never navigate the left IR panel away
+    expect(goTo).not.toHaveBeenCalledWith("block", { blockId: 99 }, "ir-left")
+  })
+
+  it("rejects missing sourceBlockId", () => {
+    const notify = vi.fn()
+    const addTo = vi.fn()
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      nav: { addTo },
+      state: { panels: {} },
+      notify
+    }
+    expect(
+      jumpToQuizSourceBlock({ sourceBlockId: 0, currentPanelId: "quiz-p" })
+    ).toBe(false)
     expect(addTo).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalled()
   })

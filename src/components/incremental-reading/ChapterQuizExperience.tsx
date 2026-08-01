@@ -1,6 +1,7 @@
 /**
  * 章末小测专注答题体验（Custom Panel 主视图）。
- * 主路径：题干 → 选项 → 揭晓 → 下一题；辅助功能默认折叠在「深入理解」。
+ * 主路径：题干 → 选项 → 揭晓 → 下一题；
+ * 揭晓后辅助为扁平意图条：加入复习 / 问 AI / 原文（方案 A）。
  */
 
 import {
@@ -20,7 +21,7 @@ import {
   type ClozePreview
 } from "./useChapterQuizController"
 
-const { useCallback, useEffect, useState } = window.React
+const { useCallback, useEffect, useRef, useState } = window.React
 const { Button } = orca.components
 
 export type ChapterQuizExperienceProps = {
@@ -29,6 +30,8 @@ export type ChapterQuizExperienceProps = {
 }
 
 type ReviewMode = "live" | "wrong"
+/** 揭晓后展开的辅助面板：填空菜单 或 AI 追问 */
+type IntentPanel = null | "review-menu" | "ai"
 
 export default function ChapterQuizExperience(props: ChapterQuizExperienceProps) {
   const { panelId, quizBlockId } = props
@@ -39,8 +42,7 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
     writeContextPanelId: panelId
   })
 
-  const [deepDiveOpen, setDeepDiveOpen] = useState(false)
-  const [reviewAddOpen, setReviewAddOpen] = useState(false)
+  const [intentPanel, setIntentPanel] = useState<IntentPanel>(null)
   const [reviewMode, setReviewMode] = useState<ReviewMode>("live")
   const [wrongCursor, setWrongCursor] = useState(0)
 
@@ -85,10 +87,9 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
       ]
     : question
 
-  // 换题（含错题回看游标）时收起深入理解并清空临时追问 UI
+  // 换题（含错题回看游标）时收起意图面板并清空临时追问 UI
   useEffect(() => {
-    setDeepDiveOpen(false)
-    setReviewAddOpen(false)
+    setIntentPanel(null)
     clearEphemeralForQuestion()
   }, [activeQuestion?.id, reviewMode, clearEphemeralForQuestion])
 
@@ -308,6 +309,42 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                 </p>
               )}
 
+              {activeRevealed ? (
+                <IntentActionSection
+                  isCorrect={activeIsCorrect === true}
+                  intentPanel={intentPanel}
+                  setIntentPanel={setIntentPanel}
+                  question={activeQuestion}
+                  cardAdds={activeCardAdds}
+                  onJump={handleJumpToSource}
+                  onAddBasic={() => {
+                    void handleAddBasicFor(activeQuestion)
+                  }}
+                  clozeBusy={clozeBusy}
+                  cardBusyId={cardBusyId}
+                  clozePreview={
+                    clozePreview?.questionId === activeQuestion.id
+                      ? clozePreview
+                      : null
+                  }
+                  setClozePreview={setClozePreview}
+                  onStartCloze={() => {
+                    void handleStartClozeFor(activeQuestion)
+                  }}
+                  onConfirmCloze={() => {
+                    void handleConfirmClozeFor(activeQuestion)
+                  }}
+                  followUpDraft={followUpDraft}
+                  setFollowUpDraft={setFollowUpDraft}
+                  followUps={followUps}
+                  followUpBusy={followUpBusy}
+                  followUpError={followUpError}
+                  onFollowUp={() => {
+                    void handleFollowUpFor(activeQuestion, activeSelected)
+                  }}
+                />
+              ) : null}
+
               <div className="chapter-quiz-panel__primary">
                 {isReviewingWrong ? (
                   <>
@@ -366,43 +403,6 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                   </Button>
                 )}
               </div>
-
-              {activeRevealed ? (
-                <DeepDiveSection
-                  open={deepDiveOpen}
-                  onToggle={() => setDeepDiveOpen((v: boolean) => !v)}
-                  question={activeQuestion}
-                  cardAdds={activeCardAdds}
-                  reviewAddOpen={reviewAddOpen}
-                  onToggleReviewAdd={() => setReviewAddOpen((v: boolean) => !v)}
-                  onJump={handleJumpToSource}
-                  onAddBasic={() => {
-                    void handleAddBasicFor(activeQuestion)
-                  }}
-                  clozeBusy={clozeBusy}
-                  cardBusyId={cardBusyId}
-                  clozePreview={
-                    clozePreview?.questionId === activeQuestion.id
-                      ? clozePreview
-                      : null
-                  }
-                  setClozePreview={setClozePreview}
-                  onStartCloze={() => {
-                    void handleStartClozeFor(activeQuestion)
-                  }}
-                  onConfirmCloze={() => {
-                    void handleConfirmClozeFor(activeQuestion)
-                  }}
-                  followUpDraft={followUpDraft}
-                  setFollowUpDraft={setFollowUpDraft}
-                  followUps={followUps}
-                  followUpBusy={followUpBusy}
-                  followUpError={followUpError}
-                  onFollowUp={() => {
-                    void handleFollowUpFor(activeQuestion, activeSelected)
-                  }}
-                />
-              ) : null}
 
               {localError ? (
                 <div className="chapter-quiz__status chapter-quiz__status--error">
@@ -476,16 +476,15 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
 }
 
 // ---------------------------------------------------------------------------
-// Deep dive (collapsed by default)
+// Intent action bar (方案 A)：揭晓后扁平三意图，不再套「深入理解」折叠
 // ---------------------------------------------------------------------------
 
-type DeepDiveProps = {
-  open: boolean
-  onToggle: () => void
+type IntentActionProps = {
+  isCorrect: boolean
+  intentPanel: IntentPanel
+  setIntentPanel: (v: IntentPanel | ((prev: IntentPanel) => IntentPanel)) => void
   question: ChapterQuizQuestion
   cardAdds?: { basicBlockId?: number; clozeBlockId?: number }
-  reviewAddOpen: boolean
-  onToggleReviewAdd: () => void
   onJump: () => void
   onAddBasic: () => void
   clozeBusy: boolean
@@ -502,14 +501,13 @@ type DeepDiveProps = {
   onFollowUp: () => void
 }
 
-function DeepDiveSection(props: DeepDiveProps) {
+function IntentActionSection(props: IntentActionProps) {
   const {
-    open,
-    onToggle,
+    isCorrect,
+    intentPanel,
+    setIntentPanel,
     question,
     cardAdds,
-    reviewAddOpen,
-    onToggleReviewAdd,
     onJump,
     onAddBasic,
     clozeBusy,
@@ -526,254 +524,347 @@ function DeepDiveSection(props: DeepDiveProps) {
     onFollowUp
   } = props
 
-  // 制卡落点是当前题 sourceBlockId（与「跳转原文」同一来源）；缺失时禁用制卡
+  // 制卡落点是当前题 sourceBlockId（与「原文」同一来源）；缺失时禁用制卡
   const canAddCard = typeof question.sourceBlockId === "number"
+  const hasSource = typeof question.sourceBlockId === "number"
+  const basicDone = Boolean(cardAdds?.basicBlockId)
+  const clozeDone = Boolean(cardAdds?.clozeBlockId)
+  const basicBusy = cardBusyId === question.id
+  const hasFollowUps = followUps.length > 0
+  const reviewMenuOpen = intentPanel === "review-menu"
+  const aiOpen = intentPanel === "ai"
+  const intentPanelRef = useRef<HTMLDivElement | null>(null)
+  const aiInputRef = useRef<HTMLInputElement | null>(null)
+  const showClozePreview =
+    clozePreview != null && clozePreview.questionId === question.id
 
-  return (
-    <div className="chapter-quiz-panel__deep">
+  /** 展开辅助面板后滚入视野，避免被 sticky「下一题」挡住且用户需手滑 */
+  useEffect(() => {
+    if (!reviewMenuOpen && !aiOpen) return
+    let cancelled = false
+    let raf1 = 0
+    let raf2 = 0
+    let timeoutId = 0
+
+    const scrollAndFocus = () => {
+      if (cancelled) return
+      const el = intentPanelRef.current
+      if (!el) return
+      try {
+        // center：把展开区滚到壳层中部，避开底部 sticky CTA 遮挡
+        el.scrollIntoView({ behavior: "smooth", block: "center" })
+      } catch (error) {
+        console.warn("[章末小测] 意图面板 scrollIntoView 失败:", error)
+      }
+      if (aiOpen && aiInputRef.current) {
+        try {
+          aiInputRef.current.focus({ preventScroll: true })
+        } catch {
+          try {
+            aiInputRef.current.focus()
+          } catch (error) {
+            console.warn("[章末小测] 追问输入框聚焦失败:", error)
+          }
+        }
+      }
+    }
+
+    // 等展开内容完成布局后再滚（双 rAF + 短延迟覆盖 sticky 重排）
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        scrollAndFocus()
+        timeoutId = window.setTimeout(scrollAndFocus, 80)
+      })
+    })
+
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(raf1)
+      window.cancelAnimationFrame(raf2)
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [reviewMenuOpen, aiOpen, showClozePreview])
+
+  const togglePanel = (panel: Exclude<IntentPanel, null>) => {
+    setIntentPanel((prev) => (prev === panel ? null : panel))
+  }
+
+  const handleAddBasicClick = () => {
+    if (!canAddCard || basicDone || basicBusy) return
+    onAddBasic()
+  }
+
+  const reviewSplit = (
+    <div
+      className={
+        "chapter-quiz-panel__intent-split" +
+        (reviewMenuOpen ? " is-open" : "") +
+        (!canAddCard ? " is-disabled" : "")
+      }
+    >
       <button
         type="button"
-        className="chapter-quiz-panel__deep-toggle"
-        aria-expanded={open}
-        title={CHAPTER_QUIZ_COPY.deepDiveTitle}
-        onClick={onToggle}
+        className={
+          "chapter-quiz-panel__intent-chip chapter-quiz-panel__intent-chip--main" +
+          (basicDone ? " is-done" : "")
+        }
+        disabled={!canAddCard || basicDone || basicBusy}
+        title={
+          !canAddCard
+            ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
+            : basicDone
+              ? CHAPTER_QUIZ_COPY.alreadyAdded
+              : CHAPTER_QUIZ_COPY.intentAddReviewTitle
+        }
+        onClick={handleAddBasicClick}
       >
-        <span className="chapter-quiz-panel__deep-chevron" aria-hidden>
-          {open ? "▾" : "▸"}
-        </span>
-        {CHAPTER_QUIZ_COPY.deepDive}
+        {basicDone
+          ? CHAPTER_QUIZ_COPY.alreadyAdded
+          : basicBusy
+            ? "…"
+            : CHAPTER_QUIZ_COPY.addToReview}
       </button>
+      <button
+        type="button"
+        className="chapter-quiz-panel__intent-chip chapter-quiz-panel__intent-chip--caret"
+        disabled={!canAddCard}
+        aria-expanded={reviewMenuOpen}
+        aria-label={CHAPTER_QUIZ_COPY.addToReviewTitle}
+        title={CHAPTER_QUIZ_COPY.addToReviewTitle}
+        onClick={() => togglePanel("review-menu")}
+      >
+        ▾
+      </button>
+    </div>
+  )
 
-      {open ? (
-        <div className="chapter-quiz-panel__deep-body">
-          <div className="chapter-quiz-panel__deep-block">
-            <div className="chapter-quiz__remember-label">
-              {CHAPTER_QUIZ_COPY.sourceBasis}
-            </div>
-            {typeof question.sourceBlockId === "number" ? (
-              <Button
-                variant="outline"
-                className="chapter-quiz__jump-btn"
-                title={CHAPTER_QUIZ_COPY.jumpToSourceTitle}
-                onClick={onJump}
-              >
-                {CHAPTER_QUIZ_COPY.jumpToSource}
-              </Button>
-            ) : (
-              <div className="chapter-quiz__hint">
-                {CHAPTER_QUIZ_COPY.jumpToSourceMissing}
-              </div>
-            )}
+  const askAiBtn = (
+    <button
+      type="button"
+      className={
+        "chapter-quiz-panel__intent-chip" + (aiOpen ? " is-active" : "")
+      }
+      aria-expanded={aiOpen}
+      title={CHAPTER_QUIZ_COPY.intentAskAiTitle}
+      onClick={() => togglePanel("ai")}
+    >
+      {CHAPTER_QUIZ_COPY.intentAskAi}
+      {hasFollowUps ? (
+        <span className="chapter-quiz-panel__intent-badge">
+          {followUps.length}
+        </span>
+      ) : null}
+    </button>
+  )
+
+  const sourceBtn = hasSource ? (
+    <button
+      type="button"
+      className="chapter-quiz-panel__intent-chip"
+      title={CHAPTER_QUIZ_COPY.jumpToSourceTitle}
+      onClick={onJump}
+    >
+      {CHAPTER_QUIZ_COPY.intentSource}
+    </button>
+  ) : null
+
+  // 错题偏理解（原文 / 问 AI 靠前）；对题偏捕获（加入复习靠前）
+  const orderedActions = isCorrect
+    ? [reviewSplit, askAiBtn, sourceBtn]
+    : [sourceBtn, askAiBtn, reviewSplit]
+
+  return (
+    <div className="chapter-quiz-panel__intent">
+      <div
+        className="chapter-quiz-panel__intent-bar"
+        role="toolbar"
+        aria-label={CHAPTER_QUIZ_COPY.intentBarLabel}
+      >
+        {orderedActions.map((node, i) =>
+          node ? <span key={i} className="chapter-quiz-panel__intent-item">{node}</span> : null
+        )}
+      </div>
+
+      {!canAddCard ? (
+        <div className="chapter-quiz__hint chapter-quiz-panel__intent-hint">
+          {CHAPTER_QUIZ_COPY.cardSourceMissing}
+        </div>
+      ) : null}
+
+      {reviewMenuOpen ? (
+        <div
+          ref={intentPanelRef}
+          className="chapter-quiz-panel__intent-panel chapter-quiz-panel__review-add"
+        >
+          <div className="chapter-quiz__remember-label">
+            {CHAPTER_QUIZ_COPY.rememberPrompt}
           </div>
-
-          <div className="chapter-quiz-panel__deep-block chapter-quiz__followup">
-            <div className="chapter-quiz__remember-label">
-              {CHAPTER_QUIZ_COPY.followUpLabel}
-            </div>
-            <div className="chapter-quiz__followup-scroll">
-              {followUps.length === 0 && !followUpBusy ? (
-                <div className="chapter-quiz__hint">
-                  对这道题有疑问可在此追问。
-                </div>
-              ) : null}
-              {followUps.map((turn, i) => (
-                <div
-                  key={i}
-                  className={
-                    turn.role === "user"
-                      ? "chapter-quiz__fu chapter-quiz__fu--user"
-                      : "chapter-quiz__fu chapter-quiz__fu--assistant"
-                  }
-                >
-                  {turn.role === "assistant"
-                    ? renderLightMarkdown(turn.content)
-                    : turn.content}
-                </div>
-              ))}
-              {followUpBusy ? (
-                <div className="chapter-quiz__hint">
-                  {CHAPTER_QUIZ_COPY.followUpBusy}
-                </div>
-              ) : null}
-              {followUpError ? (
-                <div className="chapter-quiz__status chapter-quiz__status--error">
-                  {followUpError}
-                </div>
-              ) : null}
-            </div>
-            <div className="chapter-quiz__followup-row">
-              <input
-                className="chapter-quiz__input"
-                value={followUpDraft}
-                placeholder={CHAPTER_QUIZ_COPY.followUpPlaceholder}
-                disabled={followUpBusy}
-                onChange={(e) => setFollowUpDraft(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault()
-                    onFollowUp()
-                  }
-                }}
-              />
-              <Button
-                variant="solid"
-                className={
-                  followUpBusy || !followUpDraft.trim()
-                    ? "ir-button--blocked"
-                    : undefined
-                }
-                onClick={() => {
-                  if (followUpBusy || !followUpDraft.trim()) return
-                  onFollowUp()
-                }}
-              >
-                {CHAPTER_QUIZ_COPY.followUpSend}
-              </Button>
-            </div>
-          </div>
-
-          <div className="chapter-quiz-panel__deep-block">
-            <button
-              type="button"
-              className="chapter-quiz-panel__deep-toggle chapter-quiz-panel__deep-toggle--nested"
-              aria-expanded={reviewAddOpen}
-              title={CHAPTER_QUIZ_COPY.addToReviewTitle}
-              onClick={onToggleReviewAdd}
+          <div className="chapter-quiz__actions">
+            <Button
+              variant={basicDone ? "outline" : "solid"}
+              className={
+                !canAddCard || basicDone || basicBusy
+                  ? "ir-button--blocked chapter-quiz__chip-btn"
+                  : "chapter-quiz__chip-btn"
+              }
+              title={
+                !canAddCard
+                  ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
+                  : CHAPTER_QUIZ_COPY.intentAddReviewTitle
+              }
+              onClick={handleAddBasicClick}
             >
-              <span className="chapter-quiz-panel__deep-chevron" aria-hidden>
-                {reviewAddOpen ? "▾" : "▸"}
-              </span>
-              {CHAPTER_QUIZ_COPY.addToReview}
-            </button>
-            {reviewAddOpen ? (
-              <div className="chapter-quiz-panel__review-add">
-                {!canAddCard ? (
-                  <div className="chapter-quiz__hint">
-                    {CHAPTER_QUIZ_COPY.cardSourceMissing}
-                  </div>
-                ) : null}
-                <div className="chapter-quiz__actions">
-                  <Button
-                    variant={cardAdds?.basicBlockId ? "outline" : "solid"}
-                    className={
-                      !canAddCard ||
-                      cardAdds?.basicBlockId ||
-                      cardBusyId === question.id
-                        ? "ir-button--blocked chapter-quiz__chip-btn"
-                        : "chapter-quiz__chip-btn"
-                    }
-                    title={
-                      !canAddCard
-                        ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
-                        : CHAPTER_QUIZ_COPY.rememberPrompt
-                    }
-                    onClick={() => {
-                      if (
-                        !canAddCard ||
-                        cardAdds?.basicBlockId ||
-                        cardBusyId === question.id
-                      ) {
-                        return
-                      }
-                      onAddBasic()
-                    }}
-                  >
-                    {cardAdds?.basicBlockId
-                      ? CHAPTER_QUIZ_COPY.alreadyAdded
-                      : CHAPTER_QUIZ_COPY.addBasic}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className={
-                      !canAddCard ||
-                      cardAdds?.clozeBlockId ||
-                      clozeBusy ||
-                      cardBusyId === question.id
-                        ? "ir-button--blocked chapter-quiz__chip-btn"
-                        : "chapter-quiz__chip-btn"
-                    }
-                    title={
-                      !canAddCard
-                        ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
-                        : CHAPTER_QUIZ_COPY.rememberPrompt
-                    }
-                    onClick={() => {
-                      if (
-                        !canAddCard ||
-                        cardAdds?.clozeBlockId ||
-                        clozeBusy ||
-                        cardBusyId === question.id
-                      ) {
-                        return
-                      }
-                      onStartCloze()
-                    }}
-                  >
-                    {cardAdds?.clozeBlockId
-                      ? CHAPTER_QUIZ_COPY.alreadyAdded
-                      : clozeBusy
-                        ? CHAPTER_QUIZ_COPY.clozeGenerating
-                        : CHAPTER_QUIZ_COPY.addCloze}
-                  </Button>
-                </div>
-                {clozePreview && clozePreview.questionId === question.id ? (
-                  <div className="chapter-quiz__cloze-preview">
-                    <div className="chapter-quiz__remember-label">
-                      {CHAPTER_QUIZ_COPY.clozePreviewTitle}
-                    </div>
-                    <label className="chapter-quiz__field">
-                      全文
-                      <textarea
-                        className="chapter-quiz__textarea"
-                        value={clozePreview.text}
-                        rows={3}
-                        onChange={(e) =>
-                          setClozePreview({
-                            ...clozePreview,
-                            text: e.currentTarget.value
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="chapter-quiz__field">
-                      挖空
-                      <input
-                        className="chapter-quiz__input"
-                        value={clozePreview.clozeText}
-                        onChange={(e) =>
-                          setClozePreview({
-                            ...clozePreview,
-                            clozeText: e.currentTarget.value
-                          })
-                        }
-                      />
-                    </label>
-                    <div className="chapter-quiz__actions">
-                      <Button
-                        variant="outline"
-                        onClick={() => setClozePreview(null)}
-                      >
-                        {CHAPTER_QUIZ_COPY.clozeCancel}
-                      </Button>
-                      <Button
-                        variant="solid"
-                        className={
-                          cardBusyId === question.id
-                            ? "ir-button--blocked"
-                            : undefined
-                        }
-                        onClick={() => {
-                          if (cardBusyId === question.id) return
-                          onConfirmCloze()
-                        }}
-                      >
-                        {CHAPTER_QUIZ_COPY.clozeConfirm}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
+              {basicDone
+                ? CHAPTER_QUIZ_COPY.alreadyAdded
+                : CHAPTER_QUIZ_COPY.addBasic}
+            </Button>
+            <Button
+              variant="outline"
+              className={
+                !canAddCard || clozeDone || clozeBusy || basicBusy
+                  ? "ir-button--blocked chapter-quiz__chip-btn"
+                  : "chapter-quiz__chip-btn"
+              }
+              title={
+                !canAddCard
+                  ? CHAPTER_QUIZ_COPY.cardSourceMissingTitle
+                  : CHAPTER_QUIZ_COPY.rememberPrompt
+              }
+              onClick={() => {
+                if (!canAddCard || clozeDone || clozeBusy || basicBusy) return
+                onStartCloze()
+              }}
+            >
+              {clozeDone
+                ? CHAPTER_QUIZ_COPY.alreadyAdded
+                : clozeBusy
+                  ? CHAPTER_QUIZ_COPY.clozeGenerating
+                  : CHAPTER_QUIZ_COPY.addCloze}
+            </Button>
+          </div>
+          {clozePreview && clozePreview.questionId === question.id ? (
+            <div className="chapter-quiz__cloze-preview">
+              <div className="chapter-quiz__remember-label">
+                {CHAPTER_QUIZ_COPY.clozePreviewTitle}
+              </div>
+              <label className="chapter-quiz__field">
+                全文
+                <textarea
+                  className="chapter-quiz__textarea"
+                  value={clozePreview.text}
+                  rows={3}
+                  onChange={(e) =>
+                    setClozePreview({
+                      ...clozePreview,
+                      text: e.currentTarget.value
+                    })
+                  }
+                />
+              </label>
+              <label className="chapter-quiz__field">
+                挖空
+                <input
+                  className="chapter-quiz__input"
+                  value={clozePreview.clozeText}
+                  onChange={(e) =>
+                    setClozePreview({
+                      ...clozePreview,
+                      clozeText: e.currentTarget.value
+                    })
+                  }
+                />
+              </label>
+              <div className="chapter-quiz__actions">
+                <Button
+                  variant="outline"
+                  onClick={() => setClozePreview(null)}
+                >
+                  {CHAPTER_QUIZ_COPY.clozeCancel}
+                </Button>
+                <Button
+                  variant="solid"
+                  className={basicBusy ? "ir-button--blocked" : undefined}
+                  onClick={() => {
+                    if (basicBusy) return
+                    onConfirmCloze()
+                  }}
+                >
+                  {CHAPTER_QUIZ_COPY.clozeConfirm}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {aiOpen ? (
+        <div
+          ref={intentPanelRef}
+          className="chapter-quiz-panel__intent-panel chapter-quiz__followup"
+        >
+          <div className="chapter-quiz__remember-label">
+            {CHAPTER_QUIZ_COPY.followUpLabel}
+          </div>
+          <div className="chapter-quiz__followup-scroll">
+            {followUps.length === 0 && !followUpBusy ? (
+              <div className="chapter-quiz__hint">
+                对这道题有疑问可在此追问。
               </div>
             ) : null}
+            {followUps.map((turn, i) => (
+              <div
+                key={i}
+                className={
+                  turn.role === "user"
+                    ? "chapter-quiz__fu chapter-quiz__fu--user"
+                    : "chapter-quiz__fu chapter-quiz__fu--assistant"
+                }
+              >
+                {turn.role === "assistant"
+                  ? renderLightMarkdown(turn.content)
+                  : turn.content}
+              </div>
+            ))}
+            {followUpBusy ? (
+              <div className="chapter-quiz__hint">
+                {CHAPTER_QUIZ_COPY.followUpBusy}
+              </div>
+            ) : null}
+            {followUpError ? (
+              <div className="chapter-quiz__status chapter-quiz__status--error">
+                {followUpError}
+              </div>
+            ) : null}
+          </div>
+          <div className="chapter-quiz__followup-row">
+            <input
+              ref={aiInputRef}
+              className="chapter-quiz__input"
+              value={followUpDraft}
+              placeholder={CHAPTER_QUIZ_COPY.followUpPlaceholder}
+              disabled={followUpBusy}
+              onChange={(e) => setFollowUpDraft(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  onFollowUp()
+                }
+              }}
+            />
+            <Button
+              variant="solid"
+              className={
+                followUpBusy || !followUpDraft.trim()
+                  ? "ir-button--blocked"
+                  : undefined
+              }
+              onClick={() => {
+                if (followUpBusy || !followUpDraft.trim()) return
+                onFollowUp()
+              }}
+            >
+              {CHAPTER_QUIZ_COPY.followUpSend}
+            </Button>
           </div>
         </div>
       ) : null}

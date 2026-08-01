@@ -31,6 +31,7 @@ import {
   createChapterQuizPanelNavDetail,
   dispatchChapterQuizPanelNav
 } from "./chapterQuizLive"
+import { findPanelIdByBlockView } from "../registry/panelTreeUtils"
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -183,25 +184,31 @@ export const CHAPTER_QUIZ_COPY = {
   compactInProgress: "作答进行中；完整选项与讲解仅在侧栏面板显示。",
   rememberHint: "可选",
   followUpLabel: "追问 AI",
+  /** @deprecated 方案 A 起改用扁平意图条；保留键以免外部引用断裂 */
   deepDive: "深入理解",
   deepDiveTitle: "展开原文、追问与加入复习（可选）",
   addToReview: "加入复习",
-  addToReviewTitle: "展开简答卡 / 填空卡选项",
+  addToReviewTitle: "更多制卡选项（简答 / 填空）",
+  intentBarLabel: "本题辅助操作",
+  intentAddReviewTitle: "一键加入简答卡；点 ▾ 可选填空卡",
+  intentAskAi: "问 AI",
+  intentAskAiTitle: "对本题追问 AI",
+  intentSource: "原文",
   reviewWrong: "回看错题",
-  reviewWrongTitle: "只读回看本轮错题，可展开深入理解",
+  reviewWrongTitle: "只读回看本轮错题，可加入复习或追问",
   backToSummary: "返回总结",
   wrongCountLabel: (n: number) => (n === 0 ? "全部正确" : `${n} 道错题`),
   reviewModeLabel: "错题回看",
   panelMissingId: "无法打开小测：缺少有效的测验块 ID",
   panelLoadError: "无法加载小测状态",
   jumpToSource: "跳转原文",
-  jumpToSourceTitle: "在渐进阅读正文中定位本题出处",
-  jumpToSourceFail: "无法在阅读区定位出处（块可能未展开或不在当前篇）",
+  jumpToSourceTitle: "在侧栏打开本题出处块（不改动渐进阅读面板）",
+  jumpToSourceFail: "无法打开出处侧栏",
   jumpToSourceMissing: "本题未标注出处块",
-  jumpToSourceOk: "已在阅读区定位出处",
+  jumpToSourceOk: "已在侧栏打开原文",
   sourceBasis: "原文依据",
   cardSourceMissing: "本题未标注原文出处块，无法制卡",
-  cardSourceMissingTitle: "制卡需要有效的原文出处块（与「跳转原文」一致）"
+  cardSourceMissingTitle: "制卡需要有效的原文出处块（与「原文」一致）"
 } as const
 
 /** 小测结束后请求 IR 会话推进下一篇（完成后续停留模式） */
@@ -1377,8 +1384,43 @@ export function openChapterQuizInSidePanel(options: {
 }
 
 /**
- * 在渐进阅读正文内定位出处块（优先）；找不到再降级为左栏 goTo。
- * IR 会话通过 CHAPTER_QUIZ_LOCATE_EVENT 认领并 scheduleLocateBlock。
+ * 上次为「原文」打开的侧栏 panel id。
+ * 换题时复用该侧栏 goTo，避免层层叠新面板；不触碰左侧 IR 会话。
+ */
+let quizSourceSidePanelId: string | null = null
+
+function isViewPanelAlive(panelId: string): boolean {
+  if (!panelId) return false
+  try {
+    if (typeof orca?.nav?.findViewPanel === "function" && orca.state?.panels) {
+      return orca.nav.findViewPanel(panelId, orca.state.panels) != null
+    }
+  } catch {
+    // fall through
+  }
+  const flat = getPanelsFlat() as Record<string, PanelNavEntryWithView | undefined>
+  return flat[panelId] != null
+}
+
+function focusPanelSoon(panelId: string): void {
+  window.setTimeout(() => {
+    try {
+      orca.nav.switchFocusTo(panelId)
+    } catch (error) {
+      console.warn("[章末小测] 聚焦出处侧栏失败:", error)
+    }
+  }, 100)
+}
+
+/**
+ * 在**侧栏**打开出处块（block 视图），不改写左侧渐进阅读 / IR 会话。
+ *
+ * 优先级：
+ * 1. 已有 panel 正显示该 sourceBlockId → 聚焦
+ * 2. 复用本会话缓存的出处侧栏 → goTo 新块
+ * 3. 相对答题 Custom Panel `addTo(..., "right")` 新建侧栏
+ *
+ * `CHAPTER_QUIZ_LOCATE_EVENT` 仍保留给其它调用方；本入口不再以 IR 内滚动为主路径。
  */
 export function jumpToQuizSourceBlock(options: {
   sourceBlockId: number
@@ -1397,69 +1439,81 @@ export function jumpToQuizSourceBlock(options: {
     return false
   }
 
-  const leftPanelId = resolveLeftPanelId(currentPanelId)
+  const viewArgs = { blockId: sourceBlockId }
 
-  // 1) 先发事件：IR 会话内定位（不离开 ir-session）
-  const detail: ChapterQuizLocateDetail = {
-    sourceBlockId,
-    topicBlockId: options.topicBlockId,
-    claimed: false
-  }
+  // 1) 已有 panel 显示该出处块
   try {
-    window.dispatchEvent(
-      new CustomEvent(CHAPTER_QUIZ_LOCATE_EVENT, { detail })
+    const existingOnBlock = findPanelIdByBlockView(
+      orca.state.panels as Parameters<typeof findPanelIdByBlockView>[0],
+      sourceBlockId
     )
-  } catch (error) {
-    console.warn("[章末小测] 派发 locate 事件失败:", error)
-  }
-
-  if (detail.claimed) {
-    try {
-      orca.nav.switchFocusTo(leftPanelId)
-    } catch (error) {
-      console.warn("[章末小测] 聚焦阅读面板失败:", error)
-    }
-    return true
-  }
-
-  // 2) 同步 DOM 兜底：任意可见 IR 滚动容器
-  const roots = document.querySelectorAll<HTMLElement>(
-    ".ir-reading__scroll, .ir-reading"
-  )
-  for (let i = 0; i < roots.length; i++) {
-    const root = roots[i]
-    const target = root.querySelector(
-      `.orca-block[data-id="${sourceBlockId}"], [data-id="${sourceBlockId}"]`
-    )
-    if (!(target instanceof HTMLElement)) continue
-    try {
-      target.scrollIntoView({ behavior: "smooth", block: "center" })
-      target.classList.add("ir-reading__locate-highlight")
+    if (existingOnBlock && existingOnBlock !== currentPanelId) {
       try {
-        orca.nav.switchFocusTo(leftPanelId)
+        orca.nav.goTo("block", viewArgs, existingOnBlock)
       } catch (error) {
-        console.warn("[章末小测] DOM 定位后聚焦阅读面板失败:", error)
+        console.warn("[章末小测] 刷新已有出处 panel 失败，仍尝试聚焦:", error)
       }
+      quizSourceSidePanelId = existingOnBlock
+      focusPanelSoon(existingOnBlock)
+      orca.notify("success", CHAPTER_QUIZ_COPY.jumpToSourceOk, {
+        title: "章末小测"
+      })
+      return true
+    }
+  } catch (error) {
+    console.warn("[章末小测] 查找已有出处 panel 失败:", error)
+  }
+
+  // 2) 复用本功能打开过的侧栏（换题只 goTo，不叠面板）
+  if (
+    quizSourceSidePanelId &&
+    quizSourceSidePanelId !== currentPanelId &&
+    isViewPanelAlive(quizSourceSidePanelId)
+  ) {
+    try {
+      orca.nav.goTo("block", viewArgs, quizSourceSidePanelId)
+      focusPanelSoon(quizSourceSidePanelId)
       orca.notify("success", CHAPTER_QUIZ_COPY.jumpToSourceOk, {
         title: "章末小测"
       })
       return true
     } catch (error) {
-      console.warn("[章末小测] DOM 定位滚动失败:", error)
+      console.warn("[章末小测] 复用出处侧栏失败，将新建:", error)
+      quizSourceSidePanelId = null
     }
   }
 
-  // 3) 最后降级：非 IR 场景（如 GOTIT 普通页）才 goTo 块视图
+  // 3) 相对答题面板向右新建 block 侧栏（不碰左侧 IR）
   try {
-    orca.nav.goTo("block", { blockId: sourceBlockId }, leftPanelId)
+    const newPanelId = orca.nav.addTo(currentPanelId, "right", {
+      view: "block",
+      viewArgs,
+      viewState: {}
+    })
+    if (!newPanelId) {
+      orca.notify("error", CHAPTER_QUIZ_COPY.jumpToSourceFail, {
+        title: "章末小测"
+      })
+      return false
+    }
+    quizSourceSidePanelId = newPanelId
+    focusPanelSoon(newPanelId)
+    orca.notify("success", CHAPTER_QUIZ_COPY.jumpToSourceOk, {
+      title: "章末小测"
+    })
     return true
   } catch (error) {
-    console.error("[章末小测] 跳转原文失败:", error)
+    console.error("[章末小测] 打开出处侧栏失败:", error)
     orca.notify("error", CHAPTER_QUIZ_COPY.jumpToSourceFail, {
       title: "章末小测"
     })
     return false
   }
+}
+
+/** 测试用：重置出处侧栏缓存 */
+export function resetQuizSourceSidePanelCacheForTests(): void {
+  quizSourceSidePanelId = null
 }
 
 // ── Write flashcards from a quiz question ──────────────────
