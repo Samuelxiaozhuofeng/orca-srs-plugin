@@ -279,15 +279,26 @@ function ServiceSettingsForm(props: {
               <option key={toolType} value={toolType}>
                 {toolType === "auto"
                   ? "自动（仅 grok-4.5 附带 web_search）"
-                  : toolType}
+                  : toolType === "web_search"
+                    ? "web_search（Grok 扁平）"
+                    : toolType === "google_search"
+                      ? "google_search（Gemini grounding）"
+                      : toolType}
               </option>
             ))}
           </select>
           <p className="ai-service-settings__hint">
-            「自动」只认 model id 含 grok-4.5，新版本号一发布即失效。你的网关支持哪种
-            tool，比这里的字符串匹配更清楚——需要时直接选定形态，它会原样写进请求体
-            <code className="ai-service-settings__code">tools</code>
-            ；上游不支持会返回可见的 HTTP 错误，不静默降级。
+            「自动」只认 model id 含 grok-4.5 并挂扁平{" "}
+            <code className="ai-service-settings__code">web_search</code>
+            。Gemini 请显式选{" "}
+            <code className="ai-service-settings__code">google_search</code>
+            （写入{" "}
+            <code className="ai-service-settings__code">
+              {'{ type: "google_search", google_search: {} }'}
+            </code>
+            ）；Grok 继续用{" "}
+            <code className="ai-service-settings__code">web_search</code>
+            。上游不支持会返回可见的 HTTP 错误，不静默降级。
           </p>
         </label>
 

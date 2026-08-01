@@ -240,7 +240,7 @@ makeAICard / interactiveAICard（别名）
 | 同上 | `apiUrl` | OpenAI chat/completions | 须 OpenAI 兼容；**拒绝** Ollama 原生 `/api/chat` |
 | 同上 | `model` | `gpt-3.5-turbo` | 可「拉取模型」自 `/models` 列表选择 |
 | 同上 | `enableNativeWebSearch` | `false` | 联网 tool 总开关 |
-| 同上 | `webSearchToolType` | `auto` | `auto` = 按 model 推荐（仅 `grok-4.5`，沿用旧行为）；`web_search` / `google_search` 为显式指定，**不看 model id**。此前硬编码字符串匹配，新版本号一发布即失效且覆盖不到其它厂商形态 |
+| 同上 | `webSearchToolType` | `auto` | `auto` = 仅 model id 含 `grok-4.5` 时挂扁平 `{ type: "web_search" }`；`web_search` = 同上扁平形态（xAI Grok）；`google_search` = `{ type: "google_search", google_search: {} }`（Gemini grounding，ROUTER9 实测扁平形态不稳定）。显式形态**不看 model id** |
 | 同上 | `maxOutputTokens` | `16384` | 单次响应**输出**上限（与上下文窗口无关；百万上下文的模型输出上限通常仍是 8k~64k，填超会被网关 400）。推理模型把 reasoning token 计入 completion_tokens，旧的写死 2000 会被思考吃光 |
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
 | plugin **data** `ai.quickCard` | `cardLanguage` / `customInstruction` / `model` | `auto` / `""` / `""` | 快捷制卡偏好；面板内独立分区 |
@@ -250,7 +250,10 @@ makeAICard / interactiveAICard（别名）
 - hydrate：插件 load + 打开面板；旧 settings 键自动迁移到 setData；缺省字段归一为默认（旧数据无联网/强度键时安全）
 - 面板：`AIServiceSettingsDialog`（本地表单 state + 测连 + 拉模型 + 联网开关 + 思考强度）
 - 请求：`buildChatCompletionsBody` 用于制卡 / 块解释 / 快捷交互 / 连接测试
-  - 原生联网：仅 `isNativeWebSearchSupportedModel`（model id 含 `grok-4.5`）时附带 `web_search`；Gemini/GPT/其它 Grok 版本不写 tools，走普通请求
+  - 原生联网（`resolveWebSearchTool` / `materializeWebSearchTool`）：
+    - `auto`：仅 `isNativeWebSearchSupportedModel`（model id 含 `grok-4.5`）时附带扁平 `web_search`；Gemini/GPT/其它 Grok 版本不写 tools
+    - 显式 `web_search`：始终 `{ type: "web_search" }`（**不**加嵌套字段，保护 Grok）
+    - 显式 `google_search`：始终 `{ type: "google_search", google_search: {} }`（Gemini grounding；仅扁平 `type` 在 ROUTER9 上不可靠）
   - 连接测试：`allowWebSearch: false`（不触发搜索计费/延迟），仍会带上用户设定的 `reasoning_effort`
   - 不支持该 tool 或 `reasoning_effort` 的上游会返回可见 HTTP 错误，不静默降级
   - 制卡仍做源文本接地校验：开启联网后若答案依赖源外内容，校验可能失败
@@ -313,7 +316,7 @@ makeAICard / interactiveAICard（别名）
 - 生成：`temperature: 0.2`，约 40s 超时，可取消
 - 连接测试：约 15s 超时；保留截断后的纯文本错误正文
 - 源文本在 prompt 中标为 untrusted data
-- 可选扩展字段（设置面板）：`tools`（web_search）、`reasoning_effort`
+- 可选扩展字段（设置面板）：`tools`（`web_search` 或嵌套 `google_search`）、`reasoning_effort`
 - 请求体始终 `stream: false`（避免部分网关按模型默认开流）
 - 成功体解析：`parseJsonResponseText` 支持纯 JSON、JSON 后夹带、SSE `data:`、NDJSON 首行；仍失败时 code=`RESPONSE_PARSE_ERROR`
 

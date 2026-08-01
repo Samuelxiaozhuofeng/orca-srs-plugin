@@ -2,19 +2,23 @@ import { describe, expect, it } from "vitest"
 import {
   buildChatCompletionsBody,
   isNativeWebSearchSupportedModel,
+  materializeWebSearchTool,
+  NATIVE_GOOGLE_SEARCH_TOOL,
   NATIVE_WEB_SEARCH_TOOL,
   resolveReasoningEffort,
+  resolveWebSearchTool,
   shouldAttachNativeWebSearch
 } from "./aiChatRequest"
 import type { AISettings } from "./aiSettingsSchema"
 
 const baseSettings: Pick<
   AISettings,
-  "model" | "enableNativeWebSearch" | "reasoningEffort"
+  "model" | "enableNativeWebSearch" | "reasoningEffort" | "webSearchToolType"
 > = {
   model: "grok-4.5",
   enableNativeWebSearch: false,
-  reasoningEffort: "default"
+  reasoningEffort: "default",
+  webSearchToolType: "auto"
 }
 
 describe("aiChatRequest", () => {
@@ -47,6 +51,7 @@ describe("aiChatRequest", () => {
   it("does not attach web_search for non-grok-4.5 even when setting is on", () => {
     for (const model of [
       "gemini-3.6-flash",
+      "cpa/gemini-3.6-flash",
       "gpt-4.1",
       "grok-3",
       "grok-4",
@@ -56,7 +61,8 @@ describe("aiChatRequest", () => {
         settings: {
           model,
           enableNativeWebSearch: true,
-          reasoningEffort: "default"
+          reasoningEffort: "default",
+          webSearchToolType: "auto"
         },
         messages: [{ role: "user", content: "Hi" }]
       })
@@ -64,7 +70,8 @@ describe("aiChatRequest", () => {
       expect(
         shouldAttachNativeWebSearch({
           model,
-          enableNativeWebSearch: true
+          enableNativeWebSearch: true,
+          webSearchToolType: "auto"
         })
       ).toBe(false)
     }
@@ -78,11 +85,70 @@ describe("aiChatRequest", () => {
       settings: {
         model: routed,
         enableNativeWebSearch: true,
-        reasoningEffort: "default"
+        reasoningEffort: "default",
+        webSearchToolType: "auto"
       },
       messages: [{ role: "user", content: "Hi" }]
     })
     expect(body.tools).toEqual([{ type: "web_search" }])
+  })
+
+  it("materializes flat web_search for Grok and nested google_search for Gemini", () => {
+    expect(materializeWebSearchTool("web_search")).toEqual({
+      type: "web_search"
+    })
+    expect(materializeWebSearchTool("google_search")).toEqual({
+      type: "google_search",
+      google_search: {}
+    })
+    expect(materializeWebSearchTool("google_search")).toEqual({
+      ...NATIVE_GOOGLE_SEARCH_TOOL
+    })
+  })
+
+  it("explicit web_search stays flat and ignores model id", () => {
+    for (const model of ["gpt-4.1", "cpa/gemini-3.6-flash", "grok-4.5"]) {
+      const tool = resolveWebSearchTool({
+        model,
+        enableNativeWebSearch: true,
+        webSearchToolType: "web_search"
+      })
+      expect(tool).toEqual({ type: "web_search" })
+      expect(tool).not.toHaveProperty("google_search")
+    }
+  })
+
+  it("explicit google_search attaches nested grounding tool regardless of model", () => {
+    for (const model of [
+      "cpa/gemini-3.6-flash",
+      "gemini-3.6-flash",
+      "gpt-4.1",
+      "grok-4.5"
+    ]) {
+      const body = buildChatCompletionsBody({
+        settings: {
+          model,
+          enableNativeWebSearch: true,
+          reasoningEffort: "default",
+          webSearchToolType: "google_search"
+        },
+        messages: [{ role: "user", content: "news?" }]
+      })
+      expect(body.tools).toEqual([
+        { type: "google_search", google_search: {} }
+      ])
+    }
+  })
+
+  it("does not mutate shared google_search empty object across calls", () => {
+    const a = materializeWebSearchTool("google_search")
+    const b = materializeWebSearchTool("google_search")
+    expect(a).toEqual(b)
+    expect(a).not.toBe(b)
+    if (a.type === "google_search" && b.type === "google_search") {
+      expect(a.google_search).not.toBe(b.google_search)
+      expect(a.google_search).not.toBe(NATIVE_GOOGLE_SEARCH_TOOL.google_search)
+    }
   })
 
   it("allowWebSearch=false skips tools even when setting is on", () => {
@@ -98,6 +164,16 @@ describe("aiChatRequest", () => {
       allowWebSearch: false
     })
     expect(body).not.toHaveProperty("tools")
+    expect(
+      resolveWebSearchTool(
+        {
+          model: "cpa/gemini-3.6-flash",
+          enableNativeWebSearch: true,
+          webSearchToolType: "google_search"
+        },
+        false
+      )
+    ).toBeNull()
   })
 
   it("writes reasoning_effort for low/medium/high only", () => {
@@ -118,7 +194,8 @@ describe("aiChatRequest", () => {
       settings: {
         model: "grok-4.5",
         enableNativeWebSearch: true,
-        reasoningEffort: "high"
+        reasoningEffort: "high",
+        webSearchToolType: "auto"
       },
       messages: [
         { role: "system", content: "sys" },
