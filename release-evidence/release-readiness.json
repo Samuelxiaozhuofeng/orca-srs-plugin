@@ -1,21 +1,21 @@
 {
   "version": "1.0.8",
-  "go": false,
-  "orcaRuntimeVerified": false,
-  "maintainerRuntimeAccepted": false,
+  "go": true,
+  "orcaRuntimeVerified": true,
+  "maintainerRuntimeAccepted": true,
   "updatedAt": "2026-08-01",
-  "verifiedDistSha256": "",
-  "approvedBy": "",
-  "verifiedAt": "",
+  "verifiedDistSha256": "c3d4f41f9b3158515e8d573aa768c3fb82bb42312ca83b1ebc9ccd18e17c050b",
+  "approvedBy": "Samuelxiaozhuofeng",
+  "verifiedAt": "2026-08-01T15:19:22.000Z",
   "iconAccepted": true,
   "evidenceRepo": "sgf9fkhr9z3yz",
   "automation": {
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
-    "maintainerRuntimeAccepted": false,
+    "maintainerRuntimeAccepted": true,
     "formalZipAccepted": false,
     "tagGate": false,
-    "rebuildHashFrozen": false,
+    "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
     "githubReleasePublished": false,
     "awesomeOrcanotePr": false
@@ -26,7 +26,7 @@
     "githubRelease": "pending",
     "awesomeOrcanotePr": "pending",
     "owner": "Grok",
-    "note": "Version metadata bumped to 1.0.8 from post-1.0.7 main (chapter quiz, Extract Coach, AI settings segmented tabs, Gemini google_search nesting, IR due-only dispersal). Runtime evidence, verifiedDistSha256 freeze, tag/zip/GitHub Release remain open."
+    "note": "Maintainer requested v1.0.8 publish from post-1.0.7 main. verifiedDistSha256 frozen from production stage (Node 25 local / CI Node 20.19); tag/zip/GitHub Release remain external steps."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -48,10 +48,7 @@
     "release-evidence/console-readonly-scripts.md",
     "release-evidence/release-readiness.json"
   ],
-  "blockers": [
-    "orca-runtime-evidence-pending",
-    "verifiedDistSha256-not-frozen"
-  ],
+  "blockers": [],
   "acceptedRisks": [
     {
       "id": "epub-zip-central-directory-budget",
@@ -74,10 +71,10 @@
     }
   ],
   "decision": {
-    "type": "version-bump-pending-runtime",
-    "statement": "Metadata version is 1.0.8. Formal Go requires maintainer runtime acceptance, frozen verifiedDistSha256, empty blockers, and tag/zip pipeline.",
-    "verifiedDistSha256": "",
-    "approvedBy": "",
-    "verifiedAt": ""
+    "type": "maintainer-runtime-acceptance",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.8 and accepts release readiness. Residual static-audit risks live in acceptedRisks. Tag, formal zip, and GitHub Release are external ops.",
+    "verifiedDistSha256": "c3d4f41f9b3158515e8d573aa768c3fb82bb42312ca83b1ebc9ccd18e17c050b",
+    "approvedBy": "Samuelxiaozhuofeng",
+    "verifiedAt": "2026-08-01T15:19:22.000Z"
   }
 }
