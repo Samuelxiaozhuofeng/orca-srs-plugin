@@ -891,6 +891,9 @@ export default function IRSessionShell({
 
     const onLocate = (event: Event) => {
       const detail = (event as CustomEvent<ChapterQuizLocateDetail>).detail
+      // 定向请求：只响应指定给自己的定位；无 targetPanelId 时保持广播兼容
+      // （effect 空依赖闭包捕获首次 panelId；会话面板生命周期内 panelId 不变）
+      if (detail?.targetPanelId && detail.targetPanelId !== panelId) return
       const sourceBlockId = detail?.sourceBlockId
       if (
         typeof sourceBlockId !== "number" ||
@@ -918,8 +921,8 @@ export default function IRSessionShell({
           })
         },
         onMiss: () => {
-          // 未 claim 失败路径：让 jumpToQuizSourceBlock 的 DOM/goTo 兜底
-          // 这里已 claimed，需可见反馈
+          // 已 claimed（本面板接管定位），jumpToQuizSourceBlock 不再兜底；
+          // 块不在当前篇/未展开时给出可见反馈
           console.warn(
             `[IR Session] 章末小测定位未找到块 #${sourceBlockId}（可能未展开或不在当前篇）`
           )

@@ -225,6 +225,8 @@ export type ChapterQuizAdvanceDetail = {
 export type ChapterQuizLocateDetail = {
   sourceBlockId: number
   topicBlockId?: number
+  /** 定向到指定 IR 会话面板；缺省时所有监听该事件的 IR 会话面板都会尝试定位 */
+  targetPanelId?: string
   /** 同步：IR 会话监听到并开始定位后置 true */
   claimed?: boolean
 }
@@ -1412,15 +1414,61 @@ function focusPanelSoon(panelId: string): void {
   }, 100)
 }
 
+/** 面板树节点（仅识别 IR 会话面板所需的字段） */
+type QuizPanelTreeNodeLite = {
+  id?: string
+  view?: string
+  viewArgs?: Record<string, unknown>
+  children?: QuizPanelTreeNodeLite[]
+}
+
 /**
- * 在**侧栏**打开出处块（block 视图），不改写左侧渐进阅读 / IR 会话。
+ * 在面板树中查找 srs.ir-session 阅读面板：
+ * 主视图为 `view === "block"` 且其 `viewArgs.blockId` 对应的块是
+ * `_repr.type === "srs.ir-session"` 的会话虚拟块。quiz 面板位于右侧分栏时，
+ * 该面板即左侧渐进阅读面板。不匹配其它 block 视图（普通笔记页/出处侧栏）。
+ *
+ * 边界：会话块尚未进入 `orca.state.blocks`（加载间隙）时无法判定 `_repr`，
+ * 返回 null → 走侧栏路径（安全降级，下次点击可再命中）。
+ */
+function findIRSessionViewPanelId(): string | null {
+  const root = orca.state?.panels as QuizPanelTreeNodeLite | undefined
+  if (!root) return null
+  const stack: QuizPanelTreeNodeLite[] = [root]
+  while (stack.length > 0) {
+    const node = stack.pop()!
+    if (node.view === "block" && typeof node.id === "string") {
+      const blockId = node.viewArgs?.blockId
+      if (
+        typeof blockId === "number" &&
+        Number.isFinite(blockId) &&
+        blockId > 0
+      ) {
+        const block = (orca.state?.blocks as
+          | Record<number, BlockWithRepr>
+          | undefined)?.[blockId]
+        if (block?._repr?.type === "srs.ir-session") return node.id
+      }
+    }
+    for (const child of node.children ?? []) stack.push(child)
+  }
+  return null
+}
+
+/**
+ * 打开出处原文。
  *
  * 优先级：
+ * 0. 左侧存在 srs.ir-session 阅读面板 → 请求该面板在正文内定位
+ *    （scroll + 高亮，`CHAPTER_QUIZ_LOCATE_EVENT`），**不**新增侧栏、
+ *    **不** goTo 改写阅读面板视图
  * 1. 已有 panel 正显示该 sourceBlockId → 聚焦
  * 2. 复用本会话缓存的出处侧栏 → goTo 新块
  * 3. 相对答题 Custom Panel `addTo(..., "right")` 新建侧栏
  *
- * `CHAPTER_QUIZ_LOCATE_EVENT` 仍保留给其它调用方；本入口不再以 IR 内滚动为主路径。
+ * 只有左侧没有 IR 会话阅读面板时才走 1-3（开/复用右侧侧栏），
+ * 避免左侧有阅读面板时还层层叠出新面板（出现三块面板）。
+ * `CHAPTER_QUIZ_LOCATE_EVENT` 同时保留给其它调用方。
  */
 export function jumpToQuizSourceBlock(options: {
   sourceBlockId: number
@@ -1440,6 +1488,28 @@ export function jumpToQuizSourceBlock(options: {
   }
 
   const viewArgs = { blockId: sourceBlockId }
+
+  // 0) 左侧已有 IR 会话阅读面板 → 在其正文内定位，不新增/复用侧栏
+  const irSessionPanelId = findIRSessionViewPanelId()
+  if (irSessionPanelId) {
+    const locateDetail: ChapterQuizLocateDetail = {
+      sourceBlockId,
+      topicBlockId: options.topicBlockId,
+      targetPanelId: irSessionPanelId
+    }
+    try {
+      window.dispatchEvent(
+        new CustomEvent(CHAPTER_QUIZ_LOCATE_EVENT, { detail: locateDetail })
+      )
+    } catch (error) {
+      console.warn("[章末小测] 请求 IR 会话定位失败，将走侧栏路径:", error)
+    }
+    if (locateDetail.claimed) {
+      // IR 会话面板已接管定位：成功/失败由该面板异步反馈
+      return true
+    }
+    // 面板存在但未响应（理论边界）→ 落到侧栏路径
+  }
 
   // 1) 已有 panel 显示该出处块
   try {
