@@ -150,6 +150,11 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
     <div className="chapter-quiz-panel">
       <div className="chapter-quiz-panel__shell">
         <header className="chapter-quiz-panel__header">
+          <div className="chapter-quiz-panel__header-top">
+            <span className="srs-card-badge srs-card-badge--reading">
+              {isReviewingWrong ? "错题回看" : "章末小测"}
+            </span>
+          </div>
           <div className="chapter-quiz-panel__header-main">
             <h1 className="chapter-quiz-panel__title">
               {isReviewingWrong
@@ -173,10 +178,23 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
               </span>
             ) : null}
           </div>
+          {questions.length > 0 && (repr.phase === "quiz" || isReviewingWrong) ? (
+            <div className="chapter-quiz-panel__progress-bar-track">
+              <div
+                className="chapter-quiz-panel__progress-bar-fill"
+                style={{
+                  width: `${
+                    isReviewingWrong
+                      ? ((Math.min(wrongCursor + 1, wrongQuestions.length)) / wrongQuestions.length) * 100
+                      : ((index + 1) / questions.length) * 100
+                  }%`
+                }}
+              />
+            </div>
+          ) : null}
         </header>
 
-        <div className="chapter-quiz-panel__body">
-          {repr.phase === "generating" ? (
+        {repr.phase === "generating" ? (
             <section className="chapter-quiz-panel__section">
               <div className="chapter-quiz__status">
                 {CHAPTER_QUIZ_COPY.generating}
@@ -395,7 +413,20 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
           ) : null}
 
           {repr.phase === "done" && !isReviewingWrong ? (
-            <section className="chapter-quiz-panel__section">
+            <section className="chapter-quiz-panel__section chapter-quiz-panel__done-card">
+              <div className="chapter-quiz-panel__done-hero">
+                <div className="chapter-quiz-panel__done-score">
+                  <span className="chapter-quiz-panel__done-score-num">
+                    {correctCount}
+                  </span>
+                  <span className="chapter-quiz-panel__done-score-total">
+                    / {questions.length}
+                  </span>
+                </div>
+                <div className="chapter-quiz-panel__done-badge">
+                  {Math.round((correctCount / (questions.length || 1)) * 100)}% 正确率
+                </div>
+              </div>
               <div className="chapter-quiz__status">
                 {CHAPTER_QUIZ_COPY.doneSummary(correctCount, questions.length)}
               </div>
@@ -439,7 +470,6 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
               </div>
             </section>
           ) : null}
-        </div>
       </div>
     </div>
   )
