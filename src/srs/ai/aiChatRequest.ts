@@ -37,9 +37,25 @@ export type BuildChatCompletionsBodyOptions = {
 }
 
 /**
- * xAI Grok 原生 server-side tool。
+ * xAI Grok 原生 server-side tool（扁平 `{ type: "web_search" }`）。
+ * 不得改成带嵌套字段：Grok / 部分网关只认此形态。
  */
 export const NATIVE_WEB_SEARCH_TOOL = { type: "web_search" } as const
+
+/**
+ * Gemini Google Search grounding tool。
+ * 必须带空对象 `google_search: {}`：ROUTER9 等 OpenAI 兼容网关上，
+ * 仅 `{ type: "google_search" }` 不稳定（常不触发检索或 malformed_function_call）。
+ */
+export const NATIVE_GOOGLE_SEARCH_TOOL = {
+  type: "google_search",
+  google_search: {}
+} as const
+
+/** 写入 Chat Completions `tools[]` 的联网 tool 条目（可序列化纯对象）。 */
+export type ResolvedWebSearchTool =
+  | { type: "web_search" }
+  | { type: "google_search"; google_search: Record<string, never> }
 
 /**
  * 「自动」档下认为支持原生 web_search 的模型。
@@ -56,26 +72,44 @@ export function isNativeWebSearchSupportedModel(
 }
 
 /**
+ * 把设置项里的 tool 形态解析为请求体 tools 条目。
+ * - `web_search` → 扁平 xAI 形态（Grok）
+ * - `google_search` → Gemini grounding 形态（含 `google_search: {}`）
+ */
+export function materializeWebSearchTool(
+  toolType: Exclude<AIWebSearchToolType, "auto">
+): ResolvedWebSearchTool {
+  if (toolType === "google_search") {
+    return {
+      type: "google_search",
+      google_search: { ...NATIVE_GOOGLE_SEARCH_TOOL.google_search }
+    }
+  }
+  return { ...NATIVE_WEB_SEARCH_TOOL }
+}
+
+/**
  * 解析本次请求应附带的联网 tool；null = 不带 tools 走普通请求。
  *
  * 优先级：allowWebSearch（调用方硬性关闭）> 总开关 > tool 形态设置。
  * 显式形态（web_search / google_search）不再看 model id——
  * 用户比这里的字符串匹配更清楚自己的网关支持什么。
+ * auto 仍只推荐 Grok 的 web_search，不自动给 Gemini 挂 google_search。
  */
 export function resolveWebSearchTool(
   settings: WebSearchAwareSettings,
   allowWebSearch = true
-): { type: string } | null {
+): ResolvedWebSearchTool | null {
   if (allowWebSearch !== true) return null
   if (settings.enableNativeWebSearch !== true) return null
 
   const toolType = settings.webSearchToolType ?? "auto"
   if (toolType === "auto") {
     return isNativeWebSearchSupportedModel(settings.model)
-      ? { ...NATIVE_WEB_SEARCH_TOOL }
+      ? materializeWebSearchTool("web_search")
       : null
   }
-  return { type: toolType }
+  return materializeWebSearchTool(toolType)
 }
 
 /**

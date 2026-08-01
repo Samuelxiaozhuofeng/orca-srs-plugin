@@ -68,8 +68,9 @@ export interface AISettings {
   apiUrl: string
   model: string
   /**
-   * 是否在 Chat Completions 中附带原生联网 tool（`web_search`）。
-   * 仅当当前 model 为 grok-4.5 时生效；其它模型忽略该开关，不发 tools。
+   * 是否在 Chat Completions 中附带原生联网 tool。
+   * `webSearchToolType=auto` 时仅 grok-4.5 会挂 `web_search`；
+   * 显式 `web_search` / `google_search` 时不看 model id。
    * 默认 false。
    */
   enableNativeWebSearch: boolean
@@ -81,8 +82,10 @@ export interface AISettings {
   /** 单次响应最大输出 token（含推理 token）。 */
   maxOutputTokens: number
   /**
-   * 联网 tool 形态。`auto` 沿用旧的按 model 推荐行为（仅 grok-4.5）；
-   * 显式值直接写进请求体 tools，由用户对自己的网关负责。
+   * 联网 tool 形态。
+   * - `auto`：仅 model id 含 grok-4.5 时挂扁平 `web_search`
+   * - `web_search`：扁平 `{ type: "web_search" }`（xAI Grok）
+   * - `google_search`：`{ type: "google_search", google_search: {} }`（Gemini grounding）
    */
   webSearchToolType: AIWebSearchToolType
 }
