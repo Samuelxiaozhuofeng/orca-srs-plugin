@@ -620,7 +620,9 @@ describe("jumpToQuizSourceBlock (IR session panel first)", () => {
   })
 
   /** 构造左侧含 srs.ir-session 阅读面板的面板树（真实树结构） */
-  function stubOrcaWithIRSessionPanel() {
+  function stubOrcaWithIRSessionPanel(
+    sessionBlock: Record<string, unknown> = { _repr: { type: "srs.ir-session" } }
+  ) {
     const addTo = vi.fn(() => "source-side")
     const goTo = vi.fn()
     const switchFocusTo = vi.fn()
@@ -636,7 +638,7 @@ describe("jumpToQuizSourceBlock (IR session panel first)", () => {
             { id: "quiz-p", view: "srs.chapter-quiz-panel" }
           ]
         },
-        blocks: { 1: { _repr: { type: "srs.ir-session" } } }
+        blocks: { 1: sessionBlock }
       },
       notify
     }
@@ -684,7 +686,75 @@ describe("jumpToQuizSourceBlock (IR session panel first)", () => {
     expect(goTo).not.toHaveBeenCalledWith("block", { blockId: 99 }, "ir-left")
   })
 
-  it("falls back to a side panel when the IR session panel does not claim", () => {
+  it("detects IR session via properties._repr when live _repr is missing (host reality)", () => {
+    // 真机：block._repr 常为 undefined，类型只在 properties._repr / ir.isSessionBlock
+    const events: CustomEvent[] = []
+    const dispatchEvent = vi.fn((evt: Event) => {
+      const ce = evt as CustomEvent
+      events.push(ce)
+      if (ce.type === CHAPTER_QUIZ_LOCATE_EVENT) {
+        ;(ce.detail as { claimed?: boolean }).claimed = true
+      }
+      return true
+    })
+    vi.stubGlobal("window", {
+      setTimeout: (fn: () => void) => {
+        fn()
+        return 0
+      },
+      dispatchEvent
+    })
+    const { addTo, goTo } = stubOrcaWithIRSessionPanel({
+      properties: [
+        { name: "_repr", value: { type: "srs.ir-session" }, type: 1 },
+        { name: "ir.isSessionBlock", value: true, type: 4 }
+      ]
+    })
+
+    const ok = jumpToQuizSourceBlock({
+      sourceBlockId: 99,
+      currentPanelId: "quiz-p"
+    })
+
+    expect(ok).toBe(true)
+    expect(events).toHaveLength(1)
+    expect(events[0].detail).toMatchObject({
+      targetPanelId: "ir-left",
+      claimed: true
+    })
+    expect(addTo).not.toHaveBeenCalled()
+    expect(goTo).not.toHaveBeenCalled()
+  })
+
+  it("detects IR session via ir.isSessionBlock alone", () => {
+    const events: CustomEvent[] = []
+    const dispatchEvent = vi.fn((evt: Event) => {
+      const ce = evt as CustomEvent
+      events.push(ce)
+      if (ce.type === CHAPTER_QUIZ_LOCATE_EVENT) {
+        ;(ce.detail as { claimed?: boolean }).claimed = true
+      }
+      return true
+    })
+    vi.stubGlobal("window", {
+      setTimeout: (fn: () => void) => {
+        fn()
+        return 0
+      },
+      dispatchEvent
+    })
+    const { addTo } = stubOrcaWithIRSessionPanel({
+      properties: [{ name: "ir.isSessionBlock", value: true, type: 4 }]
+    })
+
+    expect(
+      jumpToQuizSourceBlock({ sourceBlockId: 99, currentPanelId: "quiz-p" })
+    ).toBe(true)
+    expect(events).toHaveLength(1)
+    expect(addTo).not.toHaveBeenCalled()
+  })
+
+  it("does not open a side panel when IR panel exists but does not claim", () => {
     const dispatchEvent = vi.fn(() => true)
     vi.stubGlobal("window", {
       setTimeout: (fn: () => void) => {
@@ -693,15 +763,16 @@ describe("jumpToQuizSourceBlock (IR session panel first)", () => {
       },
       dispatchEvent
     })
-    const { addTo } = stubOrcaWithIRSessionPanel()
+    const { addTo, notify } = stubOrcaWithIRSessionPanel()
 
     const ok = jumpToQuizSourceBlock({
       sourceBlockId: 99,
       currentPanelId: "quiz-p"
     })
 
-    expect(ok).toBe(true)
-    // 面板存在但未响应（理论边界）：落到既有侧栏路径
-    expect(addTo).toHaveBeenCalledWith("quiz-p", "right", expect.any(Object))
+    // 已确认左侧阅读面板：禁止叠出第三块出处侧栏
+    expect(ok).toBe(false)
+    expect(addTo).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalled()
   })
 })

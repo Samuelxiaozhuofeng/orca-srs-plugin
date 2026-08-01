@@ -1422,32 +1422,66 @@ type QuizPanelTreeNodeLite = {
   children?: QuizPanelTreeNodeLite[]
 }
 
+const IR_SESSION_REPR_TYPE = "srs.ir-session"
+
+/**
+ * 是否为渐进阅读会话虚拟块。
+ *
+ * 真机：宿主常只把类型写在 `properties._repr`（或 `ir.isSessionBlock`），
+ * **不**保证 live `block._repr` 已挂上。仅查 live `_repr` 会漏判左侧阅读面板。
+ */
+function isIRSessionBlock(
+  block: BlockWithRepr | Block | null | undefined
+): boolean {
+  if (!block) return false
+  const live = (block as BlockWithRepr)._repr
+  if (live?.type === IR_SESSION_REPR_TYPE) return true
+  const prop = block.properties?.find((p) => p.name === "_repr")
+  const propValue = prop?.value as { type?: string } | string | undefined
+  if (
+    typeof propValue === "object" &&
+    propValue != null &&
+    propValue.type === IR_SESSION_REPR_TYPE
+  ) {
+    return true
+  }
+  if (propValue === IR_SESSION_REPR_TYPE) return true
+  return (
+    block.properties?.some(
+      (p) => p.name === "ir.isSessionBlock" && p.value === true
+    ) === true
+  )
+}
+
 /**
  * 在面板树中查找 srs.ir-session 阅读面板：
- * 主视图为 `view === "block"` 且其 `viewArgs.blockId` 对应的块是
- * `_repr.type === "srs.ir-session"` 的会话虚拟块。quiz 面板位于右侧分栏时，
- * 该面板即左侧渐进阅读面板。不匹配其它 block 视图（普通笔记页/出处侧栏）。
+ * 主视图为 `view === "block"` 且其 `viewArgs.blockId` 对应会话虚拟块。
+ * quiz 面板在右侧分栏时，该面板即左侧渐进阅读面板。
+ * 不匹配其它 block 视图（普通笔记页/出处侧栏）。
  *
- * 边界：会话块尚未进入 `orca.state.blocks`（加载间隙）时无法判定 `_repr`，
+ * 边界：会话块尚未进入 `orca.state.blocks`（加载间隙）时无法判定，
  * 返回 null → 走侧栏路径（安全降级，下次点击可再命中）。
  */
 function findIRSessionViewPanelId(): string | null {
   const root = orca.state?.panels as QuizPanelTreeNodeLite | undefined
   if (!root) return null
+  const blocks = orca.state?.blocks as
+    | Record<string | number, BlockWithRepr | undefined>
+    | undefined
   const stack: QuizPanelTreeNodeLite[] = [root]
   while (stack.length > 0) {
     const node = stack.pop()!
     if (node.view === "block" && typeof node.id === "string") {
-      const blockId = node.viewArgs?.blockId
-      if (
-        typeof blockId === "number" &&
-        Number.isFinite(blockId) &&
-        blockId > 0
-      ) {
-        const block = (orca.state?.blocks as
-          | Record<number, BlockWithRepr>
-          | undefined)?.[blockId]
-        if (block?._repr?.type === "srs.ir-session") return node.id
+      const rawId = node.viewArgs?.blockId
+      const blockId =
+        typeof rawId === "number" && Number.isFinite(rawId) && rawId > 0
+          ? rawId
+          : typeof rawId === "string" && /^\d+$/.test(rawId)
+            ? Number(rawId)
+            : null
+      if (blockId != null) {
+        const block = blocks?.[blockId] ?? blocks?.[String(blockId)]
+        if (isIRSessionBlock(block)) return node.id
       }
     }
     for (const child of node.children ?? []) stack.push(child)
@@ -1502,13 +1536,25 @@ export function jumpToQuizSourceBlock(options: {
         new CustomEvent(CHAPTER_QUIZ_LOCATE_EVENT, { detail: locateDetail })
       )
     } catch (error) {
-      console.warn("[章末小测] 请求 IR 会话定位失败，将走侧栏路径:", error)
+      console.warn("[章末小测] 请求 IR 会话定位失败:", error)
+      orca.notify("warn", CHAPTER_QUIZ_COPY.jumpToSourceFail, {
+        title: "章末小测"
+      })
+      // 已确认左侧是阅读面板：禁止再开右侧出处侧栏（避免第三块）
+      return false
     }
     if (locateDetail.claimed) {
       // IR 会话面板已接管定位：成功/失败由该面板异步反馈
       return true
     }
-    // 面板存在但未响应（理论边界）→ 落到侧栏路径
+    // 面板在树中但监听器未 claim（未挂载/root 空等）：仍禁止叠侧栏
+    console.warn(
+      `[章末小测] IR 阅读面板 ${irSessionPanelId} 未接管定位（sourceBlockId=${sourceBlockId}）`
+    )
+    orca.notify("warn", CHAPTER_QUIZ_COPY.jumpToSourceFail, {
+      title: "章末小测"
+    })
+    return false
   }
 
   // 1) 已有 panel 显示该出处块
