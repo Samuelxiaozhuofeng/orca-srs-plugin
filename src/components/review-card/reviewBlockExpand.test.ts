@@ -70,53 +70,38 @@ describe("EmbeddedAnswerBlock non-invasive DOM strategy", () => {
   })
 })
 
-describe("answer root CSS hides only parent main/handle", () => {
-  it("uses direct-child selectors for root main; does not hide all .orca-repr-main", () => {
+describe("answer root renders child blocks, no card-root hiding CSS", () => {
+  it("EmbeddedAnswerBlock renders the card root's child blocks, not the root itself", () => {
+    const src = readSrc("EmbeddedReviewBlocks.tsx")
+    const answerSection = src.slice(src.indexOf("export function EmbeddedAnswerBlock"))
+
+    // 每个子块一个 live Block：题目区与答案区各自只渲染一份 blockId，无同 panelId 双实例
+    expect(answerSection).toContain("childIds.map")
+    expect(answerSection).toContain("blockId={childId}")
+    expect(answerSection).not.toContain("blockId={blockId}")
+  })
+
+  it("CSS no longer hides a card root inside .srs-answer-block", () => {
     const css = readSrc("../../styles/srs-review.css")
 
-    // 精确隐藏卡根父 main
-    expect(css).toContain(
-      ".srs-answer-block > .orca-block > .orca-repr > .orca-repr-main"
-    )
-    // 精确隐藏卡根 handle / collapse
-    expect(css).toContain(".srs-answer-block > .orca-block > .orca-block-handle")
-    expect(css).toContain(
-      ".srs-answer-block > .orca-block > .orca-repr > .orca-repr-collapse"
-    )
-    // 子树容器可见兜底
-    expect(css).toContain(".srs-answer-block > .orca-block > .orca-block-children")
-
-    // 禁止用后代选择器把所有 main 藏掉（会误伤答案子块）
-    expect(css).not.toMatch(
-      /\.srs-answer-block\s+\.orca-repr-main\s*\{[^}]*display\s*:\s*none/s
-    )
-    expect(css).not.toMatch(
-      /\.srs-answer-block\s+\.orca-block\s+\.orca-repr-main\s*\{[^}]*display\s*:\s*none/s
-    )
-    // 允许的直接子级选择器必须含 `>`
-    const hideMainRule =
-      /\.srs-answer-block\s*>\s*\.orca-block\s*>\s*\.orca-repr\s*>\s*\.orca-repr-main\s*\{[^}]*display\s*:\s*none/s
-    expect(css).toMatch(hideMainRule)
+    // 答案区不再渲染卡根整树，隐藏根 main/handle 的选择器已移除
+    // （同时拦截后代选择器 `.srs-answer-block .orca-block` 形式的误伤）
+    expect(css).not.toMatch(/\.srs-answer-block[\s>]*\.orca-block/)
+    // 基础容器与文本选中能力保留
+    expect(css).toContain(".srs-answer-block")
+    expect(css).toContain(".srs-answer-block[data-orca-block-root]")
   })
 })
 
-describe("Basic showAnswer uses single live card-root Block", () => {
-  it("switches question to static front when answer is shown with children", () => {
+describe("Basic showAnswer keeps single live card-root Block", () => {
+  it("keeps the question live (EmbeddedQuestionBlock) when answer is shown", () => {
     const src = readSrc("BasicCardReviewRenderer.tsx")
 
-    expect(src).toContain("srs-question-static")
-    expect(src).toContain("showAnswer && totalChildCount > 0")
-    // 静态分支渲染 front，不再挂 EmbeddedQuestionBlock
-    const staticBranch = src.slice(
-      src.indexOf("showAnswer && totalChildCount > 0"),
-      src.indexOf("isExcerptCard ?")
-    )
-    expect(staticBranch).toContain("{front}")
-    expect(staticBranch).toContain("EmbeddedQuestionBlock")
-    // 静态 true 分支在 EmbeddedQuestionBlock 的 else 之前
-    const truePart = staticBranch.slice(0, staticBranch.indexOf("EmbeddedQuestionBlock"))
-    expect(truePart).toContain("srs-question-static")
-    expect(truePart).not.toContain("<EmbeddedQuestionBlock")
+    // 题面不再降级为静态 front 纯文本：宿主 inline 渲染（字体/页面引用/标签）始终保留
+    expect(src).not.toContain("srs-question-static")
+    expect(src).toContain("<EmbeddedQuestionBlock")
+    // 答案区只在有子块且显示答案时挂载，与题面 live 根不冲突
+    expect(src).toContain("totalChildCount > 0 && showAnswer")
   })
 
   it("still mounts EmbeddedAnswerBlock only when showAnswer and has children", () => {

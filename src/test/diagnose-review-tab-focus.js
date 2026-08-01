@@ -166,7 +166,9 @@
       answerDom: {
         present: !!document.querySelector(".srs-answer-block"),
         questionLive: !!document.querySelector(".srs-question-block"),
-        questionStatic: !!document.querySelector(".srs-question-static")
+        questionChildrenStripped: !document.querySelector(
+          ".srs-question-block .orca-block-children, .srs-question-block .orca-repr-children"
+        )
       },
       errors
     }

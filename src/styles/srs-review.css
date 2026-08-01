@@ -20,30 +20,9 @@
 }
 
 /*
- * 答案嵌入：只隐藏「卡根」父正文与根句柄/折叠钮，不碰后代答案子块的 main/handle。
- * 选择器一律 .srs-answer-block > .orca-block > …（直接子级），禁止用后代选择器扫全树。
- * 展开依赖 initiallyCollapsed={false}；此处仅 CSS 兜底显示子树容器，不写宿主 style、不 click collapse。
+ * 答案嵌入：只渲染卡根的直接子块（EmbeddedAnswerBlock → 逐个子块 live Block），
+ * 不再挂卡根整树，因此无需隐藏父正文/句柄的 CSS。
  */
-.srs-answer-block > .orca-block > .orca-repr > .orca-repr-main {
-  display: none !important;
-}
-
-.srs-answer-block > .orca-block > .orca-block-handle,
-.srs-answer-block > .orca-block > .orca-block-bullet,
-.srs-answer-block > .orca-block > .orca-repr > .orca-repr-handle,
-.srs-answer-block > .orca-block > .orca-repr > .orca-repr-collapse {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  overflow: hidden !important;
-  pointer-events: none !important;
-}
-
-.srs-answer-block > .orca-block > .orca-block-children,
-.srs-answer-block > .orca-block > .orca-repr-children {
-  display: block !important;
-  visibility: visible !important;
-}
 
 /* 确保容器不阻止 Orca 的块选择事件 */
 .srs-question-block[data-orca-block-root],
@@ -1283,11 +1262,6 @@
 .srs-review-face__text--selectable {
   user-select: text;
   -webkit-user-select: text;
-}
-
-/* 答案区补偿宿主块的项目符号缩进 */
-.srs-answer-block {
-  margin-left: -25.6px;
 }
 
 /* ---------- 卡片信息面板 ---------- */

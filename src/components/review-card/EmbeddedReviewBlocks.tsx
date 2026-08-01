@@ -1,6 +1,7 @@
-import type { DbId } from "../../orca.d.ts"
+import type { Block, DbId } from "../../orca.d.ts"
 
 const { useEffect, useRef } = window.React
+const { useSnapshot } = window.Valtio
 const { Block, BlockBreadcrumb } = orca.components
 
 type EmbeddedQuestionBlockProps = {
@@ -76,15 +77,22 @@ export function EmbeddedQuestionBlock({
 type EmbeddedAnswerBlockProps = EmbeddedQuestionBlockProps
 
 /**
- * 渲染完整父块树，父正文/句柄由 CSS 精确隐藏（见 srs-review.css），
- * 不使用长期 MutationObserver / collapse.click / 宿主 style 重写，避免破坏编辑会话。
+ * 渲染卡根的直接子块作为答案区：每个子块一个 live `<Block>`（initiallyCollapsed={false}
+ * 保证复习面板局部展开），子块的 inline 渲染（字体样式、页面引用、标签等）完整保留。
+ * **不**挂卡根本身，避免与题目区同 panelId+blockId 双实例抢 selection / 破坏编辑会话
+ * （卡根只由题目区 EmbeddedQuestionBlock live 渲染）。
+ * 不使用长期 MutationObserver / collapse.click / 宿主 style 重写。
  */
 export function EmbeddedAnswerBlock({
   blockId,
   panelId,
   fallback
 }: EmbeddedAnswerBlockProps) {
-  if (!blockId || !panelId) {
+  const { blocks } = useSnapshot(orca.state)
+  const block = blockId ? (blocks[blockId] as Block | undefined) : undefined
+  const childIds = block?.children ?? []
+
+  if (!blockId || !panelId || childIds.length === 0) {
     return (
       <div className="srs-review-face__text srs-review-face__text--answer">
         {fallback}
@@ -97,13 +105,16 @@ export function EmbeddedAnswerBlock({
       className="srs-answer-block"
       data-orca-block-root="true"
     >
-      <Block
-        panelId={panelId}
-        blockId={blockId}
-        blockLevel={0}
-        indentLevel={0}
-        initiallyCollapsed={false}
-      />
+      {childIds.map((childId) => (
+        <Block
+          key={childId}
+          panelId={panelId}
+          blockId={childId}
+          blockLevel={1}
+          indentLevel={1}
+          initiallyCollapsed={false}
+        />
+      ))}
     </div>
   )
 }

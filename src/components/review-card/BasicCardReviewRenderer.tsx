@@ -194,20 +194,13 @@ export default function BasicCardReviewRenderer({
       {!isExcerptCard && (
         <div className="srs-card-front srs-review-face srs-review-face--question">
           {/*
-            显示答案时只挂一份卡根 live Block（答案区），题目改静态 front，
+            题目始终挂卡根 live Block（EmbeddedQuestionBlock 负责剥离其子块 DOM），
+            宿主 inline 渲染（字体样式、页面引用、标签等）在显示答案前后都保留。
+            答案区（EmbeddedAnswerBlock）逐个渲染卡根子块 live Block，不挂卡根，
             避免同 panelId+blockId 双实例抢 selection / 破坏编辑会话。
-            摘录路径不走此处；无答案子块时仍用题目 live Block。
+            摘录路径不走此处。
           */}
-          {showAnswer && totalChildCount > 0 ? (
-            <div
-              className="srs-question-static srs-review-face__text"
-              contentEditable={false}
-            >
-              {front}
-            </div>
-          ) : (
-            <EmbeddedQuestionBlock blockId={blockId} panelId={panelId} fallback={front} />
-          )}
+          <EmbeddedQuestionBlock blockId={blockId} panelId={panelId} fallback={front} />
         </div>
       )}
 
