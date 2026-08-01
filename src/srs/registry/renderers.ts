@@ -12,6 +12,7 @@ import IncrementalReadingManagerPanel from "../../components/IncrementalReadingM
 import ClozeInlineRenderer from "../../components/ClozeInlineRenderer"
 import DirectionInlineRenderer from "../../components/DirectionInlineRenderer"
 import ChoiceCardBlockRenderer from "../../components/ChoiceCardBlockRenderer"
+import ChapterQuizBlock from "../../components/incremental-reading/ChapterQuizBlock"
 
 export function registerRenderers(pluginName: string): void {
   // 基本卡块渲染器
@@ -88,6 +89,15 @@ export function registerRenderers(pluginName: string): void {
     false
   )
 
+  // 章末小测（一次性单选题，与日常 choice 卡独立）
+  orca.renderers.registerBlock(
+    "srs.chapter-quiz",
+    false,
+    ChapterQuizBlock,
+    [],
+    false
+  )
+
   // Cloze inline 渲染器
   orca.renderers.registerInline(
     `${pluginName}.cloze`,
@@ -112,6 +122,7 @@ export function unregisterRenderers(pluginName: string): void {
   orca.renderers.unregisterBlock("srs.flashcard-home")
   orca.renderers.unregisterBlock("srs.ir-session")
   orca.renderers.unregisterBlock("srs.ir-manager")
+  orca.renderers.unregisterBlock("srs.chapter-quiz")
   orca.renderers.unregisterInline(`${pluginName}.cloze`)
   orca.renderers.unregisterInline(`${pluginName}.direction`)
 }

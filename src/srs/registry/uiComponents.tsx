@@ -228,6 +228,13 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.createTopicCard`
   })
 
+  orca.slashCommands.registerSlashCommand(`${pluginName}.gotitQuiz`, {
+    icon: "ti ti-question-mark",
+    group: "SRS",
+    title: "GOTIT?",
+    command: `${pluginName}.gotitQuiz`
+  })
+
   orca.slashCommands.registerSlashCommand(`${pluginName}.incrementalReading`, {
     icon: "ti ti-book-2",
     group: "SRS",
@@ -326,6 +333,7 @@ export async function unregisterUIComponents(
     console.warn(`[${pluginName}] 清理旧 AI 斜杠命令失败:`, error)
   }
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.gotitQuiz`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.incrementalReading`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.ir_record`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.todayLearning`)

@@ -74,6 +74,13 @@ import {
   shouldDismissIRImportancePanel,
   shouldDismissIRMorePanel
 } from "./irMorePanelDismiss"
+import {
+  CHAPTER_QUIZ_ADVANCE_EVENT,
+  CHAPTER_QUIZ_COPY,
+  launchChapterQuiz,
+  type ChapterQuizAdvanceDetail
+} from "../../srs/incremental-reading/chapterQuiz"
+import { isAIConfigured } from "../../srs/ai/aiSettingsSchema"
 
 const { useCallback, useEffect, useMemo, useRef, useState } = window.React
 const { Button } = orca.components
@@ -158,6 +165,16 @@ export default function IRSessionShell({
   const [completeChapterOpen, setCompleteChapterOpen] = useState(false)
   /** 非顺序 / 摘录「完成」确认 */
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  /** 章末小测确认（完成 Topic 成功后 / 更多菜单） */
+  const [chapterQuizConfirmOpen, setChapterQuizConfirmOpen] = useState(false)
+  const [chapterQuizTopicId, setChapterQuizTopicId] = useState<number | null>(null)
+  /**
+   * 完成 Topic 后已写库移出 IR，但 UI 故意不切下一篇，方便在本页做小测。
+   * true 时「下一篇」只推进会话 UI（不再 performNext）。
+   */
+  const [postCompleteQuizHold, setPostCompleteQuizHold] = useState(false)
+  const postCompleteQuizHoldRef = useRef(false)
+  postCompleteQuizHoldRef.current = postCompleteQuizHold
   /** 读到文末的「下一篇」确认门闩 */
   const [endGateOpen, setEndGateOpen] = useState(false)
   /** 会话级一次性抑制：用户处理过一次门闩后不再反复打断主路径 */
@@ -755,6 +772,113 @@ export default function IRSessionShell({
     removeCurrent
   })
 
+  const offerChapterQuiz = useCallback((topicBlockId: number) => {
+    setChapterQuizTopicId(topicBlockId)
+    setChapterQuizConfirmOpen(true)
+  }, [])
+
+  /** 解除完成后续停留并切到会话下一篇（队列里仍占位的已完成 Topic） */
+  const releasePostCompleteHoldAndAdvance = useCallback(() => {
+    if (!postCompleteQuizHoldRef.current) return
+    setPostCompleteQuizHold(false)
+    postCompleteQuizHoldRef.current = false
+    removeCurrent()
+  }, [removeCurrent])
+
+  /** 完成成功后再问是否小测（仅 Topic）；Topic 路径 defer UI 推进 */
+  const handleArchiveThenOfferQuiz = useCallback(
+    async (options?: { nextChapterSchedule?: "today" | "tomorrow" }) => {
+      const topicId =
+        isTopic && currentCard ? Number(currentCard.id) : null
+      const deferUi = topicId != null && Number.isFinite(topicId) && topicId > 0
+      const ok = await handleArchive({
+        ...options,
+        deferUiAdvance: deferUi
+      })
+      if (ok && deferUi && topicId != null) {
+        setPostCompleteQuizHold(true)
+        postCompleteQuizHoldRef.current = true
+        offerChapterQuiz(topicId)
+        return
+      }
+      // 非 Topic 或完成失败：handleArchive 已按需推进，无需 hold
+    },
+    [currentCard, handleArchive, isTopic, offerChapterQuiz]
+  )
+
+  const handleChapterQuizRequest = useCallback(() => {
+    if (!isTopic || !currentCard) {
+      orca.notify("warn", CHAPTER_QUIZ_COPY.needTopic, { title: "章末小测" })
+      return
+    }
+    setMoreOpen(false)
+    setImportanceOpen(false)
+    setPostponeOpen(false)
+    // 阅读中主动出题：不归档、不 hold
+    offerChapterQuiz(Number(currentCard.id))
+  }, [currentCard, isTopic, offerChapterQuiz])
+
+  const handleChapterQuizConfirmClose = useCallback(() => {
+    setChapterQuizConfirmOpen(false)
+    setChapterQuizTopicId(null)
+    // 用户不要小测：若来自完成后续停留，现在才切下一篇
+    if (postCompleteQuizHoldRef.current) {
+      releasePostCompleteHoldAndAdvance()
+    }
+  }, [releasePostCompleteHoldAndAdvance])
+
+  const handleChapterQuizConfirm = useCallback(async () => {
+    if (chapterQuizTopicId == null) {
+      setChapterQuizConfirmOpen(false)
+      return
+    }
+    if (!isAIConfigured(pluginName)) {
+      orca.notify("warn", CHAPTER_QUIZ_COPY.needAi, { title: "章末小测" })
+      return
+    }
+    setIsWorking(true)
+    try {
+      await launchChapterQuiz({
+        pluginName,
+        topicBlockId: chapterQuizTopicId,
+        // 仅「完成后续停留」需要测完推进会话
+        sessionContinueNext: postCompleteQuizHoldRef.current
+      })
+      setChapterQuizConfirmOpen(false)
+      // 保留 postCompleteQuizHold：测完点「继续下一篇」再推进
+      setChapterQuizTopicId(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error("[IR Session] 章末小测启动失败:", error)
+      orca.notify("error", message, { title: "章末小测" })
+    } finally {
+      setIsWorking(false)
+    }
+  }, [chapterQuizTopicId, pluginName])
+
+  // 小测块「继续下一篇」→ 推进完成后续停留
+  useEffect(() => {
+    const onAdvance = (event: Event) => {
+      if (!postCompleteQuizHoldRef.current) return
+      const detail = (event as CustomEvent<ChapterQuizAdvanceDetail>).detail
+      const heldId = currentCard?.id != null ? Number(currentCard.id) : null
+      if (
+        detail?.topicBlockId != null &&
+        heldId != null &&
+        detail.topicBlockId !== heldId
+      ) {
+        return
+      }
+      releasePostCompleteHoldAndAdvance()
+    }
+    window.addEventListener(CHAPTER_QUIZ_ADVANCE_EVENT, onAdvance as EventListener)
+    return () =>
+      window.removeEventListener(
+        CHAPTER_QUIZ_ADVANCE_EVENT,
+        onAdvance as EventListener
+      )
+  }, [currentCard?.id, releasePostCompleteHoldAndAdvance])
+
   const undoAvailable = canUndoNext({
     record: undoRecord,
     showSummary,
@@ -825,6 +949,11 @@ export default function IRSessionShell({
    */
   const requestNext = () => {
     if (isWorking || endGateOpen) return
+    // 完成后续小测停留：本章 IR 已归档，下一篇只推进 UI，勿再 performNext
+    if (postCompleteQuizHoldRef.current) {
+      releasePostCompleteHoldAndAdvance()
+      return
+    }
     if (!currentCard) {
       handleNext()
       return
@@ -1161,7 +1290,15 @@ export default function IRSessionShell({
         onItemize={handleItemize}
         onConvertToQA={handleConvertToQA}
         onConvertToDirection={handleConvertToDirection}
-        onComplete={handleCompleteRequest}
+        onChapterQuiz={handleChapterQuizRequest}
+        onComplete={() => {
+          // 已完成且停留做小测时，「完成」改为离开本章 → 下一篇
+          if (postCompleteQuizHoldRef.current) {
+            releasePostCompleteHoldAndAdvance()
+            return
+          }
+          handleCompleteRequest()
+        }}
         onImportance={openImportanceMenu}
         onMore={toggleMorePanel}
         onReturn={readingContext.onReturnFromBrowse}
@@ -1175,10 +1312,17 @@ export default function IRSessionShell({
         onToggleViewMode={toggleViewMode}
         onBackToLibrary={handleBackToLibrary}
         onCompleteChapterClose={() => setCompleteChapterOpen(false)}
-        onCompleteChapterToday={() => void handleArchive({ nextChapterSchedule: "today" })}
-        onCompleteChapterTomorrow={() => void handleArchive({ nextChapterSchedule: "tomorrow" })}
+        onCompleteChapterToday={() =>
+          void handleArchiveThenOfferQuiz({ nextChapterSchedule: "today" })
+        }
+        onCompleteChapterTomorrow={() =>
+          void handleArchiveThenOfferQuiz({ nextChapterSchedule: "tomorrow" })
+        }
         onArchiveConfirmClose={() => setArchiveConfirmOpen(false)}
-        onArchiveConfirm={() => void handleArchive()}
+        onArchiveConfirm={() => void handleArchiveThenOfferQuiz()}
+        chapterQuizConfirmOpen={chapterQuizConfirmOpen}
+        onChapterQuizConfirmClose={handleChapterQuizConfirmClose}
+        onChapterQuizConfirm={() => void handleChapterQuizConfirm()}
       />
 
       <IREndOfContentDialog

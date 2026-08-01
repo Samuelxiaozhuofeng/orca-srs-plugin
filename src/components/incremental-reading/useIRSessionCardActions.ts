@@ -85,7 +85,16 @@ export type IRSessionCardActions = {
   handleItemize: () => void
   handleConvertToQA: () => void
   handleConvertToDirection: () => void
-  handleArchive: (options?: { nextChapterSchedule?: NextChapterSchedule }) => void
+  /**
+   * 完成/归档。成功返回 true（且 leftCard），失败或 busy 返回 false。
+   * deferUiAdvance：写库移出 IR 队列，但不推进会话 UI（留给小测停留本页）。
+   */
+  handleArchive: (
+    options?: {
+      nextChapterSchedule?: NextChapterSchedule
+      deferUiAdvance?: boolean
+    }
+  ) => Promise<boolean>
   handleCompleteRequest: () => void
   handleSkipChapter: () => void
   handleImportanceNudge: (direction: ImportanceNudgeDirection) => void
@@ -115,11 +124,11 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     removeCurrent
   } = deps
 
-  const withWork = async (fn: () => Promise<void>) => {
-    if (isWorking) return
+  const withWork = async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
+    if (isWorking) return undefined
     setIsWorking(true)
     try {
-      await fn()
+      return await fn()
     } finally {
       setIsWorking(false)
     }
@@ -316,28 +325,43 @@ export function createIRSessionCardActions(deps: IRSessionCardActionsDeps): IRSe
     }
   })
 
-  const handleArchive = (options?: { nextChapterSchedule?: NextChapterSchedule }) => withWork(async () => {
-    if (!currentCard) return
-    invalidateUndo()
-    try {
-      await breakpoint.flush()
-      const outcome = await performArchive(currentCard.id, pluginName, options)
-      metricsRef.current.record("action.archive")
-      setCompleteChapterOpen(false)
-      setArchiveConfirmOpen(false)
-      if (outcome.leftCard) {
-        removeCurrent()
-      }
-      if (!outcome.sequential) {
-        orca.notify("success", formatNonSequentialCompleteSuccess(), { title: "渐进阅读" })
-      }
-    } catch (error) {
-      metricsRef.current.record("action.failure", undefined, { kind: "archive" })
-      const msg = error instanceof Error ? error.message : String(error)
-      console.error("[IR Session] 完成/归档失败:", error)
-      orca.notify("error", `完成失败：${msg}`, { title: "渐进阅读" })
+  const handleArchive = (
+    options?: {
+      nextChapterSchedule?: NextChapterSchedule
+      /** true：IR 已完成/移出，但不 removeCurrent（停留本页做小测） */
+      deferUiAdvance?: boolean
     }
-  })
+  ): Promise<boolean> =>
+    withWork(async () => {
+      if (!currentCard) return false
+      invalidateUndo()
+      try {
+        await breakpoint.flush()
+        const outcome = await performArchive(currentCard.id, pluginName, {
+          nextChapterSchedule: options?.nextChapterSchedule
+        })
+        metricsRef.current.record("action.archive")
+        setCompleteChapterOpen(false)
+        setArchiveConfirmOpen(false)
+        // 移出 IR 队列数据后，默认推进 UI；小测路径可 defer 以停留在本章
+        if (outcome.leftCard && !options?.deferUiAdvance) {
+          removeCurrent()
+        }
+        if (!outcome.sequential) {
+          orca.notify("success", formatNonSequentialCompleteSuccess(), {
+            title: "渐进阅读"
+          })
+        }
+        // 仅当当前章已离开 IR 调度时视为「完成成功」——partial 且章未剥离时不得弹章末小测
+        return outcome.leftCard === true
+      } catch (error) {
+        metricsRef.current.record("action.failure", undefined, { kind: "archive" })
+        const msg = error instanceof Error ? error.message : String(error)
+        console.error("[IR Session] 完成/归档失败:", error)
+        orca.notify("error", `完成失败：${msg}`, { title: "渐进阅读" })
+        return false
+      }
+    }).then((ok) => ok === true)
 
   const handleCompleteRequest = () => {
     if (isWorking) return

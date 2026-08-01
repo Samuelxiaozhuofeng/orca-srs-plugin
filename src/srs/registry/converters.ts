@@ -84,6 +84,13 @@ export function registerConverters(pluginName: string): void {
     () => "[SRS 渐进阅读管理面板块]"
   )
 
+  // 章末小测
+  orca.converters.registerBlock(
+    "plain",
+    "srs.chapter-quiz",
+    () => "[SRS 章末小测]"
+  )
+
   // Cloze inline 转换器
   // 将 cloze fragment 转换为纯文本时，只返回填空内容本身
   orca.converters.registerInline(
@@ -116,6 +123,7 @@ export function unregisterConverters(pluginName: string): void {
   orca.converters.unregisterBlock("plain", "srs.flashcard-home")
   orca.converters.unregisterBlock("plain", "srs.ir-session")
   orca.converters.unregisterBlock("plain", "srs.ir-manager")
+  orca.converters.unregisterBlock("plain", "srs.chapter-quiz")
   orca.converters.unregisterInline("plain", `${pluginName}.cloze`)
   orca.converters.unregisterInline("plain", `${pluginName}.direction`)
 }

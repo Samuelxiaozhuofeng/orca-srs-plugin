@@ -24,6 +24,9 @@
 > - [SRS_AI模块.md](SRS_AI模块.md)：新增请求类型 `extract-coach`（标签「摘录处理建议」）；只读顾问，有界上下文 ≤8 块 / ≤8000 字符，严格 JSON 协议 + `cloze.quote` 接地校验，会话缓存 ≤50 条
 > - [渐进阅读.md](渐进阅读.md)：Extract 正文底部 AI 处理思路虚拟块（`enableExtractCoach` 默认关；仅 `extract_focus` 显示；不写库 / 不改排期 / 不建卡）
 > - [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`scanCardsFromTags` 仅 throw 走全库兜底；列表卡 `srs.isCard` 写后 `invalidateBlockCache`
+>
+> **索引增补：2026-08-01（章末小测）**：
+> - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：Topic 完成后 / 更多菜单 → 本章全文单选小测；一题一题揭晓；可选简答/填空入队；与 `#choice` 路径独立
 
 ## 文档分类
 
@@ -128,7 +131,8 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-01 更新 — due-only 分散 Phase 0+1 短记；Extract 摘录处理建议 AI 虚拟块；
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-01 更新 — due-only 分散 Phase 0+1 短记；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
+24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-01 新增 — Topic 章末一次性单选小测（入口 / 生成 / 入卡 / 与 choice 边界）
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
     - **mixed 复习卡块可用性**（2026-07-27）：`IRMixedReviewPane` 挂载前 `preflightMixedReviewCard`（`writeToState` + missing/unknown 三态），修复 state miss 永久「加载中」；`SrsCardDemo` 改为纯渲染器

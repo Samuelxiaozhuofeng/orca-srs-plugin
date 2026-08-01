@@ -10,6 +10,7 @@ import {
   IR_READER_WIDTH_PRESETS,
   parseIRReaderWidthDraft
 } from "./irReaderWidthStorage"
+import { CHAPTER_QUIZ_COPY } from "../../srs/incremental-reading/chapterQuiz"
 
 const { useEffect, useState } = window.React
 const { Button } = orca.components
@@ -26,6 +27,8 @@ export type IRSessionMorePanelProps = {
   onPostpone: () => void
   onConvertToQA?: () => void
   onConvertToDirection?: () => void
+  /** Topic / 章节：章末一次性小测 */
+  onChapterQuiz?: () => void
   onThemeChange: (theme: IRReaderTheme) => void
   onContentWidthChange: (width: number) => void
   onToggleViewMode: () => void
@@ -43,6 +46,7 @@ export default function IRSessionMorePanel({
   onPostpone,
   onConvertToQA,
   onConvertToDirection,
+  onChapterQuiz,
   onThemeChange,
   onContentWidthChange,
   onToggleViewMode,
@@ -111,6 +115,21 @@ export default function IRSessionMorePanel({
           aria-label="转为方向卡"
         >
           方向
+        </Button>
+      ) : null}
+      {isTopic && onChapterQuiz ? (
+        <Button
+          tabIndex={0}
+          variant="plain"
+          onClick={() => {
+            if (isWorking) return
+            onChapterQuiz()
+          }}
+          className={busyClassName}
+          title={CHAPTER_QUIZ_COPY.moreMenuTitle}
+          aria-label={CHAPTER_QUIZ_COPY.moreMenuLabel}
+        >
+          {CHAPTER_QUIZ_COPY.moreMenuLabel}
         </Button>
       ) : null}
       <span className="ir-reading__more-label">主题模式</span>

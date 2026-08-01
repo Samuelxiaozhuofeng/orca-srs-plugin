@@ -15,6 +15,7 @@ import IRPostponeMenu, { type PostponeChoice } from "./IRPostponeMenu"
 import IRSessionMorePanel from "./IRSessionMorePanel"
 import IRCompleteChapterDialog from "./IRCompleteChapterDialog"
 import IRArchiveConfirmDialog from "./IRArchiveConfirmDialog"
+import ChapterQuizConfirmDialog from "./ChapterQuizConfirmDialog"
 
 export type IRSessionChromeProps = {
   isTopic: boolean
@@ -31,12 +32,14 @@ export type IRSessionChromeProps = {
   moreOpen: boolean
   completeChapterOpen: boolean
   archiveConfirmOpen: boolean
+  chapterQuizConfirmOpen?: boolean
   showReturn?: boolean
   onNext: () => void
   onExtract: () => void
   onItemize: () => void
   onConvertToQA?: () => void
   onConvertToDirection?: () => void
+  onChapterQuiz?: () => void
   onComplete: () => void
   onImportance: () => void
   onMore: () => void
@@ -55,6 +58,8 @@ export type IRSessionChromeProps = {
   onCompleteChapterTomorrow: () => void
   onArchiveConfirmClose: () => void
   onArchiveConfirm: () => void
+  onChapterQuizConfirmClose?: () => void
+  onChapterQuizConfirm?: () => void
 }
 
 export default function IRSessionChrome({
@@ -72,12 +77,14 @@ export default function IRSessionChrome({
   moreOpen,
   completeChapterOpen,
   archiveConfirmOpen,
+  chapterQuizConfirmOpen = false,
   showReturn,
   onNext,
   onExtract,
   onItemize,
   onConvertToQA,
   onConvertToDirection,
+  onChapterQuiz,
   onComplete,
   onImportance,
   onMore,
@@ -95,7 +102,9 @@ export default function IRSessionChrome({
   onCompleteChapterToday,
   onCompleteChapterTomorrow,
   onArchiveConfirmClose,
-  onArchiveConfirm
+  onArchiveConfirm,
+  onChapterQuizConfirmClose,
+  onChapterQuizConfirm
 }: IRSessionChromeProps) {
   return (
     <>
@@ -125,6 +134,7 @@ export default function IRSessionChrome({
         onPostpone={onOpenPostpone}
         onConvertToQA={onConvertToQA}
         onConvertToDirection={onConvertToDirection}
+        onChapterQuiz={onChapterQuiz}
         onThemeChange={onThemeChange}
         onContentWidthChange={onContentWidthChange}
         onToggleViewMode={onToggleViewMode}
@@ -166,6 +176,13 @@ export default function IRSessionChrome({
         isWorking={isWorking}
         onClose={onArchiveConfirmClose}
         onConfirm={onArchiveConfirm}
+      />
+
+      <ChapterQuizConfirmDialog
+        open={chapterQuizConfirmOpen}
+        isWorking={isWorking}
+        onClose={() => onChapterQuizConfirmClose?.()}
+        onConfirm={() => onChapterQuizConfirm?.()}
       />
     </>
   )

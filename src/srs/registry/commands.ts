@@ -30,6 +30,7 @@ import { getDefaultFsrsSettingsPatch } from "../settings/reviewSettingsSchema"
 import { clearFsrsRuntimeState } from "../algorithm"
 import { isCardTag } from "../tagUtils"
 import { clearRecentDeckPreference } from "../recentDeckManager"
+import { launchGotItFromEditor } from "../incremental-reading/chapterQuiz"
 
 /** F2-08：恢复 FSRS 默认设置的命令 ID 后缀 */
 export const RESET_FSRS_SETTINGS_COMMAND = "resetFsrsSettings" as const
@@ -167,6 +168,32 @@ export function registerCommands(
     },
     {
       label: "SRS: 创建 Topic 卡片",
+      hasArgs: false
+    }
+  )
+
+  // GOTIT?：任意页面底部按页面全文出一次性单选题小测（与 IR 完成路径共用章末小测块）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.gotitQuiz`,
+    async (editor) => {
+      const [panelId, rootBlockId, cursor] = editor
+      try {
+        const blockId = await launchGotItFromEditor(_pluginName, [
+          panelId,
+          Number(rootBlockId),
+          cursor
+        ])
+        return blockId != null ? { ret: { blockId }, undoArgs: {} } : null
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error("[GOTIT?] 启动失败:", error)
+        orca.notify("error", message, { title: "GOTIT?" })
+        return null
+      }
+    },
+    () => {},
+    {
+      label: "SRS: GOTIT? 页面小测",
       hasArgs: false
     }
   )
@@ -855,6 +882,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.createChoiceCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createCloze`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createTopicCard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.gotitQuiz`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createExtract`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)

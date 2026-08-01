@@ -3993,3 +3993,337 @@
   outline: 2px solid var(--orca-color-primary-5);
   outline-offset: 2px;
 }
+
+/* ---------- Chapter quiz (章末小测) ---------- */
+
+.ir-dialog__text--preline {
+  white-space: pre-line;
+}
+
+.chapter-quiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-3);
+  padding: var(--srs-space-3);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+  border: 1px solid var(--orca-color-border-1);
+  color: var(--orca-color-text-1);
+  font-family: var(--srs-font-family);
+  max-width: 42rem;
+  /* 侧栏面板内可撑满更宽 */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.chapter-quiz__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--srs-space-3);
+  flex-wrap: wrap;
+}
+
+.chapter-quiz__header-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--srs-space-3);
+  min-width: 0;
+}
+
+.chapter-quiz__title {
+  font-weight: 600;
+  font-size: var(--srs-font-size-md);
+}
+
+.chapter-quiz__progress {
+  font-size: var(--srs-font-size-sm);
+  color: var(--orca-color-text-3);
+}
+
+.chapter-quiz__side-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.chapter-quiz__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-3);
+}
+
+.chapter-quiz__status {
+  font-weight: 500;
+}
+
+.chapter-quiz__status--error {
+  color: var(--orca-color-danger-6, #c0392b);
+}
+
+.chapter-quiz__hint {
+  font-size: var(--srs-font-size-sm);
+  color: var(--orca-color-text-2);
+  line-height: 1.5;
+}
+
+.chapter-quiz__stem {
+  font-size: var(--srs-font-size-md);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.chapter-quiz__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.chapter-quiz__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--srs-space-2);
+  text-align: left;
+  width: 100%;
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  border: 1px solid var(--orca-color-border-1);
+  background: var(--orca-color-bg-1);
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-color var(--srs-duration-base) var(--srs-ease),
+    background var(--srs-duration-base) var(--srs-ease);
+}
+
+.chapter-quiz__option:hover:not(:disabled) {
+  border-color: var(--orca-color-primary-5);
+}
+
+.chapter-quiz__option:disabled {
+  cursor: default;
+}
+
+.chapter-quiz__option.is-selected {
+  border-color: var(--orca-color-primary-5);
+  background: color-mix(in srgb, var(--orca-color-primary-5) 12%, var(--orca-color-bg-1));
+}
+
+.chapter-quiz__option.is-correct {
+  border-color: var(--orca-color-success-6, #27ae60);
+  background: color-mix(in srgb, var(--orca-color-success-6, #27ae60) 12%, var(--orca-color-bg-1));
+}
+
+.chapter-quiz__option.is-wrong {
+  border-color: var(--orca-color-danger-6, #c0392b);
+  background: color-mix(in srgb, var(--orca-color-danger-6, #c0392b) 10%, var(--orca-color-bg-1));
+}
+
+.chapter-quiz__option-letter {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--orca-color-text-3);
+  min-width: 1.25rem;
+}
+
+.chapter-quiz__option-text {
+  flex: 1;
+  line-height: 1.45;
+}
+
+/* 紧贴选项下方的主操作条：制卡 + 下一题，不随追问变高 */
+.chapter-quiz__primary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-2) 0;
+  border-top: 1px solid var(--orca-color-border-1);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--orca-color-bg-2) 88%, transparent),
+    var(--orca-color-bg-2) 28%
+  );
+  margin-top: var(--srs-space-1);
+}
+
+.chapter-quiz__primary-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--srs-space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.chapter-quiz__primary-hint {
+  font-size: var(--srs-font-size-sm);
+  color: var(--orca-color-text-3);
+}
+
+.chapter-quiz__chip-btn {
+  white-space: nowrap;
+}
+
+.chapter-quiz__next-btn {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+}
+
+.chapter-quiz__reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  /* 在主操作条之下：讲解 / 追问变长也不顶走主条 */
+  order: 0;
+}
+
+.chapter-quiz__verdict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--srs-space-2);
+}
+
+.chapter-quiz__verdict {
+  font-weight: 600;
+  font-size: var(--srs-font-size-sm);
+  line-height: 1.45;
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-quiz__jump-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.chapter-quiz__verdict--ok {
+  color: var(--orca-color-success-6, #27ae60);
+}
+
+.chapter-quiz__verdict--bad {
+  color: var(--orca-color-danger-6, #c0392b);
+}
+
+.chapter-quiz__answer,
+.chapter-quiz__answer-inline {
+  font-size: var(--srs-font-size-sm);
+  color: var(--orca-color-text-2);
+  font-weight: 400;
+}
+
+.chapter-quiz__explain {
+  font-size: var(--srs-font-size-sm);
+  line-height: 1.55;
+  color: var(--orca-color-text-1);
+  white-space: pre-wrap;
+  max-height: 8rem;
+  overflow: auto;
+  padding: var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-1);
+  border: 1px solid var(--orca-color-border-1);
+}
+
+.chapter-quiz__remember,
+.chapter-quiz__followup,
+.chapter-quiz__cloze-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-1);
+  border: 1px solid var(--orca-color-border-1);
+  min-height: 0;
+}
+
+.chapter-quiz__remember-label {
+  font-size: var(--srs-font-size-sm);
+  font-weight: 600;
+  color: var(--orca-color-text-2);
+  flex: 0 0 auto;
+}
+
+.chapter-quiz__remember-actions,
+.chapter-quiz__actions,
+.chapter-quiz__followup-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--srs-space-2);
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.chapter-quiz__followup-row {
+  width: 100%;
+}
+
+.chapter-quiz__followup-row .chapter-quiz__input {
+  flex: 1;
+  min-width: 10rem;
+}
+
+/* 追问历史：固定高度内部滚动，整块面板不再无限变长 */
+.chapter-quiz__followup-scroll {
+  flex: 1 1 auto;
+  min-height: 6rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  padding-right: var(--srs-space-1);
+}
+
+.chapter-quiz__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-1);
+  font-size: var(--srs-font-size-sm);
+  color: var(--orca-color-text-2);
+}
+
+.chapter-quiz__input,
+.chapter-quiz__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--orca-color-border-1);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-1);
+  padding: var(--srs-space-2);
+  font: inherit;
+}
+
+.chapter-quiz__textarea {
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.chapter-quiz__fu {
+  font-size: var(--srs-font-size-sm);
+  line-height: 1.5;
+  padding: var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  white-space: pre-wrap;
+}
+
+.chapter-quiz__fu--user {
+  background: color-mix(in srgb, var(--orca-color-primary-5) 10%, var(--orca-color-bg-2));
+}
+
+.chapter-quiz__fu--assistant {
+  background: var(--orca-color-bg-2);
+  border: 1px solid var(--orca-color-border-1);
+}
+
+.chapter-quiz-repr-content {
+  width: 100%;
+}

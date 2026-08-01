@@ -232,6 +232,7 @@ export function unregisterRenderers(pluginName: string): void
 | `srs.flashcard-home` | `SrsFlashcardHomeRenderer` | 否 |
 | `srs.ir-session` | `IncrementalReadingSessionRenderer` | 否 |
 | `srs.ir-manager` | `IncrementalReadingManagerPanel` | 否 |
+| `srs.chapter-quiz` | `ChapterQuizBlock` | 否 |
 
 注册形态：`orca.renderers.registerBlock(type, false, Component, [], false)`。
 
@@ -265,6 +266,7 @@ export function unregisterConverters(pluginName: string): void
 | `srs.flashcard-home` | `[SRS Flashcard Home 面板块]` |
 | `srs.ir-session` | `[SRS 渐进阅读面板块]` |
 | `srs.ir-manager` | `[SRS 渐进阅读管理面板块]` |
+| `srs.chapter-quiz` | `[SRS 章末小测]` |
 
 ### Inline → plain
 

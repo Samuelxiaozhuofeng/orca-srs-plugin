@@ -23,6 +23,7 @@ export type AiRequestPurpose =
   | "web-summary"
   | "connection-test"
   | "extract-coach"
+  | "chapter-quiz"
   | "other"
 
 export const AI_REQUEST_PURPOSE_LABELS: Record<AiRequestPurpose, string> = {
@@ -32,6 +33,7 @@ export const AI_REQUEST_PURPOSE_LABELS: Record<AiRequestPurpose, string> = {
   "web-summary": "网页总结",
   "connection-test": "连接测试",
   "extract-coach": "摘录处理建议",
+  "chapter-quiz": "章末小测",
   other: "其它"
 }
 
