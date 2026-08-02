@@ -56,6 +56,16 @@ export function registerConverters(pluginName: string): void {
     }
   )
 
+  // 图片遮罩块
+  orca.converters.registerBlock(
+    "plain",
+    "srs.image-occlusion",
+    (_blockContent: BlockForConversion, repr: Repr) => {
+      const src = repr.src || "（无图片）"
+      return `[SRS 图片遮罩]\nsrc: ${src}`
+    }
+  )
+
   // 复习会话转换器
   orca.converters.registerBlock(
     "plain",
@@ -119,6 +129,7 @@ export function unregisterConverters(pluginName: string): void {
   orca.converters.unregisterBlock("plain", "srs.cloze-card")
   orca.converters.unregisterBlock("plain", "srs.direction-card")
   orca.converters.unregisterBlock("plain", "srs.choice-card")
+  orca.converters.unregisterBlock("plain", "srs.image-occlusion")
   orca.converters.unregisterBlock("plain", "srs.review-session")
   orca.converters.unregisterBlock("plain", "srs.flashcard-home")
   orca.converters.unregisterBlock("plain", "srs.ir-session")

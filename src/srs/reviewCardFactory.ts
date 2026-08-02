@@ -15,6 +15,11 @@ import {
 import { getAllClozeNumbers } from "./clozeUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
 import { isCardTag } from "./tagUtils"
+import {
+  getIoMaskNumbers,
+  readIoMasksFromBlock,
+  readStoredIoSrc
+} from "./imageOcclusion"
 
 const PLUGIN_NAME = "srs-plugin"
 
@@ -149,6 +154,41 @@ export async function convertBlockToReviewCards(
         tags: extractNonCardTags(block),
         clozeNumber,
         content: block.content
+      })
+    }
+  } else if (cardType === "image-occlusion") {
+    let masks
+    try {
+      masks = readIoMasksFromBlock(block)
+    } catch (error) {
+      console.error(
+        `[${pluginName}] convertBlockToReviewCards: 读取图片遮罩失败 #${block.id}:`,
+        error
+      )
+      throw error
+    }
+    const numbers = getIoMaskNumbers(masks)
+    if (numbers.length === 0) {
+      console.log(
+        `[${pluginName}] convertBlockToReviewCards: 跳过无遮罩区域的 image-occlusion #${block.id}`
+      )
+      return cards
+    }
+    const storedSrc = readStoredIoSrc(block) ?? ""
+    for (const clozeNumber of numbers) {
+      const srsState = await ensureClozeSrsState(block.id, clozeNumber, clozeNumber - 1)
+      cards.push({
+        id: block.id,
+        front: storedSrc || block.text || "（图片遮罩）",
+        back: `（遮罩 c${clozeNumber}）`,
+        srs: srsState,
+        isNew: !srsState.lastReviewed || srsState.reps === 0,
+        batchId,
+        isPending,
+        deck: deckName,
+        cardType: "image-occlusion",
+        tags: extractNonCardTags(block),
+        clozeNumber
       })
     }
   } else if (cardType === "direction") {

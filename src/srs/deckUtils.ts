@@ -162,6 +162,9 @@ export function extractCardType(block: Block): CardType {
     if (firstValue === "topic") return "topic"
     if (firstValue === "extracts") return "extracts"
     if (firstValue === "cloze") return "cloze"
+    if (firstValue === "image-occlusion" || firstValue === "io") {
+      return "image-occlusion"
+    }
     if (firstValue === "direction") return "direction"
     if (firstValue === "list") return "list"
     if (firstValue === "excerpt") return "excerpt"
@@ -174,6 +177,9 @@ export function extractCardType(block: Block): CardType {
     if (trimmedValue === "topic") return "topic"
     if (trimmedValue === "extracts") return "extracts"
     if (trimmedValue === "cloze") return "cloze"
+    if (trimmedValue === "image-occlusion" || trimmedValue === "io") {
+      return "image-occlusion"
+    }
     if (trimmedValue === "direction") return "direction"
     if (trimmedValue === "list") return "list"
     if (trimmedValue === "excerpt") return "excerpt"

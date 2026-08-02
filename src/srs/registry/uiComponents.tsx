@@ -14,6 +14,7 @@ import { AIServiceSettingsMount } from "../../components/AIServiceSettingsMount"
 import { IRBookDialogMount } from "../../components/IRBookDialogMount"
 import { EpubImportDialogMount } from "../../components/epub-import/EpubImportDialogMount"
 import { WebImportDialogMount } from "../../components/web-import/WebImportDialogMount"
+import { ImageOcclusionEditorMount } from "../../components/image-occlusion/ImageOcclusionEditorMount"
 import SrsErrorBoundary from "../../components/SrsErrorBoundary"
 import { getToolbarAIPrompts } from "../ai/aiToolbarPromptStore"
 import {
@@ -65,6 +66,12 @@ export function registerUIComponents(pluginName: string): void {
   orca.headbar.registerHeadbarButton(`${pluginName}.webImportDialogMount`, () => (
     <SrsErrorBoundary componentName="网页导入">
       <WebImportDialogMount pluginName={pluginName} />
+    </SrsErrorBoundary>
+  ))
+
+  orca.headbar.registerHeadbarButton(`${pluginName}.imageOcclusionEditorMount`, () => (
+    <SrsErrorBoundary componentName="图片遮罩编辑器">
+      <ImageOcclusionEditorMount pluginName={pluginName} />
     </SrsErrorBoundary>
   ))
 
@@ -173,6 +180,14 @@ export function registerUIComponents(pluginName: string): void {
     group: "SRS",
     title: "创建反向方向卡 ← (光标位置分隔问答)",
     command: `${pluginName}.createDirectionBackward`
+  })
+
+  // 图片遮罩：斜杠 /io
+  orca.slashCommands.registerSlashCommand(`${pluginName}.io`, {
+    icon: "ti ti-photo-shield",
+    group: "SRS",
+    title: "图片遮罩（IO）",
+    command: `${pluginName}.openImageOcclusionEditor`
   })
 
   // ============ AI 卡片斜杠命令（仅一条可见体验） ============
@@ -323,6 +338,7 @@ export async function unregisterUIComponents(
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.listCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionForward`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.directionBackward`)
+  orca.slashCommands.unregisterSlashCommand(`${pluginName}.io`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.aiCard`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.manageAIPrompts`)
   orca.slashCommands.unregisterSlashCommand(`${pluginName}.openAIServiceSettings`)

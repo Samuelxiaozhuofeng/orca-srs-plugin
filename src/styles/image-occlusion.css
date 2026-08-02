@@ -1,0 +1,270 @@
+/* 图片遮罩：编辑器 / 复习 / 块预览
+ * 坐标系：.srs-io-frame 紧贴图片，遮罩百分比相对该 frame（非外层滚动区）。
+ */
+
+.srs-io-editor-shell {
+  width: min(920px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--orca-color-bg-1, #1e1e1e);
+  border-radius: 12px;
+  padding: 16px 18px 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.srs-io-editor__title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.srs-io-editor__subtitle {
+  margin-top: 4px;
+  color: var(--orca-color-text-2, #aaa);
+  font-size: 0.9rem;
+}
+
+.srs-io-editor__warn,
+.srs-io-editor__error {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.srs-io-editor__warn {
+  background: rgba(255, 180, 0, 0.12);
+  color: var(--orca-color-text-1, #eee);
+}
+
+.srs-io-editor__error {
+  background: rgba(255, 80, 80, 0.12);
+  color: #f88;
+}
+
+.srs-io-editor__label {
+  font-size: 0.85rem;
+  color: var(--orca-color-text-2, #aaa);
+  margin-right: 8px;
+}
+
+.srs-io-editor__sources,
+.srs-io-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.srs-io-editor__source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.srs-io-editor__source-btn,
+.srs-io-editor__num-btn {
+  border: 1px solid var(--orca-color-border, #444);
+  background: var(--orca-color-bg-2, #2a2a2a);
+  color: var(--orca-color-text-1, #eee);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.srs-io-editor__source-btn.is-active,
+.srs-io-editor__num-btn.is-active {
+  border-color: var(--orca-color-primary, #4c8bf5);
+  background: rgba(76, 139, 245, 0.2);
+}
+
+.srs-io-editor__num-btn--danger {
+  border-color: #c55;
+  color: #f99;
+}
+
+/* 滚动容器：可滚，但不参与坐标 */
+.srs-io-editor__scroll,
+.srs-io-review__scroll {
+  max-height: 58vh;
+  overflow: auto;
+  background: #0c0c0e;
+  border-radius: 8px;
+  line-height: 0;
+}
+
+.srs-io-review__scroll {
+  max-height: none;
+  width: 100%;
+}
+
+/* 图片坐标系根：宽高 = 图片布局尺寸 */
+.srs-io-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  vertical-align: top;
+  user-select: none;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.srs-io-block .srs-io-frame {
+  cursor: default;
+}
+
+.srs-io-review .srs-io-frame {
+  cursor: default;
+  width: 100%;
+}
+
+.srs-io-frame__img {
+  display: block;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 编辑器里 frame 宽度跟滚动区走，保证图片占满可画区域 */
+.srs-io-editor__scroll .srs-io-frame {
+  width: 100%;
+}
+
+/* —— 实心遮罩（不透明） —— */
+.srs-io-mask {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #3d7eff;
+  /* 实心：完全挡住底下文字 */
+  background: #12141a;
+  pointer-events: auto;
+}
+
+.srs-io-mask--solid,
+.srs-io-mask.is-active,
+.srs-io-mask.is-other {
+  background: #12141a;
+  opacity: 1;
+}
+
+.srs-io-mask.is-selected {
+  border-color: #ffcc33;
+  box-shadow: 0 0 0 1px #ffcc33;
+  z-index: 2;
+}
+
+.srs-io-mask.is-draft {
+  border-style: dashed;
+  border-color: #6af;
+  /* 拖拽预览可略透，定稿仍为实心 */
+  background: #1a2740;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.srs-io-mask--preview {
+  pointer-events: none;
+}
+
+.srs-io-mask__label {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #3d7eff;
+  color: #fff;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.srs-io-editor__hint {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--orca-color-text-2, #999);
+  line-height: 1.4;
+}
+
+.srs-io-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.srs-io-editor__status {
+  padding: 24px;
+  text-align: center;
+  color: var(--orca-color-text-2, #aaa);
+  line-height: 1.4;
+}
+
+/* 复习 */
+.srs-io-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.srs-io-review__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.srs-io-review__mode,
+.srs-io-review__readonly {
+  font-size: 0.85rem;
+  color: var(--orca-color-text-2, #aaa);
+}
+
+.srs-io-review__missing,
+.srs-io-review--error,
+.srs-io-review--loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--orca-color-text-2, #aaa);
+  line-height: 1.4;
+}
+
+.srs-io-review--error {
+  color: #f88;
+}
+
+/* 块预览 */
+.srs-io-block__wrap {
+  max-width: 100%;
+  line-height: 0;
+}
+
+.srs-io-block__badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: #1e5ac8;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+.srs-io-block__missing {
+  padding: 12px 16px;
+  color: var(--orca-color-text-2, #999);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}

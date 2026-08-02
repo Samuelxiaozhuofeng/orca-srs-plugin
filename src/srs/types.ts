@@ -17,8 +17,18 @@ export type Grade = "again" | "hard" | "good" | "easy"
  * - choice: 选择题卡片
  * - extracts: 渐进阅读摘录卡片
  * - topic: 渐进阅读主题卡片
+ * - image-occlusion: 图片遮罩（与文字 cloze 分离；变体编号仍用 clozeNumber）
  */
-export type CardType = "basic" | "cloze" | "direction" | "list" | "excerpt" | "choice" | "extracts" | "topic"
+export type CardType =
+  | "basic"
+  | "cloze"
+  | "direction"
+  | "list"
+  | "excerpt"
+  | "choice"
+  | "extracts"
+  | "topic"
+  | "image-occlusion"
 
 // ============================================
 // 选择题卡片相关类型 (Choice Card)
@@ -94,7 +104,8 @@ export type ReviewCard = {
    * 以便 Basic 与 Choice 等可区分；测试 fixture 可省略，由 cardIdentity 兜底推断。
    */
   cardType?: CardType
-  clozeNumber?: number  // 填空编号（仅 cloze 卡片使用）
+  /** 变体编号：cloze 填空 或 image-occlusion 遮罩编号（须配合 cardType 区分） */
+  clozeNumber?: number
   directionType?: "forward" | "backward"  // 方向类型（仅 direction 卡片使用）
   // 列表卡相关字段（仅 list 卡片使用）
   listItemId?: DbId  // 当前复习的条目子块 ID（用于独立 SRS / 日志）

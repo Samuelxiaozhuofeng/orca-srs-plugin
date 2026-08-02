@@ -72,7 +72,7 @@ export type CardDeleteOutcome =
  * 每次属性写入后通过 invalidateBlockCache 失效块缓存。
  */
 export async function deleteReviewCardBackendData(
-  card: Pick<ReviewCard, "id" | "clozeNumber" | "directionType">,
+  card: Pick<ReviewCard, "id" | "clozeNumber" | "directionType" | "cardType">,
   pluginName: string
 ): Promise<CardDeleteOutcome> {
   const {
@@ -82,7 +82,12 @@ export async function deleteReviewCardBackendData(
     invalidateBlockCache
   } = await import("../srs/storage")
 
-  if (card.clozeNumber || card.directionType) {
+  const isIo =
+    card.cardType === "image-occlusion" ||
+    // 兼容未填 cardType 的旧调用：不得用 cloze 内容编号误判 IO
+    false
+
+  if (card.clozeNumber || card.directionType || isIo) {
     // 变体删除决策必须基于后端最新内容，不走本地块缓存
     const block = (await orca.invokeBackend("get-block", card.id)) as
       | Block
@@ -93,7 +98,88 @@ export async function deleteReviewCardBackendData(
     }
 
     let remainingVariants = 0
-    if (card.clozeNumber) {
+    if (card.cardType === "image-occlusion" && card.clozeNumber) {
+      const {
+        getIoMaskNumbers,
+        readIoMasksFromBlock,
+        readIoPrevRepr,
+        readStoredIoSrc,
+        removeIoNumberFromMasks,
+        restoreImageBlockReprAfterIoRemoval
+      } = await import("../srs/imageOcclusion")
+      // 决策与改 masks 均基于本轮 backend 块，禁止再用可能陈旧的 state
+      let numbers: number[]
+      try {
+        numbers = getIoMaskNumbers(readIoMasksFromBlock(block))
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        throw new Error(`读取图片遮罩失败，无法删除变体：${msg}`)
+      }
+      remainingVariants = numbers.filter((n) => n !== card.clozeNumber).length
+      if (remainingVariants > 0) {
+        // 写序：先 masks 成功，再删该编号 SRS（避免 masks 失败却把进度清成新卡）
+        await removeIoNumberFromMasks(card.id, card.clozeNumber, {
+          backendBlock: block
+        })
+        await deleteClozeCardSrsData(card.id, card.clozeNumber)
+        invalidateBlockCache(card.id)
+        return { kind: "variant-only", remainingVariants }
+      }
+      // 最后一个 IO 变体：整卡删除。
+      // restore 内部只对「曾切到 srs.image-occlusion」的宿主改 _repr；
+      // 行内/子块宿主无 prevRepr 且 type 非 IO → skip（禁止 fallback 写成 image）。
+      let prevRepr: Record<string, unknown> | null = null
+      let prevReprCorrupt = false
+      try {
+        prevRepr = readIoPrevRepr(block)
+      } catch (error) {
+        prevReprCorrupt = true
+        console.error(
+          `[${pluginName}] 整卡删除前读取 prevRepr 失败 #${card.id}:`,
+          error
+        )
+      }
+      const fallbackSrc = readStoredIoSrc(block)
+
+      await deleteCardSrsData(card.id)
+      await orca.commands.invokeEditorCommand(
+        "core.editor.removeTag",
+        null,
+        card.id,
+        "card"
+      )
+
+      try {
+        const result = await restoreImageBlockReprAfterIoRemoval(card.id, {
+          prevRepr,
+          fallbackSrc
+        })
+        if (prevReprCorrupt) {
+          // 数据已删，但恢复信息损坏：必须对用户可见，不得装成完全成功
+          orca.notify(
+            "warn",
+            "遮罩已删除，但 prevRepr 损坏，图片外观可能不完整",
+            { title: "SRS" }
+          )
+        } else if (
+          result.restored === false &&
+          result.reason.startsWith("skip-non-io-host")
+        ) {
+          // 行内/子块：预期跳过，无提示噪音
+        }
+      } catch (error) {
+        console.error(
+          `[${pluginName}] 恢复图片 _repr 失败 #${card.id}:`,
+          error
+        )
+        orca.notify("warn", "遮罩数据已删，但图片块外观可能需刷新", {
+          title: "SRS"
+        })
+      }
+
+      invalidateBlockCache(card.id)
+      return { kind: "full" }
+    } else if (card.clozeNumber && card.cardType !== "image-occlusion") {
       const { getAllClozeNumbers } = await import("../srs/clozeUtils")
       const numbers = getAllClozeNumbers(block.content, pluginName)
       remainingVariants = numbers.filter((n) => n !== card.clozeNumber).length
@@ -110,7 +196,7 @@ export async function deleteReviewCardBackendData(
     }
 
     if (remainingVariants > 0) {
-      if (card.clozeNumber) {
+      if (card.clozeNumber && card.cardType !== "image-occlusion") {
         await deleteClozeCardSrsData(card.id, card.clozeNumber)
       } else if (card.directionType) {
         await deleteDirectionCardSrsData(card.id, card.directionType)
@@ -599,32 +685,39 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   }, [pluginName, recomputeSummaries, loadTodayLearning])
 
   const handleCardDelete = useCallback(async (card: ReviewCard) => {
-    setAllCards((prev: ReviewCard[]) => {
-      const next = prev.filter((c: ReviewCard) => {
-        if (card.clozeNumber) {
-          return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
-        }
-        if (card.directionType) {
-          return !(c.id === card.id && c.directionType === card.directionType)
-        }
-        return c.id !== card.id
-      })
-      void recomputeSummaries(next)
-      return next
-    })
-
+    // 后端成功后再改列表，避免失败时页面谎报已删除
     try {
       const outcome = await deleteReviewCardBackendData(card, pluginName)
+
+      setAllCards((prev: ReviewCard[]) => {
+        const next = prev.filter((c: ReviewCard) => {
+          if (card.cardType === "image-occlusion" && card.clozeNumber) {
+            return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
+          }
+          if (card.clozeNumber) {
+            return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
+          }
+          if (card.directionType) {
+            return !(c.id === card.id && c.directionType === card.directionType)
+          }
+          return c.id !== card.id
+        })
+        void recomputeSummaries(next)
+        return next
+      })
 
       invalidateFlashHomeDataCache()
       invalidateTodayLearningSummaryCache()
       void loadTodayLearning(true)
       if (outcome.kind === "variant-only") {
-        const variantLabel = card.clozeNumber
-          ? `填空 c${card.clozeNumber}`
-          : card.directionType === "forward"
-            ? "正向卡"
-            : "反向卡"
+        const variantLabel =
+          card.cardType === "image-occlusion" && card.clozeNumber
+            ? `遮罩 c${card.clozeNumber}`
+            : card.clozeNumber
+              ? `填空 c${card.clozeNumber}`
+              : card.directionType === "forward"
+                ? "正向卡"
+                : "反向卡"
         orca.notify(
           "success",
           `已删除${variantLabel}，同块其它卡片保留 #card`,
@@ -635,7 +728,8 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
       }
     } catch (error) {
       console.error(`[${pluginName}] 删除卡片失败:`, error)
-      orca.notify("error", "删除卡片失败", { title: "SRS" })
+      const msg = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `删除卡片失败：${msg}`, { title: "SRS" })
     }
   }, [pluginName, recomputeSummaries, loadTodayLearning])
 

@@ -39,7 +39,8 @@ export const HEADBAR_MOUNT_SUFFIXES: readonly string[] = Object.freeze([
   "aiServiceSettingsMount",
   "irBookDialogMount",
   "epubImportDialogMount",
-  "webImportDialogMount"
+  "webImportDialogMount",
+  "imageOcclusionEditorMount"
 ])
 
 export function headbarButtonId(

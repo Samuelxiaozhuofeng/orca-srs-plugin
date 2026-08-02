@@ -222,6 +222,26 @@ export function registerContextMenu(pluginName: string): void {
   })
   registeredMenuIds.push(resumeEpubMenuId)
 
+  // 图片遮罩：非查询块显示；是否真有图在点击时校验
+  const imageOcclusionMenuId = `${pluginName}.imageOcclusionMenu`
+  orca.blockMenuCommands.registerBlockMenuCommand(imageOcclusionMenuId, {
+    worksOnMultipleBlocks: false,
+    render: (blockId: DbId, _rootBlockId: DbId, close: () => void) => {
+      const block = orca.state.blocks?.[blockId] as Block | undefined
+      if (!block || isQueryBlock(block)) {
+        return null
+      }
+      return (
+        <ImageOcclusionMenuItem
+          blockId={blockId}
+          pluginName={pluginName}
+          close={close}
+        />
+      )
+    }
+  })
+  registeredMenuIds.push(imageOcclusionMenuId)
+
   // 加入渐进阅读（普通非查询块，且当前不是 Topic IR）
   const joinTopicIRMenuId = `${pluginName}.joinTopicIR`
   orca.blockMenuCommands.registerBlockMenuCommand(joinTopicIRMenuId, {
@@ -781,4 +801,40 @@ async function startRepeatReviewFromContextMenu(
   }
 
   console.log(`[${pluginName}] 重复复习会话已启动，面板ID: ${rightPanelId}`)
+}
+
+/**
+ * 图片遮罩右键菜单项
+ */
+function ImageOcclusionMenuItem({
+  blockId,
+  pluginName,
+  close
+}: {
+  blockId: DbId
+  pluginName: string
+  close: () => void
+}) {
+  const handleClick = async () => {
+    close()
+    try {
+      const { openImageOcclusionEditor } = await import(
+        "../../components/image-occlusion/ImageOcclusionEditorMount"
+      )
+      openImageOcclusionEditor(blockId, pluginName)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[${pluginName}] 打开图片遮罩失败:`, error)
+      orca.notify("error", message, { title: "图片遮罩" })
+    }
+  }
+
+  const MenuText = orca.components.MenuText
+  return (
+    <MenuText
+      preIcon="ti ti-photo-shield"
+      title="图片遮罩"
+      onClick={handleClick}
+    />
+  )
 }

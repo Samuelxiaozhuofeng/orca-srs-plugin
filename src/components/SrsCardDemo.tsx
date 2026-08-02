@@ -16,6 +16,7 @@ import ChoiceCardReviewRenderer from "./ChoiceCardReviewRenderer"
 import ClozeCardReviewRenderer from "./ClozeCardReviewRenderer"
 import DirectionCardReviewRenderer from "./DirectionCardReviewRenderer"
 import ListCardReviewRenderer from "./ListCardReviewRenderer"
+import ImageOcclusionReviewRenderer from "./image-occlusion/ImageOcclusionReviewRenderer"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
 const { useMemo } = window.React
@@ -55,17 +56,21 @@ export type SrsCardDemoProps = {
  */
 function demoCardKey(props: {
   blockId?: DbId
+  /** 优先显式类型（IO 与 cloze 都可能带 clozeNumber） */
+  cardType?: import("../srs/types").CardType
   clozeNumber?: number
   directionType?: "forward" | "backward"
   listItemId?: DbId
 }): string {
   if (props.blockId == null) return "demo:no-block"
   try {
-    const cardType = inferCardType({
-      clozeNumber: props.clozeNumber,
-      directionType: props.directionType,
-      listItemId: props.listItemId
-    })
+    const cardType =
+      props.cardType ??
+      inferCardType({
+        clozeNumber: props.clozeNumber,
+        directionType: props.directionType,
+        listItemId: props.listItemId
+      })
     return buildCardKey({
       blockId: props.blockId,
       cardType,
@@ -90,7 +95,6 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     readOnly = false
   } = props
   const snapshot = useSnapshot(orca.state)
-  const cardKey = demoCardKey({ blockId, clozeNumber, directionType, listItemId })
 
   const { questionBlock, totalChildCount, inferredCardType } = useMemo(() => {
     const block = blockId ? snapshot?.blocks?.[blockId] : null
@@ -101,6 +105,16 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
       inferredCardType: block ? extractCardType(block) : "basic"
     }
   }, [snapshot?.blocks, blockId])
+
+  // 必须带显式 cardType：IO 与 cloze 都用 clozeNumber，infer 会误成 cloze
+  const cardKey = demoCardKey({
+    blockId,
+    cardType: inferredCardType,
+    clozeNumber,
+    directionType,
+    listItemId
+  })
+  void cardKey
 
   // 纯渲染器：块写入 state 由会话层 preflight（独立复习 useReviewCardAvailability /
   // mixed 的 IRMixedReviewPane）。此处仅在 state miss 时被动兜底 loading。
@@ -140,6 +154,18 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     return (
       <SrsErrorBoundary componentName="填空卡片" errorTitle="填空卡片加载出错">
         <ClozeCardReviewRenderer {...sharedRendererProps} blockId={blockId} clozeNumber={clozeNumber} />
+      </SrsErrorBoundary>
+    )
+  }
+
+  if (inferredCardType === "image-occlusion" && blockId) {
+    return (
+      <SrsErrorBoundary componentName="图片遮罩卡片" errorTitle="图片遮罩卡片加载出错">
+        <ImageOcclusionReviewRenderer
+          {...sharedRendererProps}
+          blockId={blockId}
+          clozeNumber={clozeNumber}
+        />
       </SrsErrorBoundary>
     )
   }

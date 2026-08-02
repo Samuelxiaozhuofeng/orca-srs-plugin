@@ -60,8 +60,19 @@ export const REVIEW_SETTINGS_KEYS = {
   fsrsRequestRetention: "review.fsrsRequestRetention",
   fsrsMaximumInterval: "review.fsrsMaximumInterval",
   /** Topic/Extract（及 live IR）上新建记忆卡的首次 due：dispersed | today | tomorrow */
-  irItemInitialDueMode: "review.irItemInitialDueMode"
+  irItemInitialDueMode: "review.irItemInitialDueMode",
+  /**
+   * 图片遮罩复习模式：
+   * - hideOne：只遮当前编号
+   * - hideAll：遮全部遮罩区，显示答案时揭示当前编号
+   */
+  imageOcclusionMode: "review.imageOcclusionMode"
 } as const
+
+/** 图片遮罩全局复习模式 */
+export type ImageOcclusionModeSetting = "hideOne" | "hideAll"
+
+export const DEFAULT_IMAGE_OCCLUSION_MODE: ImageOcclusionModeSetting = "hideOne"
 
 export type ReviewSettingsKey =
   (typeof REVIEW_SETTINGS_KEYS)[keyof typeof REVIEW_SETTINGS_KEYS]
@@ -173,6 +184,14 @@ export const reviewSettingsSchema = {
       + "普通笔记制卡保持原行为。"
       + "取值：dispersed（默认，按优先级分散到约 1–14 天后）、today、tomorrow。"
       + "已有卡片的 due 不会因升级或改设置而重算。"
+  },
+  [REVIEW_SETTINGS_KEYS.imageOcclusionMode]: {
+    label: "图片遮罩复习模式",
+    type: "string" as const,
+    defaultValue: DEFAULT_IMAGE_OCCLUSION_MODE,
+    description:
+      "全局生效。hideOne（默认）：复习某编号时只遮该编号区域；"
+      + "hideAll：遮住全部遮罩区，显示答案时揭示当前编号。"
   }
 }
 
@@ -187,6 +206,7 @@ export interface ReviewSettings {
   fsrsRequestRetention: number
   fsrsMaximumInterval: number
   irItemInitialDueMode: IrItemInitialDueModeSetting
+  imageOcclusionMode: ImageOcclusionModeSetting
 }
 
 /**
@@ -205,6 +225,36 @@ export function parseIrItemInitialDueMode(
     )
   }
   return DEFAULT_IR_ITEM_INITIAL_DUE_MODE
+}
+
+/**
+ * 解析图片遮罩复习模式；非法值回退 hideOne 并 warn。
+ */
+export function parseImageOcclusionMode(raw: unknown): ImageOcclusionModeSetting {
+  if (raw === "hideOne" || raw === "hideAll") return raw
+  if (raw !== undefined && raw !== null && raw !== "") {
+    console.warn(
+      `[SRS] 无效的 review.imageOcclusionMode=${JSON.stringify(raw)}，`
+        + `回退为 ${DEFAULT_IMAGE_OCCLUSION_MODE}`
+    )
+  }
+  return DEFAULT_IMAGE_OCCLUSION_MODE
+}
+
+/**
+ * 读取图片遮罩全局复习模式。
+ */
+export function getImageOcclusionMode(pluginName: string): ImageOcclusionModeSetting {
+  try {
+    const settings =
+      typeof orca !== "undefined"
+        ? orca.state?.plugins?.[pluginName]?.settings
+        : undefined
+    return parseImageOcclusionMode(settings?.[REVIEW_SETTINGS_KEYS.imageOcclusionMode])
+  } catch (error) {
+    console.warn("[SRS] 读取 imageOcclusionMode 失败，回退 hideOne:", error)
+    return DEFAULT_IMAGE_OCCLUSION_MODE
+  }
 }
 
 /**
@@ -270,6 +320,9 @@ export function getReviewSettings(pluginName: string): ReviewSettings {
         | undefined) ?? DEFAULT_MAXIMUM_INTERVAL,
     irItemInitialDueMode: parseIrItemInitialDueMode(
       settings?.[REVIEW_SETTINGS_KEYS.irItemInitialDueMode]
+    ),
+    imageOcclusionMode: parseImageOcclusionMode(
+      settings?.[REVIEW_SETTINGS_KEYS.imageOcclusionMode]
     )
   }
 }

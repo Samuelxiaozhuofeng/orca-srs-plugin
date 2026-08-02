@@ -47,8 +47,11 @@ function statusBadgeLabel(card: ReviewCard, status: ReturnType<typeof getCardDue
  * 变体删除只移除该变体的 SRS 数据；仅当它是本块最后一个变体时才移除 #card。
  */
 export function deleteConfirmText(
-  card: Pick<ReviewCard, "clozeNumber" | "directionType">
+  card: Pick<ReviewCard, "clozeNumber" | "directionType" | "cardType">
 ): string {
+  if (card.cardType === "image-occlusion" && card.clozeNumber != null && card.clozeNumber > 0) {
+    return `确定删除此遮罩（c${card.clozeNumber}）？将移除该编号的遮罩区域与 SRS 数据；同块其它遮罩不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
+  }
   if (card.clozeNumber != null && card.clozeNumber > 0) {
     return `确定删除此填空（c${card.clozeNumber}）？将移除该填空的 SRS 数据；同块其它填空/卡片不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
   }
@@ -83,7 +86,9 @@ export default function CardListItem({
         <div className="srs-card-frame__type-badges">
           {card.clozeNumber != null && card.clozeNumber > 0 && (
             <span className="srs-card-badge srs-card-badge--meta">
-              填空 c{card.clozeNumber}
+              {card.cardType === "image-occlusion"
+                ? `遮罩 c${card.clozeNumber}`
+                : `填空 c${card.clozeNumber}`}
             </span>
           )}
           {card.directionType && (

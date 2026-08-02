@@ -113,7 +113,13 @@ export async function scanCardsFromTags(pluginName: string) {
       // - 方向卡：单行可编辑卡片（由方向标记 + 标签属性驱动）
       // - 列表卡：容器卡片（条目在子块上存储 SRS 状态）
       // - 渐进阅读主题/摘录：独立于 SRS 复习流程
-      if (cardType === "direction" || cardType === "list" || cardType === "extracts" || cardType === "topic") {
+      if (
+        cardType === "direction" ||
+        cardType === "list" ||
+        cardType === "extracts" ||
+        cardType === "topic" ||
+        cardType === "image-occlusion"
+      ) {
         console.log(`[${pluginName}] 跳过：块 #${block.id} 是 ${cardType} 卡片（不转换 _repr）`)
         skippedCount++
         continue

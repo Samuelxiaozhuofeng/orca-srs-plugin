@@ -207,6 +207,142 @@ describe("deleteReviewCardBackendData — direction 变体", () => {
   })
 })
 
+describe("deleteReviewCardBackendData — image-occlusion 变体", () => {
+  it("末变体（行内宿主无 prevRepr）：整卡删除但不把宿主 _repr 改成 image", async () => {
+    const masks = JSON.stringify({
+      version: 1,
+      regions: [
+        { id: "a", n: 1, shape: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+      ]
+    })
+    // 文本块 + 行内图宿主：从未写 prevRepr，_repr 保持 text
+    blocksById[41] = {
+      id: 41,
+      content: [
+        { t: "t", v: "caption " },
+        { t: "i", v: "./image-inline.png" }
+      ],
+      properties: [
+        { name: "srs.isCard", value: true },
+        { name: "srs.io.masks", value: masks },
+        { name: "srs.io.src", value: "./image-inline.png" },
+        { name: "srs.c1.due", value: "2026-08-01" },
+        { name: "_repr", value: { type: "text" } }
+      ],
+      _repr: { type: "text" }
+    } as AnyBlock & { _repr: { type: string } }
+
+    // forceBackend load 会 get-block；restore 后还会再 get-block
+    invokeBackend.mockImplementation(async (api: string, id: number) => {
+      if (api === "get-block") return blocksById[id]
+      throw new Error(`unexpected backend call: ${api}`)
+    })
+
+    const deleteReviewCardBackendData = await importDeleteHelper()
+    const outcome = await deleteReviewCardBackendData(
+      { id: 41, clozeNumber: 1, cardType: "image-occlusion" },
+      PLUGIN
+    )
+
+    expect(outcome).toEqual({ kind: "full" })
+    expect(removeTagCalls().length).toBeGreaterThanOrEqual(1)
+    // 关键：宿主不得被写成 type=image
+    const host = blocksById[41] as AnyBlock & { _repr?: { type?: string } }
+    expect(host._repr?.type).toBe("text")
+    expect(host._repr?.type).not.toBe("image")
+  })
+
+  it("末变体（纯图片有 prevRepr）：恢复原生 image _repr", async () => {
+    const masks = JSON.stringify({
+      version: 1,
+      regions: [
+        { id: "a", n: 1, shape: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+      ]
+    })
+    blocksById[42] = {
+      id: 42,
+      content: [],
+      properties: [
+        { name: "srs.isCard", value: true },
+        { name: "srs.io.masks", value: masks },
+        { name: "srs.io.src", value: "./image-pure.png" },
+        {
+          name: "srs.io.prevRepr",
+          value: JSON.stringify({ type: "image", src: "./image-pure.png" })
+        },
+        { name: "srs.c1.due", value: "2026-08-01" }
+      ],
+      _repr: { type: "srs.image-occlusion", src: "./image-pure.png" }
+    } as AnyBlock & { _repr: { type: string; src?: string } }
+
+    const deleteReviewCardBackendData = await importDeleteHelper()
+    const outcome = await deleteReviewCardBackendData(
+      { id: 42, clozeNumber: 1, cardType: "image-occlusion" },
+      PLUGIN
+    )
+
+    expect(outcome).toEqual({ kind: "full" })
+    const host = blocksById[42] as AnyBlock & {
+      _repr?: { type?: string; src?: string }
+    }
+    expect(host._repr?.type).toBe("image")
+    expect(host._repr?.src).toBe("./image-pure.png")
+  })
+
+  it("删除 c2 保留 c1：先改 masks 再删 srs.c2.*，不 removeTag", async () => {
+    const masks = JSON.stringify({
+      version: 1,
+      regions: [
+        { id: "a", n: 1, shape: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+        { id: "b", n: 2, shape: "rect", x: 0.5, y: 0.5, w: 0.2, h: 0.2 }
+      ]
+    })
+    blocksById[40] = {
+      id: 40,
+      content: [],
+      properties: [
+        { name: "srs.isCard", value: true },
+        { name: "srs.io.masks", value: masks },
+        { name: "srs.io.src", value: "./image-x.png" },
+        { name: "srs.c1.due", value: "2026-08-01" },
+        { name: "srs.c2.due", value: "2026-08-02" },
+        { name: "srs.c2.stability", value: 1 }
+      ]
+    }
+
+    const deleteReviewCardBackendData = await importDeleteHelper()
+    const outcome = await deleteReviewCardBackendData(
+      { id: 40, clozeNumber: 2, cardType: "image-occlusion" },
+      PLUGIN
+    )
+
+    expect(outcome).toEqual({ kind: "variant-only", remainingVariants: 1 })
+    expect(removeTagCalls()).toHaveLength(0)
+
+    // 应有 setProperties 写 masks（去掉 c2）
+    const setMask = invokeEditorCommand.mock.calls.find(
+      (c) =>
+        c[0] === "core.editor.setProperties" &&
+        Array.isArray(c[3]) &&
+        c[3].some((p: { name: string }) => p.name === "srs.io.masks")
+    )
+    expect(setMask).toBeTruthy()
+    const written = (setMask![3] as { name: string; value: string }[]).find(
+      p => p.name === "srs.io.masks"
+    )!.value
+    const parsed = JSON.parse(written)
+    expect(parsed.regions.every((r: { n: number }) => r.n !== 2)).toBe(true)
+    expect(parsed.regions.some((r: { n: number }) => r.n === 1)).toBe(true)
+
+    // 再删 c2 SRS 前缀
+    const delProps = deletePropertiesCalls()
+    expect(
+      delProps.some(c => c.names.some(n => n.startsWith("srs.c2.")))
+    ).toBe(true)
+    expect(hasBlockCacheEntry(40)).toBe(false)
+  })
+})
+
 describe("deleteReviewCardBackendData — 边界", () => {
   it("普通卡（无变体）：保持整卡删除语义", async () => {
     blocksById[5] = {

@@ -251,6 +251,33 @@ export function registerCommands(
     }
   )
 
+  // 图片遮罩：打开编辑器（斜杠 /io / 右键 / 命令面板）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.openImageOcclusionEditor`,
+    async (editor) => {
+      const [_panelId, _rootBlockId, cursor] = editor
+      if (!cursor?.anchor?.blockId) {
+        orca.notify("error", "无法获取光标位置", { title: "图片遮罩" })
+        return null
+      }
+      try {
+        const { openImageOcclusionEditor } = await import(
+          "../../components/image-occlusion/ImageOcclusionEditorMount"
+        )
+        openImageOcclusionEditor(cursor.anchor.blockId, _pluginName)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(`[${_pluginName}] 打开图片遮罩编辑器失败:`, error)
+        orca.notify("error", message, { title: "图片遮罩" })
+      }
+      return null
+    },
+    () => {},
+    {
+      label: "SRS: 图片遮罩（IO）",
+      hasArgs: false
+    }
+  )
 
   // 方向卡命令：正向 (Ctrl+Alt+.)
   orca.commands.registerEditorCommand(
@@ -885,6 +912,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.gotitQuiz`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createExtract`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.openImageOcclusionEditor`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionBackward`)
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)

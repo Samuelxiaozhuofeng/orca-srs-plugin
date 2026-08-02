@@ -11,6 +11,7 @@ import {
   parentBlockIdFromLog
 } from "./cardIdentity"
 import { getAllClozeNumbers } from "./clozeUtils"
+import { getIoMaskNumbers, readIoMasksFromBlock } from "./imageOcclusion"
 import { extractCardType } from "./deckUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
 import { isSrsCardBlock, type BlockWithRepr } from "./blockUtils"
@@ -120,8 +121,11 @@ function structuredIdentityIsComplete(log: ReviewLogEntry): {
   }
 
   const cardType = log.cardType
-  if (cardType === "cloze" && log.clozeNumber == null) {
-    return { ok: false, reason: "cloze 日志缺少 clozeNumber" }
+  if (
+    (cardType === "cloze" || cardType === "image-occlusion") &&
+    log.clozeNumber == null
+  ) {
+    return { ok: false, reason: `${cardType} 日志缺少 clozeNumber` }
   }
   if (cardType === "direction" && !log.directionType) {
     return { ok: false, reason: "direction 日志缺少 directionType" }
@@ -279,6 +283,38 @@ export async function evaluateReviewLogRetention(
       }
     }
     return { decision: "keep", reason: "cloze：父块存在且编号仍有效" }
+  }
+
+  // Image occlusion：类型仍为 image-occlusion，且编号仍在 masks 中
+  if (logType === "image-occlusion") {
+    if (!stillSrs || currentType !== "image-occlusion") {
+      return {
+        decision: "delete",
+        reason: `父块不再是 image-occlusion 卡（stillSrs=${stillSrs}, type=${currentType}）`
+      }
+    }
+    try {
+      const numbers = getIoMaskNumbers(readIoMasksFromBlock(parentBlock))
+      if (!numbers.includes(log.clozeNumber!)) {
+        return {
+          decision: "delete",
+          reason: `image-occlusion clozeNumber=${log.clozeNumber} 已不在 masks 中`
+        }
+      }
+      return {
+        decision: "keep",
+        reason: "image-occlusion：父块存在且编号仍有效"
+      }
+    } catch (error) {
+      console.error(
+        `[deletedCardCleanup] 读取 image-occlusion masks 失败 blockId=${parentId}:`,
+        error
+      )
+      return {
+        decision: "unknown",
+        reason: `读取 image-occlusion masks 失败：${error instanceof Error ? error.message : String(error)}`
+      }
+    }
   }
 
   // Direction：类型仍为 direction，且方向仍在当前定义生成的集合中

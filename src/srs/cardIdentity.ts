@@ -51,10 +51,10 @@ export function identityFromReviewCard(card: ReviewCard): CardIdentity {
     cardType
   }
 
-  if (cardType === "cloze") {
+  if (cardType === "cloze" || cardType === "image-occlusion") {
     if (card.clozeNumber == null) {
       throw new Error(
-        `[cardIdentity] cloze 卡片缺少 clozeNumber（blockId=${card.id}）`
+        `[cardIdentity] ${cardType} 卡片缺少 clozeNumber（blockId=${card.id}）`
       )
     }
     identity.clozeNumber = card.clozeNumber
@@ -83,6 +83,7 @@ export function identityFromReviewCard(card: ReviewCard): CardIdentity {
  * 格式：
  * - basic:123 / choice:123 / excerpt:123 / ...
  * - cloze:123:c1
+ * - io:123:c1（image-occlusion）
  * - direction:123:forward
  * - list:123:item:456
  * - legacy:123（仅旧日志归一化）
@@ -102,6 +103,14 @@ export function buildCardKey(identity: CardIdentity): string {
         )
       }
       return `cloze:${blockId}:c${identity.clozeNumber}`
+    }
+    case "image-occlusion": {
+      if (identity.clozeNumber == null) {
+        throw new Error(
+          `[cardIdentity] 无法生成 image-occlusion cardKey：缺少 clozeNumber（blockId=${blockId}）`
+        )
+      }
+      return `io:${blockId}:c${identity.clozeNumber}`
     }
     case "direction": {
       if (!identity.directionType) {
@@ -145,7 +154,8 @@ const CARD_TYPE_ORDER: Record<CardType, number> = {
   choice: 4,
   excerpt: 5,
   extracts: 6,
-  topic: 7
+  topic: 7,
+  "image-occlusion": 8
 }
 
 /** Direction：forward 先于 backward（与 getDirectionList 习惯一致） */
@@ -171,7 +181,7 @@ export function orderTupleFromIdentity(identity: CardIdentity): CardOrderTuple {
   const typeRank = CARD_TYPE_ORDER[identity.cardType] ?? 99
   let variant = 0
 
-  if (identity.cardType === "cloze") {
+  if (identity.cardType === "cloze" || identity.cardType === "image-occlusion") {
     variant = identity.clozeNumber ?? 0
   } else if (identity.cardType === "direction") {
     variant = identity.directionType

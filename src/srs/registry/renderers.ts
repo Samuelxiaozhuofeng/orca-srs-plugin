@@ -12,6 +12,7 @@ import IncrementalReadingManagerPanel from "../../components/IncrementalReadingM
 import ClozeInlineRenderer from "../../components/ClozeInlineRenderer"
 import DirectionInlineRenderer from "../../components/DirectionInlineRenderer"
 import ChoiceCardBlockRenderer from "../../components/ChoiceCardBlockRenderer"
+import ImageOcclusionBlockRenderer from "../../components/image-occlusion/ImageOcclusionBlockRenderer"
 import ChapterQuizBlock from "../../components/incremental-reading/ChapterQuizBlock"
 import ChapterQuizPanel from "../../panels/ChapterQuizPanel"
 import { CHAPTER_QUIZ_PANEL_VIEW } from "../incremental-reading/chapterQuiz"
@@ -52,6 +53,15 @@ export function registerRenderers(pluginName: string): void {
     false,
     ChoiceCardBlockRenderer,
     [],
+    false
+  )
+
+  // 图片遮罩块：原图 + IO×N 徽章（asset 字段 src）
+  orca.renderers.registerBlock(
+    "srs.image-occlusion",
+    false,
+    ImageOcclusionBlockRenderer,
+    ["src"],
     false
   )
 
@@ -128,6 +138,7 @@ export function unregisterRenderers(pluginName: string): void {
   orca.renderers.unregisterBlock("srs.cloze-card")
   orca.renderers.unregisterBlock("srs.direction-card")
   orca.renderers.unregisterBlock("srs.choice-card")
+  orca.renderers.unregisterBlock("srs.image-occlusion")
   orca.renderers.unregisterBlock("srs.review-session")
   orca.renderers.unregisterBlock("srs.flashcard-home")
   orca.renderers.unregisterBlock("srs.ir-session")
