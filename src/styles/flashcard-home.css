@@ -1408,3 +1408,87 @@
   font-size: var(--srs-text-caption);
   color: var(--orca-color-text-3);
 }
+
+/* ---------- 批量 TTS（卡片列表） ---------- */
+.srs-card-list-view__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  flex-shrink: 0;
+}
+
+.srs-tts-batch-bar {
+  margin: var(--srs-space-2) 0 var(--srs-space-3);
+  padding: var(--srs-space-3);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+  border: 1px solid var(--srs-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.srs-tts-batch-bar__stats {
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+}
+
+.srs-tts-batch-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--srs-space-2);
+}
+
+.srs-tts-batch-bar__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.srs-tts-batch-bar__progress {
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-1);
+}
+
+.srs-tts-batch-bar__errors {
+  margin: 0;
+  padding-left: var(--srs-space-4);
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-2);
+  max-height: 8rem;
+  overflow: auto;
+}
+
+.srs-tts-batch-bar__hint {
+  margin: 0;
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+}
+
+.srs-tts-batch-check {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--srs-space-2);
+  flex-shrink: 0;
+}
+
+.srs-tts-batch-check--disabled {
+  opacity: 0.4;
+}
+
+.srs-tts-batch-status--success {
+  color: var(--srs-accent-success, var(--orca-color-text-1));
+}
+
+.srs-tts-batch-status--failed {
+  color: var(--srs-accent-danger, var(--orca-color-text-1));
+}
+
+.srs-tts-batch-status--running {
+  color: var(--srs-accent-primary, var(--orca-color-text-1));
+}

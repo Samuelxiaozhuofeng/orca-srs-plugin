@@ -1138,118 +1138,13 @@ function fragmentImageSrc(fragment: ContentFragment): string | null {
   )
 }
 
-/**
- * 解析仓库 assets 目录下的相对资源为绝对文件系统路径。
- * 对齐宿主内部 `getAssetPath$1`：`{repoDir}/assets/{fileName}`。
- *
- * 例：`image-xxx.png` → `/Users/.../orca/repos/{id}/assets/image-xxx.png`
- */
-export function resolveRepoAssetAbsolutePath(relativeName: string): string {
-  const sep = "/"
-  const name = String(relativeName ?? "")
-    .replace(/\\/g, "/")
-    .replace(/^\.\//, "")
-    .replace(/^assets\//, "")
-  let repoDir = ""
-  try {
-    if (typeof orca !== "undefined") {
-      const state = orca.state as {
-        repoDir?: string
-        dataDir?: string
-        repo?: string
-      }
-      repoDir =
-        (typeof state.repoDir === "string" && state.repoDir) ||
-        (typeof state.dataDir === "string" && typeof state.repo === "string"
-          ? `${state.dataDir.replace(/[\\/]+$/, "")}${sep}repos${sep}${state.repo}`
-          : "")
-    }
-  } catch (error) {
-    console.warn("[imageOcclusion] 读取 repoDir 失败:", error)
-  }
-  if (!repoDir) {
-    throw new Error(
-      "无法解析仓库 assets 路径：orca.state.repoDir / dataDir+repo 不可用"
-    )
-  }
-  const base = repoDir.replace(/[\\/]+$/, "")
-  if (!name) return `${base}${sep}assets${sep}`
-  return `${base}${sep}assets${sep}${name}`
-}
-
-/**
- * 将绝对路径转为 img 可用的 file:// URL（与宿主 image 块渲染一致）。
- * 宿主逻辑：`/^(file|https?):/.test(p) ? p : \`file://${p.startsWith("/")?"":"/"}${p}\``
- */
-export function absolutePathToFileUrl(absPath: string): string {
-  const p = String(absPath ?? "").trim()
-  if (!p) return ""
-  if (/^(file|https?):/i.test(p)) return p
-  // 保留路径中的空格等字符：先规范化分隔符，再按段 encode（避免 encodeURI 漏 # 等）
-  const normalized = p.replace(/\\/g, "/")
-  const withRoot = normalized.startsWith("/") ? normalized : `/${normalized}`
-  // file URL：file:///Users/... ；Windows: file:///C:/...
-  const encoded = withRoot
-    .split("/")
-    .map((seg, i) => (i === 0 ? seg : encodeURIComponent(seg)))
-    .join("/")
-  return `file://${encoded}`
-}
-
-/**
- * 解析展示用 URL，对齐 Orca 原生 image 块：
- * - `./image-xxx.png` / `image-xxx.png` → `{repoDir}/assets/...` → `file://...`
- * - 绝对路径 → `file://...`
- * - http(s)/data/blob/file 原样
- *
- * 注意：`orca.utils.getAssetPath` 在宿主中是恒等函数，不能单独依赖它解析仓库图。
- */
-export function resolveImageDisplayUrl(src: string): string {
-  if (!src) return ""
-  const trimmed = src.trim()
-  // 协议大小写不敏感（HTTPS:// 不得被当成仓库相对路径）
-  if (/^(https?:|data:|blob:|file:)/i.test(trimmed)) {
-    return trimmed
-  }
-
-  // 仓库相对资源：`./image-xxx.png`（DB 中最常见）
-  const isRepoRelative =
-    trimmed.startsWith("./") ||
-    trimmed.startsWith("assets/") ||
-    (!trimmed.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(trimmed))
-
-  let fsPath = trimmed
-  if (isRepoRelative) {
-    // repoDir 不可用时必须抛错，禁止生成 file:///./image.png 假 URL
-    fsPath = resolveRepoAssetAbsolutePath(trimmed)
-  }
-
-  // 绝对路径或已解析的 fs 路径 → file://
-  if (
-    fsPath.startsWith("/") ||
-    /^[A-Za-z]:[\\/]/.test(fsPath) ||
-    fsPath.includes("/assets/") ||
-    fsPath.includes("\\assets\\")
-  ) {
-    return absolutePathToFileUrl(fsPath)
-  }
-
-  try {
-    if (typeof orca !== "undefined" && orca.utils?.getAssetPath) {
-      const via = orca.utils.getAssetPath(fsPath)
-      if (via && via !== fsPath && /^(file|https?):/i.test(via)) return via
-      if (via && (via.startsWith("/") || /^[A-Za-z]:[\\/]/.test(via))) {
-        return absolutePathToFileUrl(via)
-      }
-    }
-  } catch (error) {
-    console.warn("[imageOcclusion] getAssetPath 失败:", error)
-  }
-
-  throw new Error(
-    `无法将图片 src 解析为可展示 URL: ${trimmed.slice(0, 120)}`
-  )
-}
+// 路径解析实现已抽到 repoAssetPath.ts（TTS 播放共用）；此处 re-export 保持原导入路径稳定。
+export {
+  absolutePathToFileUrl,
+  resolveImageDisplayUrl,
+  resolveRepoAssetAbsolutePath,
+  resolveRepoAssetDisplayUrl
+} from "./repoAssetPath"
 
 /**
  * 从宿主块收集可选图片：自身 image 块、content 内 inline 图、直接子 image 块。

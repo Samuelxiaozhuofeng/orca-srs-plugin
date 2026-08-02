@@ -2,6 +2,10 @@ import type { DbId } from "../../orca.d.ts"
 import type { Grade, SrsState } from "../../srs/types"
 import { previewDueDates, previewIntervals } from "../../srs/algorithm"
 import { useReviewShortcuts } from "../../hooks/useReviewShortcuts"
+import {
+  loadTtsPlaybackForCard,
+  playTtsAudio
+} from "../../srs/tts/ttsPlayback"
 import SrsErrorBoundary from "../SrsErrorBoundary"
 import CardInfoPanel from "./CardInfoPanel"
 import {
@@ -10,7 +14,7 @@ import {
 } from "./EmbeddedReviewBlocks"
 import ReviewGradeButtons from "./ReviewGradeButtons"
 
-const { useEffect, useMemo, useRef, useState } = window.React
+const { useEffect, useMemo, useRef, useState, useCallback } = window.React
 const { Block, BlockBreadcrumb, Button, ModalOverlay } = orca.components
 
 export type BasicCardReviewRendererProps = {
@@ -78,17 +82,119 @@ export default function BasicCardReviewRenderer({
 }: BasicCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
+  const [ttsPlayUrl, setTtsPlayUrl] = useState<string | null>(null)
+  const [ttsLoading, setTtsLoading] = useState(false)
+  const [ttsPlaying, setTtsPlaying] = useState(false)
+  const [ttsError, setTtsError] = useState<string | null>(null)
   const previousCardKeyRef = useRef("")
+  const audioElRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (previousCardKeyRef.current !== cardKey) {
       setShowAnswer(readOnly)
       setShowCardInfo(false)
+      setTtsPlayUrl(null)
+      setTtsError(null)
+      setTtsPlaying(false)
+      try {
+        audioElRef.current?.pause()
+      } catch (error) {
+        console.warn("[TTS Review] 切换卡片时暂停音频失败:", error)
+      }
+      audioElRef.current = null
       previousCardKeyRef.current = cardKey
     } else if (readOnly) {
       setShowAnswer(true)
     }
   }, [cardKey, readOnly])
+
+  // 探测是否有关联 TTS（失败不阻断复习）
+  useEffect(() => {
+    if (!blockId || !cardKey || isExcerptCard) {
+      setTtsPlayUrl(null)
+      return
+    }
+    let cancelled = false
+    setTtsLoading(true)
+    void loadTtsPlaybackForCard(blockId, cardKey)
+      .then((result) => {
+        if (cancelled) return
+        if (result.ok) {
+          setTtsPlayUrl(result.playUrl)
+          setTtsError(null)
+        } else {
+          setTtsPlayUrl(null)
+          if (result.reason === "此卡尚无关联语音") {
+            setTtsError(null)
+          } else {
+            console.error("[TTS Review] 加载播放路径失败:", result.reason)
+            setTtsError(result.reason)
+          }
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.warn("[TTS Review] 加载播放路径失败:", error)
+        setTtsPlayUrl(null)
+      })
+      .finally(() => {
+        if (!cancelled) setTtsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [blockId, cardKey, isExcerptCard])
+
+  useEffect(() => {
+    return () => {
+      const audio = audioElRef.current
+      if (!audio) return
+      try {
+        audio.pause()
+      } catch (error) {
+        console.warn("[TTS Review] 离开复习页时暂停音频失败:", error)
+      }
+      audioElRef.current = null
+    }
+  }, [])
+
+  const handlePlayTts = useCallback(async () => {
+    if (!blockId || !cardKey) return
+    setTtsError(null)
+    try {
+      let url = ttsPlayUrl
+      if (!url) {
+        const resolved = await loadTtsPlaybackForCard(blockId, cardKey)
+        if (!resolved.ok) {
+          setTtsError(resolved.reason)
+          orca.notify("warn", resolved.reason, { title: "播放语音" })
+          return
+        }
+        url = resolved.playUrl
+        setTtsPlayUrl(url)
+      }
+      setTtsPlaying(true)
+      const el = await playTtsAudio({
+        playUrl: url,
+        audioEl: audioElRef.current ?? undefined
+      })
+      audioElRef.current = el
+      el.onended = () => setTtsPlaying(false)
+      el.onerror = () => {
+        setTtsPlaying(false)
+        const msg = "音频加载或播放失败"
+        setTtsError(msg)
+        orca.notify("error", msg, { title: "播放语音" })
+      }
+    } catch (error) {
+      setTtsPlaying(false)
+      const msg =
+        error instanceof Error ? error.message : String(error)
+      setTtsError(msg)
+      console.error("[TTS Review] 播放失败:", msg)
+      orca.notify("error", msg, { title: "播放语音" })
+    }
+  }, [blockId, cardKey, ttsPlayUrl])
 
   const handleGrade = async (grade: Grade) => {
     if (isGrading || readOnly) return
@@ -185,11 +291,43 @@ export default function BasicCardReviewRenderer({
             >
               <i className="ti ti-info-circle" />
             </Button>
+            {!isExcerptCard && (ttsPlayUrl || ttsLoading) && (
+              <Button
+                variant="plain"
+                onClick={
+                  ttsLoading
+                    ? undefined
+                    : () => {
+                        void handlePlayTts()
+                      }
+                }
+                title={ttsPlaying ? "重播语音" : "播放语音"}
+                className={`srs-review-icon-btn ${
+                  ttsPlaying ? "srs-review-icon-btn--active" : ""
+                }${ttsLoading ? " srs-review-icon-btn--disabled" : ""}`}
+              >
+                <i
+                  className={
+                    ttsPlaying ? "ti ti-player-play-filled" : "ti ti-volume"
+                  }
+                />
+              </Button>
+            )}
           </div>
         </div>
       )}
 
       {blockId && showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
+
+      {ttsError && (
+        <div
+          contentEditable={false}
+          className="srs-review-tts-error"
+          role="status"
+        >
+          {ttsError}
+        </div>
+      )}
 
       {!isExcerptCard && (
         <div className="srs-card-front srs-review-face srs-review-face--question">
@@ -201,6 +339,21 @@ export default function BasicCardReviewRenderer({
             摘录路径不走此处。
           */}
           <EmbeddedQuestionBlock blockId={blockId} panelId={panelId} fallback={front} />
+          {ttsPlayUrl && (
+            <div contentEditable={false} className="srs-review-tts-actions">
+              <Button
+                variant="outline"
+                className="srs-review-tts-btn"
+                onClick={() => {
+                  void handlePlayTts()
+                }}
+                title={ttsPlaying ? "重播语音" : "播放语音"}
+              >
+                <i className="ti ti-volume" aria-hidden="true" />{" "}
+                {ttsPlaying ? "重播" : "播放语音"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

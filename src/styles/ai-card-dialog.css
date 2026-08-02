@@ -2491,3 +2491,16 @@
   display: block;
   margin-top: var(--srs-space-1);
 }
+
+.ai-service-settings__actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--srs-space-2);
+  margin-top: var(--srs-space-2);
+}
+
+/* TTS 语速/音调并排字段 */
+.ai-service-settings__field--flex {
+  flex: 1 1 0;
+  min-width: 0;
+}

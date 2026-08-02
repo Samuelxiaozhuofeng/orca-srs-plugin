@@ -25,6 +25,16 @@ import {
   DEFAULT_CHAPTER_QUIZ_COUNT,
   type ChapterQuizPrefs
 } from "../settings/chapterQuizSettingsSchema"
+import {
+  getTtsSettings,
+  hydrateTtsSettings,
+  DEFAULT_TTS_REGION,
+  DEFAULT_TTS_VOICE,
+  DEFAULT_TTS_RATE,
+  DEFAULT_TTS_PITCH,
+  DEFAULT_TTS_OUTPUT_FORMAT,
+  type TtsSettings
+} from "../tts/ttsSettingsSchema"
 
 const { proxy } = window.Valtio
 
@@ -40,6 +50,8 @@ export interface AIServiceSettingsState {
   initialQuickCard: QuickCardPrefs
   /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
   initialChapterQuiz: ChapterQuizPrefs
+  /** Azure TTS 连接（独立 key，不复用 AI） */
+  initialTts: TtsSettings
 }
 
 const emptyAI: AISettings = {
@@ -71,6 +83,17 @@ const emptyChapterQuiz: ChapterQuizPrefs = {
   model: ""
 }
 
+const emptyTts: TtsSettings = {
+  provider: "azure",
+  region: DEFAULT_TTS_REGION,
+  endpoint: "",
+  apiKey: "",
+  voice: DEFAULT_TTS_VOICE,
+  format: DEFAULT_TTS_OUTPUT_FORMAT,
+  rate: DEFAULT_TTS_RATE,
+  pitch: DEFAULT_TTS_PITCH
+}
+
 export const aiServiceSettingsState = proxy({
   isOpen: false,
   pluginName: null as string | null,
@@ -79,7 +102,8 @@ export const aiServiceSettingsState = proxy({
   errorMessage: null as string | null,
   initialAI: { ...emptyAI },
   initialFirecrawl: { ...emptyFirecrawl },
-  initialChapterQuiz: { ...emptyChapterQuiz }
+  initialChapterQuiz: { ...emptyChapterQuiz },
+  initialTts: { ...emptyTts }
 }) as AIServiceSettingsState
 
 export function isAIServiceSettingsOpen(): boolean {
@@ -111,14 +135,16 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   aiServiceSettingsState.initialFirecrawl = getWebImportSettings(pluginName)
   aiServiceSettingsState.initialQuickCard = getQuickCardPrefs(pluginName)
   aiServiceSettingsState.initialChapterQuiz = getChapterQuizPrefs(pluginName)
+  aiServiceSettingsState.initialTts = getTtsSettings(pluginName)
   aiServiceSettingsState.isOpen = true
 
   try {
-    const [ai, firecrawl, quickCard, chapterQuiz] = await Promise.all([
+    const [ai, firecrawl, quickCard, chapterQuiz, tts] = await Promise.all([
       hydrateAISettings(pluginName),
       hydrateWebImportSettings(pluginName),
       hydrateQuickCardPrefs(pluginName),
-      hydrateChapterQuizPrefs(pluginName)
+      hydrateChapterQuizPrefs(pluginName),
+      hydrateTtsSettings(pluginName)
     ])
     if (
       !aiServiceSettingsState.isOpen ||
@@ -130,6 +156,7 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
     aiServiceSettingsState.initialFirecrawl = firecrawl
     aiServiceSettingsState.initialQuickCard = quickCard
     aiServiceSettingsState.initialChapterQuiz = chapterQuiz
+    aiServiceSettingsState.initialTts = tts
   } catch (error) {
     console.error("[AI ServiceSettings] 加载失败:", error)
     if (
@@ -160,6 +187,7 @@ export function closeAIServiceSettings(): void {
     aiServiceSettingsState.initialAI = { ...emptyAI }
     aiServiceSettingsState.initialFirecrawl = { ...emptyFirecrawl }
     aiServiceSettingsState.initialChapterQuiz = { ...emptyChapterQuiz }
+    aiServiceSettingsState.initialTts = { ...emptyTts }
   }, 300)
 }
 

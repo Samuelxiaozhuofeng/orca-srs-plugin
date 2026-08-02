@@ -924,6 +924,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             allDeckCards={deckCards}
             currentFilter={currentFilter}
             panelId={panelId}
+            pluginName={pluginName}
             onFilterChange={handleFilterChange}
             onCardClick={handleCardClick}
             onCardReset={handleCardReset}

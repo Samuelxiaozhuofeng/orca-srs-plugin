@@ -1807,3 +1807,23 @@
 .srs-choice-grade-hint {
   margin-top: 0;
 }
+
+/* ---------- Basic 复习 TTS 播放 ---------- */
+.srs-review-tts-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--srs-space-2);
+}
+
+.srs-review-tts-btn {
+  font-size: var(--srs-text-secondary);
+}
+
+.srs-review-tts-error {
+  margin: var(--srs-space-2) 0;
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  background: var(--orca-color-bg-2);
+  color: var(--orca-color-text-2);
+  font-size: var(--srs-text-caption);
+}

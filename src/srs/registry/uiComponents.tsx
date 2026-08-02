@@ -98,6 +98,12 @@ export function registerUIComponents(pluginName: string): void {
     command: `${pluginName}.createCloze`
   })
 
+  orca.toolbar.registerToolbarButton(`${pluginName}.ttsFromSelection`, {
+    icon: "ti ti-volume",
+    tooltip: "选区生成语音 (Azure TTS)",
+    command: `${pluginName}.ttsFromSelection`
+  })
+
   orca.toolbar.registerToolbarButton(`${pluginName}.aiQuickInteract`, {
     icon: "ti ti-sparkles",
     tooltip: "AI 快捷交互",
@@ -327,6 +333,7 @@ export async function unregisterUIComponents(
 
   // 工具栏按钮
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.ttsFromSelection`)
   orca.toolbar.unregisterToolbarButton(`${pluginName}.aiQuickInteract`)
 
   // 斜杠命令

@@ -31,6 +31,9 @@
 > **索引增补：2026-08-02（章末小测生成偏好进服务设置面板）**：
 > - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：新增「生成偏好」小节——「AI / Firecrawl 服务设置」→「章末小测」Tab 可配默认出题数量（3–30）、题目语言（auto/zh/en/ja）、自定义提示词（≤500）、专用模型；持久化 plugin data `ai.chapterQuiz`（`chapterQuizSettingsSchema.ts`），`insertChapterQuizBlock` / `generateChapterQuizQuestions` 未显式传参时读取
 > - [SRS_AI模块.md](SRS_AI模块.md)：设置项表格 + 面板 Tab 清单同步
+>
+> **索引增补：2026-08-02（Azure TTS MVP）**：
+> - [SRS_TTS语音.md](SRS_TTS语音.md)：Azure Speech REST；选区单条 / Flash Home Basic 批量 / `srs.tts.manifest` / 复习手动播放；plugin data `tts.connection`；不自动播放、不批量非 Basic
 
 ## 文档分类
 
@@ -65,6 +68,10 @@
 4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-07-26 更新
    - 收集、卡组、块工具等横切模块（**无** `cardBrowser.ts`；浏览侧见 Flash Home；`panelUtils.ts` 已删除）
    - 关联：`blockUtils.ts`、`cardCollector.ts`、`deckUtils.ts`、`flashcardHomeManager.ts` 等
+
+4b. **[SRS_TTS语音.md](SRS_TTS语音.md)** ⭐ 2026-08-02 新增
+   - Azure Speech REST TTS MVP：服务设置、选区生成、Flash Home Basic 批量、manifest、复习手动播放
+   - 关联：`src/srs/tts/*`、`AIServiceSettingsDialog.tsx`、`CardListView.tsx`、`BasicCardReviewRenderer.tsx`
 
 ### 卡种
 

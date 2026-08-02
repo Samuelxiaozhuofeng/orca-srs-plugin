@@ -439,6 +439,46 @@ export function registerCommands(
     }
   )
 
+  // 选中文本 → Azure TTS → 原生 audio block（对称 undo：删 audio + 恢复 manifest）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.ttsFromSelection`,
+    async (editor) => {
+      const [, , cursor] = editor
+      if (!cursor) {
+        orca.notify("error", "无法获取光标位置", { title: "TTS" })
+        return null
+      }
+      const {
+        runSelectionTtsCommand
+      } = await import("../tts/ttsSelectionCommand")
+      const result = await runSelectionTtsCommand(cursor, _pluginName)
+      if (!result.ok) {
+        if (result.openSettings) {
+          const { openAIServiceSettings } = await import(
+            "../ai/aiServiceSettingsState"
+          )
+          await openAIServiceSettings(_pluginName)
+        }
+        return null
+      }
+      // skipped / 失败不产生可误删内容的 undoArgs
+      if (result.status === "created" && result.undoArgs) {
+        return { ret: result, undoArgs: result.undoArgs }
+      }
+      return null
+    },
+    async (undoArgs) => {
+      // 与同文件 makeCard/createExtract 一致：宿主 undo 传入的首参即为 undoArgs
+      const { undoSelectionTts } = await import("../tts/ttsSelectionCommand")
+      // 失败时 undoSelectionTts 已 console.error + notify 并抛出
+      await undoSelectionTts(undoArgs)
+    },
+    {
+      label: "SRS: 选区生成语音",
+      hasArgs: false
+    }
+  )
+
   // AI 连接测试命令
   orca.commands.registerCommand(
     `${pluginName}.testAIConnection`,
@@ -918,6 +958,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.makeAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.interactiveAICard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.aiQuickInteract`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.ttsFromSelection`)
   orca.commands.unregisterEditorCommand(`${pluginName}.quickBasicCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.quickClozeCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.quickChoiceCard`)

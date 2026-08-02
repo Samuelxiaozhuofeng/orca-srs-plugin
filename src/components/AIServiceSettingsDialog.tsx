@@ -29,12 +29,17 @@ import {
   CHAPTER_QUIZ_COUNT_MIN,
   type ChapterQuizPrefs
 } from "../srs/settings/chapterQuizSettingsSchema"
+import {
+  DEFAULT_TTS_OUTPUT_FORMAT,
+  type TtsSettings
+} from "../srs/tts/ttsSettingsSchema"
 
 export type ServiceSettingsDraft = {
   ai: AISettings
   firecrawl: WebImportSettings
   quickCard: QuickCardPrefs
   chapterQuiz: ChapterQuizPrefs
+  tts: TtsSettings
 }
 
 export interface AIServiceSettingsDialogProps {
@@ -49,14 +54,17 @@ export interface AIServiceSettingsDialogProps {
   initialQuickCard: QuickCardPrefs
   /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
   initialChapterQuiz: ChapterQuizPrefs
+  initialTts: TtsSettings
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
+  isTestingTts: boolean
   modelsError: string | null
   statusMessage: string | null
   onClose: () => void
   onSave: (draft: ServiceSettingsDraft) => void
   onTestAI: (draft: ServiceSettingsDraft) => void
+  onTestTts: (draft: ServiceSettingsDraft) => void
   onFetchModels: (draft: ServiceSettingsDraft) => void
 }
 
@@ -65,6 +73,7 @@ type SettingsTabId =
   | "behavior"
   | "quickCard"
   | "chapterQuiz"
+  | "tts"
   | "webImport"
   | "diagnostics"
 
@@ -77,6 +86,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "behavior", label: "行为", icon: "ti-adjustments" },
   { id: "quickCard", label: "快捷制卡", icon: "ti-bolt" },
   { id: "chapterQuiz", label: "章末小测", icon: "ti-clipboard-list" },
+  { id: "tts", label: "语音 TTS", icon: "ti-volume" },
   { id: "webImport", label: "网页导入", icon: "ti-world-www" },
   { id: "diagnostics", label: "诊断", icon: "ti-activity" }
 ]
@@ -131,14 +141,17 @@ function ServiceSettingsForm(props: {
   initialFirecrawl: WebImportSettings
   initialQuickCard: QuickCardPrefs
   initialChapterQuiz: ChapterQuizPrefs
+  initialTts: TtsSettings
   busy: boolean
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
+  isTestingTts: boolean
   modelsError: string | null
   statusMessage: string | null
   onSave: (draft: ServiceSettingsDraft) => void
   onTestAI: (draft: ServiceSettingsDraft) => void
+  onTestTts: (draft: ServiceSettingsDraft) => void
   onFetchModels: (draft: ServiceSettingsDraft) => void
   onCancel: () => void
 }) {
@@ -182,6 +195,13 @@ function ServiceSettingsForm(props: {
     props.initialChapterQuiz.customPrompt
   )
   const [quizModel, setQuizModel] = useState(props.initialChapterQuiz.model)
+  const [ttsApiKey, setTtsApiKey] = useState(props.initialTts.apiKey)
+  const [ttsShowKey, setTtsShowKey] = useState(false)
+  const [ttsRegion, setTtsRegion] = useState(props.initialTts.region)
+  const [ttsEndpoint, setTtsEndpoint] = useState(props.initialTts.endpoint)
+  const [ttsVoice, setTtsVoice] = useState(props.initialTts.voice)
+  const [ttsRate, setTtsRate] = useState(props.initialTts.rate)
+  const [ttsPitch, setTtsPitch] = useState(props.initialTts.pitch)
 
   const busy = props.busy
   const draft = (): ServiceSettingsDraft => ({
@@ -212,6 +232,16 @@ function ServiceSettingsForm(props: {
       language: quizLanguage,
       customPrompt: quizCustomPrompt,
       model: quizModel
+    },
+    tts: {
+      provider: "azure",
+      apiKey: ttsApiKey,
+      region: ttsRegion,
+      endpoint: ttsEndpoint,
+      voice: ttsVoice,
+      format: DEFAULT_TTS_OUTPUT_FORMAT,
+      rate: ttsRate,
+      pitch: ttsPitch
     }
   })
 
@@ -662,6 +692,173 @@ function ServiceSettingsForm(props: {
           </section>
         ) : null}
 
+        {activeTab === "tts" ? (
+          <section
+            className="ai-service-settings__section"
+            role="tabpanel"
+            id="ai-service-panel-tts"
+            aria-labelledby="ai-service-tab-tts"
+          >
+            <h3 className="ai-service-settings__section-title">
+              <i className="ti ti-volume" aria-hidden="true" />
+              Azure Speech TTS
+            </h3>
+            <p className="ai-service-settings__section-desc">
+              独立于 AI 的语音合成配置。Key 仅存本机插件 data，不会写入卡片
+              manifest 或日志。
+            </p>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">服务商</span>
+              <input
+                type="text"
+                className="ai-service-settings__input"
+                value="Azure Speech"
+                disabled
+                readOnly
+              />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">区域 (region)</span>
+              <input
+                type="text"
+                className="ai-service-settings__input"
+                value={ttsRegion}
+                onChange={(e) => setTtsRegion(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                placeholder="eastasia / japaneast / westus …"
+                disabled={busy}
+                autoComplete="off"
+              />
+              <FieldHint summary="常用区域：eastasia、japaneast、southeastasia、westus2。须与 Azure 资源区域一致。" />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">
+                自定义 Endpoint（可选）
+              </span>
+              <input
+                type="url"
+                className="ai-service-settings__input"
+                value={ttsEndpoint}
+                onChange={(e) => setTtsEndpoint(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                placeholder="https://{region}.tts.speech.microsoft.com"
+                disabled={busy}
+                autoComplete="off"
+              />
+              <FieldHint
+                summary="仅允许 HTTPS。填写后优先于 region。"
+                details="路径会自动追加 /cognitiveservices/v1。留空则使用 https://{region}.tts.speech.microsoft.com。"
+              />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">API Key</span>
+              <div className="ai-service-settings__model-row">
+                <input
+                  type={ttsShowKey ? "text" : "password"}
+                  className="ai-service-settings__input"
+                  value={ttsApiKey}
+                  onChange={(e) => setTtsApiKey(e.target.value)}
+                  onKeyDown={stopKeys}
+                  onKeyUp={stopKeys}
+                  onMouseDown={stopBubble}
+                  placeholder="Azure Speech 订阅密钥"
+                  disabled={busy}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="ai-service-settings__btn ai-service-settings__btn--ghost"
+                  onClick={() => setTtsShowKey((v: boolean) => !v)}
+                  disabled={busy}
+                  title={ttsShowKey ? "隐藏密钥" : "显示密钥"}
+                >
+                  {ttsShowKey ? "隐藏" : "显示"}
+                </button>
+              </div>
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">语音 (voice)</span>
+              <input
+                type="text"
+                className="ai-service-settings__input"
+                value={ttsVoice}
+                onChange={(e) => setTtsVoice(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                placeholder="zh-CN-XiaoxiaoNeural"
+                disabled={busy}
+                autoComplete="off"
+              />
+              <FieldHint summary="Azure 神经语音名称，如 zh-CN-XiaoxiaoNeural、en-US-JennyNeural。" />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">输出格式</span>
+              <input
+                type="text"
+                className="ai-service-settings__input"
+                value={DEFAULT_TTS_OUTPUT_FORMAT}
+                disabled
+                readOnly
+              />
+              <FieldHint summary="MVP 固定 MP3 格式，便于原生 audio 块与播放。" />
+            </label>
+
+            <div className="ai-service-settings__model-row">
+              <label className="ai-service-settings__field ai-service-settings__field--flex">
+                <span className="ai-service-settings__label">语速 rate</span>
+                <input
+                  type="text"
+                  className="ai-service-settings__input"
+                  value={ttsRate}
+                  onChange={(e) => setTtsRate(e.target.value)}
+                  onKeyDown={stopKeys}
+                  onKeyUp={stopKeys}
+                  onMouseDown={stopBubble}
+                  placeholder="0% / +10% / -5%"
+                  disabled={busy}
+                />
+              </label>
+              <label className="ai-service-settings__field ai-service-settings__field--flex">
+                <span className="ai-service-settings__label">音调 pitch</span>
+                <input
+                  type="text"
+                  className="ai-service-settings__input"
+                  value={ttsPitch}
+                  onChange={(e) => setTtsPitch(e.target.value)}
+                  onKeyDown={stopKeys}
+                  onKeyUp={stopKeys}
+                  onMouseDown={stopBubble}
+                  placeholder="0% / +2st"
+                  disabled={busy}
+                />
+              </label>
+            </div>
+
+            <div className="ai-service-settings__actions-row">
+              <button
+                type="button"
+                className="ai-service-settings__btn ai-service-settings__btn--primary"
+                onClick={() => props.onTestTts(draft())}
+                disabled={busy || props.isTestingTts}
+              >
+                {props.isTestingTts ? "试听中…" : "测试连接 / 试听"}
+              </button>
+            </div>
+            <FieldHint summary="会请求一小段「你好，这是语音合成测试。」并尝试播放；失败会显示明确错误。" />
+          </section>
+        ) : null}
+
         {activeTab === "webImport" ? (
           <section
             className="ai-service-settings__section"
@@ -760,14 +957,17 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     initialFirecrawl,
     initialQuickCard,
     initialChapterQuiz,
+    initialTts,
     modelOptions,
     isFetchingModels,
     isTestingAI,
+    isTestingTts,
     modelsError,
     statusMessage,
     onClose,
     onSave,
     onTestAI,
+    onTestTts,
     onFetchModels
   } = props
 
@@ -795,7 +995,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
               <span>AI 与导入服务</span>
             </h2>
             <p className="ai-service-settings__subtitle">
-              连接 AI、调请求行为、快捷制卡与网页导入；数据保存在插件私有
+              连接 AI、语音 TTS、快捷制卡与网页导入；数据保存在插件私有
               data，不冲掉其它配置。
             </p>
           </div>
@@ -829,14 +1029,17 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             initialFirecrawl={initialFirecrawl}
             initialQuickCard={initialQuickCard}
             initialChapterQuiz={initialChapterQuiz}
+            initialTts={initialTts}
             busy={busy}
             modelOptions={modelOptions}
             isFetchingModels={isFetchingModels}
             isTestingAI={isTestingAI}
+            isTestingTts={isTestingTts}
             modelsError={modelsError}
             statusMessage={statusMessage}
             onSave={onSave}
             onTestAI={onTestAI}
+            onTestTts={onTestTts}
             onFetchModels={onFetchModels}
             onCancel={onClose}
           />

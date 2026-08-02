@@ -133,6 +133,12 @@ export async function load(_name: string) {
   } catch (error) {
     console.warn(`[${pluginName}] 加载章末小测偏好失败:`, error)
   }
+  try {
+    const { hydrateTtsSettings } = await import("./srs/tts/ttsSettingsSchema")
+    await hydrateTtsSettings(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载 TTS 连接设置失败:`, error)
+  }
 
   try {
     const { registerIRDefaultShortcuts } = await import("./srs/incremental-reading/irShortcutsRegistry")

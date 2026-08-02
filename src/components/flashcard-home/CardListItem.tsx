@@ -1,5 +1,6 @@
 import type { DbId } from "../../orca.d.ts"
 import type { ReviewCard } from "../../srs/types"
+import type { TtsBatchItemStatus } from "../../srs/tts/ttsBatch"
 import SafeBlockPreview from "../SafeBlockPreview"
 import CardFrame from "./CardFrame"
 import {
@@ -17,6 +18,14 @@ type CardListItemProps = {
   onCardClick: (cardId: DbId) => void
   onCardReset: (card: ReviewCard) => void
   onCardDelete: (card: ReviewCard) => void
+  /** 批量 TTS 模式 */
+  batchMode?: boolean
+  selectable?: boolean
+  selected?: boolean
+  skipReason?: string
+  batchStatus?: TtsBatchItemStatus
+  batchError?: string
+  onToggleSelect?: () => void
 }
 
 function statusBadgeClass(status: ReturnType<typeof getCardDueStatus>): string {
@@ -62,12 +71,38 @@ export function deleteConfirmText(
   return "确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。"
 }
 
+function batchStatusLabel(status?: TtsBatchItemStatus): string | null {
+  switch (status) {
+    case "pending":
+      return "待生成"
+    case "running":
+      return "生成中"
+    case "success":
+      return "已生成"
+    case "skipped":
+      return "已跳过"
+    case "failed":
+      return "失败"
+    case "cancelled":
+      return "已取消"
+    default:
+      return null
+  }
+}
+
 export default function CardListItem({
   card,
   panelId,
   onCardClick,
   onCardReset,
-  onCardDelete
+  onCardDelete,
+  batchMode = false,
+  selectable = false,
+  selected = false,
+  skipReason,
+  batchStatus,
+  batchError,
+  onToggleSelect
 }: CardListItemProps) {
   const status = getCardDueStatus(card)
   const resets = card.srs.resets ?? 0
@@ -77,10 +112,35 @@ export default function CardListItem({
     onCardClick(card.id)
   }
 
+  const batchLabel = batchStatusLabel(batchStatus)
+
   return (
     <CardFrame status={status}>
       <div className="srs-card-frame__header">
         <div className="srs-card-frame__header-main">
+          {batchMode && (
+            <label
+              className={`srs-tts-batch-check${
+                selectable ? "" : " srs-tts-batch-check--disabled"
+              }`}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              title={
+                selectable
+                  ? selected
+                    ? "取消选择"
+                    : "选择此卡"
+                  : skipReason ?? "不可选"
+              }
+            >
+              <input
+                type="checkbox"
+                checked={selectable && selected}
+                disabled={!selectable}
+                onChange={() => onToggleSelect?.()}
+                aria-label={selectable ? "选择此卡生成语音" : skipReason}
+              />
+            </label>
+          )}
           <orca.components.BlockBreadcrumb blockId={card.id} />
         </div>
         <div className="srs-card-frame__type-badges">
@@ -94,6 +154,19 @@ export default function CardListItem({
           {card.directionType && (
             <span className="srs-card-badge srs-card-badge--meta">
               {card.directionType === "forward" ? "正向" : "反向"}
+            </span>
+          )}
+          {batchMode && skipReason && (
+            <span className="srs-card-badge srs-card-badge--meta" title={skipReason}>
+              {skipReason}
+            </span>
+          )}
+          {batchLabel && (
+            <span
+              className={`srs-card-badge srs-card-badge--meta srs-tts-batch-status srs-tts-batch-status--${batchStatus}`}
+              title={batchError}
+            >
+              {batchLabel}
             </span>
           )}
         </div>

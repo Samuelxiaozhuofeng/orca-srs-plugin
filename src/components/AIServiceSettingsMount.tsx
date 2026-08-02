@@ -21,6 +21,16 @@ import {
   saveChapterQuizPrefs,
   type ChapterQuizPrefs
 } from "../srs/settings/chapterQuizSettingsSchema"
+import {
+  normalizeTtsSettings,
+  saveTtsSettings,
+  setTtsSettingsCache,
+  getTtsSettings,
+  type TtsSettings
+} from "../srs/tts/ttsSettingsSchema"
+import { synthesizeSpeech } from "../srs/tts/azureTtsClient"
+import { playTtsAudio } from "../srs/tts/ttsPlayback"
+import { sanitizePublicError } from "../srs/http/redactSecrets"
 import { fetchCompatibleModels } from "../srs/ai/aiModelsFetch"
 import { setCompatibleModelsCache } from "../srs/ai/aiModelsCache"
 import { testAIConfigWithDetails } from "../srs/ai/aiConfigValidator"
@@ -46,7 +56,9 @@ export function AIServiceSettingsMount({
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [isFetchingModels, setIsFetchingModels] = useState(false)
   const [isTestingAI, setIsTestingAI] = useState(false)
+  const [isTestingTts, setIsTestingTts] = useState(false)
   const modelsAbortRef = useRef<AbortController | null>(null)
+  const ttsTestAbortRef = useRef<AbortController | null>(null)
 
   if (!snap.isOpen) return null
 
@@ -60,7 +72,13 @@ export function AIServiceSettingsMount({
     snap.initialAI.enableNativeWebSearch ? "web1" : "web0",
     snap.initialAI.reasoningEffort,
     snap.initialChapterQuiz.questionCount,
-    snap.initialChapterQuiz.language
+    snap.initialChapterQuiz.language,
+    snap.initialTts.apiKey.length,
+    snap.initialTts.region,
+    snap.initialTts.endpoint,
+    snap.initialTts.voice,
+    snap.initialTts.rate,
+    snap.initialTts.pitch
   ].join(":")
 
   const handleSave = async (draft: ServiceSettingsDraft) => {
@@ -72,6 +90,7 @@ export function AIServiceSettingsMount({
       await saveWebImportSettings(activePlugin, draft.firecrawl)
       await saveQuickCardPrefs(activePlugin, draft.quickCard)
       await saveChapterQuizPrefs(activePlugin, draft.chapterQuiz)
+      await saveTtsSettings(activePlugin, draft.tts)
       orca.notify("success", "服务设置已保存", { title: "服务设置" })
       closeAIServiceSettings()
     } catch (error) {
@@ -150,6 +169,65 @@ export function AIServiceSettingsMount({
     }
   }
 
+  const handleTestTts = async (draft: ServiceSettingsDraft) => {
+    ttsTestAbortRef.current?.abort()
+    const controller = new AbortController()
+    ttsTestAbortRef.current = controller
+    setIsTestingTts(true)
+    setStatusMessage(null)
+    setServiceSettingsError(null)
+
+    const cleaned = normalizeTtsSettings(draft.tts)
+    const previous = getTtsSettings(activePlugin)
+    // 试听用草稿，不落盘；finally 恢复缓存
+    setTtsSettingsCache(activePlugin, cleaned)
+
+    try {
+      if (!cleaned.apiKey) {
+        const message = "请先填写 Azure TTS API Key"
+        setServiceSettingsError(message)
+        orca.notify("error", message, { title: "TTS 试听" })
+        return
+      }
+      const result = await synthesizeSpeech({
+        settings: cleaned,
+        text: "你好，这是语音合成测试。",
+        signal: controller.signal
+      })
+      if (controller.signal.aborted) return
+
+      // 生成 blob URL 试听（不写入仓库 assets）
+      const blob = new Blob([result.audio], {
+        type: result.contentType || "audio/mpeg"
+      })
+      const url = URL.createObjectURL(blob)
+      try {
+        await playTtsAudio({ playUrl: url })
+      } finally {
+        // 延迟 revoke，避免播放中途失效
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      }
+
+      const message = `TTS 试听成功（${result.byteLength} 字节，${cleaned.voice}）`
+      setStatusMessage(message)
+      orca.notify("success", message, { title: "TTS 试听" })
+    } catch (error) {
+      if (controller.signal.aborted) return
+      const raw =
+        error instanceof Error ? error.message : "TTS 试听失败"
+      const message = sanitizePublicError(raw, cleaned.apiKey)
+      console.error("[AI ServiceSettings] TTS 试听失败:", message)
+      setServiceSettingsError(message)
+      orca.notify("error", message, { title: "TTS 试听失败" })
+    } finally {
+      setTtsSettingsCache(activePlugin, previous)
+      if (ttsTestAbortRef.current === controller) {
+        ttsTestAbortRef.current = null
+      }
+      setIsTestingTts(false)
+    }
+  }
+
   return (
     <AIServiceSettingsDialog
       visible={snap.isOpen}
@@ -161,13 +239,16 @@ export function AIServiceSettingsMount({
       initialFirecrawl={snap.initialFirecrawl as WebImportSettings}
       initialQuickCard={snap.initialQuickCard as QuickCardPrefs}
       initialChapterQuiz={snap.initialChapterQuiz as ChapterQuizPrefs}
+      initialTts={snap.initialTts as TtsSettings}
       modelOptions={modelOptions}
       isFetchingModels={isFetchingModels}
       isTestingAI={isTestingAI}
+      isTestingTts={isTestingTts}
       modelsError={modelsError}
       statusMessage={statusMessage}
       onClose={() => {
         modelsAbortRef.current?.abort()
+        ttsTestAbortRef.current?.abort()
         closeAIServiceSettings()
       }}
       onSave={(draft) => {
@@ -175,6 +256,9 @@ export function AIServiceSettingsMount({
       }}
       onTestAI={(draft) => {
         void handleTestAI(draft)
+      }}
+      onTestTts={(draft) => {
+        void handleTestTts(draft)
       }}
       onFetchModels={(draft) => {
         void handleFetchModels(draft)

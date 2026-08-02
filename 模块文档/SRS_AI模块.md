@@ -245,15 +245,16 @@ makeAICard / interactiveAICard（别名）
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
 | plugin **data** `ai.quickCard` | `cardLanguage` / `customInstruction` / `model` | `auto` / `""` / `""` | 快捷制卡偏好；面板内独立分区 |
 | plugin **data** `ai.chapterQuiz` | `questionCount` / `language` / `customPrompt` / `model` | `10` / `auto` / `""` / `""` | 章末小测偏好（默认出题数 / 题目语言 / 自定义提示词 / 专用模型）；面板内独立分区；见 [渐进阅读_章末小测.md](渐进阅读_章末小测.md) |
+| plugin **data** `tts.connection` | `apiKey` / `region` / `endpoint` / `voice` / `format` / `rate` / `pitch` | Azure 默认 | **语音 TTS**（Azure Speech REST）；**独立 Key**，不复用 AI；见 [SRS_TTS语音.md](SRS_TTS语音.md) |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
 
-- 读取：`getAISettings` / `getWebImportSettings`（内存缓存 → 旧 settings 迁移源 → 默认）
-- hydrate：插件 load + 打开面板；旧 settings 键自动迁移到 setData；缺省字段归一为默认（旧数据无联网/强度键时安全）
+- 读取：`getAISettings` / `getWebImportSettings` / `getTtsSettings`（内存缓存 → 默认）
+- hydrate：插件 load + 打开面板；旧 AI settings 键可迁移到 setData；缺省字段归一为默认（旧数据无联网/强度键时安全）
 - 面板：`AIServiceSettingsDialog` — **分段 Tab**（默认「连接」）
   - **连接**：Key / URL / 模型 / 拉取 / 测连；模型 chips 默认 8 个，「浏览全部」展开
   - **行为**：联网 / 思考强度 / max tokens；长说明「了解更多」折叠
-  - **快捷制卡** / **章末小测**（出题数量、题目语言、自定义提示词、专用模型）/ **网页导入** / **诊断**（请求日志）各一页
-  - 保存仍一次提交整份 draft（ai + firecrawl + quickCard + chapterQuiz）
+  - **快捷制卡** / **章末小测** / **语音 TTS**（Azure region·endpoint·Key·voice·试听）/ **网页导入** / **诊断**（请求日志）各一页
+  - 保存一次提交整份 draft（`ai` + `firecrawl` + `quickCard` + `chapterQuiz` + **`tts`**）
 - 请求：`buildChatCompletionsBody` 用于制卡 / 块解释 / 快捷交互 / 连接测试
   - 原生联网（`resolveWebSearchRoute` / `resolveWebSearchTool` / `materializeWebSearchTool`）：
     - UI 仅一个勾选 `enableNativeWebSearch`；**无**形态下拉
