@@ -69,7 +69,7 @@
 ### 卡种
 
 5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-07-29 更新 — Cloze fragment / 首次 due（普通 legacy 分天；Topic·Extract·live IR 默认 1–14 天分散）/ 复习渲染；`isClozeFragment` 共用谓词；创建仅新编号初始写入、已有编号 ensure 不覆盖
-6. **[SRS_图片遮罩.md](SRS_图片遮罩.md)** ⭐ 2026-08-02 新增 — Image Occlusion v1：矩形/同号多区/`io:{id}:cN`/全局 hideOne·hideAll；删编号后自动压成 1..k 并迁移 FSRS；单卡评分预览时刻冻结；斜杠 `/io`、右键；与文字 cloze 分离
+6. **[SRS_图片遮罩.md](SRS_图片遮罩.md)** ⭐ 2026-08-02 更新 — Image Occlusion：矩形/同号多区组交互（绘制·选择·框选·组合·解组·拖动缩放；组合仅全吸收才删进度）/`io:{id}:cN`/每图 `srs.io.mode` 三段式 + 题面/答案预览；pointer commit·cancel；编辑器拆为 Mount/Body/Toolbar/Canvas + `ioEditorInteraction`；删编号 compact+pending FSRS；斜杠 `/io`
 7. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-07-26 更新 — Direction 左右向、入队条件、渲染；direction 白名单双层防御（脏值回退 forward / `getDirectionList` 返回 `[]`）
 8. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
 9. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-26 更新

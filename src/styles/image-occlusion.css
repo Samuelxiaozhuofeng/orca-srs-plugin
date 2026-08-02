@@ -56,6 +56,14 @@
   margin: 10px 0;
 }
 
+.srs-io-editor__toolbar--tools {
+  gap: 8px;
+}
+
+.srs-io-editor__toolbar--modes {
+  row-gap: 8px;
+}
+
 .srs-io-editor__source-list {
   display: flex;
   flex-wrap: wrap;
@@ -63,7 +71,9 @@
 }
 
 .srs-io-editor__source-btn,
-.srs-io-editor__num-btn {
+.srs-io-editor__num-btn,
+.srs-io-editor__icon-btn,
+.srs-io-editor__seg-btn {
   border: 1px solid var(--orca-color-border, #444);
   background: var(--orca-color-bg-2, #2a2a2a);
   color: var(--orca-color-text-1, #eee);
@@ -73,15 +83,98 @@
   font-size: 0.85rem;
 }
 
+.srs-io-editor__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.srs-io-editor__icon-btn:disabled,
+.srs-io-editor__num-btn:disabled,
+.srs-io-editor__seg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.srs-io-editor__icon-btn i {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .srs-io-editor__source-btn.is-active,
-.srs-io-editor__num-btn.is-active {
+.srs-io-editor__num-btn.is-active,
+.srs-io-editor__icon-btn.is-active,
+.srs-io-editor__seg-btn.is-active {
   border-color: var(--orca-color-primary, #4c8bf5);
   background: rgba(76, 139, 245, 0.2);
 }
 
-.srs-io-editor__num-btn--danger {
+.srs-io-editor__num-btn--danger,
+.srs-io-editor__icon-btn--danger {
   border-color: #c55;
   color: #f99;
+}
+
+/* 固定宽度选中摘要，避免「未选 / 3 区 · c1/2」切换时工具栏跳动 */
+.srs-io-editor__sel-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7.5rem;
+  max-width: 10rem;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--orca-color-bg-3, #333);
+  color: var(--orca-color-text-2, #bbb);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srs-io-editor__seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--orca-color-border, #444);
+}
+
+.srs-io-editor__seg-btn {
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--orca-color-border, #444);
+  min-height: 30px;
+  min-width: 4.5rem;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.srs-io-editor__seg-btn:last-child {
+  border-right: none;
+}
+
+.srs-io-editor__label--gap {
+  margin-left: 10px;
+}
+
+@media (max-width: 560px) {
+  .srs-io-editor__icon-btn span {
+    display: none;
+  }
+  .srs-io-editor__seg-btn {
+    min-width: 3.2rem;
+    padding: 4px 6px;
+    font-size: 0.75rem;
+  }
+  .srs-io-editor__sel-slot {
+    min-width: 5.5rem;
+  }
 }
 
 /* 滚动容器：可滚，但不参与坐标 */
@@ -109,6 +202,18 @@
   user-select: none;
   touch-action: none;
   cursor: crosshair;
+}
+
+.srs-io-frame.is-draw {
+  cursor: crosshair;
+}
+
+.srs-io-frame.is-select {
+  cursor: default;
+}
+
+.srs-io-frame.is-preview {
+  cursor: default;
 }
 
 .srs-io-block .srs-io-frame {
@@ -166,6 +271,11 @@
   pointer-events: none;
 }
 
+.srs-io-mask.is-draft.is-marquee {
+  border-color: #ffcc33;
+  background: rgba(255, 204, 51, 0.12);
+}
+
 .srs-io-mask--preview {
   pointer-events: none;
 }
@@ -183,6 +293,28 @@
   line-height: 1.45;
   pointer-events: none;
 }
+
+/* 单选缩放控制柄 */
+.srs-io-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #ffcc33;
+  border: 1px solid #1a1a1a;
+  border-radius: 1px;
+  box-sizing: border-box;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.srs-io-handle--nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.srs-io-handle--n  { left: 50%; top: -5px; margin-left: -4px; cursor: ns-resize; }
+.srs-io-handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.srs-io-handle--w  { left: -5px; top: 50%; margin-top: -4px; cursor: ew-resize; }
+.srs-io-handle--e  { right: -5px; top: 50%; margin-top: -4px; cursor: ew-resize; }
+.srs-io-handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.srs-io-handle--s  { left: 50%; bottom: -5px; margin-left: -4px; cursor: ns-resize; }
+.srs-io-handle--se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 
 .srs-io-editor__hint {
   margin-top: 8px;

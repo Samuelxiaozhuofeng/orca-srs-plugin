@@ -1,19 +1,32 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   absolutePathToFileUrl,
   applyIoVariantDeleteToCardList,
   collectImageSources,
   compactIoMaskRegions,
+  chooseIoUngroupProgressKeeper,
   createRegionId,
+  deleteIoRegionsByIds,
+  formatIoGroupConfirmMessage,
   getIoMaskNumbers,
+  getVisibleIoMaskRegions,
+  groupIoRegionsToMinNumber,
+  IO_MODE_PROP,
+  IO_HOST_PROPERTY_NAMES,
   normalizeRect,
   parseIoMasksPayload,
+  parseIoModeProperty,
   parseIoPendingSrs,
   planIoSrsNumberOps,
+  readIoModeFromBlock,
+  resizeIoRegionClamped,
+  resolveEffectiveIoMode,
   resolveImageDisplayUrl,
   resolveRepoAssetAbsolutePath,
   serializeIoMasksPayload,
   serializeIoPendingSrs,
+  translateIoRegionsClamped,
+  ungroupIoFocusedGroup,
   type IoMasksPayload,
   type IoRectRegion
 } from "./imageOcclusion"
@@ -335,10 +348,273 @@ describe("image-occlusion card identity", () => {
 })
 
 describe("imageOcclusion mode setting", () => {
-  it("parses hideOne / hideAll and falls back", () => {
+  it("parses hideOne / hideAll / hideAllRevealAll and falls back", () => {
     expect(parseImageOcclusionMode("hideOne")).toBe("hideOne")
     expect(parseImageOcclusionMode("hideAll")).toBe("hideAll")
+    expect(parseImageOcclusionMode("hideAllRevealAll")).toBe("hideAllRevealAll")
     expect(parseImageOcclusionMode("nope")).toBe("hideOne")
+  })
+
+  it("per-image mode prefers block value; illegal warns and falls back to global", () => {
+    expect(parseIoModeProperty("hideAllRevealAll")).toBe("hideAllRevealAll")
+    expect(parseIoModeProperty(null)).toBe(null)
+    expect(parseIoModeProperty("")).toBe(null)
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    expect(parseIoModeProperty("bad")).toBe(null)
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+
+    expect(resolveEffectiveIoMode("hideAll", "hideOne")).toBe("hideAll")
+    expect(resolveEffectiveIoMode(null, "hideAllRevealAll")).toBe(
+      "hideAllRevealAll"
+    )
+
+    const block = {
+      properties: [{ name: IO_MODE_PROP, value: "hideAll" }]
+    } as unknown as Block
+    expect(readIoModeFromBlock(block)).toBe("hideAll")
+    expect(readIoModeFromBlock({ properties: [] } as unknown as Block)).toBe(
+      null
+    )
+  })
+
+  it("getVisibleIoMaskRegions covers three modes question/answer", () => {
+    const regions: IoRectRegion[] = [
+      { id: "a", n: 1, shape: "rect", x: 0, y: 0, w: 0.2, h: 0.2 },
+      { id: "b", n: 2, shape: "rect", x: 0.3, y: 0.3, w: 0.2, h: 0.2 },
+      { id: "c", n: 1, shape: "rect", x: 0.6, y: 0.6, w: 0.1, h: 0.1 }
+    ]
+    // hideOne：题面只当前，答案全揭
+    expect(
+      getVisibleIoMaskRegions(regions, 1, "hideOne", false).map(r => r.id)
+    ).toEqual(["a", "c"])
+    expect(getVisibleIoMaskRegions(regions, 1, "hideOne", true)).toEqual([])
+
+    // hideAll：题面全遮，答案揭当前
+    expect(
+      getVisibleIoMaskRegions(regions, 1, "hideAll", false).map(r => r.id)
+    ).toEqual(["a", "b", "c"])
+    expect(
+      getVisibleIoMaskRegions(regions, 1, "hideAll", true).map(r => r.id)
+    ).toEqual(["b"])
+
+    // hideAllRevealAll：题面全遮，答案全揭
+    expect(
+      getVisibleIoMaskRegions(regions, 2, "hideAllRevealAll", false).map(
+        r => r.id
+      )
+    ).toEqual(["a", "b", "c"])
+    expect(
+      getVisibleIoMaskRegions(regions, 2, "hideAllRevealAll", true)
+    ).toEqual([])
+  })
+
+  it("IO_HOST_PROPERTY_NAMES includes srs.io.mode for symmetric cleanup", () => {
+    expect(IO_HOST_PROPERTY_NAMES).toContain(IO_MODE_PROP)
+    expect(IO_HOST_PROPERTY_NAMES).toContain("srs.io.masks")
+  })
+})
+
+describe("io region group / ungroup / move / delete (pure)", () => {
+  const rect = (
+    id: string,
+    n: number,
+    x = 0.1,
+    y = 0.1,
+    w = 0.2,
+    h = 0.2
+  ): IoRectRegion => ({ id, n, shape: "rect", x, y, w, h })
+
+  it("group full absorption of source n; region ids kept", () => {
+    // 全选 c2(b,d) 与 c3(c) → c2 目标；c3 全吸收；c1 未参与
+    const previous: IoMasksPayload = {
+      version: 1,
+      regions: [rect("a", 1), rect("b", 2), rect("c", 3), rect("d", 2)]
+    }
+    const result = groupIoRegionsToMinNumber(previous.regions, ["b", "c", "d"])
+    expect(result.ok).toBe(true)
+    expect(result.preCompactTargetN).toBe(2)
+    expect(result.targetN).toBe(2)
+    expect(result.movedFromNs).toEqual([3])
+    expect(result.fullyAbsorbedNs).toEqual([3])
+    expect(result.partialSourceNs).toEqual([])
+    expect(result.targetHadUnselected).toBe(false)
+    const byId = Object.fromEntries(result.regions.map(r => [r.id, r.n]))
+    expect(byId).toEqual({ a: 1, b: 2, c: 2, d: 2 })
+    expect(result.regions.map(r => r.id).sort()).toEqual(["a", "b", "c", "d"])
+
+    const ops = planIoSrsNumberOps(previous, result.regions)
+    expect(ops.deleted).toEqual([3])
+    expect(ops.keep).toEqual([1, 2])
+    expect(ops.created).toEqual([])
+    const msg = formatIoGroupConfirmMessage(result)
+    expect(msg).toContain("完整并入的卡 c3")
+    expect(msg).not.toMatch(/仅移动了部分区域的卡 c3/)
+  })
+
+  it("group partial source: only some regions of a number selected", () => {
+    // c2 有 b,d；只选 b + c1 的 a → 目标 c1；c2 部分移动，进度保留
+    const previous: IoMasksPayload = {
+      version: 1,
+      regions: [rect("a", 1), rect("b", 2), rect("d", 2), rect("e", 3)]
+    }
+    const result = groupIoRegionsToMinNumber(previous.regions, ["a", "b"])
+    expect(result.ok).toBe(true)
+    expect(result.preCompactTargetN).toBe(1)
+    expect(result.movedFromNs).toEqual([2])
+    expect(result.fullyAbsorbedNs).toEqual([])
+    expect(result.partialSourceNs).toEqual([2])
+    expect(result.targetHadUnselected).toBe(false)
+    const byId = Object.fromEntries(result.regions.map(r => [r.id, r.n]))
+    expect(byId).toEqual({ a: 1, b: 1, d: 2, e: 3 })
+    expect(result.regions.map(r => r.id).sort()).toEqual(["a", "b", "d", "e"])
+
+    const ops = planIoSrsNumberOps(previous, result.regions)
+    expect(ops.deleted).toEqual([])
+    expect(ops.keep).toEqual([1, 2, 3])
+    expect(ops.created).toEqual([])
+    const msg = formatIoGroupConfirmMessage(result)
+    expect(msg).toContain("仅移动了部分区域的卡 c2")
+    expect(msg).not.toMatch(/完整并入的卡 c2/)
+    expect(msg).not.toMatch(/c2 及其进度会在保存后移除/)
+  })
+
+  it("group with unselected target regions remains on target card", () => {
+    // c1 有 a,x；选 x + 全选 c2(b) → 目标 c1；a 未选仍在 c1；c2 全吸收
+    const previous: IoMasksPayload = {
+      version: 1,
+      regions: [rect("a", 1), rect("x", 1), rect("b", 2)]
+    }
+    const result = groupIoRegionsToMinNumber(previous.regions, ["x", "b"])
+    expect(result.ok).toBe(true)
+    expect(result.targetHadUnselected).toBe(true)
+    expect(result.fullyAbsorbedNs).toEqual([2])
+    expect(result.partialSourceNs).toEqual([])
+    const byId = Object.fromEntries(result.regions.map(r => [r.id, r.n]))
+    expect(byId).toEqual({ a: 1, x: 1, b: 1 })
+    expect(result.regions.map(r => r.id).sort()).toEqual(["a", "b", "x"])
+
+    const ops = planIoSrsNumberOps(previous, result.regions)
+    expect(ops.deleted).toEqual([2])
+    expect(ops.keep).toEqual([1])
+    const msg = formatIoGroupConfirmMessage(result)
+    expect(msg).toContain("未选中的区域本来就在该卡中")
+    expect(msg).toContain("完整并入的卡 c2")
+  })
+
+  it("group refuses single-n selection", () => {
+    const regions = [rect("a", 1), rect("b", 1)]
+    const result = groupIoRegionsToMinNumber(regions, ["a", "b"])
+    expect(result.ok).toBe(false)
+  })
+
+  it("ungroup keeps focus n; others get distinct new numbers; ids stable", () => {
+    const regions = [rect("a", 1), rect("b", 2), rect("c", 2), rect("d", 2)]
+    const result = ungroupIoFocusedGroup(regions, "c")
+    expect(result.ok).toBe(true)
+    expect(result.keptN).toBe(2)
+    expect(result.focusRegionId).toBe("c")
+    expect(result.newNumbers).toEqual([3, 4])
+    const byId = Object.fromEntries(result.regions.map(r => [r.id, r.n]))
+    expect(byId.c).toBe(2)
+    expect(byId.a).toBe(1)
+    expect(new Set([byId.b, byId.d, byId.c]).size).toBe(3)
+    expect(byId.b).not.toBe(2)
+    expect(byId.d).not.toBe(2)
+    expect(result.regions.map(r => r.id)).toEqual(["a", "b", "c", "d"])
+  })
+
+  it("plan after ungroup: focus keeps progress, siblings created", () => {
+    const previous: IoMasksPayload = {
+      version: 1,
+      regions: [rect("a", 1), rect("b", 2), rect("c", 2)]
+    }
+    const ungrouped = ungroupIoFocusedGroup(previous.regions, "b")
+    expect(ungrouped.ok).toBe(true)
+    const ops = planIoSrsNumberOps(previous, ungrouped.regions)
+    expect(ops.deleted).toEqual([])
+    expect(ops.keep).toContain(1)
+    expect(ops.keep).toContain(2)
+    expect(ops.created.length).toBe(1)
+    expect(ops.moves).toEqual([])
+  })
+
+  it("ungroup assigns progress keeper to an existing region when focus is new", () => {
+    const previous: IoMasksPayload = {
+      version: 1,
+      regions: [rect("old-a", 1), rect("old-b", 1)]
+    }
+    const current = [...previous.regions, rect("new-focus", 1)]
+    const keeper = chooseIoUngroupProgressKeeper(
+      current,
+      "new-focus",
+      previous
+    )
+    expect(keeper.keeperRegionId).toBe("old-a")
+    expect(keeper.adjustedFromFocus).toBe(true)
+    expect(keeper.previousNumber).toBe(1)
+
+    const ungrouped = ungroupIoFocusedGroup(current, keeper.keeperRegionId)
+    const ops = planIoSrsNumberOps(previous, ungrouped.regions)
+    expect(ungrouped.regions.find(r => r.id === "old-a")?.n).toBe(1)
+    expect(ops.keep).toEqual([1])
+    expect(ops.created).toHaveLength(2)
+  })
+
+  it("ungroup keeps focus for a wholly new unsaved group", () => {
+    const current = [rect("new-a", 1), rect("new-b", 1)]
+    expect(
+      chooseIoUngroupProgressKeeper(current, "new-b", null)
+    ).toEqual({
+      keeperRegionId: "new-b",
+      adjustedFromFocus: false,
+      previousNumber: null
+    })
+  })
+
+  it("translate clamps multi-select within [0,1] and keeps ids", () => {
+    const regions = [
+      rect("a", 1, 0.0, 0.1, 0.2, 0.2),
+      rect("b", 1, 0.8, 0.1, 0.2, 0.2)
+    ]
+    const moved = translateIoRegionsClamped(regions, ["a", "b"], 0.5, 0)
+    // dx 被右侧 b 限制为 0
+    expect(moved.find(r => r.id === "a")?.x).toBe(0)
+    expect(moved.find(r => r.id === "b")?.x).toBe(0.8)
+    const left = translateIoRegionsClamped(regions, ["a", "b"], -0.5, 0)
+    expect(left.find(r => r.id === "a")?.x).toBe(0)
+    expect(left.find(r => r.id === "b")?.x).toBe(0.8)
+    const up = translateIoRegionsClamped(
+      [rect("a", 1, 0.1, 0.1, 0.2, 0.2)],
+      ["a"],
+      0.05,
+      -0.05
+    )
+    expect(up[0]!.id).toBe("a")
+    expect(up[0]!.n).toBe(1)
+    expect(up[0]!.x).toBeCloseTo(0.15, 10)
+    expect(up[0]!.y).toBeCloseTo(0.05, 10)
+  })
+
+  it("resize clamps and never rebuilds id", () => {
+    const r = rect("x", 2, 0.1, 0.1, 0.3, 0.3)
+    const next = resizeIoRegionClamped(r, "se", 0.8, 0.8)
+    expect(next.id).toBe("x")
+    expect(next.n).toBe(2)
+    expect(next.x + next.w).toBeLessThanOrEqual(1)
+    expect(next.y + next.h).toBeLessThanOrEqual(1)
+    const tiny = resizeIoRegionClamped(r, "se", -0.299, -0.299)
+    // 过小 → 保持原几何
+    expect(tiny).toEqual(r)
+  })
+
+  it("delete multiple regions compact emptied numbers", () => {
+    const regions = [rect("a", 1), rect("b", 2), rect("c", 3)]
+    const result = deleteIoRegionsByIds(regions, ["a", "b"])
+    expect(result.deletedIds).toEqual(["a", "b"])
+    expect(result.emptiedNumbers).toEqual([1, 2])
+    expect(result.regions).toEqual([rect("c", 1)])
+    expect(result.renames).toEqual([{ from: 3, to: 1 }])
   })
 })
 

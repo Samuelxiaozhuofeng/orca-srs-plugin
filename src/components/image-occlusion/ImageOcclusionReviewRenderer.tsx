@@ -1,7 +1,9 @@
 /**
  * 图片遮罩复习渲染器
- * - hideOne：只遮当前编号
- * - hideAll：遮全部，显示答案时揭示当前编号
+ * - hideOne：题面只遮当前，答案全部揭开
+ * - hideAll：题面全遮，答案只揭当前
+ * - hideAllRevealAll：题面全遮，答案全部揭开
+ * 每图 srs.io.mode 优先于全局 review.imageOcclusionMode。
  */
 
 import type { DbId } from "../../orca.d.ts"
@@ -10,8 +12,12 @@ import { useReviewShortcuts } from "../../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates } from "../../srs/algorithm"
 import {
   getIoMaskNumbers,
+  getVisibleIoMaskRegions,
+  ioModeShortLabel,
   readIoMasksFromBlock,
+  readIoModeFromBlock,
   readStoredIoSrc,
+  resolveEffectiveIoMode,
   resolveImageDisplayUrl,
   type IoRectRegion
 } from "../../srs/imageOcclusion"
@@ -94,11 +100,13 @@ export default function ImageOcclusionReviewRenderer({
   const snapshot = useSnapshot(orca.state)
   const block = useMemo(() => snapshot?.blocks?.[blockId], [snapshot?.blocks, blockId])
 
-  const mode = useMemo(
-    () => getImageOcclusionMode(pluginName),
-    // plugins settings 变化时重读
-    [pluginName, snapshot?.plugins]
-  )
+  const mode = useMemo(() => {
+    const globalMode = getImageOcclusionMode(pluginName)
+    if (!block) return globalMode
+    const perImage = readIoModeFromBlock(block as any)
+    return resolveEffectiveIoMode(perImage, globalMode)
+    // plugins settings / 块属性变化时重读
+  }, [pluginName, snapshot?.plugins, block])
 
   const { regions, src, parseError, numbers } = useMemo(() => {
     if (!block) {
@@ -157,13 +165,10 @@ export default function ImageOcclusionReviewRenderer({
 
   const n = clozeNumber ?? 0
 
-  const visibleRegions = useMemo(() => {
-    if (!n) return []
-    if (mode === "hideOne") {
-      return regions.filter((r: IoRectRegion) => r.n === n)
-    }
-    return regions
-  }, [regions, n, mode])
+  const visibleRegions = useMemo(
+    () => getVisibleIoMaskRegions(regions, n, mode, showAnswer),
+    [regions, n, mode, showAnswer]
+  )
 
   if (!block) {
     return <div className="srs-review-card-placeholder">卡片加载中...</div>
@@ -208,7 +213,7 @@ export default function ImageOcclusionReviewRenderer({
             遮罩 c{n || "?"}
           </div>
           <span className="srs-io-review__mode">
-            {mode === "hideAll" ? "全部遮罩" : "仅当前"}
+            {ioModeShortLabel(mode)}
             {numbers.length > 1 ? ` · 共 ${numbers.length} 空` : ""}
           </span>
         </div>
@@ -278,13 +283,10 @@ export default function ImageOcclusionReviewRenderer({
             />
             {visibleRegions.map((r: IoRectRegion) => {
               const isCurrent = r.n === n
-              // 显示答案：当前编号揭开（不画遮罩）；其它编号在 hideAll 下保持实心遮罩
-              if (showAnswer && isCurrent) return null
               const className = [
                 "srs-io-mask",
                 "srs-io-mask--solid",
-                isCurrent ? "is-active" : "",
-                !isCurrent && mode === "hideAll" ? "is-other" : ""
+                isCurrent ? "is-active" : "is-other"
               ]
                 .filter(Boolean)
                 .join(" ")

@@ -19,6 +19,10 @@ import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
 import { extractCardType } from "./deckUtils"
+import {
+  isImageOcclusionMode,
+  type ImageOcclusionModeSetting
+} from "./settings/reviewSettingsSchema"
 
 // ---------------------------------------------------------------------------
 // 常量与类型
@@ -33,6 +37,19 @@ export const IO_PREV_REPR_PROP = "srs.io.prevRepr"
  * 与 masks 同次写入；迁移成功后删除。崩溃后靠此幂等重放。
  */
 export const IO_PENDING_SRS_PROP = "srs.io.pendingSrs"
+/**
+ * 每图复习模式（Text）：hideOne | hideAll | hideAllRevealAll。
+ * 优先于全局 review.imageOcclusionMode；缺失则继承全局。
+ */
+export const IO_MODE_PROP = "srs.io.mode"
+/** 整卡 / 末变体清理时须对称删除的 IO 属性（含 mode，禁止孤儿） */
+export const IO_HOST_PROPERTY_NAMES = [
+  IO_MASKS_PROP,
+  IO_SRC_PROP,
+  IO_PREV_REPR_PROP,
+  IO_PENDING_SRS_PROP,
+  IO_MODE_PROP
+] as const
 /** 属性类型：Text（JSON 字符串），与选择题统计等一致 */
 const PROP_TYPE_TEXT = 1
 
@@ -78,6 +95,8 @@ export type SaveImageOcclusionInput = {
   source: ResolvedImageSource
   regions: IoRectRegion[]
   pluginName: string
+  /** 每图复习模式；与 masks/src 同次写入 srs.io.mode */
+  reviewMode: ImageOcclusionModeSetting
 }
 
 export type SaveImageOcclusionResult = {
@@ -133,6 +152,485 @@ export function compactIoMaskRegions(
     renames,
     changed: renames.length > 0
   }
+}
+
+// ---------------------------------------------------------------------------
+// 编辑器纯区域变换（不写后端；保存时再 plan + pending SRS）
+// ---------------------------------------------------------------------------
+
+function toIdSet(ids: ReadonlySet<string> | readonly string[]): Set<string> {
+  return ids instanceof Set ? new Set(ids) : new Set(ids)
+}
+
+/** 轴对齐矩形是否相交（边界相贴视为相交） */
+export function ioRectsIntersect(
+  a: Pick<IoRectRegion, "x" | "y" | "w" | "h">,
+  b: Pick<IoRectRegion, "x" | "y" | "w" | "h">
+): boolean {
+  return !(
+    a.x + a.w < b.x ||
+    b.x + b.w < a.x ||
+    a.y + a.h < b.y ||
+    b.y + b.h < a.y
+  )
+}
+
+/** 组合为一张卡的纯结果（含精确 SRS 进度元数据，供确认文案） */
+export type GroupIoRegionsResult = {
+  regions: IoRectRegion[]
+  /** compact 后的目标编号（界面/保存后的 cN） */
+  targetN: number
+  /** compact 前的目标编号（所选中的最小现有 n） */
+  preCompactTargetN: number
+  /**
+   * 参与移动的来源 n：被选中且 n ≠ 目标，至少有一个区域改写到目标。
+   * 不含目标 n 自身。
+   */
+  movedFromNs: number[]
+  /**
+   * 完整并入：该来源 n 的全部区域都被选中并入目标；
+   * 保存后该卡不再存在，进度删除（plan deleted）。
+   */
+  fullyAbsorbedNs: number[]
+  /**
+   * 部分移动：该来源 n 仍有未选区域留在原编号；
+   * 保存后该卡仍在并保留进度，不能声称删除。
+   */
+  partialSourceNs: number[]
+  /**
+   * 目标 n 在组合前是否还有未选中区域（它们本来就在目标卡上，不重复也不删除）。
+   */
+  targetHadUnselected: boolean
+  selectedCount: number
+  ok: boolean
+  reason?: string
+}
+
+/**
+ * 组合为一张卡：所选区域改为其中最小现有 n，再 compact。
+ * region id 不变。
+ *
+ * SRS 进度（与 planIoSrsNumberOps 一致）：
+ * - 目标 n 保留进度（含目标上未选中的区域，本来就在该卡）
+ * - 仅当某来源 n 的**全部**区域都被移走时，该卡才会在保存后删除
+ * - 若某来源 n 仍有未选区域，该卡继续存在，进度保留
+ */
+export function groupIoRegionsToMinNumber(
+  regions: readonly IoRectRegion[],
+  selectedIds: ReadonlySet<string> | readonly string[]
+): GroupIoRegionsResult {
+  const empty = (
+    partial: Partial<GroupIoRegionsResult> & {
+      selectedCount: number
+      ok: boolean
+      reason?: string
+    }
+  ): GroupIoRegionsResult => ({
+    regions: regions as IoRectRegion[],
+    targetN: 0,
+    preCompactTargetN: 0,
+    movedFromNs: [],
+    fullyAbsorbedNs: [],
+    partialSourceNs: [],
+    targetHadUnselected: false,
+    ...partial
+  })
+
+  const idSet = toIdSet(selectedIds)
+  const selected = regions.filter(r => idSet.has(r.id))
+  if (selected.length < 2) {
+    return empty({
+      selectedCount: selected.length,
+      ok: false,
+      reason: "至少选中两个区域"
+    })
+  }
+  const ns = Array.from(new Set(selected.map(r => r.n))).sort((a, b) => a - b)
+  if (ns.length < 2) {
+    return empty({
+      preCompactTargetN: ns[0] ?? 0,
+      targetN: ns[0] ?? 0,
+      selectedCount: selected.length,
+      ok: false,
+      reason: "所选区域须跨多个编号"
+    })
+  }
+  const preCompactTargetN = ns[0]!
+  const movedFromNs = ns.filter(n => n !== preCompactTargetN)
+
+  // 按编号统计：总数 / 被选中数 → 全吸收 vs 部分移动
+  const countByN = new Map<number, number>()
+  const selectedCountByN = new Map<number, number>()
+  for (const r of regions) {
+    countByN.set(r.n, (countByN.get(r.n) ?? 0) + 1)
+  }
+  for (const r of selected) {
+    selectedCountByN.set(r.n, (selectedCountByN.get(r.n) ?? 0) + 1)
+  }
+
+  const fullyAbsorbedNs: number[] = []
+  const partialSourceNs: number[] = []
+  for (const n of movedFromNs) {
+    const total = countByN.get(n) ?? 0
+    const sel = selectedCountByN.get(n) ?? 0
+    if (sel >= total && total > 0) fullyAbsorbedNs.push(n)
+    else if (sel > 0 && sel < total) partialSourceNs.push(n)
+  }
+
+  const targetTotal = countByN.get(preCompactTargetN) ?? 0
+  const targetSelected = selectedCountByN.get(preCompactTargetN) ?? 0
+  const targetHadUnselected = targetSelected < targetTotal
+
+  const remapped = regions.map(r =>
+    idSet.has(r.id) && r.n !== preCompactTargetN
+      ? { ...r, n: preCompactTargetN }
+      : r
+  )
+  const compacted = compactIoMaskRegions(remapped)
+  return {
+    regions: compacted.regions,
+    targetN: compacted.numberMap[preCompactTargetN] ?? preCompactTargetN,
+    preCompactTargetN,
+    movedFromNs,
+    fullyAbsorbedNs,
+    partialSourceNs,
+    targetHadUnselected,
+    selectedCount: selected.length,
+    ok: true
+  }
+}
+
+/**
+ * 组合确认文案：与 fullyAbsorbed / partial 元数据一致，不得误称「部分移动的卡会删除」。
+ */
+export function formatIoGroupConfirmMessage(result: GroupIoRegionsResult): string {
+  if (!result.ok) {
+    return result.reason ?? "无法组合"
+  }
+  const lines: string[] = [
+    `将 ${result.selectedCount} 个区域组合为 c${result.targetN} 一张卡。`,
+    `保留 c${result.targetN} 的复习进度。`
+  ]
+  if (result.targetHadUnselected) {
+    lines.push(
+      `c${result.targetN} 上未选中的区域本来就在该卡中，保持不变。`
+    )
+  }
+  if (result.fullyAbsorbedNs.length > 0) {
+    lines.push(
+      `完整并入的卡 c${result.fullyAbsorbedNs.join("、c")} 及其进度会在保存后移除。`
+    )
+  }
+  if (result.partialSourceNs.length > 0) {
+    lines.push(
+      `仅移动了部分区域的卡 c${result.partialSourceNs.join("、c")} 仍保留（未选区域留在原卡，进度不删）。`
+    )
+  }
+  if (
+    result.fullyAbsorbedNs.length === 0 &&
+    result.partialSourceNs.length === 0 &&
+    result.movedFromNs.length > 0
+  ) {
+    // 理论上不应出现：moved 必落入 full 或 partial
+    lines.push(
+      `来源编号 c${result.movedFromNs.join("、c")} 将并入目标（请确认保存后进度）。`
+    )
+  }
+  lines.push("确定组合？")
+  return lines.join("\n")
+}
+
+/**
+ * 解组：聚焦区域保留原 n（及保存后进度），同组其它区域各自成为新编号。
+ * 不为多张卡复制同一份 SRS 状态；新编号在保存时 plan 为 created。
+ */
+export function ungroupIoFocusedGroup(
+  regions: readonly IoRectRegion[],
+  focusRegionId: string
+): {
+  regions: IoRectRegion[]
+  keptN: number
+  focusRegionId: string
+  newNumbers: number[]
+  releasedCount: number
+  ok: boolean
+  reason?: string
+} {
+  const focus = regions.find(r => r.id === focusRegionId)
+  if (!focus) {
+    return {
+      regions: regions as IoRectRegion[],
+      keptN: 0,
+      focusRegionId,
+      newNumbers: [],
+      releasedCount: 0,
+      ok: false,
+      reason: "聚焦区域不存在"
+    }
+  }
+  const group = regions.filter(r => r.n === focus.n)
+  if (group.length < 2) {
+    return {
+      regions: regions as IoRectRegion[],
+      keptN: focus.n,
+      focusRegionId,
+      newNumbers: [],
+      releasedCount: 0,
+      ok: false,
+      reason: "当前组至少两个区域才能解组"
+    }
+  }
+  const used = new Set(getIoMaskNumbers({ version: 1, regions: regions as IoRectRegion[] }))
+  let nextFree = used.size > 0 ? Math.max(...used) + 1 : 1
+  const newNumbers: number[] = []
+  const idToNewN = new Map<string, number>()
+  // 稳定顺序：按原 regions 出现顺序，聚焦区跳过
+  for (const r of regions) {
+    if (r.n !== focus.n || r.id === focusRegionId) continue
+    while (used.has(nextFree)) nextFree += 1
+    idToNewN.set(r.id, nextFree)
+    newNumbers.push(nextFree)
+    used.add(nextFree)
+    nextFree += 1
+  }
+  const remapped = regions.map(r => {
+    const neu = idToNewN.get(r.id)
+    return neu != null ? { ...r, n: neu } : r
+  })
+  // 本地不强制 compact：新号已连续接在 max 后；保存端再压 1..k
+  return {
+    regions: remapped,
+    keptN: focus.n,
+    focusRegionId,
+    newNumbers,
+    releasedCount: newNumbers.length,
+    ok: true
+  }
+}
+
+export type IoUngroupKeeperResult = {
+  keeperRegionId: string
+  adjustedFromFocus: boolean
+  previousNumber: number | null
+}
+
+/**
+ * 解组前选择真正承载旧进度的区域。
+ * 新画区域没有 previous region id，不能声称它会保留既有 SRS；此时优先选择
+ * 当前组内、原编号相同的旧区域，其次选择任一旧区域。全新未保存组才保留焦点。
+ */
+export function chooseIoUngroupProgressKeeper(
+  regions: readonly IoRectRegion[],
+  focusRegionId: string,
+  previous: IoMasksPayload | null | undefined
+): IoUngroupKeeperResult {
+  const focus = regions.find(r => r.id === focusRegionId)
+  if (!focus) {
+    throw new Error("解组聚焦区域不存在")
+  }
+  const group = regions.filter(r => r.n === focus.n)
+  const previousNumberById = new Map<string, number>()
+  for (const r of previous?.regions ?? []) {
+    previousNumberById.set(r.id, r.n)
+  }
+
+  const focusPreviousNumber = previousNumberById.get(focusRegionId) ?? null
+  let keeper =
+    focusPreviousNumber === focus.n
+      ? focus
+      : group.find(r => previousNumberById.get(r.id) === focus.n)
+  if (!keeper && focusPreviousNumber != null) keeper = focus
+  if (!keeper) keeper = group.find(r => previousNumberById.has(r.id))
+  keeper ??= focus
+
+  return {
+    keeperRegionId: keeper.id,
+    adjustedFromFocus: keeper.id !== focusRegionId,
+    previousNumber: previousNumberById.get(keeper.id) ?? null
+  }
+}
+
+/**
+ * 删除选中区域；若某编号删光则 compact 为 1..k。region id 保留于剩余项。
+ */
+export function deleteIoRegionsByIds(
+  regions: readonly IoRectRegion[],
+  ids: ReadonlySet<string> | readonly string[]
+): {
+  regions: IoRectRegion[]
+  deletedIds: string[]
+  numberMap: Record<number, number>
+  renames: IoNumberRename[]
+  emptiedNumbers: number[]
+} {
+  const idSet = toIdSet(ids)
+  const deletedIds = regions.filter(r => idSet.has(r.id)).map(r => r.id)
+  const beforeNums = new Set(
+    getIoMaskNumbers({ version: 1, regions: regions as IoRectRegion[] })
+  )
+  const filtered = regions.filter(r => !idSet.has(r.id))
+  const compacted = compactIoMaskRegions(filtered)
+  const afterNums = new Set(getIoMaskNumbers({ version: 1, regions: compacted.regions }))
+  // 删光的旧编号：compact 前已不在 filtered 中
+  const emptiedNumbers = Array.from(beforeNums)
+    .filter(n => !filtered.some(r => r.n === n))
+    .sort((a, b) => a - b)
+  return {
+    regions: compacted.regions,
+    deletedIds,
+    numberMap: compacted.numberMap,
+    renames: compacted.renames,
+    emptiedNumbers
+  }
+}
+
+/**
+ * 整体平移选中区域；所有坐标限制在 [0,1]，不重建 id。
+ * 多选时共用同一 delta，按最紧约束 clamp。
+ */
+export function translateIoRegionsClamped(
+  regions: readonly IoRectRegion[],
+  ids: ReadonlySet<string> | readonly string[],
+  dx: number,
+  dy: number
+): IoRectRegion[] {
+  const idSet = toIdSet(ids)
+  const selected = regions.filter(r => idSet.has(r.id))
+  if (selected.length === 0 || (!Number.isFinite(dx) && !Number.isFinite(dy))) {
+    return regions as IoRectRegion[]
+  }
+  let cdx = Number.isFinite(dx) ? dx : 0
+  let cdy = Number.isFinite(dy) ? dy : 0
+  for (const r of selected) {
+    cdx = Math.min(cdx, 1 - r.x - r.w)
+    cdx = Math.max(cdx, -r.x)
+    cdy = Math.min(cdy, 1 - r.y - r.h)
+    cdy = Math.max(cdy, -r.y)
+  }
+  // 浮点边沿（如 0.8+0.2）会产生 1e-16 级噪声，压成 0 避免「看起来没动却改坐标」
+  if (Math.abs(cdx) < 1e-12) cdx = 0
+  if (Math.abs(cdy) < 1e-12) cdy = 0
+  if (cdx === 0 && cdy === 0) return regions as IoRectRegion[]
+  return regions.map(r => {
+    if (!idSet.has(r.id)) return r
+    const x = clamp01(r.x + cdx)
+    const y = clamp01(r.y + cdy)
+    // 保持 w/h，必要时再收缩以免 x+w 越界
+    let w = r.w
+    let h = r.h
+    if (x + w > 1) w = 1 - x
+    if (y + h > 1) h = 1 - y
+    return { ...r, x, y, w, h }
+  })
+}
+
+export type IoResizeHandle =
+  | "n"
+  | "s"
+  | "e"
+  | "w"
+  | "ne"
+  | "nw"
+  | "se"
+  | "sw"
+
+/**
+ * 单区角/边缩放；id 不变，结果 clamp 到 [0,1]；过小则保持原几何。
+ */
+export function resizeIoRegionClamped(
+  region: IoRectRegion,
+  handle: IoResizeHandle,
+  dx: number,
+  dy: number
+): IoRectRegion {
+  let { x, y, w, h } = region
+  const adx = Number.isFinite(dx) ? dx : 0
+  const ady = Number.isFinite(dy) ? dy : 0
+  if (handle.includes("e")) w = w + adx
+  if (handle.includes("w")) {
+    x = x + adx
+    w = w - adx
+  }
+  if (handle.includes("s")) h = h + ady
+  if (handle.includes("n")) {
+    y = y + ady
+    h = h - ady
+  }
+  const norm = normalizeRect({ x, y, w, h })
+  if (norm.w <= 0 || norm.h <= 0) return region
+  return { ...region, ...norm }
+}
+
+/**
+ * 复习/预览：当前编号 + 模式下，题面/答案应绘制的遮罩区域。
+ * 与 ImageOcclusionReviewRenderer / 编辑器预览共用。
+ */
+export function getVisibleIoMaskRegions(
+  regions: readonly IoRectRegion[],
+  currentN: number,
+  mode: ImageOcclusionModeSetting,
+  showAnswer: boolean
+): IoRectRegion[] {
+  if (!Number.isInteger(currentN) || currentN < 1) return []
+  if (mode === "hideOne") {
+    if (showAnswer) return []
+    return regions.filter(r => r.n === currentN) as IoRectRegion[]
+  }
+  if (mode === "hideAll") {
+    if (!showAnswer) return regions as IoRectRegion[]
+    return regions.filter(r => r.n !== currentN) as IoRectRegion[]
+  }
+  // hideAllRevealAll
+  if (!showAnswer) return regions as IoRectRegion[]
+  return []
+}
+
+/** 短中文标签（编辑器/复习条） */
+export function ioModeShortLabel(mode: ImageOcclusionModeSetting): string {
+  switch (mode) {
+    case "hideOne":
+      return "只遮当前"
+    case "hideAll":
+      return "全遮揭当前"
+    case "hideAllRevealAll":
+      return "全遮揭全部"
+    default:
+      return mode
+  }
+}
+
+/**
+ * 解析每图 srs.io.mode 原始值。
+ * - 缺失/空：返回 null（调用方继承全局）
+ * - 合法：返回该模式
+ * - 非法：console.warn 并返回 null（调用方回退全局，不得静默当合法）
+ */
+export function parseIoModeProperty(raw: unknown): ImageOcclusionModeSetting | null {
+  if (raw == null || raw === "") return null
+  if (isImageOcclusionMode(raw)) return raw
+  console.warn(
+    `[imageOcclusion] 无效的 srs.io.mode=${JSON.stringify(raw)}，将回退全局模式`
+  )
+  return null
+}
+
+export function readIoModeFromBlock(
+  block: Block | null | undefined
+): ImageOcclusionModeSetting | null {
+  if (!block?.properties?.length) return null
+  const prop = block.properties.find(p => p.name === IO_MODE_PROP)
+  if (prop?.value == null || prop.value === "") return null
+  return parseIoModeProperty(prop.value)
+}
+
+/**
+ * 每图优先；缺失或非法回退 globalMode（非法已在 parseIoModeProperty warn）。
+ */
+export function resolveEffectiveIoMode(
+  perImage: ImageOcclusionModeSetting | null | undefined,
+  globalMode: ImageOcclusionModeSetting
+): ImageOcclusionModeSetting {
+  return perImage ?? globalMode
 }
 
 /**
@@ -990,13 +1488,17 @@ export function assertHostAcceptsImageOcclusion(block: Block): void {
 export async function saveImageOcclusion(
   input: SaveImageOcclusionInput
 ): Promise<SaveImageOcclusionResult> {
-  const { hostBlockId, source, regions, pluginName } = input
+  const { hostBlockId, source, regions, pluginName, reviewMode } = input
   return withIoBlockLock(hostBlockId, async () => {
     // 先恢复上次中断的迁移，避免用脏编号基线做 plan
     await resumePendingIoSrsOps(hostBlockId)
 
     const block = await loadBlockForIo(hostBlockId, { forceBackend: true })
     assertHostAcceptsImageOcclusion(block)
+
+    if (!isImageOcclusionMode(reviewMode)) {
+      throw new Error(`非法图片遮罩复习模式: ${String(reviewMode)}`)
+    }
 
     const normalizedRegions: IoRectRegion[] = []
     for (const r of regions) {
@@ -1063,7 +1565,7 @@ export async function saveImageOcclusion(
       )
     }
 
-    // masks 与 pending 同次写入：迁移中断后可幂等恢复
+    // masks / src / mode / pending 同次写入：迁移中断后可幂等恢复；mode 不留孤儿
     await orca.commands.invokeEditorCommand(
       "core.editor.setProperties",
       null,
@@ -1076,6 +1578,11 @@ export async function saveImageOcclusion(
           type: PROP_TYPE_TEXT
         },
         { name: IO_SRC_PROP, value: source.src, type: PROP_TYPE_TEXT },
+        {
+          name: IO_MODE_PROP,
+          value: reviewMode,
+          type: PROP_TYPE_TEXT
+        },
         {
           name: IO_PENDING_SRS_PROP,
           value: serializeIoPendingSrs(pending),
@@ -1144,12 +1651,12 @@ export async function removeIoNumberFromMasks(
 
     const nextRegions = payload.regions.filter(r => r.n !== clozeNumber)
     if (nextRegions.length === 0) {
-      // 末变体：只清 IO 几何/挂起；整卡 srs/#card 由调用方处理
+      // 末变体：对称清全部 IO 宿主属性（含 srs.io.mode）；整卡 srs/#card 由调用方处理
       await orca.commands.invokeEditorCommand(
         "core.editor.deleteProperties",
         null,
         [hostBlockId],
-        [IO_MASKS_PROP, IO_SRC_PROP, IO_PREV_REPR_PROP, IO_PENDING_SRS_PROP]
+        [...IO_HOST_PROPERTY_NAMES]
       )
       invalidateBlockCache(hostBlockId)
       return { remainingNumbers: [], clearedAll: true, renames: [] }

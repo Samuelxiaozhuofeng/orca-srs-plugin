@@ -1,6 +1,8 @@
 /**
- * 图片遮罩评分预览必须在同一卡片生命周期内保持稳定。
- * 源码契约测试避免依赖 Orca 的 React/Valtio 宿主运行时。
+ * 图片遮罩复习渲染器源码契约：
+ * - 评分预览同一卡片生命周期冻结 now
+ * - 每图模式 + 共用可见遮罩纯函数
+ * 不替代 getVisibleIoMaskRegions 等核心纯逻辑单测。
  */
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -31,5 +33,33 @@ describe("ImageOcclusionReviewRenderer grade preview", () => {
     expect(previewSection).toContain("[currentKey, srsInfo, pluginName]")
     expect(previewSection).not.toContain("previewIntervals(fullState, undefined")
     expect(previewSection).not.toContain("previewDueDates(fullState, undefined")
+  })
+
+  it("resolves per-block mode and shared visible-mask helper; uses ReviewGradeButtons", () => {
+    const source = readFileSync(
+      join(dir, "ImageOcclusionReviewRenderer.tsx"),
+      "utf8"
+    )
+    expect(source).toContain("readIoModeFromBlock")
+    expect(source).toContain("resolveEffectiveIoMode")
+    expect(source).toContain("getVisibleIoMaskRegions")
+    expect(source).toContain("ReviewGradeButtons")
+    expect(source).not.toContain("mode === \"hideAll\" ? \"全部遮罩\"")
+  })
+})
+
+describe("ImageOcclusion editor controller save + interaction wiring", () => {
+  it("passes reviewMode into saveImageOcclusion; uses group confirm helper", () => {
+    const controller = readFileSync(
+      join(dir, "useIoEditorController.ts"),
+      "utf8"
+    )
+    const pointer = readFileSync(join(dir, "useIoEditorPointer.ts"), "utf8")
+    expect(controller).toContain("reviewMode")
+    expect(controller).toContain("saveImageOcclusion({")
+    expect(controller).toMatch(/reviewMode\s*[,}]/)
+    expect(controller).toContain("formatIoGroupConfirmMessage")
+    expect(pointer).toContain("cancelIoEditorInteraction")
+    expect(pointer).toContain("commitIoEditorInteraction")
   })
 })

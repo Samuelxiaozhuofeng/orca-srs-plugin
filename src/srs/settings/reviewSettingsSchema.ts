@@ -62,17 +62,24 @@ export const REVIEW_SETTINGS_KEYS = {
   /** Topic/Extract（及 live IR）上新建记忆卡的首次 due：dispersed | today | tomorrow */
   irItemInitialDueMode: "review.irItemInitialDueMode",
   /**
-   * 图片遮罩复习模式：
-   * - hideOne：只遮当前编号
-   * - hideAll：遮全部遮罩区，显示答案时揭示当前编号
+   * 图片遮罩全局默认复习模式（每图 `srs.io.mode` 优先）：
+   * - hideOne：题面只遮当前，答案全部揭开
+   * - hideAll：题面全遮，答案只揭当前
+   * - hideAllRevealAll：题面全遮，答案全部揭开
    */
   imageOcclusionMode: "review.imageOcclusionMode"
 } as const
 
-/** 图片遮罩全局复习模式 */
-export type ImageOcclusionModeSetting = "hideOne" | "hideAll"
+/** 图片遮罩复习模式（全局默认 + 每图 srs.io.mode） */
+export type ImageOcclusionModeSetting =
+  | "hideOne"
+  | "hideAll"
+  | "hideAllRevealAll"
 
 export const DEFAULT_IMAGE_OCCLUSION_MODE: ImageOcclusionModeSetting = "hideOne"
+
+export const IMAGE_OCCLUSION_MODE_VALUES: readonly ImageOcclusionModeSetting[] =
+  ["hideOne", "hideAll", "hideAllRevealAll"] as const
 
 export type ReviewSettingsKey =
   (typeof REVIEW_SETTINGS_KEYS)[keyof typeof REVIEW_SETTINGS_KEYS]
@@ -186,12 +193,14 @@ export const reviewSettingsSchema = {
       + "已有卡片的 due 不会因升级或改设置而重算。"
   },
   [REVIEW_SETTINGS_KEYS.imageOcclusionMode]: {
-    label: "图片遮罩复习模式",
+    label: "图片遮罩复习模式（全局默认）",
     type: "string" as const,
     defaultValue: DEFAULT_IMAGE_OCCLUSION_MODE,
     description:
-      "全局生效。hideOne（默认）：复习某编号时只遮该编号区域；"
-      + "hideAll：遮住全部遮罩区，显示答案时揭示当前编号。"
+      "每张图可单独设置 srs.io.mode；未设置时继承本项。"
+      + "hideOne（默认）：题面只遮当前编号，答案全部揭开；"
+      + "hideAll：题面全遮，答案只揭当前编号；"
+      + "hideAllRevealAll：题面全遮，答案全部揭开。"
   }
 }
 
@@ -229,9 +238,16 @@ export function parseIrItemInitialDueMode(
 
 /**
  * 解析图片遮罩复习模式；非法值回退 hideOne 并 warn。
+ * 同时用于全局设置与每图 `srs.io.mode` 的取值校验。
  */
 export function parseImageOcclusionMode(raw: unknown): ImageOcclusionModeSetting {
-  if (raw === "hideOne" || raw === "hideAll") return raw
+  if (
+    raw === "hideOne" ||
+    raw === "hideAll" ||
+    raw === "hideAllRevealAll"
+  ) {
+    return raw
+  }
   if (raw !== undefined && raw !== null && raw !== "") {
     console.warn(
       `[SRS] 无效的 review.imageOcclusionMode=${JSON.stringify(raw)}，`
@@ -239,6 +255,15 @@ export function parseImageOcclusionMode(raw: unknown): ImageOcclusionModeSetting
     )
   }
   return DEFAULT_IMAGE_OCCLUSION_MODE
+}
+
+/** 是否为合法的图片遮罩模式字符串（不回退、不 warn） */
+export function isImageOcclusionMode(
+  raw: unknown
+): raw is ImageOcclusionModeSetting {
+  return (
+    raw === "hideOne" || raw === "hideAll" || raw === "hideAllRevealAll"
+  )
 }
 
 /**
