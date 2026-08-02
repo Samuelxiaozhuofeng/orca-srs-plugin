@@ -35,6 +35,11 @@ import {
   DEFAULT_TTS_OUTPUT_FORMAT,
   type TtsSettings
 } from "../tts/ttsSettingsSchema"
+import {
+  getDefaultReviewServiceSettingsDraft,
+  loadReviewServiceSettings,
+  type ReviewServiceSettingsDraft
+} from "../settings/reviewServiceSettings"
 
 const { proxy } = window.Valtio
 
@@ -52,6 +57,14 @@ export interface AIServiceSettingsState {
   initialChapterQuiz: ChapterQuizPrefs
   /** Azure TTS 连接（独立 key，不复用 AI） */
   initialTts: TtsSettings
+  /**
+   * 复习页可见三项（日新卡 / 日复习 / 保留率；仍存 plugin settings）。
+   * 打开时填安全生效值；非法旧配置时见 reviewLoadWarning。
+   * 不含权重 / 最大间隔草稿。
+   */
+  initialReview: ReviewServiceSettingsDraft
+  /** 打开时若可见复习项非法，展示 runtime 警告文案 */
+  reviewLoadWarning: string | null
 }
 
 const emptyAI: AISettings = {
@@ -94,6 +107,9 @@ const emptyTts: TtsSettings = {
   pitch: DEFAULT_TTS_PITCH
 }
 
+const emptyReview: ReviewServiceSettingsDraft =
+  getDefaultReviewServiceSettingsDraft()
+
 export const aiServiceSettingsState = proxy({
   isOpen: false,
   pluginName: null as string | null,
@@ -103,7 +119,9 @@ export const aiServiceSettingsState = proxy({
   initialAI: { ...emptyAI },
   initialFirecrawl: { ...emptyFirecrawl },
   initialChapterQuiz: { ...emptyChapterQuiz },
-  initialTts: { ...emptyTts }
+  initialTts: { ...emptyTts },
+  initialReview: { ...emptyReview },
+  reviewLoadWarning: null as string | null
 }) as AIServiceSettingsState
 
 export function isAIServiceSettingsOpen(): boolean {
@@ -136,6 +154,10 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   aiServiceSettingsState.initialQuickCard = getQuickCardPrefs(pluginName)
   aiServiceSettingsState.initialChapterQuiz = getChapterQuizPrefs(pluginName)
   aiServiceSettingsState.initialTts = getTtsSettings(pluginName)
+  // 复习可见项存 plugin settings，同步可读；非法旧值展示安全草稿 + 警告
+  const reviewLoaded = loadReviewServiceSettings(pluginName)
+  aiServiceSettingsState.initialReview = reviewLoaded.draft
+  aiServiceSettingsState.reviewLoadWarning = reviewLoaded.warningMessage
   aiServiceSettingsState.isOpen = true
 
   try {
@@ -157,6 +179,10 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
     aiServiceSettingsState.initialQuickCard = quickCard
     aiServiceSettingsState.initialChapterQuiz = chapterQuiz
     aiServiceSettingsState.initialTts = tts
+    // 复习无独立 hydrate；再次同步读，避免打开后 settings 已变
+    const reviewAgain = loadReviewServiceSettings(pluginName)
+    aiServiceSettingsState.initialReview = reviewAgain.draft
+    aiServiceSettingsState.reviewLoadWarning = reviewAgain.warningMessage
   } catch (error) {
     console.error("[AI ServiceSettings] 加载失败:", error)
     if (
@@ -188,6 +214,8 @@ export function closeAIServiceSettings(): void {
     aiServiceSettingsState.initialFirecrawl = { ...emptyFirecrawl }
     aiServiceSettingsState.initialChapterQuiz = { ...emptyChapterQuiz }
     aiServiceSettingsState.initialTts = { ...emptyTts }
+    aiServiceSettingsState.initialReview = { ...emptyReview }
+    aiServiceSettingsState.reviewLoadWarning = null
   }, 300)
 }
 

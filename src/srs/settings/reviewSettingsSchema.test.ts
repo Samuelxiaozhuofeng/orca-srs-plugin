@@ -1,5 +1,7 @@
 /**
- * F2-08：FSRS 设置纯校验与默认 patch
+ * F2-08：FSRS 设置纯校验与默认 patch；
+ * 原生 schema 不含每日额度两项与 FSRS 三项 UI。
+ * 独立面板 form helper 见 reviewServiceSettings.test.ts
  */
 
 import { describe, expect, it } from "vitest"
@@ -19,6 +21,7 @@ import {
   parseFsrsWeights,
   parseFsrsWeightsStrict,
   REVIEW_SETTINGS_KEYS,
+  reviewSettingsSchema,
   summarizeFsrsRawValue,
   validateFsrsConfig
 } from "./reviewSettingsSchema"
@@ -226,5 +229,37 @@ describe("validateFsrsConfig 逐项回退与 issues", () => {
     // JSON.stringify 包裹后仍含截断标记
     expect(summarizeFsrsRawValue(long)).toContain("…")
     expect(summarizeFsrsRawValue(long).length).toBeLessThan(long.length + 10)
+  })
+
+})
+
+describe("原生 reviewSettingsSchema 不含每日额度与 FSRS UI 字段", () => {
+  it("每日额度两项与 FSRS 三项 key 均不在 schema 对象中", () => {
+    const keys = Object.keys(reviewSettingsSchema)
+    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.newCardsPerDay)
+    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.reviewCardsPerDay)
+    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.fsrsWeights)
+    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.fsrsRequestRetention)
+    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.fsrsMaximumInterval)
+  })
+
+  it("仍保留其它复习项与全部 key 常量 / defaults 读取路径", () => {
+    expect(reviewSettingsSchema).toHaveProperty(
+      REVIEW_SETTINGS_KEYS.disableNotifications
+    )
+    expect(reviewSettingsSchema).toHaveProperty(
+      REVIEW_SETTINGS_KEYS.irItemInitialDueMode
+    )
+    expect(REVIEW_SETTINGS_KEYS.newCardsPerDay).toBe("review.newCardsPerDay")
+    expect(REVIEW_SETTINGS_KEYS.reviewCardsPerDay).toBe(
+      "review.reviewCardsPerDay"
+    )
+    expect(REVIEW_SETTINGS_KEYS.fsrsWeights).toBe("review.fsrsWeights")
+    expect(REVIEW_SETTINGS_KEYS.fsrsRequestRetention).toBe(
+      "review.fsrsRequestRetention"
+    )
+    expect(REVIEW_SETTINGS_KEYS.fsrsMaximumInterval).toBe(
+      "review.fsrsMaximumInterval"
+    )
   })
 })

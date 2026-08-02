@@ -1,7 +1,7 @@
 /**
- * AI + Firecrawl 服务设置面板（本地表单 state，避免无法输入）
+ * 服务与算法设置面板（本地表单 state，避免无法输入）
  *
- * 布局：分段 Tab（连接 / 行为 / 快捷制卡 / 网页导入 / 诊断），
+ * 布局：分段 Tab（连接 / 行为 / 快捷制卡 / 复习 / 网页导入 / 诊断 等），
  * 默认落地「连接」；长说明二级展开；模型列表默认折叠。
  */
 
@@ -35,6 +35,15 @@ import {
   TTS_RECOMMENDED_VOICES,
   type TtsSettings
 } from "../srs/tts/ttsSettingsSchema"
+import {
+  FSRS_REQUEST_RETENTION_MAX,
+  FSRS_REQUEST_RETENTION_MIN
+} from "../srs/settings/reviewSettingsSchema"
+import { MAX_DAILY_CARD_LIMIT } from "../srs/reviewSessionBudget"
+import {
+  getDefaultReviewServiceSettingsDraft,
+  type ReviewServiceSettingsDraft
+} from "../srs/settings/reviewServiceSettings"
 
 export type ServiceSettingsDraft = {
   ai: AISettings
@@ -42,6 +51,7 @@ export type ServiceSettingsDraft = {
   quickCard: QuickCardPrefs
   chapterQuiz: ChapterQuizPrefs
   tts: TtsSettings
+  review: ReviewServiceSettingsDraft
 }
 
 export interface AIServiceSettingsDialogProps {
@@ -57,6 +67,9 @@ export interface AIServiceSettingsDialogProps {
   /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
   initialChapterQuiz: ChapterQuizPrefs
   initialTts: TtsSettings
+  initialReview: ReviewServiceSettingsDraft
+  /** 打开时非法可见复习设置的警告（runtime 文案） */
+  reviewLoadWarning: string | null
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
@@ -75,6 +88,7 @@ type SettingsTabId =
   | "behavior"
   | "quickCard"
   | "chapterQuiz"
+  | "review"
   | "tts"
   | "webImport"
   | "diagnostics"
@@ -88,6 +102,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "behavior", label: "行为", icon: "ti-adjustments" },
   { id: "quickCard", label: "快捷制卡", icon: "ti-bolt" },
   { id: "chapterQuiz", label: "章末小测", icon: "ti-clipboard-list" },
+  { id: "review", label: "复习", icon: "ti-cards" },
   { id: "tts", label: "语音 TTS", icon: "ti-volume" },
   { id: "webImport", label: "网页导入", icon: "ti-world-www" },
   { id: "diagnostics", label: "诊断", icon: "ti-activity" }
@@ -144,6 +159,7 @@ function ServiceSettingsForm(props: {
   initialQuickCard: QuickCardPrefs
   initialChapterQuiz: ChapterQuizPrefs
   initialTts: TtsSettings
+  initialReview: ReviewServiceSettingsDraft
   busy: boolean
   modelOptions: readonly string[]
   isFetchingModels: boolean
@@ -204,6 +220,15 @@ function ServiceSettingsForm(props: {
   const [ttsVoice, setTtsVoice] = useState(props.initialTts.voice)
   const [ttsRate, setTtsRate] = useState(props.initialTts.rate)
   const [ttsPitch, setTtsPitch] = useState(props.initialTts.pitch)
+  const [newCardsPerDay, setNewCardsPerDay] = useState(
+    props.initialReview.newCardsPerDay
+  )
+  const [reviewCardsPerDay, setReviewCardsPerDay] = useState(
+    props.initialReview.reviewCardsPerDay
+  )
+  const [requestRetention, setRequestRetention] = useState(
+    props.initialReview.requestRetention
+  )
 
   const busy = props.busy
   const draft = (): ServiceSettingsDraft => ({
@@ -244,8 +269,20 @@ function ServiceSettingsForm(props: {
       format: DEFAULT_TTS_OUTPUT_FORMAT,
       rate: ttsRate,
       pitch: ttsPitch
+    },
+    review: {
+      newCardsPerDay,
+      reviewCardsPerDay,
+      requestRetention
     }
   })
+
+  const restoreReviewDefaults = () => {
+    const defaults = getDefaultReviewServiceSettingsDraft()
+    setNewCardsPerDay(defaults.newCardsPerDay)
+    setReviewCardsPerDay(defaults.reviewCardsPerDay)
+    setRequestRetention(defaults.requestRetention)
+  }
 
   const modelList = props.modelOptions
   const modelInList = modelList.includes(model)
@@ -694,6 +731,96 @@ function ServiceSettingsForm(props: {
           </section>
         ) : null}
 
+        {activeTab === "review" ? (
+          <section
+            className="ai-service-settings__section"
+            role="tabpanel"
+            id="ai-service-panel-review"
+            aria-labelledby="ai-service-tab-review"
+          >
+            <h3 className="ai-service-settings__section-title">
+              <i className="ti ti-cards" aria-hidden="true" />
+              复习
+            </h3>
+            <p className="ai-service-settings__section-desc">
+              控制每天进入队列的新卡与复习卡数量，以及目标记忆保留率。
+            </p>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">每日新卡上限</span>
+              <input
+                type="number"
+                className="ai-service-settings__input"
+                value={newCardsPerDay}
+                min={0}
+                max={MAX_DAILY_CARD_LIMIT}
+                step={1}
+                onChange={(e) => setNewCardsPerDay(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              />
+              <FieldHint
+                summary={`0–${MAX_DAILY_CARD_LIMIT} 的整数。0 表示当天不安排新卡。`}
+              />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">每日复习上限</span>
+              <input
+                type="number"
+                className="ai-service-settings__input"
+                value={reviewCardsPerDay}
+                min={0}
+                max={MAX_DAILY_CARD_LIMIT}
+                step={1}
+                onChange={(e) => setReviewCardsPerDay(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              />
+              <FieldHint
+                summary={`0–${MAX_DAILY_CARD_LIMIT} 的整数。0 表示当天不安排复习卡。`}
+              />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">目标记忆保留率</span>
+              <input
+                type="number"
+                className="ai-service-settings__input"
+                value={requestRetention}
+                min={FSRS_REQUEST_RETENTION_MIN}
+                max={FSRS_REQUEST_RETENTION_MAX}
+                step={0.01}
+                onChange={(e) => setRequestRetention(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              />
+              <FieldHint
+                summary={`范围 ${FSRS_REQUEST_RETENTION_MIN}–${FSRS_REQUEST_RETENTION_MAX}，推荐 0.9。越高复习越勤。`}
+              />
+            </label>
+
+            <div className="ai-service-settings__row-actions">
+              <button
+                type="button"
+                className="ai-service-settings__btn ai-service-settings__btn--secondary"
+                onClick={restoreReviewDefaults}
+                disabled={busy}
+                title="仅更新本页草稿，需点底部「保存」才生效"
+              >
+                恢复默认值
+              </button>
+            </div>
+            <FieldHint summary="「恢复默认值」只改当前草稿（30 / 200 / 0.9），仍须底部保存才会生效。" />
+          </section>
+        ) : null}
+
         {activeTab === "tts" ? (
           <section
             className="ai-service-settings__section"
@@ -991,6 +1118,8 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     initialQuickCard,
     initialChapterQuiz,
     initialTts,
+    initialReview,
+    reviewLoadWarning,
     modelOptions,
     isFetchingModels,
     isTestingAI,
@@ -1025,11 +1154,10 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
               className="ai-service-settings__title"
             >
               <i className="ti ti-plug-connected" aria-hidden="true" />
-              <span>AI 与导入服务</span>
+              <span>服务与算法设置</span>
             </h2>
             <p className="ai-service-settings__subtitle">
-              连接 AI、语音 TTS、快捷制卡与网页导入；数据保存在插件私有
-              data，不冲掉其它配置。
+              连接 AI、语音 TTS、网页导入与每日复习额度。
             </p>
           </div>
           <button
@@ -1053,6 +1181,18 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
           </div>
         ) : null}
 
+        {!errorMessage && reviewLoadWarning ? (
+          <div
+            className="ai-service-settings__banner ai-service-settings__banner--warning"
+            role="alert"
+          >
+            {reviewLoadWarning}
+            <p className="ai-service-settings__hint ai-service-settings__hint--after-banner">
+              「复习」页已填入当前可用值，请确认后保存，或恢复默认值。
+            </p>
+          </div>
+        ) : null}
+
         {isLoading ? (
           <p className="ai-service-settings__loading">正在加载已保存的配置…</p>
         ) : (
@@ -1063,6 +1203,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             initialQuickCard={initialQuickCard}
             initialChapterQuiz={initialChapterQuiz}
             initialTts={initialTts}
+            initialReview={initialReview}
             busy={busy}
             modelOptions={modelOptions}
             isFetchingModels={isFetchingModels}

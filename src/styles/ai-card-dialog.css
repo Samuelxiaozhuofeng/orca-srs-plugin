@@ -1288,6 +1288,13 @@
   overflow: auto;
 }
 
+.ai-service-settings__banner--warning {
+  background: var(--orca-color-warning-1, var(--srs-surface-sunken));
+  border: 1px solid
+    color-mix(in srgb, var(--orca-color-warning-5) 40%, transparent);
+  color: var(--orca-color-warning-5, var(--orca-color-text-1));
+}
+
 .ai-service-settings__loading {
   align-items: center;
   color: var(--orca-color-text-3);
@@ -1626,6 +1633,11 @@
   line-height: 1.35;
   margin: 0;
   max-width: var(--srs-measure-prose);
+}
+
+/* 警告 banner 内的补充说明 */
+.ai-service-settings__hint--after-banner {
+  margin-top: var(--srs-space-2);
 }
 
 .ai-service-settings__hint--details {

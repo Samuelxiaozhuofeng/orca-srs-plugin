@@ -417,17 +417,19 @@ stateDiagram-v2
 
 ### 复习相关设置（现行 Schema）
 
-以 `src/srs/settings/reviewSettingsSchema.ts` 的 `REVIEW_SETTINGS_KEYS` 为准，当前仅有：
+以 `src/srs/settings/reviewSettingsSchema.ts` 的 `REVIEW_SETTINGS_KEYS` 为准：
 
-| 设置键 | 说明 |
-| ------ | ---- |
-| `review.disableNotifications` | 关闭通知提醒 |
-| `review.newCardsPerDay` | 每日新卡上限 |
-| `review.reviewCardsPerDay` | 每日复习卡上限 |
-| `review.fsrsWeights` | FSRS 权重（21 个） |
-| `review.fsrsRequestRetention` | 目标保留率 |
-| `review.fsrsMaximumInterval` | 最大间隔（天） |
+| 设置键 | 说明 | UI 入口 |
+| ------ | ---- | ------ |
+| `review.disableNotifications` | 关闭通知提醒 | 原生插件设置 |
+| `review.newCardsPerDay` | 每日新卡上限（0..10000；0=当天不安排新卡） | 服务设置面板 **复习** 页（**不**在原生 schema；helper：`reviewServiceSettings.ts`） |
+| `review.reviewCardsPerDay` | 每日复习上限（同上） | 同上 |
+| `review.fsrsRequestRetention` | 目标保留率（0.7..0.99） | 同上 |
+| `review.fsrsWeights` | FSRS 权重（21 个） | **无 UI**；算法 runtime +「恢复 FSRS 默认」命令 |
+| `review.fsrsMaximumInterval` | 最大间隔（天） | **无 UI**；同上 |
 
+> 每日额度与 FSRS 参数仍存 plugin settings 原 key，算法/额度读取路径不变；可见三项 UI 在独立「复习」页，权重/最大间隔不在面板编辑。详见 [SRS_记忆算法.md](SRS_记忆算法.md)。
+>
 > **不存在** `review.showSiblingBlocks` / `review.maxSiblingBlocks`（旧文档或设想；全库 `src/` 无此键）。Basic 答案区同级子块展示不由上述设置控制。
 
 ### 埋藏 / 暂停

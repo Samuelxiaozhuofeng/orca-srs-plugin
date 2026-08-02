@@ -32,6 +32,11 @@
 > - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：新增「生成偏好」小节——「AI / Firecrawl 服务设置」→「章末小测」Tab 可配默认出题数量（3–30）、题目语言（auto/zh/en/ja）、自定义提示词（≤500）、专用模型；持久化 plugin data `ai.chapterQuiz`（`chapterQuizSettingsSchema.ts`），`insertChapterQuizBlock` / `generateChapterQuizQuestions` 未显式传参时读取
 > - [SRS_AI模块.md](SRS_AI模块.md)：设置项表格 + 面板 Tab 清单同步
 >
+> **索引增补：2026-08-02（复习设置迁独立服务面板「复习」页）**：
+> - [SRS_记忆算法.md](SRS_记忆算法.md)：每日新卡/复习上限 + 目标保留率离开原生 schema，进入服务设置面板 **复习** 页签；权重/最大间隔无 UI 但底层保留；helper：`src/srs/settings/reviewServiceSettings.ts`；保存 patch 仅三项、不覆盖个人权重
+> - [SRS_AI模块.md](SRS_AI模块.md)：面板标题「服务与算法设置」；Tab「复习」与 draft 含 `review`（非权重表单）
+> - [SRS_插件入口与命令.md](SRS_插件入口与命令.md) / [SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)：schema 与 `reviewServiceSettings` 路径同步
+>
 > **索引增补：2026-08-02（Azure TTS MVP）**：
 > - [SRS_TTS语音.md](SRS_TTS语音.md)：Azure Speech REST；选区单条 / Flash Home Basic 批量 / `srs.tts.manifest` / 复习手动播放；默认 Multilingual 音色（自动语种）；plugin data `tts.connection`；不自动播放、不批量非 Basic
 
@@ -48,9 +53,10 @@
 
 ### 核心功能
 
-1. **[SRS_记忆算法.md](SRS_记忆算法.md)** ⭐ 2026-07-26 更新
+1. **[SRS_记忆算法.md](SRS_记忆算法.md)** ⭐ 2026-08-02 更新
    - FSRS 算法、状态、设置严格校验与统一运行时参数（F2-08）；运行时实例启用 `enable_fuzz`（削峰分散到期，确定性播种保证预览=正式一致）
-   - 关联：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/types.ts`
+   - 独立服务面板 **复习** 页：每日新卡/复习上限 + 目标保留率；权重/最大间隔无 UI；原生 schema 不含每日额度与 FSRS 五项；helper：`reviewServiceSettings.ts`
+   - 关联：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/settings/reviewServiceSettings.ts`、`src/srs/reviewSessionBudget.ts`、`src/components/AIServiceSettingsDialog.tsx`、`src/srs/types.ts`
 
 2. **[SRS_数据存储.md](SRS_数据存储.md)** ⭐ 2026-07-26 更新
    - 卡片属性持久化；块 exists/missing/unknown；日志与会话进度等存储面

@@ -29,6 +29,11 @@ import {
   TTS_PREVIEW_TEXT,
   type TtsSettings
 } from "../srs/tts/ttsSettingsSchema"
+import {
+  parseReviewServiceSettingsDraftStrict,
+  saveReviewServiceSettingsFromForm,
+  type ReviewServiceSettingsDraft
+} from "../srs/settings/reviewServiceSettings"
 import { synthesizeSpeech } from "../srs/tts/azureTtsClient"
 import { playTtsAudio } from "../srs/tts/ttsPlayback"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
@@ -79,19 +84,34 @@ export function AIServiceSettingsMount({
     snap.initialTts.endpoint,
     snap.initialTts.voice,
     snap.initialTts.rate,
-    snap.initialTts.pitch
+    snap.initialTts.pitch,
+    snap.initialReview.newCardsPerDay,
+    snap.initialReview.reviewCardsPerDay,
+    snap.initialReview.requestRetention,
+    snap.reviewLoadWarning ? "review-warn" : "review-ok"
   ].join(":")
 
   const handleSave = async (draft: ServiceSettingsDraft) => {
-    setServiceSettingsSaving(true)
     setServiceSettingsError(null)
     setStatusMessage(null)
+
+    // 先严格校验复习可见三项：非法则整包中止，绝不先写入 AI/Firecrawl 等
+    const reviewParsed = parseReviewServiceSettingsDraftStrict(draft.review)
+    if (!reviewParsed.ok) {
+      setServiceSettingsError(reviewParsed.message)
+      orca.notify("error", reviewParsed.message, { title: "服务设置" })
+      return
+    }
+
+    setServiceSettingsSaving(true)
     try {
       await saveAISettings(activePlugin, draft.ai)
       await saveWebImportSettings(activePlugin, draft.firecrawl)
       await saveQuickCardPrefs(activePlugin, draft.quickCard)
       await saveChapterQuizPrefs(activePlugin, draft.chapterQuiz)
       await saveTtsSettings(activePlugin, draft.tts)
+      // 写回三项可见 review.* 原 key 并 clearFsrsRuntimeState（不写权重/最大间隔）
+      await saveReviewServiceSettingsFromForm(activePlugin, draft.review)
       orca.notify("success", "服务设置已保存", { title: "服务设置" })
       closeAIServiceSettings()
     } catch (error) {
@@ -241,6 +261,8 @@ export function AIServiceSettingsMount({
       initialQuickCard={snap.initialQuickCard as QuickCardPrefs}
       initialChapterQuiz={snap.initialChapterQuiz as ChapterQuizPrefs}
       initialTts={snap.initialTts as TtsSettings}
+      initialReview={snap.initialReview as ReviewServiceSettingsDraft}
+      reviewLoadWarning={snap.reviewLoadWarning}
       modelOptions={modelOptions}
       isFetchingModels={isFetchingModels}
       isTestingAI={isTestingAI}

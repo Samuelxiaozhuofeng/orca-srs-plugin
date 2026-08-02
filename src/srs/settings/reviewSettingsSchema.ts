@@ -4,6 +4,13 @@
  * 定义复习界面的配置选项，并对 FSRS 运行时参数做严格校验。
  * F2-08：权重恰好 21 个有限数字；retention 0.7..0.99；maximum interval 1..36500。
  * 非法字段逐项回退明确默认值，并返回可诊断 issues（不得静默成功）。
+ *
+ * 以下 key 仍存 plugin settings，但**不**注册到原生 `reviewSettingsSchema` UI：
+ * - 每日额度 `review.newCardsPerDay` / `review.reviewCardsPerDay`
+ * - FSRS `review.fsrsWeights` / `review.fsrsRequestRetention` / `review.fsrsMaximumInterval`
+ *
+ * 独立面板「复习」页（可见三项：日新卡 / 日复习 / 保留率）见 `reviewServiceSettings.ts`。
+ * 权重与最大间隔无独立面板编辑 UI，算法 runtime 与「恢复 FSRS 默认」命令仍读写。
  */
 
 /**
@@ -149,39 +156,8 @@ export const reviewSettingsSchema = {
     defaultValue: false,
     description: "开启后不显示任何 SRS 相关的通知提醒（评分、创建卡片等）"
   },
-  [REVIEW_SETTINGS_KEYS.newCardsPerDay]: {
-    label: "每日新卡上限",
-    type: "number" as const,
-    defaultValue: DEFAULT_NEW_CARDS_PER_DAY,
-    description: "每天最多学习的新卡数量"
-  },
-  [REVIEW_SETTINGS_KEYS.reviewCardsPerDay]: {
-    label: "每日复习卡上限",
-    type: "number" as const,
-    defaultValue: DEFAULT_REVIEW_CARDS_PER_DAY,
-    description: "每天最多复习的旧卡数量"
-  },
-  [REVIEW_SETTINGS_KEYS.fsrsWeights]: {
-    label: "FSRS v6 算法权重",
-    type: "string" as const,
-    defaultValue: DEFAULT_FSRS_WEIGHTS,
-    description:
-      "FSRS v6 算法权重参数（恰好 21 个逗号分隔的有限数字）。默认值为 ts-fsrs 官方 default_w，如需调整请使用 FSRS 优化器计算"
-  },
-  [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: {
-    label: "FSRS 目标记忆保留率",
-    type: "number" as const,
-    defaultValue: DEFAULT_REQUEST_RETENTION,
-    description:
-      "期望的记忆保留率（有效区间 0.7-0.99），值越高复习频率越高。推荐 0.9"
-  },
-  [REVIEW_SETTINGS_KEYS.fsrsMaximumInterval]: {
-    label: "FSRS 最大间隔天数",
-    type: "number" as const,
-    defaultValue: DEFAULT_MAXIMUM_INTERVAL,
-    description:
-      "卡片复习的最大间隔天数（有限正整数 1-36500；默认 36500 天，约 100 年）"
-  },
+  // 每日额度 + FSRS 五项不在此 schema：日额度/保留率 UI 在独立服务面板「复习」页；
+  // 权重与最大间隔无面板编辑 UI；存储 key 与 getReviewSettings / 算法读取仍保留。
   [REVIEW_SETTINGS_KEYS.irItemInitialDueMode]: {
     label: "IR 源记忆卡首次学习时间",
     type: "string" as const,
@@ -608,9 +584,7 @@ export function getDefaultValidatedFsrsConfig(): ValidatedFsrsConfig {
   }
 }
 
-/**
- * 将 issues 格式化为用户可见的中文摘要。
- */
+/** 将 issues 格式化为用户可见的中文摘要。 */
 export function formatFsrsIssuesMessage(
   issues: readonly FsrsSettingIssue[]
 ): string {
