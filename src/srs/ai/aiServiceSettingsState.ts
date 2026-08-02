@@ -19,6 +19,12 @@ import {
   hydrateWebImportSettings,
   type WebImportSettings
 } from "../settings/webImportSettingsSchema"
+import {
+  getChapterQuizPrefs,
+  hydrateChapterQuizPrefs,
+  DEFAULT_CHAPTER_QUIZ_COUNT,
+  type ChapterQuizPrefs
+} from "../settings/chapterQuizSettingsSchema"
 
 const { proxy } = window.Valtio
 
@@ -32,6 +38,8 @@ export interface AIServiceSettingsState {
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
   initialQuickCard: QuickCardPrefs
+  /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
+  initialChapterQuiz: ChapterQuizPrefs
 }
 
 const emptyAI: AISettings = {
@@ -55,6 +63,14 @@ const emptyFirecrawl: WebImportSettings = {
   firecrawlApiUrl: ""
 }
 
+const emptyChapterQuiz: ChapterQuizPrefs = {
+  // 单一默认源：与生成侧 CHAPTER_QUIZ_DEFAULT_COUNT(10) 一致的 schema 默认常量
+  questionCount: DEFAULT_CHAPTER_QUIZ_COUNT,
+  language: "auto",
+  customPrompt: "",
+  model: ""
+}
+
 export const aiServiceSettingsState = proxy({
   isOpen: false,
   pluginName: null as string | null,
@@ -62,7 +78,8 @@ export const aiServiceSettingsState = proxy({
   isSaving: false,
   errorMessage: null as string | null,
   initialAI: { ...emptyAI },
-  initialFirecrawl: { ...emptyFirecrawl }
+  initialFirecrawl: { ...emptyFirecrawl },
+  initialChapterQuiz: { ...emptyChapterQuiz }
 }) as AIServiceSettingsState
 
 export function isAIServiceSettingsOpen(): boolean {
@@ -93,13 +110,15 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   aiServiceSettingsState.initialAI = getAISettings(pluginName)
   aiServiceSettingsState.initialFirecrawl = getWebImportSettings(pluginName)
   aiServiceSettingsState.initialQuickCard = getQuickCardPrefs(pluginName)
+  aiServiceSettingsState.initialChapterQuiz = getChapterQuizPrefs(pluginName)
   aiServiceSettingsState.isOpen = true
 
   try {
-    const [ai, firecrawl, quickCard] = await Promise.all([
+    const [ai, firecrawl, quickCard, chapterQuiz] = await Promise.all([
       hydrateAISettings(pluginName),
       hydrateWebImportSettings(pluginName),
-      hydrateQuickCardPrefs(pluginName)
+      hydrateQuickCardPrefs(pluginName),
+      hydrateChapterQuizPrefs(pluginName)
     ])
     if (
       !aiServiceSettingsState.isOpen ||
@@ -110,6 +129,7 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
     aiServiceSettingsState.initialAI = ai
     aiServiceSettingsState.initialFirecrawl = firecrawl
     aiServiceSettingsState.initialQuickCard = quickCard
+    aiServiceSettingsState.initialChapterQuiz = chapterQuiz
   } catch (error) {
     console.error("[AI ServiceSettings] 加载失败:", error)
     if (
@@ -139,6 +159,7 @@ export function closeAIServiceSettings(): void {
     aiServiceSettingsState.isSaving = false
     aiServiceSettingsState.initialAI = { ...emptyAI }
     aiServiceSettingsState.initialFirecrawl = { ...emptyFirecrawl }
+    aiServiceSettingsState.initialChapterQuiz = { ...emptyChapterQuiz }
   }, 300)
 }
 

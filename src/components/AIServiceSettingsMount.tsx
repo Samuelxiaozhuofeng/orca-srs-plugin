@@ -17,6 +17,10 @@ import {
   saveWebImportSettings,
   type WebImportSettings
 } from "../srs/settings/webImportSettingsSchema"
+import {
+  saveChapterQuizPrefs,
+  type ChapterQuizPrefs
+} from "../srs/settings/chapterQuizSettingsSchema"
 import { fetchCompatibleModels } from "../srs/ai/aiModelsFetch"
 import { setCompatibleModelsCache } from "../srs/ai/aiModelsCache"
 import { testAIConfigWithDetails } from "../srs/ai/aiConfigValidator"
@@ -54,7 +58,9 @@ export function AIServiceSettingsMount({
     snap.initialAI.apiUrl,
     snap.initialAI.model,
     snap.initialAI.enableNativeWebSearch ? "web1" : "web0",
-    snap.initialAI.reasoningEffort
+    snap.initialAI.reasoningEffort,
+    snap.initialChapterQuiz.questionCount,
+    snap.initialChapterQuiz.language
   ].join(":")
 
   const handleSave = async (draft: ServiceSettingsDraft) => {
@@ -65,6 +71,7 @@ export function AIServiceSettingsMount({
       await saveAISettings(activePlugin, draft.ai)
       await saveWebImportSettings(activePlugin, draft.firecrawl)
       await saveQuickCardPrefs(activePlugin, draft.quickCard)
+      await saveChapterQuizPrefs(activePlugin, draft.chapterQuiz)
       orca.notify("success", "服务设置已保存", { title: "服务设置" })
       closeAIServiceSettings()
     } catch (error) {
@@ -153,6 +160,7 @@ export function AIServiceSettingsMount({
       initialAI={snap.initialAI as AISettings}
       initialFirecrawl={snap.initialFirecrawl as WebImportSettings}
       initialQuickCard={snap.initialQuickCard as QuickCardPrefs}
+      initialChapterQuiz={snap.initialChapterQuiz as ChapterQuizPrefs}
       modelOptions={modelOptions}
       isFetchingModels={isFetchingModels}
       isTestingAI={isTestingAI}

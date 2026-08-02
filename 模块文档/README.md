@@ -27,6 +27,10 @@
 >
 > **索引增补：2026-08-01（章末小测）**：
 > - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：Topic 完成后 / 更多菜单 → 本章全文单选小测；**Custom Panel 专注答题** + 块侧紧凑入口；揭晓后扁平意图条（加入复习 / 问 AI / 原文）；「原文」优先左侧 IR 阅读面板内定位，无阅读面板才开/复用右侧侧栏；可选简答/填空入队；与 `#choice` 路径独立
+>
+> **索引增补：2026-08-02（章末小测生成偏好进服务设置面板）**：
+> - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：新增「生成偏好」小节——「AI / Firecrawl 服务设置」→「章末小测」Tab 可配默认出题数量（3–30）、题目语言（auto/zh/en/ja）、自定义提示词（≤500）、专用模型；持久化 plugin data `ai.chapterQuiz`（`chapterQuizSettingsSchema.ts`），`insertChapterQuizBlock` / `generateChapterQuizQuestions` 未显式传参时读取
+> - [SRS_AI模块.md](SRS_AI模块.md)：设置项表格 + 面板 Tab 清单同步
 
 ## 文档分类
 

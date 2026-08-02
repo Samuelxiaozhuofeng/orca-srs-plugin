@@ -24,11 +24,17 @@ import {
 } from "../srs/ai/aiSettingsSchema"
 import { AiRequestLogSection } from "./AIRequestLogSection"
 import type { WebImportSettings } from "../srs/settings/webImportSettingsSchema"
+import {
+  CHAPTER_QUIZ_COUNT_MAX,
+  CHAPTER_QUIZ_COUNT_MIN,
+  type ChapterQuizPrefs
+} from "../srs/settings/chapterQuizSettingsSchema"
 
 export type ServiceSettingsDraft = {
   ai: AISettings
   firecrawl: WebImportSettings
   quickCard: QuickCardPrefs
+  chapterQuiz: ChapterQuizPrefs
 }
 
 export interface AIServiceSettingsDialogProps {
@@ -41,6 +47,8 @@ export interface AIServiceSettingsDialogProps {
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
   initialQuickCard: QuickCardPrefs
+  /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
+  initialChapterQuiz: ChapterQuizPrefs
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
@@ -56,6 +64,7 @@ type SettingsTabId =
   | "connection"
   | "behavior"
   | "quickCard"
+  | "chapterQuiz"
   | "webImport"
   | "diagnostics"
 
@@ -67,6 +76,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "connection", label: "连接", icon: "ti-plug-connected" },
   { id: "behavior", label: "行为", icon: "ti-adjustments" },
   { id: "quickCard", label: "快捷制卡", icon: "ti-bolt" },
+  { id: "chapterQuiz", label: "章末小测", icon: "ti-clipboard-list" },
   { id: "webImport", label: "网页导入", icon: "ti-world-www" },
   { id: "diagnostics", label: "诊断", icon: "ti-activity" }
 ]
@@ -120,6 +130,7 @@ function ServiceSettingsForm(props: {
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
   initialQuickCard: QuickCardPrefs
+  initialChapterQuiz: ChapterQuizPrefs
   busy: boolean
   modelOptions: readonly string[]
   isFetchingModels: boolean
@@ -161,6 +172,16 @@ function ServiceSettingsForm(props: {
   const [firecrawlApiUrl, setFirecrawlApiUrl] = useState(
     props.initialFirecrawl.firecrawlApiUrl
   )
+  const [quizQuestionCount, setQuizQuestionCount] = useState(
+    String(props.initialChapterQuiz.questionCount)
+  )
+  const [quizLanguage, setQuizLanguage] = useState<AICardLanguage>(
+    props.initialChapterQuiz.language
+  )
+  const [quizCustomPrompt, setQuizCustomPrompt] = useState(
+    props.initialChapterQuiz.customPrompt
+  )
+  const [quizModel, setQuizModel] = useState(props.initialChapterQuiz.model)
 
   const busy = props.busy
   const draft = (): ServiceSettingsDraft => ({
@@ -180,6 +201,17 @@ function ServiceSettingsForm(props: {
       cardLanguage: quickCardLanguage,
       customInstruction: quickCardInstruction,
       model: quickCardModel
+    },
+    chapterQuiz: {
+      // 非法输入交给 normalizeChapterQuizPrefs 兜底钳制，这里不静默改用户的字；
+      // 空字符串 → NaN → normalize 回退默认题量（而非钳制到最小值）
+      questionCount:
+        quizQuestionCount.trim() === ""
+          ? Number.NaN
+          : Number(quizQuestionCount),
+      language: quizLanguage,
+      customPrompt: quizCustomPrompt,
+      model: quizModel
     }
   })
 
@@ -526,6 +558,110 @@ function ServiceSettingsForm(props: {
           </section>
         ) : null}
 
+        {activeTab === "chapterQuiz" ? (
+          <section
+            className="ai-service-settings__section"
+            role="tabpanel"
+            id="ai-service-panel-chapterQuiz"
+            aria-labelledby="ai-service-tab-chapterQuiz"
+          >
+            <h3 className="ai-service-settings__section-title">
+              <i className="ti ti-clipboard-list" aria-hidden="true" />
+              章末小测
+            </h3>
+            <p className="ai-service-settings__section-desc">
+              渐进阅读读完 Topic 后的章节小测：出题数量、题目语言与自定义提示词。
+              设置作为新小测的默认值；单个测验仍可另行生成。
+            </p>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">出题数量</span>
+              <input
+                type="number"
+                className="ai-service-settings__input"
+                value={quizQuestionCount}
+                min={CHAPTER_QUIZ_COUNT_MIN}
+                max={CHAPTER_QUIZ_COUNT_MAX}
+                step={1}
+                onChange={(e) => setQuizQuestionCount(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              />
+              <FieldHint
+                summary={`每次小测的默认题量（${CHAPTER_QUIZ_COUNT_MIN}–${CHAPTER_QUIZ_COUNT_MAX} 道）。`}
+                details="范围外或非数字会在保存时钳制回合法区间；仍可针对单次测验传不同题量。"
+              />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">题目语言</span>
+              <select
+                className="ai-service-settings__input ai-service-settings__select"
+                value={quizLanguage}
+                onChange={(e) =>
+                  setQuizLanguage(e.target.value as AICardLanguage)
+                }
+                onKeyDown={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              >
+                {AI_CARD_LANGUAGES.map((language) => (
+                  <option key={language} value={language}>
+                    {AI_CARD_LANGUAGE_LABELS[language]}
+                  </option>
+                ))}
+              </select>
+              <FieldHint summary="auto 跟随源文本语言；指定语言时题干/选项/讲解用该语言，事实与关键术语仍忠实于原文。" />
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">自定义提示词（可选）</span>
+              <textarea
+                className="ai-service-settings__input"
+                rows={2}
+                value={quizCustomPrompt}
+                maxLength={AI_CUSTOM_INSTRUCTION_MAX}
+                placeholder="例：只出概念辨析题；避免记忆性细节"
+                onChange={(e) => setQuizCustomPrompt(e.target.value)}
+                onKeyDown={stopKeys}
+                onKeyUp={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              />
+              <p className="ai-service-settings__hint">
+                {quizCustomPrompt.length}/{AI_CUSTOM_INSTRUCTION_MAX}
+              </p>
+            </label>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">专用模型（可选）</span>
+              <select
+                className="ai-service-settings__input ai-service-settings__select"
+                value={quizModel}
+                onChange={(e) => setQuizModel(e.target.value)}
+                onKeyDown={stopKeys}
+                onMouseDown={stopBubble}
+                disabled={busy}
+              >
+                <option value="">默认（用「连接」页的全局模型）</option>
+                {quizModel && !modelList.includes(quizModel) ? (
+                  <option value={quizModel}>
+                    {quizModel}（已保存，不在当前列表）
+                  </option>
+                ) : null}
+                {modelList.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <FieldHint summary="可指定更快更便宜的模型；留空则跟随全局设置。已保存但不在当前模型列表时会单独显示，选「默认」即可清除。" />
+            </label>
+          </section>
+        ) : null}
+
         {activeTab === "webImport" ? (
           <section
             className="ai-service-settings__section"
@@ -623,6 +759,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     initialAI,
     initialFirecrawl,
     initialQuickCard,
+    initialChapterQuiz,
     modelOptions,
     isFetchingModels,
     isTestingAI,
@@ -691,6 +828,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             initialAI={initialAI}
             initialFirecrawl={initialFirecrawl}
             initialQuickCard={initialQuickCard}
+            initialChapterQuiz={initialChapterQuiz}
             busy={busy}
             modelOptions={modelOptions}
             isFetchingModels={isFetchingModels}

@@ -244,6 +244,7 @@ makeAICard / interactiveAICard（别名）
 | 同上 | `maxOutputTokens` | `16384` | 单次响应**输出**上限（与上下文窗口无关；百万上下文的模型输出上限通常仍是 8k~64k，填超会被网关 400）。推理模型把 reasoning token 计入 completion_tokens，旧的写死 2000 会被思考吃光 |
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
 | plugin **data** `ai.quickCard` | `cardLanguage` / `customInstruction` / `model` | `auto` / `""` / `""` | 快捷制卡偏好；面板内独立分区 |
+| plugin **data** `ai.chapterQuiz` | `questionCount` / `language` / `customPrompt` / `model` | `10` / `auto` / `""` / `""` | 章末小测偏好（默认出题数 / 题目语言 / 自定义提示词 / 专用模型）；面板内独立分区；见 [渐进阅读_章末小测.md](渐进阅读_章末小测.md) |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
 
 - 读取：`getAISettings` / `getWebImportSettings`（内存缓存 → 旧 settings 迁移源 → 默认）
@@ -251,8 +252,8 @@ makeAICard / interactiveAICard（别名）
 - 面板：`AIServiceSettingsDialog` — **分段 Tab**（默认「连接」）
   - **连接**：Key / URL / 模型 / 拉取 / 测连；模型 chips 默认 8 个，「浏览全部」展开
   - **行为**：联网 / 思考强度 / max tokens；长说明「了解更多」折叠
-  - **快捷制卡** / **网页导入** / **诊断**（请求日志）各一页
-  - 保存仍一次提交整份 draft（ai + firecrawl + quickCard）
+  - **快捷制卡** / **章末小测**（出题数量、题目语言、自定义提示词、专用模型）/ **网页导入** / **诊断**（请求日志）各一页
+  - 保存仍一次提交整份 draft（ai + firecrawl + quickCard + chapterQuiz）
 - 请求：`buildChatCompletionsBody` 用于制卡 / 块解释 / 快捷交互 / 连接测试
   - 原生联网（`resolveWebSearchRoute` / `resolveWebSearchTool` / `materializeWebSearchTool`）：
     - UI 仅一个勾选 `enableNativeWebSearch`；**无**形态下拉

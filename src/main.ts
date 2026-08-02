@@ -124,6 +124,14 @@ export async function load(_name: string) {
   } catch (error) {
     console.warn(`[${pluginName}] 加载 Firecrawl 设置失败:`, error)
   }
+  try {
+    const { hydrateChapterQuizPrefs } = await import(
+      "./srs/settings/chapterQuizSettingsSchema"
+    )
+    await hydrateChapterQuizPrefs(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载章末小测偏好失败:`, error)
+  }
 
   try {
     const { registerIRDefaultShortcuts } = await import("./srs/incremental-reading/irShortcutsRegistry")
