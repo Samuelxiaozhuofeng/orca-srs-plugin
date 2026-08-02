@@ -12,6 +12,7 @@ import {
   deleteClozeCardSrsData,
   ensureClozeSrsState,
   invalidateBlockCache,
+  moveClozeCardSrsData,
   writeInitialClozeSrsState
 } from "./storage"
 import { isCardTag } from "./tagUtils"
@@ -27,6 +28,11 @@ export const IO_MASKS_PROP = "srs.io.masks"
 export const IO_SRC_PROP = "srs.io.src"
 /** 切换到 srs.image-occlusion 前的原 _repr（JSON 字符串），整卡删除时恢复 */
 export const IO_PREV_REPR_PROP = "srs.io.prevRepr"
+/**
+ * masks 已紧凑但 srs.cN.* 迁移尚未完成时的挂起描述。
+ * 与 masks 同次写入；迁移成功后删除。崩溃后靠此幂等重放。
+ */
+export const IO_PENDING_SRS_PROP = "srs.io.pendingSrs"
 /** 属性类型：Text（JSON 字符串），与选择题统计等一致 */
 const PROP_TYPE_TEXT = 1
 
@@ -78,10 +84,348 @@ export type SaveImageOcclusionResult = {
   hostBlockId: DbId
   numbers: number[]
   createdNumbers: number[]
-  /** 本次从 masks 移除、并清理了 srs.cN.* 的编号 */
+  /** 本次从 masks 移除、并清理了 srs.cN.* 的编号（按重排前旧编号） */
   removedNumbers: number[]
+  /** 保留进度的编号迁移（旧 n → 新 n），已在保存时落地 */
+  renames: IoNumberRename[]
   regionCount: number
   addedCardTag: boolean
+}
+
+/** 遮罩编号重排：from（旧）→ to（新），仅 from !== to */
+export type IoNumberRename = { from: number; to: number }
+
+export type CompactIoMaskResult = {
+  regions: IoRectRegion[]
+  /** 输入中出现过的旧编号 → 紧凑后编号 */
+  numberMap: Record<number, number>
+  renames: IoNumberRename[]
+  changed: boolean
+}
+
+/**
+ * 将遮罩编号压成连续的 1..k（保持相对顺序：更小的旧号仍更小）。
+ * 例：删掉 c2 后剩余 [1,3,4] → [1,2,3]，renames = [{3→2},{4→3}]。
+ * 同号多区一起改 n，region id 不变。
+ */
+export function compactIoMaskRegions(
+  regions: readonly IoRectRegion[]
+): CompactIoMaskResult {
+  const oldNumbers = getIoMaskNumbers({
+    version: 1,
+    regions: regions as IoRectRegion[]
+  })
+  const numberMap: Record<number, number> = {}
+  const renames: IoNumberRename[] = []
+  oldNumbers.forEach((old, i) => {
+    const neu = i + 1
+    numberMap[old] = neu
+    if (old !== neu) renames.push({ from: old, to: neu })
+  })
+  const next = regions.map(r => {
+    const mapped = numberMap[r.n]
+    if (mapped == null || mapped === r.n) return r as IoRectRegion
+    return { ...r, n: mapped }
+  })
+  return {
+    regions: next,
+    numberMap,
+    renames,
+    changed: renames.length > 0
+  }
+}
+
+/**
+ * 按 region id 把「保存后最终编号」对齐到「先前编号」的 SRS 进度。
+ * 编辑器可能已在本地 compact，因此不能只靠号码差集。
+ */
+export function planIoSrsNumberOps(
+  previous: IoMasksPayload | null | undefined,
+  finalRegions: readonly IoRectRegion[]
+): {
+  deleted: number[]
+  moves: IoNumberRename[]
+  keep: number[]
+  created: number[]
+} {
+  const prevRegions = previous?.regions ?? []
+  const idToPrevN = new Map<string, number>()
+  for (const r of prevRegions) {
+    if (r.id && Number.isInteger(r.n) && r.n >= 1) {
+      idToPrevN.set(r.id, r.n)
+    }
+  }
+  const prevNumbers = new Set(getIoMaskNumbers(previous))
+  const finalNumbers = getIoMaskNumbers({
+    version: 1,
+    regions: finalRegions as IoRectRegion[]
+  })
+
+  const finalToSource = new Map<number, number | null>()
+  for (const n of finalNumbers) {
+    const sources = new Set<number>()
+    for (const r of finalRegions) {
+      if (r.n !== n) continue
+      const pn = idToPrevN.get(r.id)
+      if (pn != null) sources.add(pn)
+    }
+    if (sources.size === 0) {
+      finalToSource.set(n, null)
+    } else if (sources.size === 1) {
+      finalToSource.set(n, sources.values().next().value as number)
+    } else {
+      // 同最终编号下混入多个旧编号（异常编辑路径）：取最小旧号，进度可预期
+      const pick = Math.min(...sources)
+      console.warn(
+        `[imageOcclusion] 最终 c${n} 对应多个旧编号 ${[...sources].join(",")}，取 c${pick} 进度`
+      )
+      finalToSource.set(n, pick)
+    }
+  }
+
+  const usedSources = new Set<number>()
+  const moves: IoNumberRename[] = []
+  const keep: number[] = []
+  const created: number[] = []
+
+  for (const n of finalNumbers) {
+    const src = finalToSource.get(n) ?? null
+    if (src == null) {
+      created.push(n)
+      continue
+    }
+    if (usedSources.has(src)) {
+      console.warn(
+        `[imageOcclusion] 旧编号 c${src} 被多个最终编号争用，c${n} 按新建处理`
+      )
+      created.push(n)
+      continue
+    }
+    usedSources.add(src)
+    if (src === n) keep.push(n)
+    else moves.push({ from: src, to: n })
+  }
+
+  const deleted = Array.from(prevNumbers)
+    .filter(n => !usedSources.has(n))
+    .sort((a, b) => a - b)
+
+  return { deleted, moves, keep, created }
+}
+
+export type IoPendingSrsPayload = {
+  version: 1
+  deleted: number[]
+  moves: IoNumberRename[]
+  keep: number[]
+  created: number[]
+}
+
+export function serializeIoPendingSrs(ops: IoPendingSrsPayload): string {
+  return JSON.stringify({
+    version: 1 as const,
+    deleted: ops.deleted,
+    moves: ops.moves,
+    keep: ops.keep,
+    created: ops.created
+  })
+}
+
+export function parseIoPendingSrs(raw: unknown): IoPendingSrsPayload | null {
+  if (raw == null || raw === "") return null
+  let obj: unknown = raw
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw)
+    } catch (error) {
+      console.error("[imageOcclusion] srs.io.pendingSrs JSON 解析失败:", error)
+      throw new Error(
+        `图片遮罩挂起迁移数据损坏（srs.io.pendingSrs 不是合法 JSON）: ${String(error)}`
+      )
+    }
+  }
+  if (!obj || typeof obj !== "object") {
+    throw new Error("图片遮罩挂起迁移数据损坏：srs.io.pendingSrs 不是对象")
+  }
+  const version = (obj as { version?: unknown }).version
+  if (version !== 1) {
+    throw new Error(`不支持的 srs.io.pendingSrs 版本: ${String(version)}`)
+  }
+  const asNums = (v: unknown, label: string): number[] => {
+    if (!Array.isArray(v)) {
+      throw new Error(`srs.io.pendingSrs.${label} 必须是数组`)
+    }
+    return v.map((n, i) => {
+      const num = Number(n)
+      if (!Number.isInteger(num) || num < 1) {
+        throw new Error(`srs.io.pendingSrs.${label}[${i}] 非法: ${String(n)}`)
+      }
+      return num
+    })
+  }
+  const movesRaw = (obj as { moves?: unknown }).moves
+  if (!Array.isArray(movesRaw)) {
+    throw new Error("srs.io.pendingSrs.moves 必须是数组")
+  }
+  const moves: IoNumberRename[] = movesRaw.map((m, i) => {
+    if (!m || typeof m !== "object") {
+      throw new Error(`srs.io.pendingSrs.moves[${i}] 非法`)
+    }
+    const from = Number((m as { from?: unknown }).from)
+    const to = Number((m as { to?: unknown }).to)
+    if (!Number.isInteger(from) || from < 1 || !Number.isInteger(to) || to < 1) {
+      throw new Error(`srs.io.pendingSrs.moves[${i}] from/to 非法`)
+    }
+    return { from, to }
+  })
+  return {
+    version: 1,
+    deleted: asNums((obj as { deleted?: unknown }).deleted, "deleted"),
+    moves,
+    keep: asNums((obj as { keep?: unknown }).keep, "keep"),
+    created: asNums((obj as { created?: unknown }).created, "created")
+  }
+}
+
+export function readIoPendingSrsFromBlock(
+  block: Block | null | undefined
+): IoPendingSrsPayload | null {
+  if (!block?.properties?.length) return null
+  const prop = block.properties.find(p => p.name === IO_PENDING_SRS_PROP)
+  if (prop?.value == null || prop.value === "") return null
+  return parseIoPendingSrs(prop.value)
+}
+
+export async function clearIoPendingSrs(hostBlockId: DbId): Promise<void> {
+  await orca.commands.invokeEditorCommand(
+    "core.editor.deleteProperties",
+    null,
+    [hostBlockId],
+    [IO_PENDING_SRS_PROP]
+  )
+  invalidateBlockCache(hostBlockId)
+}
+
+/** 同块 IO 保存/删除/迁移串行化（进程内；防编辑器与 Flash Home 并发互踩） */
+const ioBlockLocks = new Map<string, Promise<unknown>>()
+
+export async function withIoBlockLock<T>(
+  hostBlockId: DbId,
+  fn: () => Promise<T>
+): Promise<T> {
+  const key = String(hostBlockId)
+  const prev = ioBlockLocks.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  const chained = prev.then(() => gate)
+  ioBlockLocks.set(key, chained)
+  await prev.catch(() => undefined)
+  try {
+    return await fn()
+  } finally {
+    release()
+    if (ioBlockLocks.get(key) === chained) {
+      ioBlockLocks.delete(key)
+    }
+  }
+}
+
+/**
+ * 写序安全地应用 cloze 编号迁移：先删 deleted，再按 to 升序 move。
+ * 调用方须已成功写入 masks（及 pending）。可幂等重放。
+ */
+export async function applyIoClozeNumberOps(
+  hostBlockId: DbId,
+  ops: {
+    deleted: number[]
+    moves: IoNumberRename[]
+    keep: number[]
+    created: number[]
+  }
+): Promise<void> {
+  for (const n of ops.deleted) {
+    await deleteClozeCardSrsData(hostBlockId, n)
+  }
+  // 压号只向更小编号移动；按 to 升序保证目标槽已空
+  const moves = [...ops.moves].sort((a, b) => a.to - b.to || a.from - b.from)
+  for (const { from, to } of moves) {
+    await moveClozeCardSrsData(hostBlockId, from, to, {
+      requireSource: true,
+      overwriteTarget: false
+    })
+  }
+  for (const n of ops.keep) {
+    await ensureClozeSrsState(hostBlockId, n, n - 1)
+  }
+  for (const n of ops.created) {
+    await writeInitialClozeSrsState(hostBlockId, n, n - 1)
+  }
+}
+
+/**
+ * 若存在 srs.io.pendingSrs，幂等重放 SRS 迁移后清除挂起标记。
+ * @returns 是否执行了恢复
+ */
+export async function resumePendingIoSrsOps(
+  hostBlockId: DbId,
+  options?: { backendBlock?: Block }
+): Promise<boolean> {
+  const block =
+    options?.backendBlock ??
+    (await loadBlockForIo(hostBlockId, { forceBackend: true }))
+  let pending: IoPendingSrsPayload | null
+  try {
+    pending = readIoPendingSrsFromBlock(block)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`读取挂起迁移失败，请先修复块 #${hostBlockId}：${msg}`)
+  }
+  if (!pending) return false
+  console.warn(
+    `[imageOcclusion] 恢复未完成的 SRS 编号迁移 block=#${hostBlockId} deleted=${pending.deleted.join(",")} moves=${pending.moves.map(m => `${m.from}→${m.to}`).join(",")}`
+  )
+  await applyIoClozeNumberOps(hostBlockId, pending)
+  await clearIoPendingSrs(hostBlockId)
+  return true
+}
+
+/**
+ * Flash Home 本地列表：删掉指定 IO 编号后，按 renames 一次性改写同块剩余 clozeNumber。
+ * renames 必须按 from→to 单次映射（禁止链式就地改写导致 c4→c3→c2）。
+ */
+export function applyIoVariantDeleteToCardList<
+  T extends { id: unknown; cardType?: string; clozeNumber?: number }
+>(
+  cards: readonly T[],
+  blockId: T["id"],
+  deletedClozeNumber: number,
+  renames: readonly IoNumberRename[]
+): T[] {
+  const map = new Map<number, number>()
+  for (const r of renames) map.set(r.from, r.to)
+  return cards
+    .filter(
+      c =>
+        !(
+          c.id === blockId &&
+          c.cardType === IMAGE_OCCLUSION_CARD_TYPE &&
+          c.clozeNumber === deletedClozeNumber
+        )
+    )
+    .map(c => {
+      if (
+        c.id !== blockId ||
+        c.cardType !== IMAGE_OCCLUSION_CARD_TYPE ||
+        c.clozeNumber == null
+      ) {
+        return c
+      }
+      const nextN = map.get(c.clozeNumber)
+      if (nextN == null || nextN === c.clozeNumber) return c
+      return { ...c, clozeNumber: nextN }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -639,158 +983,221 @@ export function assertHostAcceptsImageOcclusion(block: Block): void {
 
 /**
  * 写入遮罩并确保 #card type=image-occlusion + 各编号 FSRS。
- * 仅对**新建编号** writeInitial；已有编号 ensure 不覆盖进度。
- * **消失编号**显式 deleteClozeCardSrsData（二次编辑删框不留孤儿进度）。
+ * 保存时强制编号紧凑为 1..k；按 region id 迁移/删除 srs.cN.*（删洞后后续编号前移且保留进度）。
+ * 写序：resume pending → masks+pending 同写 → apply SRS → 清 pending。
  * 损坏的 srs.io.masks 直接抛错（错误可见）。
  */
 export async function saveImageOcclusion(
   input: SaveImageOcclusionInput
 ): Promise<SaveImageOcclusionResult> {
   const { hostBlockId, source, regions, pluginName } = input
-  const block = await loadBlockForIo(hostBlockId, { forceBackend: true })
-  assertHostAcceptsImageOcclusion(block)
+  return withIoBlockLock(hostBlockId, async () => {
+    // 先恢复上次中断的迁移，避免用脏编号基线做 plan
+    await resumePendingIoSrsOps(hostBlockId)
 
-  const normalizedRegions: IoRectRegion[] = []
-  for (const r of regions) {
-    const rect = normalizeRect(r)
-    if (rect.w <= 0 || rect.h <= 0) continue
-    if (!Number.isInteger(r.n) || r.n < 1) {
-      throw new Error(`非法遮罩编号: ${r.n}`)
+    const block = await loadBlockForIo(hostBlockId, { forceBackend: true })
+    assertHostAcceptsImageOcclusion(block)
+
+    const normalizedRegions: IoRectRegion[] = []
+    for (const r of regions) {
+      const rect = normalizeRect(r)
+      if (rect.w <= 0 || rect.h <= 0) continue
+      if (!Number.isInteger(r.n) || r.n < 1) {
+        throw new Error(`非法遮罩编号: ${r.n}`)
+      }
+      normalizedRegions.push({
+        id: r.id || createRegionId(),
+        n: r.n,
+        shape: "rect",
+        ...rect
+      })
     }
-    normalizedRegions.push({
-      id: r.id || createRegionId(),
-      n: r.n,
-      shape: "rect",
-      ...rect
-    })
-  }
-  if (normalizedRegions.length === 0) {
-    throw new Error("请至少绘制一个遮罩矩形")
-  }
-
-  const payload: IoMasksPayload = { version: 1, regions: normalizedRegions }
-  const numbers = getIoMaskNumbers(payload)
-  // 损坏 masks：readIoMasksFromBlock 抛错，不得吞成 null
-  const previous = readIoMasksFromBlock(block)
-  const previousNumbers = new Set(getIoMaskNumbers(previous))
-  const nextNumberSet = new Set(numbers)
-  const removedNumbers = Array.from(previousNumbers)
-    .filter(n => !nextNumberSet.has(n))
-    .sort((a, b) => a - b)
-
-  const hasCardTag =
-    block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
-  let addedCardTag = false
-
-  if (!hasCardTag) {
-    await orca.commands.invokeEditorCommand(
-      "core.editor.insertTag",
-      null,
-      hostBlockId,
-      "card",
-      await buildCardTagData(pluginName, hostBlockId, IMAGE_OCCLUSION_CARD_TYPE)
-    )
-    await ensureCardTagProperties(pluginName)
-    addedCardTag = true
-  } else {
-    const live = (await loadBlockForIo(hostBlockId, {
-      forceBackend: true
-    })) as Block
-    const cardRef = live.refs?.find(ref => ref.type === 2 && isCardTag(ref.alias))
-    if (!cardRef) {
-      throw new Error("已有 #card 标签但无法读取其引用数据")
+    if (normalizedRegions.length === 0) {
+      throw new Error("请至少绘制一个遮罩矩形")
     }
-    await orca.commands.invokeEditorCommand(
-      "core.editor.setRefData",
-      null,
-      cardRef,
-      [{ name: "type", value: IMAGE_OCCLUSION_CARD_TYPE }]
-    )
-  }
 
-  // 先写 masks（权威几何），成功后再处理 SRS 增删
-  await orca.commands.invokeEditorCommand(
-    "core.editor.setProperties",
-    null,
-    [hostBlockId],
-    [
-      { name: "srs.isCard", value: true, type: 4 },
-      {
-        name: IO_MASKS_PROP,
-        value: serializeIoMasksPayload(payload),
-        type: PROP_TYPE_TEXT
-      },
-      { name: IO_SRC_PROP, value: source.src, type: PROP_TYPE_TEXT }
-    ]
-  )
-  invalidateBlockCache(hostBlockId)
+    // 强制 1..k，避免洞号（编辑器本地也会 compact，此处再保证一次）
+    const compacted = compactIoMaskRegions(normalizedRegions)
+    const payload: IoMasksPayload = { version: 1, regions: compacted.regions }
+    const numbers = getIoMaskNumbers(payload)
+    // 损坏 masks：readIoMasksFromBlock 抛错，不得吞成 null
+    const previous = readIoMasksFromBlock(block)
+    const srsOps = planIoSrsNumberOps(previous, compacted.regions)
+    const pending: IoPendingSrsPayload = {
+      version: 1,
+      deleted: srsOps.deleted,
+      moves: srsOps.moves,
+      keep: srsOps.keep,
+      created: srsOps.created
+    }
 
-  await applyImageOcclusionBlockPreview(hostBlockId, source)
+    const hasCardTag =
+      block.refs?.some(ref => ref.type === 2 && isCardTag(ref.alias)) ?? false
+    let addedCardTag = false
 
-  for (const n of removedNumbers) {
-    await deleteClozeCardSrsData(hostBlockId, n)
-  }
-
-  const createdNumbers: number[] = []
-  for (const n of numbers) {
-    if (previousNumbers.has(n)) {
-      await ensureClozeSrsState(hostBlockId, n, n - 1)
+    if (!hasCardTag) {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.insertTag",
+        null,
+        hostBlockId,
+        "card",
+        await buildCardTagData(pluginName, hostBlockId, IMAGE_OCCLUSION_CARD_TYPE)
+      )
+      await ensureCardTagProperties(pluginName)
+      addedCardTag = true
     } else {
-      await writeInitialClozeSrsState(hostBlockId, n, n - 1)
-      createdNumbers.push(n)
+      const live = (await loadBlockForIo(hostBlockId, {
+        forceBackend: true
+      })) as Block
+      const cardRef = live.refs?.find(
+        ref => ref.type === 2 && isCardTag(ref.alias)
+      )
+      if (!cardRef) {
+        throw new Error("已有 #card 标签但无法读取其引用数据")
+      }
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setRefData",
+        null,
+        cardRef,
+        [{ name: "type", value: IMAGE_OCCLUSION_CARD_TYPE }]
+      )
     }
-  }
 
-  return {
-    hostBlockId,
-    numbers,
-    createdNumbers,
-    removedNumbers,
-    regionCount: normalizedRegions.length,
-    addedCardTag
-  }
+    // masks 与 pending 同次写入：迁移中断后可幂等恢复
+    await orca.commands.invokeEditorCommand(
+      "core.editor.setProperties",
+      null,
+      [hostBlockId],
+      [
+        { name: "srs.isCard", value: true, type: 4 },
+        {
+          name: IO_MASKS_PROP,
+          value: serializeIoMasksPayload(payload),
+          type: PROP_TYPE_TEXT
+        },
+        { name: IO_SRC_PROP, value: source.src, type: PROP_TYPE_TEXT },
+        {
+          name: IO_PENDING_SRS_PROP,
+          value: serializeIoPendingSrs(pending),
+          type: PROP_TYPE_TEXT
+        }
+      ]
+    )
+    invalidateBlockCache(hostBlockId)
+
+    await applyImageOcclusionBlockPreview(hostBlockId, source)
+
+    await applyIoClozeNumberOps(hostBlockId, pending)
+    await clearIoPendingSrs(hostBlockId)
+
+    return {
+      hostBlockId,
+      numbers,
+      createdNumbers: srsOps.created,
+      removedNumbers: srsOps.deleted,
+      renames: srsOps.moves,
+      regionCount: compacted.regions.length,
+      addedCardTag
+    }
+  })
 }
 
 /**
- * 从 masks 中移除某一编号的全部区域（**强制 backend 读**）。
- * 若无剩余区域则 deleteProperties 清理 IO 属性。
- * 调用方应在 masks 成功后再删该编号 srs.cN.*（写序：先 masks 后 SRS）。
+ * 从 masks 中移除某一编号的全部区域，压成 1..k，并完成 SRS 删除/迁移。
+ * - 目标编号必须存在于 masks，否则抛错（陈旧 UI 不得 silent no-op）
+ * - 写序：masks+pending 同写 → apply SRS → 清 pending
+ * - 无剩余区域：clearedAll=true，**不**在此删整卡 SRS（由调用方整卡删除）
  */
 export async function removeIoNumberFromMasks(
   hostBlockId: DbId,
   clozeNumber: number,
   options?: {
-    /** 已从 backend 读出的块；传入则不再二次 get-block */
+    /** 已从 backend 读出的块；传入则不再二次 get-block（仍会先 resume） */
     backendBlock?: Block
   }
-): Promise<{ remainingNumbers: number[]; clearedAll: boolean }> {
-  const block =
-    options?.backendBlock ??
-    (await loadBlockForIo(hostBlockId, { forceBackend: true }))
-  const payload = readIoMasksFromBlock(block)
-  if (!payload) {
-    return { remainingNumbers: [], clearedAll: true }
-  }
-  const nextRegions = payload.regions.filter(r => r.n !== clozeNumber)
-  if (nextRegions.length === 0) {
+): Promise<{
+  remainingNumbers: number[]
+  clearedAll: boolean
+  /** 过滤被删编号后、紧凑重排产生的 from→to（旧号仍为删前编号体系） */
+  renames: IoNumberRename[]
+}> {
+  return withIoBlockLock(hostBlockId, async () => {
+    await resumePendingIoSrsOps(hostBlockId)
+
+    const block =
+      options?.backendBlock ??
+      (await loadBlockForIo(hostBlockId, { forceBackend: true }))
+    // resume 可能已改属性；强制再读一次 masks 基线
+    const fresh = await loadBlockForIo(hostBlockId, { forceBackend: true })
+    const payload = readIoMasksFromBlock(fresh)
+    if (!payload) {
+      throw new Error(
+        `块 #${hostBlockId} 缺少 srs.io.masks，无法删除遮罩编号 c${clozeNumber}`
+      )
+    }
+    const numbers = getIoMaskNumbers(payload)
+    if (!numbers.includes(clozeNumber)) {
+      throw new Error(
+        `遮罩编号 c${clozeNumber} 不存在于 masks（当前: c${numbers.join("、c") || "无"}），拒绝删除（列表可能已过期）`
+      )
+    }
+
+    const nextRegions = payload.regions.filter(r => r.n !== clozeNumber)
+    if (nextRegions.length === 0) {
+      // 末变体：只清 IO 几何/挂起；整卡 srs/#card 由调用方处理
+      await orca.commands.invokeEditorCommand(
+        "core.editor.deleteProperties",
+        null,
+        [hostBlockId],
+        [IO_MASKS_PROP, IO_SRC_PROP, IO_PREV_REPR_PROP, IO_PENDING_SRS_PROP]
+      )
+      invalidateBlockCache(hostBlockId)
+      return { remainingNumbers: [], clearedAll: true, renames: [] }
+    }
+
+    const compacted = compactIoMaskRegions(nextRegions)
+    const next: IoMasksPayload = { version: 1, regions: compacted.regions }
+    const remainingNumbers = getIoMaskNumbers(next)
+    const keep = remainingNumbers.filter(n => {
+      // 未参与 rename 的最终号 = 旧号仍等于新号
+      return !compacted.renames.some(r => r.to === n)
+    })
+    const pending: IoPendingSrsPayload = {
+      version: 1,
+      deleted: [clozeNumber],
+      moves: compacted.renames,
+      keep,
+      created: []
+    }
+
     await orca.commands.invokeEditorCommand(
-      "core.editor.deleteProperties",
+      "core.editor.setProperties",
       null,
       [hostBlockId],
-      [IO_MASKS_PROP, IO_SRC_PROP, IO_PREV_REPR_PROP]
+      [
+        {
+          name: IO_MASKS_PROP,
+          value: serializeIoMasksPayload(next),
+          type: PROP_TYPE_TEXT
+        },
+        {
+          name: IO_PENDING_SRS_PROP,
+          value: serializeIoPendingSrs(pending),
+          type: PROP_TYPE_TEXT
+        }
+      ]
     )
     invalidateBlockCache(hostBlockId)
-    return { remainingNumbers: [], clearedAll: true }
-  }
-  const next: IoMasksPayload = { version: 1, regions: nextRegions }
-  await orca.commands.invokeEditorCommand(
-    "core.editor.setProperties",
-    null,
-    [hostBlockId],
-    [{ name: IO_MASKS_PROP, value: serializeIoMasksPayload(next), type: PROP_TYPE_TEXT }]
-  )
-  invalidateBlockCache(hostBlockId)
-  return { remainingNumbers: getIoMaskNumbers(next), clearedAll: false }
+
+    await applyIoClozeNumberOps(hostBlockId, pending)
+    await clearIoPendingSrs(hostBlockId)
+
+    return {
+      remainingNumbers,
+      clearedAll: false,
+      renames: compacted.renames
+    }
+  })
 }
 
 /**

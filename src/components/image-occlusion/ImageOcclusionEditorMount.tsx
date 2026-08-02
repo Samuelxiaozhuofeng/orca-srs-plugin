@@ -5,6 +5,7 @@
 
 import type { DbId } from "../../orca.d.ts"
 import {
+  compactIoMaskRegions,
   createRegionId,
   getIoMaskNumbers,
   normalizeRect,
@@ -188,6 +189,24 @@ function ImageOcclusionEditorBody({
     setSelectedId(id)
   }, [drag, activeNumber])
 
+  /** 删除区域；若某编号被删光则剩余编号立即压成 1..k（c2→c1 等） */
+  const removeRegionById = useCallback(
+    (regionId: string) => {
+      const filtered = regions.filter((r: IoRectRegion) => r.id !== regionId)
+      const { regions: next, numberMap } = compactIoMaskRegions(filtered)
+      const nums = getIoMaskNumbers({ version: 1, regions: next })
+      const nextActive = filtered.some((r: IoRectRegion) => r.n === activeNumber)
+        ? (numberMap[activeNumber] ?? activeNumber)
+        : nums.length > 0
+          ? Math.max(...nums)
+          : 1
+      setRegions(next)
+      setActiveNumber(nextActive)
+      setSelectedId(null)
+    },
+    [regions, activeNumber]
+  )
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -196,15 +215,12 @@ function ImageOcclusionEditorBody({
       }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
         e.preventDefault()
-        setRegions((prev: IoRectRegion[]) =>
-          prev.filter(r => r.id !== selectedId)
-        )
-        setSelectedId(null)
+        removeRegionById(selectedId)
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [selectedId, onClose])
+  }, [selectedId, onClose, removeRegionById])
 
   const handleSave = async () => {
     if (!selectedSource) {
@@ -332,12 +348,7 @@ function ImageOcclusionEditorBody({
           <button
             type="button"
             className="srs-io-editor__num-btn srs-io-editor__num-btn--danger"
-            onClick={() => {
-              setRegions((prev: IoRectRegion[]) =>
-                prev.filter(r => r.id !== selectedId)
-              )
-              setSelectedId(null)
-            }}
+            onClick={() => removeRegionById(selectedId)}
           >
             删除选中
           </button>

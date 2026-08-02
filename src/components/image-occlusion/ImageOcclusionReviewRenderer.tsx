@@ -7,11 +7,7 @@
 import type { DbId } from "../../orca.d.ts"
 import type { Grade, SrsState } from "../../srs/types"
 import { useReviewShortcuts } from "../../hooks/useReviewShortcuts"
-import {
-  previewIntervals,
-  previewDueDates,
-  formatDueDate
-} from "../../srs/algorithm"
+import { previewIntervals, previewDueDates } from "../../srs/algorithm"
 import {
   getIoMaskNumbers,
   readIoMasksFromBlock,
@@ -21,6 +17,7 @@ import {
 } from "../../srs/imageOcclusion"
 import { getImageOcclusionMode } from "../../srs/settings/reviewSettingsSchema"
 import CardInfoPanel from "../review-card/CardInfoPanel"
+import ReviewGradeButtons from "../review-card/ReviewGradeButtons"
 import { regionStylePercent } from "./ioGeometry"
 
 const { useState, useMemo, useRef, useEffect } = window.React
@@ -149,15 +146,14 @@ export default function ImageOcclusionReviewRenderer({
     readOnly
   })
 
-  const fullState = toFullSrs(srsInfo)
-  const intervals = useMemo(
-    () => previewIntervals(fullState, undefined, pluginName),
-    [fullState, pluginName]
-  )
-  const dueDates = useMemo(
-    () => previewDueDates(fullState, undefined, pluginName),
-    [fullState, pluginName]
-  )
+  const preview = useMemo(() => {
+    const previewNow = new Date()
+    const fullState = toFullSrs(srsInfo)
+    return {
+      intervals: previewIntervals(fullState, previewNow, pluginName),
+      dueDates: previewDueDates(fullState, previewNow, pluginName)
+    }
+  }, [currentKey, srsInfo, pluginName])
 
   const n = clozeNumber ?? 0
 
@@ -308,20 +304,15 @@ export default function ImageOcclusionReviewRenderer({
         )}
       </div>
 
-      {readOnly ? (
-        <div className="srs-review-actions">
-          {onSkip && (
-            <Button
-              variant="solid"
-              onClick={onSkip}
-              title="继续复习"
-              className="srs-review-cta"
-            >
-              继续
-            </Button>
-          )}
-        </div>
-      ) : !showAnswer ? (
+      {readOnly || showAnswer ? (
+        <ReviewGradeButtons
+          intervals={preview.intervals}
+          dueDates={preview.dueDates}
+          onGrade={handleGrade}
+          onSkip={onSkip}
+          readOnly={readOnly}
+        />
+      ) : (
         <div className="srs-review-actions">
           {onSkip && (
             <Button
@@ -340,45 +331,6 @@ export default function ImageOcclusionReviewRenderer({
           >
             显示答案
           </Button>
-        </div>
-      ) : (
-        <div className="srs-card-grade-buttons srs-grade-buttons">
-          {onSkip && (
-            <button
-              onClick={onSkip}
-              className="srs-grade-btn srs-grade-btn--skip"
-              type="button"
-            >
-              <div className="srs-grade-btn__preview">不评分</div>
-              <span className="srs-grade-btn__emoji">⏭️</span>
-              <span className="srs-grade-btn__label">跳过</span>
-            </button>
-          )}
-          {(["again", "hard", "good", "easy"] as Grade[]).map(grade => {
-            const labels: Record<Grade, { emoji: string; label: string; cls: string }> = {
-              again: { emoji: "😞", label: "忘记", cls: "again" },
-              hard: { emoji: "😐", label: "困难", cls: "hard" },
-              good: { emoji: "😊", label: "良好", cls: "good" },
-              easy: { emoji: "😄", label: "简单", cls: "easy" }
-            }
-            const meta = labels[grade]
-            return (
-              <button
-                key={grade}
-                type="button"
-                onClick={() => handleGrade(grade)}
-                disabled={isGrading}
-                className={`srs-grade-btn srs-grade-btn--${meta.cls}`}
-              >
-                <div className="srs-grade-btn__preview">
-                  {formatDueDate(dueDates[grade])}
-                  {intervals ? ` · ${intervals[grade]}` : ""}
-                </div>
-                <span className="srs-grade-btn__emoji">{meta.emoji}</span>
-                <span className="srs-grade-btn__label">{meta.label}</span>
-              </button>
-            )
-          })}
         </div>
       )}
     </div>

@@ -941,6 +941,109 @@ export const deleteClozeCardSrsData = async (
   blockCache.delete(blockId)
 }
 
+/** cloze 编号是否已有任意 `srs.cN.*` 属性（尾点号前缀，不伤 c10） */
+export const hasClozeSrsData = async (
+  blockId: DbId,
+  clozeNumber: number
+): Promise<boolean> => {
+  if (!Number.isInteger(clozeNumber) || clozeNumber < 1) return false
+  const names = await getSrsPropertyNames(blockId, `srs.c${clozeNumber}.`)
+  return names.length > 0
+}
+
+export type MoveClozeCardSrsResult =
+  | "moved"
+  | "already-done"
+  | "skipped-same"
+
+export type MoveClozeCardSrsOptions = {
+  /**
+   * 计划迁移路径：源无数据时 —
+   * - 目标已有数据 → 视为幂等完成（中断后重试）
+   * - 目标也无 → 抛错（错误可见，禁止静默成功）
+   */
+  requireSource?: boolean
+  /**
+   * 目标槽已有属性时是否允许覆盖。
+   * 默认 false：源有数据且目标非空则抛错，避免并发/脏写互踩。
+   */
+  overwriteTarget?: boolean
+}
+
+/**
+ * 将某个 cloze 编号的 SRS 属性整体迁移到另一编号（保留进度）。
+ * 用于图片遮罩删除编号后的连续重排（c3→c2 等）。
+ *
+ * - 前缀以 `srs.cN.` 结尾点号匹配，避免 c1 误伤 c10
+ * - 写序：校验 →（可选清目标）→ 写目标 → 删源；任一步失败会抛错
+ * - 不先无条件清目标：目标非空且未允许覆盖时中止，避免「先破坏再失败」
+ */
+export const moveClozeCardSrsData = async (
+  blockId: DbId,
+  fromNumber: number,
+  toNumber: number,
+  options?: MoveClozeCardSrsOptions
+): Promise<MoveClozeCardSrsResult> => {
+  if (!Number.isInteger(fromNumber) || fromNumber < 1) {
+    throw new Error(`非法 cloze 源编号: ${fromNumber}`)
+  }
+  if (!Number.isInteger(toNumber) || toNumber < 1) {
+    throw new Error(`非法 cloze 目标编号: ${toNumber}`)
+  }
+  if (fromNumber === toNumber) {
+    return "skipped-same"
+  }
+
+  const fromPrefix = `srs.c${fromNumber}.`
+  const toPrefix = `srs.c${toNumber}.`
+  const block = await getBlockCached(blockId)
+  const props = block?.properties ?? []
+  const sourceProps = props.filter(p => p.name.startsWith(fromPrefix))
+  const targetProps = props.filter(p => p.name.startsWith(toPrefix))
+  const hasFrom = sourceProps.length > 0
+  const hasTo = targetProps.length > 0
+
+  if (!hasFrom) {
+    if (hasTo) {
+      // 幂等：上次已迁完（源已清、目标已有）
+      return "already-done"
+    }
+    if (options?.requireSource) {
+      throw new Error(
+        `无法迁移 srs.c${fromNumber}.* → srs.c${toNumber}.*：源编号无 SRS 数据且目标为空（数据不一致）`
+      )
+    }
+    return "already-done"
+  }
+
+  if (hasTo && !options?.overwriteTarget) {
+    throw new Error(
+      `无法迁移 srs.c${fromNumber}.* → srs.c${toNumber}.*：目标槽非空，拒绝覆盖（可能并发写入）`
+    )
+  }
+
+  if (hasTo) {
+    await deleteClozeCardSrsData(blockId, toNumber)
+  }
+
+  const properties = sourceProps.map(p => ({
+    name: `${toPrefix}${p.name.slice(fromPrefix.length)}`,
+    value: p.value,
+    type: p.type ?? 3
+  }))
+
+  await orca.commands.invokeEditorCommand(
+    "core.editor.setProperties",
+    null,
+    [blockId],
+    properties
+  )
+  blockCache.delete(blockId)
+
+  await deleteClozeCardSrsData(blockId, fromNumber)
+  return "moved"
+}
+
 /**
  * 删除方向卡某个方向的 SRS 属性
  *

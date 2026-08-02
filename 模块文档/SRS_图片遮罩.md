@@ -21,8 +21,9 @@
 
 1. 自动收集宿主块上的 **图片块 / 行内图 / 直接子块图**；多图时先选源  
 2. 拖拽画矩形；**画笔编号**可复用（同号多区 = 一张卡）  
-3. 选中区域可 Delete 删除；保存写入属性并初始化缺失的 `srs.cN.*`  
-4. 再次打开同一命令可继续编辑（已有进度的编号 ensure 不覆盖）
+3. 选中区域可 Delete 删除；**某编号删光后剩余编号立即压成连续 1..k**（如删 c1 则 c2→c1；删 c2 则 c3→c2、c4→c3）  
+4. 保存写入属性：紧凑编号 + 按 region id 迁移/删除 `srs.cN.*`（保留仍存活编号的 FSRS 进度）  
+5. 再次打开同一命令可继续编辑（已有进度的编号 ensure 不覆盖）
 
 ### 复习
 
@@ -32,6 +33,8 @@
 |----|------|
 | `hideOne`（默认） | 只遮当前编号区域 |
 | `hideAll` | 遮全部区域；显示答案时揭示当前编号 |
+
+进入一张卡时，评分按钮的 interval 与 due date 共用同一个冻结的预览时刻；宿主状态刷新不会让「简单 / 良好」等文案在同一张卡内跳动。
 
 ---
 
@@ -52,6 +55,7 @@
 |------|------|------|
 | `srs.io.masks` | Text (1) JSON | `{ version:1, regions:[{id,n,shape:"rect",x,y,w,h}] }`，坐标相对图 [0,1] |
 | `srs.io.src` | Text | 制卡时图片 src；换图后仍尽量用相对坐标 |
+| `srs.io.pendingSrs` | Text (1) JSON | 紧凑 masks 后未完成的 SRS 删/迁计划；成功后删除 |
 | `srs.c{N}.*` | 同 cloze | 每编号独立 FSRS（复用 cloze 存储 API） |
 
 ### 身份
@@ -85,7 +89,10 @@
 - 保存后 **纯图片宿主块**（`source.kind=block-repr`）切换为 `srs.image-occlusion`，笔记中 **持续显示** 全部实心遮罩 + `IO×N`；原 `_repr` 备份到 `srs.io.prevRepr`，整卡删除时恢复。
 - **行内图 / 子块图** 宿主：v1 **不**改宿主 `_repr`，笔记正文无实心预览；编辑 Modal 与复习仍正确显示遮罩（产品合同收窄，非遗漏吞错）。
 - **旧版**（相对滚动容器画的）遮罩可能错位，需在编辑器中重画后保存。
-- 二次保存会删除 masks 中已消失编号的 `srs.cN.*`；删变体写序为 **先 masks 后 SRS**，且强制 backend 读。
+- 二次保存会删除 masks 中已消失编号的 `srs.cN.*`，并将洞号后的编号前移（紧凑 1..k），进度按 **region id** 迁移（`moveClozeCardSrsData`）。
+- **挂起迁移** `srs.io.pendingSrs`：与 masks **同次写入**；SRS 删/迁全部成功后删除。中断后再次保存/删除会先 `resumePendingIoSrsOps` 幂等重放，避免 masks 已紧凑却无法恢复进度。
+- Flash Home / 变体删除：`removeIoNumberFromMasks` 内完成 compact + pending + SRS；缺 masks / 编号不在 masks → **抛错**（禁止静默整卡删）。返回 `ioRenames` 供列表同步 `clozeNumber`。
+- 同块 IO 写路径经 `withIoBlockLock` 进程内串行；`moveClozeCardSrsData(requireSource)` 源缺失且目标空 → 抛错；目标非空拒绝覆盖。
 - 整卡删除恢复 `_repr`：**仅**当有 `srs.io.prevRepr` 或 live type 仍为 `srs.image-occlusion` 时执行；禁止用 `srs.io.src` 把行内/子块文本宿主改写成 image（2026-08-02 Sol 复核 High）。
 
 ## 图片路径（宿主对齐）

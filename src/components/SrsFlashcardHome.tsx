@@ -57,7 +57,13 @@ async function mergeDeckNotes(
 
 /** 卡片删除结果：variant-only = 同块仍有其它变体，#card 标签保留 */
 export type CardDeleteOutcome =
-  | { kind: "variant-only"; remainingVariants: number }
+  | {
+      kind: "variant-only"
+      remainingVariants: number
+      /** IO：删除后编号迁移，供前端列表同步 clozeNumber */
+      ioRenames?: Array<{ from: number; to: number }>
+      deletedClozeNumber?: number
+    }
   | { kind: "full" }
 
 /**
@@ -110,20 +116,37 @@ export async function deleteReviewCardBackendData(
       // 决策与改 masks 均基于本轮 backend 块，禁止再用可能陈旧的 state
       let numbers: number[]
       try {
-        numbers = getIoMaskNumbers(readIoMasksFromBlock(block))
+        const masks = readIoMasksFromBlock(block)
+        if (!masks) {
+          throw new Error(
+            `块 #${card.id} 为 image-occlusion 但缺少 srs.io.masks，拒绝删除（数据不一致）`
+          )
+        }
+        numbers = getIoMaskNumbers(masks)
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
         throw new Error(`读取图片遮罩失败，无法删除变体：${msg}`)
       }
+      if (!numbers.includes(card.clozeNumber)) {
+        throw new Error(
+          `遮罩编号 c${card.clozeNumber} 不存在于 masks（当前: c${numbers.join("、c") || "无"}），拒绝删除（列表可能已过期，请刷新后重试）`
+        )
+      }
       remainingVariants = numbers.filter((n) => n !== card.clozeNumber).length
       if (remainingVariants > 0) {
-        // 写序：先 masks 成功，再删该编号 SRS（避免 masks 失败却把进度清成新卡）
-        await removeIoNumberFromMasks(card.id, card.clozeNumber, {
-          backendBlock: block
-        })
-        await deleteClozeCardSrsData(card.id, card.clozeNumber)
+        // removeIoNumberFromMasks 内部：masks+pending → SRS 删/迁 → 清 pending
+        const maskResult = await removeIoNumberFromMasks(
+          card.id,
+          card.clozeNumber,
+          { backendBlock: block }
+        )
         invalidateBlockCache(card.id)
-        return { kind: "variant-only", remainingVariants }
+        return {
+          kind: "variant-only",
+          remainingVariants,
+          ioRenames: maskResult.renames,
+          deletedClozeNumber: card.clozeNumber
+        }
       }
       // 最后一个 IO 变体：整卡删除。
       // restore 内部只对「曾切到 srs.image-occlusion」的宿主改 _repr；
@@ -688,20 +711,41 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     // 后端成功后再改列表，避免失败时页面谎报已删除
     try {
       const outcome = await deleteReviewCardBackendData(card, pluginName)
+      const { applyIoVariantDeleteToCardList } = await import(
+        "../srs/imageOcclusion"
+      )
 
       setAllCards((prev: ReviewCard[]) => {
-        const next = prev.filter((c: ReviewCard) => {
-          if (card.cardType === "image-occlusion" && card.clozeNumber) {
-            return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
-          }
-          if (card.clozeNumber) {
-            return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
-          }
-          if (card.directionType) {
-            return !(c.id === card.id && c.directionType === card.directionType)
-          }
-          return c.id !== card.id
-        })
+        let next: ReviewCard[]
+        if (
+          outcome.kind === "variant-only" &&
+          card.cardType === "image-occlusion" &&
+          card.clozeNumber &&
+          outcome.deletedClozeNumber
+        ) {
+          // 后端已压号：同步列表 clozeNumber，避免幽灵旧号再次误删
+          next = applyIoVariantDeleteToCardList(
+            prev,
+            card.id,
+            outcome.deletedClozeNumber,
+            outcome.ioRenames ?? []
+          )
+        } else {
+          next = prev.filter((c: ReviewCard) => {
+            if (card.cardType === "image-occlusion" && card.clozeNumber) {
+              return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
+            }
+            if (card.clozeNumber) {
+              return !(c.id === card.id && c.clozeNumber === card.clozeNumber)
+            }
+            if (card.directionType) {
+              return !(
+                c.id === card.id && c.directionType === card.directionType
+              )
+            }
+            return c.id !== card.id
+          })
+        }
         void recomputeSummaries(next)
         return next
       })
