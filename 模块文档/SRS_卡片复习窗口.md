@@ -437,9 +437,9 @@ stateDiagram-v2
 | 操作 | 行为 | 快捷键 |
 | ---- | ---- | ------ |
 | Bury（推迟） | `due` → 明天零点；不改 interval/stability 等 | `b` |
-| Suspend | 标签 `status=suspend`；队列过滤 | `s` |
+| Suspend | Basic 等无变体卡写 `#card.status=suspend`；Cloze / IO 写 `srs.cN.suspended`；Direction 写 `srs.<dir>.suspended` | `s` |
 
-实现：`src/srs/cardStatusUtils.ts`；收集过滤：`cardCollector.ts`。
+正式会话与 IR mixed 都把完整 `ReviewCard` 交给 `suspendCard`，因此同块变体只暂停当前 `cardKey` 对应的编号/方向。提示中的「卡片浏览器取消暂停」对应 Flash Home 的「已暂停」次级视图；恢复失败保持可见。实现：`src/srs/cardStatusUtils.ts`、`reviewCardGrading.ts`；收集过滤：`reviewCardFactory.ts` / `cardCollector.ts`。
 
 ### 快捷键（复习）
 

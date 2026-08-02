@@ -251,7 +251,7 @@ export async function postponeReviewCard(card: ReviewCard): Promise<ReviewStatus
 
 export async function suspendReviewCard(card: ReviewCard): Promise<ReviewStatusActionResult> {
   try {
-    await suspendCard(card.id)
+    await suspendCard(card)
     emitCardSuspended(card.id)
     return {
       ok: true,

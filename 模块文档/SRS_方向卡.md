@@ -53,7 +53,7 @@
 
 ### SRS 状态
 
-前缀：`srs.forward.*` / `srs.backward.*`（字段同通用 FSRS：stability、difficulty、interval、due、lastReviewed、reps、lapses）
+前缀：`srs.forward.*` / `srs.backward.*`（字段同通用 FSRS：stability、difficulty、interval、due、lastReviewed、reps、lapses；`suspended` Boolean 仅暂停对应方向）
 
 - 单向：只初始化对应方向，`daysOffset = 0`
 - 双向：forward offset 0、backward offset 1
@@ -107,7 +107,10 @@
 
 1. `extractDirectionInfo` 失败 → 跳过
 2. left 或 right 为空 → **未完成**，不入队
-3. 按 `getDirectionList` 展开；`ensureDirectionSrsState(blockId, dir, daysOffsetIndex)`
+3. 按 `getDirectionList` 展开；默认跳过 `srs.<dir>.suspended=true` 的方向
+4. 其余方向执行 `ensureDirectionSrsState(blockId, dir, daysOffsetIndex)`
+
+Flash Home include-suspended 路径返回暂停方向供逐方向恢复；正向暂停/恢复不影响反向。Direction 值仍先经白名单门禁，暂停属性名不得使用契约外方向。
 
 ### 复习 UI
 

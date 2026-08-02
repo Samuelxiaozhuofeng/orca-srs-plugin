@@ -16,13 +16,17 @@ export function partitionDueAndNewCards(
   const nowTime = now.getTime()
 
   // pending 卡尚未激活：已建好但不排期，必须排除在两个分区之外。
+  // isSuspended 为防御性过滤：正常收集不产出暂停行，include-suspended 收集的
+  // 结果绝不允许流入复习队列。
   const dueCards = cards.filter((card) => {
+    if (card.isSuspended) return false
     if (card.isPending) return false
     if (card.isNew) return false
     return card.srs.due.getTime() <= nowTime
   })
 
   const newCards = cards.filter((card) => {
+    if (card.isSuspended) return false
     if (card.isPending) return false
     if (!card.isNew) return false
     return card.srs.due.getTime() <= nowTime

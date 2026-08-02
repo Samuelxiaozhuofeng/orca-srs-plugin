@@ -39,6 +39,10 @@
 >
 > **索引增补：2026-08-02（Azure TTS MVP）**：
 > - [SRS_TTS语音.md](SRS_TTS语音.md)：Azure Speech REST；选区单条 / Flash Home Basic 批量 / `srs.tts.manifest` / 复习手动播放；默认 Multilingual 音色（自动语种）；plugin data `tts.connection`；不自动播放、不批量非 Basic
+>
+> **索引增补：2026-08-02（暂停卡恢复闭环）**：
+> - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：新增「已暂停」全页视图与逐行取消暂停；同轮收集分 active/suspended，统计只用 active
+> - [SRS_卡片复习窗口.md](SRS_卡片复习窗口.md) / [SRS_复习队列管理.md](SRS_复习队列管理.md)：Cloze、Direction、IO 按单个变体暂停，旧整块暂停可迁移恢复
 
 ## 文档分类
 
@@ -81,9 +85,9 @@
 
 ### 卡种
 
-5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-07-29 更新 — Cloze fragment / 首次 due（普通 legacy 分天；Topic·Extract·live IR 默认 1–14 天分散）/ 复习渲染；`isClozeFragment` 共用谓词；创建仅新编号初始写入、已有编号 ensure 不覆盖
-6. **[SRS_图片遮罩.md](SRS_图片遮罩.md)** ⭐ 2026-08-02 更新 — Image Occlusion：矩形/同号多区组交互（绘制·选择·框选·组合·解组·拖动缩放；组合仅全吸收才删进度）/`io:{id}:cN`/每图 `srs.io.mode` 三段式 + 题面/答案预览；pointer commit·cancel；编辑器拆为 Mount/Body/Toolbar/Canvas + `ioEditorInteraction`；删编号 compact+pending FSRS；斜杠 `/io`
-7. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-07-26 更新 — Direction 左右向、入队条件、渲染；direction 白名单双层防御（脏值回退 forward / `getDirectionList` 返回 `[]`）
+5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-08-02 更新 — Cloze fragment / 首次 due / 复习渲染；`srs.cN.suspended` 单编号暂停与恢复
+6. **[SRS_图片遮罩.md](SRS_图片遮罩.md)** ⭐ 2026-08-02 更新 — Image Occlusion：矩形/同号多区组交互 / `io:{id}:cN` / 每图复习模式 / compact+pending FSRS；`srs.cN.suspended` 单遮罩暂停随编号迁移
+7. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-08-02 更新 — Direction 左右向、入队条件、渲染；白名单门禁；`srs.forward|backward.suspended` 单方向暂停
 8. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
 9. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-26 更新
    - Choice 标签约定、乱序、提交门闩、选项统计；斜杠「创建选择题」`createChoiceCardFromBlock`
@@ -95,20 +99,21 @@
 > 基准来自 Flash Home，令牌实现在 `src/styles/srs-design-tokens.css`（由 `src/main.ts` 最先导入）。
 > 改动本节任何面板的样式前必须先读它：禁止硬编码圆角/间距/阴影/动效裸值，禁止用 React 内联样式做视觉表现（运行时动态几何量除外）。
 
-9. **[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)** ⭐ 2026-07-27 更新
+9. **[SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)** ⭐ 2026-08-02 更新
    - 会话 UI、块加载三态、评分门控、宿主 chrome、会话进度
    - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**：269 处内联样式迁移到 `srs-review.css` 的 `srs-review-*` / `srs-grade-*` 类，仅保留 7 处运行时几何量；评分按钮语义色 Again=danger / Hard=warning / Good=primary / Easy=success；`srs-review.css` 顶部宿主 DOM 兼容选择器原样保留
    - Basic 答案嵌入：题面始终 live 卡根（宿主 inline 渲染保留），答案区逐个渲染卡根子块（不挂卡根整树、无隐藏正文 CSS、无长期 MutationObserver）；Tab/Enter 实例验证边界见该文档与 `问题经验.md`
    - 「卡片信息」面板统一为 `review-card/CardInfoPanel.tsx`（五渲染器共用；`showSchedulingDetails` prop）
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
 
-10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-07-28 更新
+10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-08-02 更新
     - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
     - 统一 remaining（SRS 日额度 + IR due）、预计分钟、开始/继续；**日额度队列**（无 10/20/30）；受信任 remaining 显式降级（mixed / 独立 SRS / 只读 IR）
     - Flash Home 块：`resolveBlock` 三态（throw 不新建）；`insertBlock` 有限正数校验；列表/困难卡 React key 用 `cardKeyFromReviewCard`
     - 从 Home 点开始/继续进入 IR：`openInCurrentPanel` 替换 Home；已有 IR 面板则聚焦后关闭 Home
     - resume 非队列快照；统一 `kind:"ir"` marker 在纯 SRS 剩余时也可继续；装配成功后才写 IR marker
     - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡
+    - 「已暂停」全页视图：逐 `cardKey` 恢复；Cloze/Direction/IO 不误伤同块其它变体
     - 删除为**变体感知**（`deleteReviewCardBackendData`：仍有存活变体只删该变体前缀属性、保留 `#card`）；今日摘要经 deps 注入复用同轮 cards
     - 关联：`SrsFlashcardHome.tsx`、`flashcard-home/*`、`flashcardHomeManager.ts`、`src/srs/todayLearning/*`（含 `todayLearningLaunch.ts`）、`styles/flashcard-home.css`
 
@@ -133,10 +138,11 @@
     - `unregisterUIComponents` 已 async（3s 有界等待 AI 后台任务取消）
     - 关联：`src/srs/registry/*`（含 `headbarButtons.ts`）
 
-20. **[SRS_复习队列管理.md](SRS_复习队列管理.md)** ⭐ 2026-07-26 更新
+20. **[SRS_复习队列管理.md](SRS_复习队列管理.md)** ⭐ 2026-08-02 更新
     - 收集、descriptor（F2-01）、scope / budget / pending、repeat
     - 查询块收集：`getQueryResults` DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不吞错）
     - `get-all-blocks` 兜底仅标签查询失败时触发；会话块创建校验 `insertBlock` 返回值（坏 ID 零落盘）
+    - normal 收集/队列排除暂停卡；显式 include 路径供 Home 同轮分流 active/suspended
     - 关联：`cardCollector.ts`、`blockCardCollector.ts`、`reviewSessionDescriptor.ts`、`reviewSessionManager.ts`、`repeatReviewManager.ts` 等
 
 21. **[SRS 动态复习队列.md](SRS%20动态复习队列.md)** ⭐ 2026-07-26 更新 — 动态队列与 resume 相关细节；短期重学窗口 5→15 分钟；已评分卡到期后允许回流本会话（去重范围收窄为未处理部分 + pending 身份）

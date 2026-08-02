@@ -21,6 +21,7 @@ export type HomeSummaryBarProps = {
   onRetryContinue: () => void
   onStartFresh: () => void
   onShowDifficultCards: () => void
+  onShowSuspendedCards: () => void
   onOpenReadingLibrary: () => void
   onRefresh: () => void
   onStatClick?: (kind: HomeStatKind) => void
@@ -45,6 +46,7 @@ export default function HomeSummaryBar({
   onRetryContinue,
   onStartFresh,
   onShowDifficultCards,
+  onShowSuspendedCards,
   onOpenReadingLibrary,
   onRefresh,
   onStatClick
@@ -302,6 +304,15 @@ export default function HomeSummaryBar({
               >
                 <i className="ti ti-alert-triangle" />
                 <span>困难卡</span>
+              </button>
+              <button
+                type="button"
+                className="srs-home-nav-btn srs-home-nav-btn--suspended"
+                onClick={onShowSuspendedCards}
+                title="查看已暂停的记忆卡并取消暂停"
+              >
+                <i className="ti ti-player-pause" />
+                <span>已暂停</span>
               </button>
               <button
                 type="button"

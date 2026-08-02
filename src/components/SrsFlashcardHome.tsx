@@ -4,6 +4,7 @@ import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../srs/types"
 import type { FilterType } from "../srs/cardFilterUtils"
 import { filterCards } from "../srs/cardFilterUtils"
+import { cardKeyFromReviewCard } from "../srs/cardIdentity"
 import { subscribeSrsCardLifecycleEvents } from "../srs/srsBroadcastBus"
 import {
   invalidateFlashHomeDataCache,
@@ -22,6 +23,7 @@ import {
 import FlashHomePage from "./flashcard-home/FlashHomePage"
 import CardListView from "./flashcard-home/CardListView"
 import DifficultCardsView from "./DifficultCardsView"
+import SuspendedCardsView, { removeCardByKey } from "./SuspendedCardsView"
 import type { HomeStatKind } from "./flashcard-home/homeStatNav"
 import {
   GLOBAL_DECK_SCOPE,
@@ -32,7 +34,7 @@ import {
 const { useState, useEffect, useCallback, useMemo, useRef } = window.React
 const { Button } = orca.components
 
-type ViewMode = "home" | "card-list" | "difficult-cards"
+type ViewMode = "home" | "card-list" | "difficult-cards" | "suspended-cards"
 
 type SrsFlashcardHomeProps = {
   panelId: string
@@ -245,6 +247,7 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
   const [viewMode, setViewMode] = useState<ViewMode>("home")
   const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
   const [allCards, setAllCards] = useState<ReviewCard[]>([])
+  const [suspendedCards, setSuspendedCards] = useState<ReviewCard[]>([])
   const [deckStats, setDeckStats] = useState<DeckStats>({
     decks: [],
     totalCards: 0,
@@ -337,8 +340,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         setErrorMessage(null)
       }
       try {
-        const data = await loadFlashHomeData({ pluginName, force })
+        const data = await loadFlashHomeData({ pluginName, force, includeSuspended: true })
         setAllCards(data.cards)
+        setSuspendedCards(data.suspendedCards)
         setTodayStats(data.todayStats)
         setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
         // 首页 mount / 强制刷新：绕过 45s 缓存拉今日剩余；
@@ -372,8 +376,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     const autoRefresh = async () => {
       if (typeof document !== "undefined" && document.hidden) return
       try {
-        const data = await loadFlashHomeData({ pluginName, force: true })
+        const data = await loadFlashHomeData({ pluginName, force: true, includeSuspended: true })
         setAllCards(data.cards)
+        setSuspendedCards(data.suspendedCards)
         setTodayStats(data.todayStats)
         setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
         await loadTodayLearning(true, data.cards)
@@ -791,6 +796,45 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     setViewMode("difficult-cards")
   }, [])
 
+  const handleShowSuspendedCards = useCallback(() => {
+    setViewMode("suspended-cards")
+  }, [])
+
+  /**
+   * 取消暂停（变体感知）：后端成功后该行立即从已暂停列表移除，
+   * 并刷新正常卡数据 / 今日统计 / 今日摘要缓存；失败抛错由视图行内展示，
+   * 行保留、不通知成功。
+   */
+  const handleUnsuspendCard = useCallback(
+    async (card: ReviewCard) => {
+      const { unsuspendCard } = await import("../srs/cardStatusUtils")
+      await unsuspendCard(card, { pluginName })
+      setSuspendedCards((prev: ReviewCard[]) =>
+        removeCardByKey(prev, cardKeyFromReviewCard(card))
+      )
+      invalidateFlashHomeDataCache()
+      invalidateTodayLearningSummaryCache()
+      void loadFlashHomeData({ pluginName, force: true, includeSuspended: true })
+        .then(async (data) => {
+          setAllCards(data.cards)
+          setSuspendedCards(data.suspendedCards)
+          setTodayStats(data.todayStats)
+          setDeckStats(await mergeDeckNotes(pluginName, data.deckStats))
+          await loadTodayLearning(true, data.cards)
+        })
+        .catch((error) => {
+          console.error(`[${pluginName}] 取消暂停后刷新数据失败:`, error)
+          orca.notify("warn", "已取消暂停，但刷新数据失败，请手动刷新", {
+            title: "SRS"
+          })
+        })
+      orca.notify("success", "已取消暂停，卡片将重新进入复习队列", {
+        title: "SRS"
+      })
+    },
+    [pluginName, loadTodayLearning]
+  )
+
   const handleOpenReadingLibrary = useCallback(async () => {
     try {
       const { openIRWorkspace } = await import(
@@ -903,8 +947,19 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             onRefresh={handleRefresh}
             onNoteChange={handleNoteChange}
             onShowDifficultCards={handleShowDifficultCards}
+            onShowSuspendedCards={handleShowSuspendedCards}
             onOpenReadingLibrary={() => void handleOpenReadingLibrary()}
             onStatClick={handleStatClick}
+          />
+        </div>
+      ) : viewMode === "suspended-cards" ? (
+        <div className="srs-suspended-cards-view">
+          <SuspendedCardsView
+            cards={suspendedCards}
+            panelId={panelId}
+            pluginName={pluginName}
+            onBack={handleBack}
+            onUnsuspend={handleUnsuspendCard}
           />
         </div>
       ) : viewMode === "difficult-cards" ? (

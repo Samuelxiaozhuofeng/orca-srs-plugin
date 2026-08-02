@@ -897,7 +897,7 @@ export default function SrsReviewSession({
     setIsGrading(true)
 
     try {
-      await suspendCard(currentCard.id)
+      await suspendCard(currentCard)
 
       if (!canCommitSessionAction(actionGateRef.current, token)) {
         return

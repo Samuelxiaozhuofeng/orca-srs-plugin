@@ -122,6 +122,12 @@ export type ReviewCard = {
    * 与 suspend 不同——pending 卡仍会被收集，便于统计与批量激活。
    */
   isPending?: boolean
+  /**
+   * 已暂停：仅在 include-suspended 收集路径（如 Flash Home「已暂停」视图）中出现。
+   * 正常 collectReviewCards() / 复习队列 / 统计路径不产出带该标记的行，
+   * 队列构建另有防御过滤，保证暂停卡不会被错误接纳。
+   */
+  isSuspended?: boolean
   content?: ContentFragment[]  // 块内容（仅 cloze 卡片使用，用于渲染填空）
   tags?: TagInfo[]  // 额外标签（排除 #card）
 }

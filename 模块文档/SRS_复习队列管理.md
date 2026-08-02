@@ -1,6 +1,7 @@
 # SRS 复习队列管理模块
 
-> **文档同步日期：2026-07-26**  
+> **文档同步日期：2026-08-02**
+> 2026-08-02：暂停改为变体感知；正常收集/队列排除暂停卡，Flash Home 可用显式 include 路径同轮分出已暂停卡。
 > 变更说明：P0 低压调度优化——`SHORT_RELEARN_WINDOW_MS` 5 分钟 → 15 分钟（详见 `SRS 动态复习队列.md`）。  
 > 同日另一批次：新增「查询块收集」小节——`getQueryResults` 对后端 `query` 返回做 DbId[]/Block[] 双形状归一化，失败抛 `QueryExecutionError`（不再静默返回空数组）。低危批次：`collectSrsBlocks` 的 `get-all-blocks` 兜底改**仅标签查询失败时触发**；会话块创建补 `insertBlock` 返回值校验与 `reviewSessionManager.test.ts` 回归。  
 > 2026-07-13：收集/建队入口改为 `cardCollector.ts`；到期判定统一为精确时间（删除过时的「仅比日期」段落）；补全 descriptor / scope / budget / pending / 子卡展开相关文件。
@@ -66,9 +67,12 @@
   deck: string,
   cardType?: CardType,
   clozeNumber? / directionType? / listItemId? / ...,
+  isSuspended?: boolean, // 仅 include-suspended 路径
   tags?: TagInfo[]
 }
 ```
+
+暂停规则：默认收集遇旧整块 `#card.status=suspend` 直接跳过；Cloze / IO 仅跳过带 `srs.cN.suspended=true` 的编号，Direction 仅跳过带 `srs.<dir>.suspended=true` 的方向。`options.includeSuspended=true` 返回 active 与 suspended 两组行供 Flash Home 分流；`reviewQueueBuilder` 仍对 `isSuspended` 做最终防御过滤。回归：`reviewCardFactory.test.ts`、`reviewQueueBatchCluster.test.ts`。
 
 **FC-13 收集性能（默认开启，不改变卡片数量/顺序/card key/due/isNew/deck）：**
 

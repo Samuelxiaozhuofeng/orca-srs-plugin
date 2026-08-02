@@ -246,7 +246,8 @@
 /* Shared centered content column — comfortable reading measure. */
 .srs-flash-home-page,
 .srs-flash-home-view,
-.srs-difficult-cards-view {
+.srs-difficult-cards-view,
+.srs-suspended-cards-view {
   width: 100%;
   max-width: var(--srs-measure);
 }
@@ -1491,4 +1492,178 @@
 
 .srs-tts-batch-status--running {
   color: var(--srs-accent-primary, var(--orca-color-text-1));
+}
+
+/* ---------- 已暂停卡片视图（Flash Home 次级视图） ---------- */
+
+.srs-suspended-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-4);
+}
+
+.srs-suspended-cards__header {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-3);
+}
+
+.srs-suspended-cards__back {
+  font-size: var(--srs-text-secondary);
+  padding: 6px var(--srs-space-3);
+}
+
+.srs-suspended-cards__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  font-size: var(--srs-text-heading);
+  font-weight: var(--srs-weight-semibold);
+  color: var(--orca-color-text-1);
+}
+
+.srs-suspended-cards__title-icon {
+  color: var(--srs-accent-backlog);
+}
+
+.srs-suspended-cards__count {
+  font-size: var(--srs-text-body);
+  font-weight: var(--srs-weight-regular);
+  color: var(--orca-color-text-3);
+}
+
+/* 说明托盘 */
+.srs-suspended-cards__intro {
+  padding: var(--srs-space-3);
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+/* 空状态 */
+.srs-suspended-cards__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 28px var(--srs-space-4);
+  text-align: center;
+  color: var(--orca-color-text-3);
+}
+
+.srs-suspended-cards__empty-icon {
+  display: block;
+  font-size: var(--srs-icon-empty);
+  opacity: 0.5;
+  margin-bottom: var(--srs-space-3);
+}
+
+.srs-suspended-cards__empty-title {
+  font-size: var(--srs-text-body);
+  margin-bottom: var(--srs-space-2);
+}
+
+.srs-suspended-cards__empty-hint {
+  font-size: var(--srs-text-secondary);
+  opacity: 0.7;
+}
+
+/* 单张已暂停卡 */
+.srs-suspended-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  padding: 14px var(--srs-space-4);
+  background: var(--srs-surface-base);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-lg);
+  box-shadow: var(--srs-shadow-1);
+  box-sizing: border-box;
+  transition:
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease);
+}
+
+/* 可点击行（role=button）：hover / active / focus-visible 完整反馈 */
+.srs-suspended-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  min-width: 0;
+  cursor: pointer;
+  border-radius: var(--srs-radius-md);
+  transition:
+    box-shadow var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-base) var(--srs-ease);
+}
+
+.srs-suspended-card__main:hover .srs-suspended-card__preview {
+  border-color: var(--srs-hairline-strong);
+}
+
+.srs-suspended-card__main:hover {
+  box-shadow: var(--srs-shadow-2);
+}
+
+.srs-suspended-card__main:active {
+  transform: translateY(0.5px);
+}
+
+.srs-suspended-card__main:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-suspended-card__preview {
+  min-height: 28px;
+  padding: 10px var(--srs-space-3);
+  border-radius: var(--srs-radius-sm);
+  background: var(--srs-surface-sunken);
+  border: 1px solid var(--srs-hairline);
+  box-sizing: border-box;
+}
+
+.srs-suspended-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.srs-suspended-card__deck {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+  min-width: 0;
+}
+
+.srs-suspended-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--srs-space-2);
+  flex-wrap: wrap;
+}
+
+.srs-suspended-card__error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--srs-space-1);
+  margin-right: auto;
+  font-size: var(--srs-text-caption);
+  color: var(--srs-accent-danger);
+  line-height: 1.5;
+}
+
+.srs-suspended-card__unsuspend-icon {
+  margin-right: var(--srs-space-1);
+  font-size: var(--srs-icon-sm);
 }

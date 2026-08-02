@@ -51,6 +51,7 @@
 | stability / difficulty / interval | FSRS 参数 |
 | due / lastReviewed | 到期与上次复习 |
 | reps / lapses | 次数统计 |
+| suspended | Boolean；仅暂停当前 cN，不影响同块其它填空 |
 
 **首次 due：**
 
@@ -119,7 +120,10 @@
 
 1. `getAllClozeNumbers(block.content, pluginName)`
 2. 无编号则跳过
-3. 每个编号：`ensureClozeSrsState` → 一张 `ReviewCard`（含 `clozeNumber`、`content`）
+3. 默认跳过 `srs.cN.suspended=true` 的编号；其它编号继续收集
+4. 每个保留编号：`ensureClozeSrsState` → 一张 `ReviewCard`（含 `clozeNumber`、`content`）
+
+Flash Home 的 include-suspended 路径会同时返回暂停编号并标记 `isSuspended`，用于逐编号恢复。旧整块暂停恢复某一 cN 时，其它当前存活编号会显式保留暂停。
 
 ### 复习 UI
 

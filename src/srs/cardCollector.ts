@@ -69,6 +69,14 @@ export type CollectReviewCardsOptions = {
   disableOptimizations?: boolean
   /** 开发态：为 true 时 console.info 输出一行 metrics 摘要 */
   logMetrics?: boolean
+  /**
+   * include-suspended 收集（Flash Home「已暂停」视图专用）：
+   * 暂停的行（整块 suspend 展开行 + 变体级 suspend 行）也会返回并带 isSuspended=true，
+   * 与正常行同轮区分，避免为暂停视图无界重复扫库。
+   * 默认 false：行为与历史一致（整块 suspend 不产出、变体级 suspend 只跳过该变体），
+   * 正常 collectReviewCards() / 复习队列 / 统计路径不得传 true。
+   */
+  includeSuspended?: boolean
 }
 
 function emptyStageTimings(): CollectStageTimings {
@@ -258,7 +266,9 @@ export async function collectReviewCards(
   t0 = performance.now()
   try {
     for (const block of blocks) {
-      cards.push(...await convertBlockToReviewCards(block, pluginName, collectionNow))
+      cards.push(...await convertBlockToReviewCards(block, pluginName, collectionNow, {
+        includeSuspended: options.includeSuspended === true
+      }))
     }
   } finally {
     stageMs.processCardsMs = performance.now() - t0

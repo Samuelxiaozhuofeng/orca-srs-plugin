@@ -4,7 +4,7 @@ import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard, TagInfo } from "./types"
 import { BlockWithRepr, isSrsCardBlock, resolveFrontBack } from "./blockUtils"
 import { extractDeckName, extractCardType } from "./deckUtils"
-import { extractCardStatus } from "./cardStatusUtils"
+import { extractCardStatus, isVariantSuspended } from "./cardStatusUtils"
 import { readCardBatchId } from "./cardBatch"
 import {
   ensureCardSrsState,
@@ -82,6 +82,15 @@ function getTomorrowMidnight(): Date {
 }
 
 /**
+ * 单块转换选项。
+ * includeSuspended=true 时暂停行也会返回（带 isSuspended=true），供「已暂停」视图使用；
+ * 默认 false：整块 suspend 返回空数组、变体级 suspend 只跳过该变体，行为与历史一致。
+ */
+export type ConvertBlockToReviewCardsOptions = {
+  includeSuspended?: boolean
+}
+
+/**
  * 将单个块转换为 ReviewCard 数组
  *
  * 对于 Cloze 卡片，为每个填空编号生成独立的 ReviewCard
@@ -94,24 +103,28 @@ function getTomorrowMidnight(): Date {
 export async function convertBlockToReviewCards(
   block: BlockWithRepr,
   pluginName: string = PLUGIN_NAME,
-  now: Date = new Date()
+  now: Date = new Date(),
+  options: ConvertBlockToReviewCardsOptions = {}
 ): Promise<ReviewCard[]> {
   const cards: ReviewCard[] = []
+  const includeSuspended = options.includeSuspended === true
 
   if (!isSrsCardBlock(block) && !hasCardTag(block)) {
     return cards
   }
 
-  // 过滤已暂停的卡片
-  const status = extractCardStatus(block)
-  if (status === "suspend") {
+  // 整块暂停：默认直接返回空（历史行为）。仅 include-suspended 路径继续展开，
+  // 使 legacy #card.status=suspend 的多变体块能在「已暂停」视图逐变体恢复。
+  const blockStatus = extractCardStatus(block)
+  const blockSuspended = blockStatus === "suspend"
+  if (blockSuspended && !includeSuspended) {
     console.log(`[${pluginName}] convertBlockToReviewCards: 跳过已暂停的卡片 #${block.id}`)
     return cards
   }
 
   // pending：卡片已建好但尚未排期。与 suspend 不同，这里不提前返回——
   // 卡片仍要被收集，只是由队列构建阶段排除，Flash Home 才能统计并批量激活。
-  const isPending = status === "pending"
+  const isPending = blockStatus === "pending"
   const batchId = readCardBatchId(block)
 
   // 识别卡片类型
@@ -136,6 +149,10 @@ export async function convertBlockToReviewCards(
     }
 
     for (const clozeNumber of clozeNumbers) {
+      // 变体级暂停：默认跳过该变体；include-suspended 路径返回并标记
+      const variantSuspended = isVariantSuspended(block, "cloze", clozeNumber)
+      if ((blockSuspended || variantSuspended) && !includeSuspended) continue
+
       const srsState = await ensureClozeSrsState(block.id, clozeNumber, clozeNumber - 1)
 
       // front 使用块文本（将在渲染时隐藏对应填空）
@@ -149,6 +166,7 @@ export async function convertBlockToReviewCards(
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         batchId,
         isPending,
+        isSuspended: blockSuspended || variantSuspended || undefined,
         deck: deckName,
         cardType: "cloze",
         tags: extractNonCardTags(block),
@@ -176,6 +194,10 @@ export async function convertBlockToReviewCards(
     }
     const storedSrc = readStoredIoSrc(block) ?? ""
     for (const clozeNumber of numbers) {
+      // IO 变体级暂停：默认跳过该变体；include-suspended 路径返回并标记
+      const variantSuspended = isVariantSuspended(block, "image-occlusion", clozeNumber)
+      if ((blockSuspended || variantSuspended) && !includeSuspended) continue
+
       const srsState = await ensureClozeSrsState(block.id, clozeNumber, clozeNumber - 1)
       cards.push({
         id: block.id,
@@ -185,6 +207,7 @@ export async function convertBlockToReviewCards(
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         batchId,
         isPending,
+        isSuspended: blockSuspended || variantSuspended || undefined,
         deck: deckName,
         cardType: "image-occlusion",
         tags: extractNonCardTags(block),
@@ -210,6 +233,10 @@ export async function convertBlockToReviewCards(
     for (let i = 0; i < directions.length; i++) {
       const dir = directions[i]
 
+      // 变体级暂停：默认跳过该方向；include-suspended 路径返回并标记
+      const variantSuspended = isVariantSuspended(block, "direction", undefined, dir)
+      if ((blockSuspended || variantSuspended) && !includeSuspended) continue
+
       const srsState = await ensureDirectionSrsState(block.id, dir, i)
 
       // 根据方向决定问题和答案
@@ -224,6 +251,7 @@ export async function convertBlockToReviewCards(
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         batchId,
         isPending,
+        isSuspended: blockSuspended || variantSuspended || undefined,
         deck: deckName,
         cardType: "direction",
         tags: extractNonCardTags(block),
@@ -241,8 +269,9 @@ export async function convertBlockToReviewCards(
       back: "",
       srs: srsState,
       isNew: !srsState.lastReviewed || srsState.reps === 0,
-        batchId,
-        isPending,
+      batchId,
+      isPending,
+      isSuspended: blockSuspended || undefined,
       deck: deckName,
       cardType: "excerpt",
       tags: extractNonCardTags(block)
@@ -262,8 +291,9 @@ export async function convertBlockToReviewCards(
       back: "",
       srs: srsState,
       isNew: !srsState.lastReviewed || srsState.reps === 0,
-        batchId,
-        isPending,
+      batchId,
+      isPending,
+      isSuspended: blockSuspended || undefined,
       deck: deckName,
       cardType: "choice",
       tags: extractNonCardTags(block),
@@ -302,6 +332,7 @@ export async function convertBlockToReviewCards(
       back: "",
       srs: dueItemSrs,
       isNew: !dueItemSrs.lastReviewed || dueItemSrs.reps === 0,
+      isSuspended: blockSuspended || undefined,
       deck: deckName,
       cardType: "list",
       tags: extractNonCardTags(block),
@@ -327,6 +358,7 @@ export async function convertBlockToReviewCards(
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         batchId,
         isPending,
+        isSuspended: blockSuspended || undefined,
         deck: deckName,
         cardType: "basic",
         tags: extractNonCardTags(block)
@@ -344,6 +376,7 @@ export async function convertBlockToReviewCards(
         isNew: !srsState.lastReviewed || srsState.reps === 0,
         batchId,
         isPending,
+        isSuspended: blockSuspended || undefined,
         deck: deckName,
         cardType: "basic",
         tags: extractNonCardTags(block)

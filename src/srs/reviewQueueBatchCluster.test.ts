@@ -122,3 +122,19 @@ describe("pending cards", () => {
     expect(queue.map((c) => c.id)).toEqual([3, 4])
   })
 })
+
+describe("suspended cards", () => {
+  const now = new Date(1_700_000_500_000)
+
+  it("are excluded from both partitions and the built queue", () => {
+    const cards = [
+      card(1, 0),
+      card(2, 0, { isSuspended: true }),
+      card(3, 0, { isNew: true, isSuspended: true })
+    ]
+    const { dueCards, newCards } = partitionDueAndNewCards(cards, now)
+    expect(dueCards.map((c) => c.id)).toEqual([1])
+    expect(newCards).toEqual([])
+    expect(buildReviewQueue(cards, null, now).map((c) => c.id)).toEqual([1])
+  })
+})

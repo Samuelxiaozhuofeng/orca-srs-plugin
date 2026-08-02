@@ -25,6 +25,7 @@ export type FlashHomePageProps = {
   onRefresh: () => void
   onNoteChange: (deckName: string, note: string) => void
   onShowDifficultCards: () => void
+  onShowSuspendedCards: () => void
   onOpenReadingLibrary: () => void
   onStatClick: (kind: HomeStatKind) => void
 }
@@ -50,6 +51,7 @@ export default function FlashHomePage({
   onRefresh,
   onNoteChange,
   onShowDifficultCards,
+  onShowSuspendedCards,
   onOpenReadingLibrary,
   onStatClick
 }: FlashHomePageProps) {
@@ -69,6 +71,7 @@ export default function FlashHomePage({
         onRetryContinue={onRetryContinue}
         onStartFresh={onStartFresh}
         onShowDifficultCards={onShowDifficultCards}
+        onShowSuspendedCards={onShowSuspendedCards}
         onOpenReadingLibrary={onOpenReadingLibrary}
         onRefresh={onRefresh}
         onStatClick={onStatClick}

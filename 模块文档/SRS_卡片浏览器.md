@@ -1,6 +1,6 @@
 # SRS Flashcard Home（闪卡主页 / 卡片浏览器）
 
-> **文档同步日期：2026-07-28**
+> **文档同步日期：2026-08-02**
 > 现状以代码为准。产品主入口称为 **「今日学习」**（块类型 / 命令 ID 仍为 `srs.flashcard-home` / `openFlashcardHome` 以兼容）。
 > 历史上称「卡片浏览器 / Flash Home」；旧组件 `SrsCardBrowser.tsx` **已不存在**。
 
@@ -12,6 +12,7 @@
 - **卡库次级区**（新卡 / 今日到期 / 积压三卡 + 卡组列表）
 - **卡片列表**（按 Deck 筛选、重置/删除/跳转）
 - **困难卡**（全页次级视图；fixed 会话，**不**写今日 resume）
+- **已暂停**（全页次级视图；逐变体恢复，失败保留行并显示错误）
 
 ### 核心价值
 
@@ -37,6 +38,7 @@
 | `src/components/flashcard-home/CardListView.tsx` | 单 Deck 卡片列表（列表托盘 + 分页） |
 | `src/components/flashcard-home/CardListItem.tsx` | 卡片行内容（预览 / 操作） |
 | `src/components/flashcard-home/CardFrame.tsx` | 卡片外壳：左侧状态色条 + 状态徽标 |
+| `src/components/SuspendedCardsView.tsx` | 已暂停卡片列表、行级恢复状态与错误展示 |
 | `src/components/flashcard-home/cardStatus.ts` | 到期状态（new/today/backlog/future）与日期文案 |
 | `src/styles/flashcard-home.css` | Flash Home 列表框与卡片帧样式（`main.ts` 引入） |
 | `src/components/DifficultCardsView.tsx` | 困难卡片列表与一键复习 |
@@ -61,7 +63,7 @@
 ## 视图模式
 
 ```text
-ViewMode = "home" | "card-list" | "difficult-cards"
+ViewMode = "home" | "card-list" | "difficult-cards" | "suspended-cards"
 默认：home
 ```
 
@@ -72,13 +74,16 @@ flowchart TD
   C -->|home| D[FlashHomePage]
   C -->|card-list| F[CardListView]
   C -->|difficult-cards| H[DifficultCardsView]
+  C -->|suspended-cards| I[SuspendedCardsView]
   D -->|查看 Deck| F
   D -->|困难卡片| H
+  D -->|已暂停| I
   F -->|返回| D
   H -->|返回| D
+  I -->|返回| D
 ```
 
-无顶层「主页 / 卡组 / 统计」Tab。困难卡片与单 Deck 列表为全页次级视图；`handleBack` 回到 **`home`** 并清空 `selectedDeck` / `currentFilter`。
+无顶层「主页 / 卡组 / 统计」Tab。困难卡片、已暂停与单 Deck 列表为全页次级视图；`handleBack` 回到 **`home`** 并清空 `selectedDeck` / `currentFilter`。
 
 ---
 
@@ -104,7 +109,8 @@ flowchart TD
 
 1. `loadFlashHomeData`（`src/srs/flashHomeDataLoader.ts`）：
    - 短 TTL（45s）缓存 + 并发 inflight 去重，减少重复全量 `collectReviewCards`
-   - 产出 `cards` + `calculateDeckStats` + `calculateHomeStats`；备注另经 `getAllDeckNotes` 合并
+   - Home 用 `includeSuspended: true` 做一次有界收集，按 `isSuspended` 分成 `cards` / `suspendedCards`；统计只基于 active `cards`
+   - inflight 按 include key 分槽，同 key 去重、不同 key 并发互不清理
    - 用户刷新 / 评分事件：`invalidate` + `force` 重载
 2. 今日摘要：同一轮 `applyLoaded` 中 `loadTodayLearning(true, data.cards)` —— 经 `loadTodayLearningSummaryCached` 的 **`deps.collectReviewCards` 注入复用本轮 cards**，一次刷新只做一遍 SRS 全量收集（IR 收集链不受影响；回归：`src/srs/todayLearning/todayLearningSummary.depsReuse.test.ts`）；随后 `loadResume()` 读恢复点
 3. 事件：`CARD_GRADED` / `CARD_POSTPONED` / `CARD_SUSPENDED` → 失效缓存并重载
@@ -142,7 +148,16 @@ flowchart TD
 `HomeSummaryBar` 动作区分两行，语义层级清晰（Apple 风）：
 
 1. `.srs-home-summary__actions`（主 CTA 行）：主按钮「开始今日学习 / 继续上次学习」（`srs-home-primary-btn`）+ 可选「重新开始」（`srs-home-linkbtn`，仅 `canContinue && canStart`）。
-2. `.srs-home-summary__nav`（次级入口行）：**「阅读资料库」**（`srs-home-nav-btn--library` 强调色调，`onOpenReadingLibrary` → `openIRWorkspace({ mode: "library" })`，经 `FlashHomePage` 由 `SrsFlashcardHome.handleOpenReadingLibrary` 透传，失败可见 notify）· 「困难卡」· 刷新图标。
+2. `.srs-home-summary__nav`（次级入口行）：**「阅读资料库」**（`srs-home-nav-btn--library` 强调色调，`onOpenReadingLibrary` → `openIRWorkspace({ mode: "library" })`，经 `FlashHomePage` 由 `SrsFlashcardHome.handleOpenReadingLibrary` 透传，失败可见 notify）· 「困难卡」· 「已暂停」· 刷新图标。
+
+### 已暂停视图与恢复
+
+- 正常 `collectReviewCards()` 仍排除暂停卡；仅 Home 的 include 路径返回暂停行并标记 `isSuspended`，因此今日 remaining、牌组统计与复习队列不包含暂停卡。
+- Cloze / IO 用 `srs.cN.suspended`，Direction 用 `srs.forward|backward.suspended`；取消暂停按 `cardKeyFromReviewCard` 精确移除一行，不影响同块其它变体。
+- 旧 `#card.status=suspend` 多变体块会在视图中展开。恢复目标前以后端最新块确认存活变体，把其它变体显式保持暂停后再清旧整块状态；后端读取、masks 或写入失败时保留行并显示错误。
+- 成功后当前行立即消失，并失效 Flash Home / 今日摘要缓存后重载；重载失败显示 warning，不回滚已经成功的恢复写入。
+
+回归：`src/srs/cardStatusUtils.test.ts`、`src/srs/reviewCardFactory.test.ts`、`src/srs/flashHomeDataLoader.test.ts`、`src/components/SuspendedCardsView.test.ts`。
 
 ### 启动路由（受信任 remaining 降级）
 

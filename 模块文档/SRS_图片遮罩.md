@@ -68,6 +68,7 @@
 | `srs.io.pendingSrs` | Text (1) JSON | 紧凑 masks 后未完成的 SRS 删/迁计划；成功后删除 |
 | `srs.io.prevRepr` | Text | 纯图片宿主备份原 `_repr` |
 | `srs.c{N}.*` | 同 cloze | 每编号独立 FSRS（复用 cloze 存储 API） |
+| `srs.c{N}.suspended` | Boolean | 仅暂停该遮罩编号；随 cN 前缀迁移一起移动 |
 
 **清理对称**：末变体 `removeIoNumberFromMasks` 与 `IO_HOST_PROPERTY_NAMES` 删除 masks/src/mode/prevRepr/pending；整卡 `deleteCardSrsData` 删全部 `srs.*`。禁止留下孤儿 `srs.io.mode`。
 
@@ -124,6 +125,7 @@
 - 保存后 **纯图片宿主块**（`source.kind=block-repr`）切换为 `srs.image-occlusion`，笔记中 **持续显示** 全部实心遮罩 + `IO×N`；原 `_repr` 备份到 `srs.io.prevRepr`，整卡删除时恢复。
 - **行内图 / 子块图** 宿主：v1 **不**改宿主 `_repr`，笔记正文无实心预览；编辑 Modal 与复习仍正确显示遮罩。
 - 二次保存会删除 masks 中已消失编号的 `srs.cN.*`，并将洞号后的编号前移（紧凑 1..k），进度按 **region id** 迁移（`moveClozeCardSrsData`）。
+- 暂停/恢复按遮罩编号隔离。Flash Home include-suspended 路径显示 `io:{blockId}:cN` 行；旧整块暂停恢复时以结构化 `cardType=image-occlusion` + 后端最新 masks 判断其它编号，不能依赖 `_repr`（行内图/子块图宿主不改 `_repr`）。缺 masks、目标编号已删除或后端读取失败均拒绝清整块暂停。
 - **挂起迁移** `srs.io.pendingSrs`：与 masks **同次写入**；SRS 删/迁全部成功后删除。中断后再次保存/删除会先 `resumePendingIoSrsOps` 幂等重放。
 - Flash Home / 变体删除：`removeIoNumberFromMasks` 内完成 compact + pending + SRS；缺 masks / 编号不在 masks → **抛错**。返回 `ioRenames` 供列表同步 `clozeNumber`。
 - 同块 IO 写路径经 `withIoBlockLock` 进程内串行；`moveClozeCardSrsData(requireSource)` 源缺失且目标空 → 抛错；目标非空拒绝覆盖。
