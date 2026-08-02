@@ -226,7 +226,8 @@ export async function runTtsBatch(
           targetBlockId: item.blockId,
           targetKey: item.cardKey,
           text: item.front,
-          insertAfterBlockId: item.blockId,
+          // 音频作为卡片根块的子块插入
+          parentBlockId: item.blockId,
           mode: options.mode ?? "skip_existing",
           signal: options.signal,
           ...options.generateOptions

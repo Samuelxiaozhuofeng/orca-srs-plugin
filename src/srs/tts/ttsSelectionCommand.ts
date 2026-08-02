@@ -140,7 +140,8 @@ export async function runSelectionTtsCommand(
       targetBlockId: extracted.blockId,
       targetKey,
       text,
-      insertAfterBlockId: extracted.blockId,
+      // 音频作为选中文本所在块的子块插入
+      parentBlockId: extracted.blockId,
       mode: "skip_existing"
     })
 

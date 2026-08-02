@@ -53,10 +53,10 @@ export type GenerateTtsAudioOptions = {
   targetKey: string
   text: string
   /**
-   * 插入 audio 块的参照块。默认 targetBlockId；
-   * 插在该块 after（sibling），避免成为卡型子块。
+   * 作为子块插入时的父块。默认 targetBlockId；
+   * 使用 lastChild，挂在目标块下方（子级），而非同级 after。
    */
-  insertAfterBlockId?: DbId
+  parentBlockId?: DbId
   /** 默认跳过 textHash+voice+format 匹配的已有 entry */
   mode?: "skip_existing" | "regenerate"
   settingsOverride?: Partial<TtsSettings>
@@ -66,7 +66,7 @@ export type GenerateTtsAudioOptions = {
   uploadAsset?: (mime: string, data: ArrayBuffer) => Promise<string>
   /** 测试注入 insert */
   insertAudioBlock?: (args: {
-    refBlockId: DbId
+    parentBlockId: DbId
     assetPath: string
   }) => Promise<DbId>
   /** 测试注入读块 */
@@ -129,25 +129,26 @@ async function defaultUploadAsset(
 }
 
 async function defaultInsertAudioBlock(args: {
-  refBlockId: DbId
+  parentBlockId: DbId
   assetPath: string
 }): Promise<DbId> {
-  const refBlock =
-    (orca.state.blocks?.[args.refBlockId] as Block | undefined) ??
-    ((await orca.invokeBackend("get-block", args.refBlockId)) as
+  const parentBlock =
+    (orca.state.blocks?.[args.parentBlockId] as Block | undefined) ??
+    ((await orca.invokeBackend("get-block", args.parentBlockId)) as
       | Block
       | undefined)
 
-  if (!refBlock) {
-    throw new Error(`参照块不存在（#${args.refBlockId}）`)
+  if (!parentBlock) {
+    throw new Error(`父块不存在（#${args.parentBlockId}）`)
   }
 
   const content = `audio: ${args.assetPath}`
+  // lastChild：挂在目标块子级末尾，而不是同级 after
   const rawId = await orca.commands.invokeEditorCommand(
     "core.editor.insertBlock",
     null,
-    refBlock,
-    "after",
+    parentBlock,
+    "lastChild",
     [{ t: "t", v: content }],
     { type: "audio", src: args.assetPath }
   )
@@ -265,14 +266,13 @@ export async function generateTtsAudio(
     )
   }
 
-  // ── 3. 插入原生 audio block（sibling after） ──
-  const insertAfter =
-    options.insertAfterBlockId ?? options.targetBlockId
+  // ── 3. 插入原生 audio block（目标块 lastChild 子块） ──
+  const parentBlockId = options.parentBlockId ?? options.targetBlockId
   const insertFn = options.insertAudioBlock ?? defaultInsertAudioBlock
   let audioBlockId: number
   try {
     audioBlockId = await insertFn({
-      refBlockId: insertAfter,
+      parentBlockId,
       assetPath
     })
   } catch (error) {

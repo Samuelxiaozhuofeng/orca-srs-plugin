@@ -33,7 +33,7 @@
 > - [SRS_AI模块.md](SRS_AI模块.md)：设置项表格 + 面板 Tab 清单同步
 >
 > **索引增补：2026-08-02（Azure TTS MVP）**：
-> - [SRS_TTS语音.md](SRS_TTS语音.md)：Azure Speech REST；选区单条 / Flash Home Basic 批量 / `srs.tts.manifest` / 复习手动播放；plugin data `tts.connection`；不自动播放、不批量非 Basic
+> - [SRS_TTS语音.md](SRS_TTS语音.md)：Azure Speech REST；选区单条 / Flash Home Basic 批量 / `srs.tts.manifest` / 复习手动播放；默认 Multilingual 音色（自动语种）；plugin data `tts.connection`；不自动播放、不批量非 Basic
 
 ## 文档分类
 

@@ -12,10 +12,53 @@ export type TtsProvider = (typeof TTS_PROVIDERS)[number]
 export const DEFAULT_TTS_OUTPUT_FORMAT =
   "audio-24khz-96kbitrate-mono-mp3" as const
 
-export const DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural"
+/**
+ * 默认音色：Multilingual，可按输入文本自动识别语种发音。
+ * 单语种如 zh-CN-XiaoxiaoNeural 不会自动切英文。
+ * 已落盘的旧配置不会被强制迁移。
+ */
+export const DEFAULT_TTS_VOICE = "zh-CN-XiaochenMultilingualNeural"
 export const DEFAULT_TTS_REGION = "eastasia"
 export const DEFAULT_TTS_RATE = "0%"
 export const DEFAULT_TTS_PITCH = "0%"
+
+/**
+ * 设置页「推荐音色」快捷项（方案 A：靠 Multilingual 自动语种，不做客户端分段）。
+ * 仍允许用户手填任意 Azure voice 名称。
+ */
+export type TtsRecommendedVoice = {
+  id: string
+  /** 按钮短标签 */
+  label: string
+  voice: string
+  /** 一行说明 */
+  hint: string
+}
+
+export const TTS_RECOMMENDED_VOICES: readonly TtsRecommendedVoice[] = [
+  {
+    id: "zh-multi",
+    label: "中文多语",
+    voice: "zh-CN-XiaochenMultilingualNeural",
+    hint: "中文主 locale，中英混排可自动识别"
+  },
+  {
+    id: "en-multi",
+    label: "英文多语",
+    voice: "en-US-JennyMultilingualNeural",
+    hint: "英文主 locale，兼多语自动识别"
+  },
+  {
+    id: "zh-classic",
+    label: "晓晓（单语）",
+    voice: "zh-CN-XiaoxiaoNeural",
+    hint: "经典中文；英文可能中式发音，不适合混排"
+  }
+] as const
+
+/** 设置页试听文案：含中英，便于验证 Multilingual 自动语种 */
+export const TTS_PREVIEW_TEXT =
+  "你好，这是语音合成测试。Hello, this is a multilingual TTS test."
 
 /** region 允许字符：字母数字与连字符 */
 const REGION_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i

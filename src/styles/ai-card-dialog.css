@@ -1520,6 +1520,24 @@
   overflow-y: auto;
 }
 
+/* TTS 推荐音色快捷行 */
+.ai-service-settings__tts-voice-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--srs-space-2);
+}
+
+.ai-service-settings__tts-voice-presets .ai-service-settings__btn {
+  font-size: var(--srs-text-caption);
+  padding: 4px 10px;
+}
+
+.ai-service-settings__tts-voice-presets__btn--active {
+  border-color: var(--orca-color-primary-5, var(--srs-hairline));
+  color: var(--orca-color-primary-5, var(--orca-color-text-1));
+  font-weight: var(--srs-weight-semibold);
+}
+
 .ai-service-settings__hint-block {
   display: flex;
   flex-direction: column;

@@ -26,6 +26,7 @@ import {
   saveTtsSettings,
   setTtsSettingsCache,
   getTtsSettings,
+  TTS_PREVIEW_TEXT,
   type TtsSettings
 } from "../srs/tts/ttsSettingsSchema"
 import { synthesizeSpeech } from "../srs/tts/azureTtsClient"
@@ -191,7 +192,7 @@ export function AIServiceSettingsMount({
       }
       const result = await synthesizeSpeech({
         settings: cleaned,
-        text: "你好，这是语音合成测试。",
+        text: TTS_PREVIEW_TEXT,
         signal: controller.signal
       })
       if (controller.signal.aborted) return

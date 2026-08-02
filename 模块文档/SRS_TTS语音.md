@@ -1,12 +1,13 @@
 # SRS TTS 语音（Azure Speech MVP）
 
 > **状态：已落地（2026-08-02）**；审查修复同步：严格 manifest、repo asset 解析、选区 identity、对称 undo。  
-> 实现路径以仓库当前代码为准。自动播放、多服务商、非 Basic 批量**不在**本 MVP 范围。
+> 方案 A（2026）：默认 / 推荐 Multilingual 音色，靠 Azure 自动语种；无客户端分段。  
+> 实现路径以仓库当前代码为准。自动播放、多服务商、非 Basic 批量、SSML 语种分段**不在**本 MVP 范围。
 
 ## 能力概览
 
 1. **服务设置**：在「AI 与导入服务」对话框 **语音 TTS** Tab（Azure Speech REST）。
-2. **选区单条**：工具栏「选区生成语音」→ 选中文字 → 合成 → 上传 asset → 插入原生 audio 块 → 写 `srs.tts.manifest`；**支持对称撤销**。
+2. **选区单条**：工具栏「选区生成语音」→ 选中文字 → 合成 → 上传 asset → 以 **lastChild 子块** 插入原生 audio 块（挂在目标块下方）→ 写 `srs.tts.manifest`；**支持对称撤销**。
 3. **Flash Home 批量**：卡片列表「批量语音」；仅 **Basic**；`cardKey` 去重；并发 2；可取消未开始项。
 4. **复习播放**：Basic 有 manifest 时显示播放/重播（**不**自动播放）。
 
@@ -37,11 +38,18 @@ plugin data 键：`tts.connection`（独立于 `ai.connection`）。
 | region | Azure 区域；非法回退默认 |
 | endpoint | 可选 HTTPS base；合法时优先于 region |
 | apiKey | 可显隐；**不得**写入 manifest / 日志 |
-| voice | 如 `zh-CN-XiaoxiaoNeural` |
+| voice | 默认 **`zh-CN-XiaochenMultilingualNeural`**（多语自动识别）；可选手填或点推荐快捷项 |
 | format | 固定 `audio-24khz-96kbitrate-mono-mp3` |
 | rate / pitch | SSML prosody（默认 `0%`） |
 
-试听：合成短句 → blob URL 播放；**不**写入仓库 assets。
+### 多语种（方案 A，已落地）
+
+- Azure **Multilingual** 音色可按输入文本自动识别语种发音；**不**做客户端语种分段 / 翻译。
+- 默认与推荐「中文多语」：`zh-CN-XiaochenMultilingualNeural`；另有「英文多语」`en-US-JennyMultilingualNeural`、「晓晓（单语）」`zh-CN-XiaoxiaoNeural`（英文可能中式发音，不适合中英混排）。
+- **已保存的旧 voice 不会强制迁移**；新装或空配置才落到 Multilingual 默认。
+- 常量：`DEFAULT_TTS_VOICE`、`TTS_RECOMMENDED_VOICES`、`TTS_PREVIEW_TEXT`（`ttsSettingsSchema.ts`）。
+
+试听：合成**中英混合**短句（`TTS_PREVIEW_TEXT`）→ blob URL 播放；**不**写入仓库 assets。
 
 ## Asset 播放路径
 
@@ -103,7 +111,8 @@ plugin data 键：`tts.connection`（独立于 `ai.connection`）。
 
 ## 写入顺序与失败
 
-1. 请求音频 → 2. 校验 → 3. `upload-asset-binary` → 4. `insertBlock` audio sibling after → 5. 写 manifest → invalidate  
+1. 请求音频 → 2. 校验 → 3. `upload-asset-binary` → 4. `insertBlock` audio 为 **目标块 lastChild（子块）** → 5. 写 manifest → invalidate  
+
 
 任一步失败标明 step；insert 成功而 manifest 失败时错误含 **audioBlockId** 与 assetPath。
 

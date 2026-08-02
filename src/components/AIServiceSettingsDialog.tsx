@@ -31,6 +31,8 @@ import {
 } from "../srs/settings/chapterQuizSettingsSchema"
 import {
   DEFAULT_TTS_OUTPUT_FORMAT,
+  DEFAULT_TTS_VOICE,
+  TTS_RECOMMENDED_VOICES,
   type TtsSettings
 } from "../srs/tts/ttsSettingsSchema"
 
@@ -705,7 +707,8 @@ function ServiceSettingsForm(props: {
             </h3>
             <p className="ai-service-settings__section-desc">
               独立于 AI 的语音合成配置。Key 仅存本机插件 data，不会写入卡片
-              manifest 或日志。
+              manifest 或日志。中英混卡请优先选名称含 Multilingual
+              的音色（可自动识别语种发音）；单语音色如晓晓不会自动切英文。
             </p>
 
             <label className="ai-service-settings__field">
@@ -795,11 +798,41 @@ function ServiceSettingsForm(props: {
                 onKeyDown={stopKeys}
                 onKeyUp={stopKeys}
                 onMouseDown={stopBubble}
-                placeholder="zh-CN-XiaoxiaoNeural"
+                placeholder={DEFAULT_TTS_VOICE}
                 disabled={busy}
                 autoComplete="off"
               />
-              <FieldHint summary="Azure 神经语音名称，如 zh-CN-XiaoxiaoNeural、en-US-JennyNeural。" />
+              <div
+                className="ai-service-settings__tts-voice-presets"
+                role="group"
+                aria-label="推荐音色"
+              >
+                {TTS_RECOMMENDED_VOICES.map((preset) => {
+                  const active = ttsVoice.trim() === preset.voice
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={
+                        "ai-service-settings__btn ai-service-settings__btn--ghost" +
+                        (active
+                          ? " ai-service-settings__tts-voice-presets__btn--active"
+                          : "")
+                      }
+                      title={preset.hint}
+                      disabled={busy}
+                      aria-pressed={active}
+                      onClick={() => setTtsVoice(preset.voice)}
+                    >
+                      {preset.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <FieldHint
+                summary="推荐 Multilingual 音色做中英混排；也可手填任意 Azure voice 名称。"
+                details={`默认 ${DEFAULT_TTS_VOICE}。名称含 Multilingual 时 Azure 会按文本自动识别语种。单语如 zh-CN-XiaoxiaoNeural 仅适合纯中文。已保存的旧 voice 不会被强制覆盖。`}
+              />
             </label>
 
             <label className="ai-service-settings__field">
@@ -855,7 +888,7 @@ function ServiceSettingsForm(props: {
                 {props.isTestingTts ? "试听中…" : "测试连接 / 试听"}
               </button>
             </div>
-            <FieldHint summary="会请求一小段「你好，这是语音合成测试。」并尝试播放；失败会显示明确错误。" />
+            <FieldHint summary="试听会合成一段中英混合短句并尝试播放，便于验证 Multilingual 自动语种；失败会显示明确错误。" />
           </section>
         ) : null}
 

@@ -93,10 +93,60 @@ describe("generateTtsAudio", () => {
     }
     expect(upload).toHaveBeenCalledOnce()
     expect(insert).toHaveBeenCalledWith({
-      refBlockId: 1,
+      parentBlockId: 1,
       assetPath: "./tts-x.mp3"
     })
     expect(setProps).toHaveBeenCalled()
+  })
+
+  it("默认 insert 使用 lastChild（子块）而非 after（同级）", async () => {
+    clearTtsSettingsCache()
+    setTtsSettingsCache("p", { apiKey: "k", region: "eastasia" })
+
+    const parent = { id: 42, properties: [] as unknown[] }
+    const invokeEditorCommand = vi.fn().mockImplementation(async (cmd: string) => {
+      if (cmd === "core.editor.insertBlock") return 99
+      if (cmd === "core.editor.setProperties") return undefined
+      return undefined
+    })
+    vi.stubGlobal("orca", {
+      state: { blocks: { 42: parent } },
+      commands: { invokeEditorCommand },
+      invokeBackend: vi.fn()
+    })
+
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (k: string) =>
+          k.toLowerCase() === "content-length" ? "64" : "audio/mpeg"
+      },
+      body: null,
+      arrayBuffer: async () => mp3Buf()
+    })
+
+    const result = await generateTtsAudio({
+      pluginName: "p",
+      targetBlockId: 42,
+      targetKey: "block:42",
+      text: "子块插入",
+      mode: "skip_existing",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      uploadAsset: async () => "./child.mp3",
+      loadBlock: async () => parent as never
+    })
+
+    expect(result.status).toBe("created")
+    const insertCall = invokeEditorCommand.mock.calls.find(
+      (c) => c[0] === "core.editor.insertBlock"
+    )
+    expect(insertCall).toBeDefined()
+    // args: cmd, cursor, refBlock, position, content, repr
+    expect(insertCall![2]).toBe(parent)
+    expect(insertCall![3]).toBe("lastChild")
+    expect(insertCall![3]).not.toBe("after")
+    expect(insertCall![5]).toMatchObject({ type: "audio", src: "./child.mp3" })
   })
 
   it("insert 成功但 manifest 失败时错误含 audioBlockId", async () => {

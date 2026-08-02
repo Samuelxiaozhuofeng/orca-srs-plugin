@@ -12,7 +12,9 @@ import {
   resolveTtsSynthesizeUrl,
   saveTtsSettings,
   setTtsSettingsCache,
-  TTS_CONNECTION_DATA_KEY
+  TTS_CONNECTION_DATA_KEY,
+  TTS_PREVIEW_TEXT,
+  TTS_RECOMMENDED_VOICES
 } from "./ttsSettingsSchema"
 
 describe("ttsSettingsSchema", () => {
@@ -29,6 +31,25 @@ describe("ttsSettingsSchema", () => {
     expect(s.format).toBe(DEFAULT_TTS_OUTPUT_FORMAT)
     expect(s.endpoint).toBe("")
     expect(s.apiKey).toBe("")
+  })
+
+  it("默认与推荐音色为 Multilingual（方案 A）；已保存 voice 不被改写", () => {
+    expect(DEFAULT_TTS_VOICE).toMatch(/Multilingual/i)
+    expect(DEFAULT_TTS_VOICE).toBe("zh-CN-XiaochenMultilingualNeural")
+    const ids = TTS_RECOMMENDED_VOICES.map((v) => v.id)
+    expect(ids).toEqual(["zh-multi", "en-multi", "zh-classic"])
+    expect(
+      TTS_RECOMMENDED_VOICES.find((v) => v.id === "zh-multi")?.voice
+    ).toBe(DEFAULT_TTS_VOICE)
+    expect(
+      TTS_RECOMMENDED_VOICES.some((v) => /Multilingual/i.test(v.voice))
+    ).toBe(true)
+    // 已落盘的单语 voice 仍原样保留
+    expect(
+      normalizeTtsSettings({ voice: "zh-CN-XiaoxiaoNeural" }).voice
+    ).toBe("zh-CN-XiaoxiaoNeural")
+    expect(TTS_PREVIEW_TEXT).toMatch(/Hello/)
+    expect(TTS_PREVIEW_TEXT).toMatch(/你好/)
   })
 
   it("normalize: 非法 region 回退默认；合法 region 小写", () => {
