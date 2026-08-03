@@ -1494,6 +1494,170 @@
   color: var(--srs-accent-primary, var(--orca-color-text-1));
 }
 
+/* ---------- 卡片浏览器：搜索 / 筛选工具栏 / 管理多选 ---------- */
+
+.srs-card-browser-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--srs-space-2);
+  padding: var(--srs-space-2) 0;
+}
+
+.srs-card-browser-toolbar__search {
+  display: flex;
+  align-items: center;
+  gap: var(--srs-space-2);
+  flex: 1 1 12rem;
+  min-width: 10rem;
+  padding: 6px var(--srs-space-3);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-md);
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-3);
+  box-sizing: border-box;
+}
+
+.srs-card-browser-toolbar__search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--orca-color-text-1);
+  font: inherit;
+  font-size: var(--srs-text-secondary);
+}
+
+.srs-card-browser-toolbar__search-input::placeholder {
+  color: var(--orca-color-text-3);
+}
+
+.srs-card-browser-toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.srs-card-browser-toolbar__label {
+  font-size: var(--srs-text-micro);
+  color: var(--orca-color-text-3);
+  line-height: 1.2;
+}
+
+.srs-card-browser-toolbar__field select,
+.srs-card-manage-bar__deck select {
+  font: inherit;
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-1);
+  background: var(--srs-surface-base);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-md);
+  padding: 6px var(--srs-space-2);
+  max-width: 10rem;
+  min-width: 5.5rem;
+}
+
+.srs-card-browser-toolbar__field select:focus-visible,
+.srs-card-manage-bar__deck select:focus-visible,
+.srs-card-browser-toolbar__search-input:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-card-list-view__select-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--srs-space-2);
+  margin: 0 0 var(--srs-space-1);
+}
+
+.srs-card-manage-bar {
+  margin: 0 0 var(--srs-space-3);
+  padding: var(--srs-space-3);
+  border-radius: var(--srs-radius-md);
+  background: var(--orca-color-bg-2);
+  border: 1px solid var(--srs-hairline-strong, var(--srs-hairline));
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.srs-card-manage-bar__stats {
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+}
+
+.srs-card-manage-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--srs-space-2);
+}
+
+.srs-card-manage-bar__deck {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.srs-card-manage-bar__busy {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-3);
+}
+
+.srs-card-batch-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--srs-space-2);
+  margin: 0 0 var(--srs-space-3);
+  padding: var(--srs-space-2) var(--srs-space-3);
+  border-radius: var(--srs-radius-md);
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-sunken);
+}
+
+.srs-card-batch-alert__body {
+  flex: 1 1 12rem;
+  min-width: 0;
+  white-space: pre-wrap;
+  font-size: var(--srs-text-caption);
+  color: var(--srs-accent-danger, var(--orca-color-danger-6, var(--orca-color-text-1)));
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.srs-card-batch-alert__dismiss {
+  flex-shrink: 0;
+  font-size: var(--srs-text-caption) !important;
+}
+
+.srs-manage-select-check {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--srs-space-2);
+  flex-shrink: 0;
+}
+
+.srs-manage-select-check--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.srs-card-badge--suspended {
+  background: var(--srs-surface-sunken);
+  color: var(--srs-accent-warn, var(--orca-color-text-1));
+}
+
+.srs-card-badge--pending {
+  background: var(--srs-surface-sunken);
+  color: var(--orca-color-primary-6, var(--orca-color-text-1));
+}
+
 /* ---------- 已暂停卡片视图（Flash Home 次级视图） ---------- */
 
 .srs-suspended-cards {

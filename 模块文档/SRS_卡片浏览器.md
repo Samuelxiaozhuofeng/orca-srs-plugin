@@ -1,6 +1,6 @@
 # SRS Flashcard Home（闪卡主页 / 卡片浏览器）
 
-> **文档同步日期：2026-08-02**
+> **文档同步日期：2026-08-03**
 > 现状以代码为准。产品主入口称为 **「今日学习」**（块类型 / 命令 ID 仍为 `srs.flashcard-home` / `openFlashcardHome` 以兼容）。
 > 历史上称「卡片浏览器 / Flash Home」；旧组件 `SrsCardBrowser.tsx` **已不存在**。
 
@@ -35,8 +35,12 @@
 | `src/srs/todayLearning/todayLearningLaunch.ts` | 受信任 remaining → mixed / 独立 SRS / 只读 IR 路由 |
 | `src/components/flashcard-home/DeckListView.tsx` | 卡组搜索与表格（新卡 / 今日到期 / 积压） |
 | `src/components/flashcard-home/DeckRow.tsx` | 单卡组行 |
-| `src/components/flashcard-home/CardListView.tsx` | 单 Deck 卡片列表（列表托盘 + 分页） |
-| `src/components/flashcard-home/CardListItem.tsx` | 卡片行内容（预览 / 操作） |
+| `src/components/flashcard-home/CardListView.tsx` | 卡片浏览器状态 / query / 批量 orchestration / 分页列表 |
+| `src/components/flashcard-home/CardBrowserControls.tsx` | 顶栏/到期 tabs 与搜索筛选工具栏（无业务状态） |
+| `src/components/flashcard-home/CardBrowserBatchControls.tsx` | 管理批量条、确认文案、选择提示与独立 batch alert |
+| `src/components/flashcard-home/CardListItem.tsx` | 卡片行内容（预览 / 操作状态徽标 / 管理多选） |
+| `src/components/flashcard-home/cardBrowserQuery.ts` | 浏览器纯函数：搜索 / 状态·标签·卡型·来源牌组筛选 / 稳定排序 / 选择裁剪 / 批量后选择 |
+| `src/components/flashcard-home/cardBrowserBatchActions.ts` | 批量暂停·激活·重置·改牌组（partial success、块级去重） |
 | `src/components/flashcard-home/CardFrame.tsx` | 卡片外壳：左侧状态色条 + 状态徽标 |
 | `src/components/SuspendedCardsView.tsx` | 已暂停卡片列表、行级恢复状态与错误展示 |
 | `src/components/flashcard-home/cardStatus.ts` | 到期状态（new/today/backlog/future）与日期文案 |
@@ -186,16 +190,38 @@ flowchart TD
 
 ---
 
-## CardListView（单 Deck 卡片）
+## CardListView（卡片浏览器）
 
-1. 面包屑：返回、Deck 名、「复习此牌组」（有到期时）
-2. 筛选：`全部 / 已到期 / 今天 / 未来 / 新卡`（`filterCards` + 数量统计；新卡文案为 **新卡**，不用「未学习」）
-3. 列表托盘：`.srs-card-list-frame`（`flashcard-home.css`）— 加大 `gap` / elevation，使卡片彼此分离、可扫读
-4. 列表项外壳：`CardFrame` — 左侧状态强调色条 + 状态徽标；内层 `CardListItem` 承载预览与操作
-5. 状态来源：`cardStatus.ts`（`new` / `today` / `backlog` / `future` + 到期/间隔日期格式化）；与筛选自然日边界一致
-6. 列表项内容：`SafeBlockPreview`、到期相对描述、间隔、Cloze/Direction 标记、重置次数
-7. 操作：**删除**（变体感知，见下）、**重置**（变新卡）、**跳转**（`orca.nav.openInLastPanel("block", …)`）
-8. 无限滚动：每页 20 张
+父容器 `SrsFlashcardHome` 在 `card-list` 视图传入：
+
+| prop | 内容 |
+| ---- | ---- |
+| `activeCards` / `suspendedCards` | **同 scope**（牌组下钻或全局 `__all__`），供列表与筛选 |
+| `deckResolutionCards` | **全库** `allCards + suspendedCards`（已加载数据，不新扫库），仅供改牌组目标下拉与 `resolveDeckTargetBlockIdFromCards` |
+
+到期 tabs 与搜索/状态等筛选在 `CardListView` 内通过 `queryBrowserCards` 完成；**默认操作状态 = 正常 (active)**，不会突然把暂停卡混进默认列表。
+
+1. 面包屑：返回、Deck 名、「复习此牌组」（**仅 active 可复习到期**，与 statusFilter 无关）、「批量语音」
+2. **到期 tabs**：数量基于当前操作状态子集
+3. **工具栏**（`CardBrowserControls.CardBrowserToolbar`）：搜索 front/back/tag；状态/卡型/标签；**来源牌组筛选选项 = scope**；排序稳定
+4. **多选**：`cardKeyFromReviewCard`；全选筛选结果；`pruneBrowserSelection`；与 TTS 选择互斥；`batchBusy` 时 checkbox/返回/单卡删重置禁用
+5. **批量**（`CardManageBatchBar`）：
+   - 暂停 / 激活 / 重置语义同前
+   - **改牌组**目标列表与解析均用 `deckResolutionCards`（全库），故从牌组 A 可改到 B
+   - partial：`nextSelectionAfterBatch` 只保留 failed keys；全成功清空；全失败保持选择
+   - **`CardBatchAlert` 独立 `role=alert`**，不依赖 selectedCount；可显式关闭 / 下次操作 / 进 TTS 清理
+   - 写成功后 cache invalidate + `applyLoaded(true, false)`；父级在 `showSpinner===false` 失败时 **rethrow**，子级提示「动作已写入但刷新失败」
+6. 列表：`CardFrame` + `CardListItem`；已暂停/待激活徽标独立；无限滚动 20/页
+
+回归（Vitest）：`cardBrowserQuery.test.ts`、`cardBrowserBatchActions.test.ts`。
+
+### 手工 Orca 验证清单
+
+1. 打开某牌组列表：默认仅 active；切状态「已暂停」可见暂停行与徽标
+2. 搜索 front/back/标签；组合卡型 + 来源牌组 + 到期 tab
+3. 全选筛选结果（多于一页时仍全选）；筛选后再选应无幽灵
+4. 批量暂停 / 激活 / 重置 / 改牌组（同块两变体只应改一次牌组）；确认 partial 失败可见
+5. TTS 批量语音与管理多选互不串扰
 
 ### 删除的变体感知语义（`deleteReviewCardBackendData`，`SrsFlashcardHome.tsx` 导出）
 
@@ -287,8 +313,12 @@ CardListView
 | `src/components/flashcard-home/DeckListView.tsx` | 卡组列表 |
 | `src/components/flashcard-home/DeckRow.tsx` | 卡组行 |
 | `src/components/flashcard-home/StatCard.tsx` | 统计小卡 |
-| `src/components/flashcard-home/CardListView.tsx` | 单 Deck 卡片列表 |
+| `src/components/flashcard-home/CardListView.tsx` | 卡片浏览器状态与编排 |
+| `src/components/flashcard-home/CardBrowserControls.tsx` | 顶栏与筛选工具栏 UI |
+| `src/components/flashcard-home/CardBrowserBatchControls.tsx` | 批量管理与 alert UI |
 | `src/components/flashcard-home/CardListItem.tsx` | 卡片行内容 |
+| `src/components/flashcard-home/cardBrowserQuery.ts` | 筛选 / 排序 / 选择纯函数 |
+| `src/components/flashcard-home/cardBrowserBatchActions.ts` | 批量写入 |
 | `src/components/flashcard-home/CardFrame.tsx` | 卡片外壳（左色条 / 状态帧） |
 | `src/components/flashcard-home/cardStatus.ts` | 列表用到期状态与日期文案 |
 | `src/components/flashcard-home/homeStatNav.ts` | 三数 → 全局筛选映射 |
@@ -301,7 +331,7 @@ CardListView
 | `src/srs/deckUtils.ts` | Deck/首页统计 |
 | `src/srs/deckNoteManager.ts` | 卡组备注 |
 | `src/srs/difficultCardsManager.ts` | 困难卡后端 |
-| `src/srs/cardFilterUtils.ts` | 列表筛选 |
+| `src/srs/cardFilterUtils.ts` | 到期 tabs 筛选 |
 | `src/srs/srsEvents.ts` | 广播事件名 |
 | `src/main.ts` | 打开与复习入口；引入 `flashcard-home.css` |
 | `src/srs/registry/{commands,renderers,uiComponents,converters}.ts` | 注册 |

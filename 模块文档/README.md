@@ -43,6 +43,12 @@
 > **索引增补：2026-08-02（暂停卡恢复闭环）**：
 > - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：新增「已暂停」全页视图与逐行取消暂停；同轮收集分 active/suspended，统计只用 active
 > - [SRS_卡片复习窗口.md](SRS_卡片复习窗口.md) / [SRS_复习队列管理.md](SRS_复习队列管理.md)：Cloze、Direction、IO 按单个变体暂停，旧整块暂停可迁移恢复
+>
+> **索引增补：2026-08-03（P1 卡片浏览器增强）**：
+> - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：CardListView 正文搜索、状态/标签/卡型/来源牌组筛选、稳定排序、cardKey 多选；批量暂停/激活/重置/改牌组；`cardBrowserQuery` / `cardBrowserBatchActions`；默认 status=active 不混入暂停卡
+>
+> **索引增补：2026-08-03（浏览器返修）**：
+> - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：全库 `deckResolutionCards` 改牌组；partial 保留 failed 选择 + 独立 alert；`applyLoaded(showSpinner=false)` rethrow；筛选/批量 controls 拆分；复习 CTA 仅看 active due
 
 ## 文档分类
 
@@ -106,10 +112,11 @@
    - 「卡片信息」面板统一为 `review-card/CardInfoPanel.tsx`（五渲染器共用；`showSchedulingDetails` prop）
    - 关联：`SrsReviewSession*.tsx`、`SrsCardDemo.tsx`、`review-card/EmbeddedReviewBlocks.tsx`、`review-card/BasicCardReviewRenderer.tsx`、`styles/srs-review.css`、`reviewSessionBlockLoad.ts`、`reviewSessionActionGate.ts`、`sessionProgress*.ts`；诊断 `src/test/diagnose-review-tab-focus.js`
 
-10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-08-02 更新
+10. **[SRS_卡片浏览器.md](SRS_卡片浏览器.md)** ⭐ 2026-08-03 更新
     - **即「今日学习」主页**（块/命令 ID 仍兼容 `flashcard-home` / `openFlashcardHome`）
     - 统一 remaining（SRS 日额度 + IR due）、预计分钟、开始/继续；**日额度队列**（无 10/20/30）；受信任 remaining 显式降级（mixed / 独立 SRS / 只读 IR）
     - Flash Home 块：`resolveBlock` 三态（throw 不新建）；`insertBlock` 有限正数校验；列表/困难卡 React key 用 `cardKeyFromReviewCard`
+    - **卡片浏览器 P1**：搜索 front/back/标签；状态（默认 active）/标签/卡型/来源牌组筛选；稳定排序；cardKey 多选与批量暂停·激活·重置·改牌组；与 TTS 批量选择隔离
     - 从 Home 点开始/继续进入 IR：`openInCurrentPanel` 替换 Home；已有 IR 面板则聚焦后关闭 Home
     - resume 非队列快照；统一 `kind:"ir"` marker 在纯 SRS 剩余时也可继续；装配成功后才写 IR marker
     - 次级：卡库三卡 + 卡组列表；全页：卡片列表 / 困难卡

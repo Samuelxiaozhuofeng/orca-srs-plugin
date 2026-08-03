@@ -3,7 +3,6 @@
 import type { Block, DbId } from "../orca.d.ts"
 import type { ReviewCard, DeckInfo, DeckStats, TodayStats, SrsState } from "../srs/types"
 import type { FilterType } from "../srs/cardFilterUtils"
-import { filterCards } from "../srs/cardFilterUtils"
 import { cardKeyFromReviewCard } from "../srs/cardIdentity"
 import { subscribeSrsCardLifecycleEvents } from "../srs/srsBroadcastBus"
 import {
@@ -353,6 +352,10 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         console.error(`[${pluginName}] 今日学习主页加载数据失败:`, error)
         if (showSpinner) {
           setErrorMessage(error instanceof Error ? error.message : String(error))
+        } else {
+          // 批量后静默刷新（showSpinner=false）必须把失败抛给调用方，
+          // 否则 CardListView 无法提示「动作已写入但刷新失败」。
+          throw error
         }
       } finally {
         if (showSpinner) setIsLoading(false)
@@ -417,15 +420,29 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
     })
   }, [pluginName])
 
-  const deckCards = useMemo(() => {
+  /** 同 scope active 卡（到期筛选改由 CardListView 内 queryBrowserCards 完成） */
+  const deckActiveCards = useMemo(() => {
     if (!selectedDeck) return []
     if (isGlobalDeckScope(selectedDeck)) return allCards
     return allCards.filter((card: ReviewCard) => card.deck === selectedDeck)
   }, [allCards, selectedDeck])
 
-  const filteredCards = useMemo(() => {
-    return filterCards(deckCards, currentFilter)
-  }, [deckCards, currentFilter])
+  /** 同 scope suspended 卡；浏览器默认 status=active，不混入「全部」到期视图 */
+  const deckSuspendedCards = useMemo(() => {
+    if (!selectedDeck) return []
+    if (isGlobalDeckScope(selectedDeck)) return suspendedCards
+    return suspendedCards.filter(
+      (card: ReviewCard) => card.deck === selectedDeck
+    )
+  }, [suspendedCards, selectedDeck])
+
+  /**
+   * 全库 active+suspended：仅供改牌组目标解析/下拉。
+   * 不触发新收集，复用 loadFlashHomeData 已加载结果。
+   */
+  const deckResolutionCards = useMemo(() => {
+    return [...allCards, ...suspendedCards]
+  }, [allCards, suspendedCards])
 
   // 仅精确 ok 侧数字可启动；partial lower-bound 不可信
   const trustedIrRemaining = todayLearning?.irRemaining
@@ -975,8 +992,9 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
         <div className="srs-flash-home-view">
           <CardListView
             deckName={selectedDeck || ""}
-            cards={filteredCards}
-            allDeckCards={deckCards}
+            activeCards={deckActiveCards}
+            suspendedCards={deckSuspendedCards}
+            deckResolutionCards={deckResolutionCards}
             currentFilter={currentFilter}
             panelId={panelId}
             pluginName={pluginName}
@@ -986,6 +1004,10 @@ export default function SrsFlashcardHome({ panelId, pluginName, onClose }: SrsFl
             onCardDelete={handleCardDelete}
             onBack={handleBack}
             onReviewDeck={handleReviewDeck}
+            onAfterBatchMutation={async () => {
+              // 批量写成功后 force reload includeSuspended；失败 rethrow 给 CardListView 告警
+              await applyLoaded(true, false)
+            }}
           />
         </div>
       )}

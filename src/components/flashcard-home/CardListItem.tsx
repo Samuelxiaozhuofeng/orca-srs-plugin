@@ -26,6 +26,17 @@ type CardListItemProps = {
   batchStatus?: TtsBatchItemStatus
   batchError?: string
   onToggleSelect?: () => void
+  /**
+   * 管理多选（与 TTS 选择互斥展示）。
+   * 普通模式展示管理复选框；TTS 模式走 batchMode 选择。
+   */
+  manageSelect?: boolean
+  manageSelected?: boolean
+  /** 批量写入进行中时禁止改选择 */
+  manageSelectDisabled?: boolean
+  /** 批量写入进行中时禁止单卡操作 */
+  actionsDisabled?: boolean
+  onToggleManageSelect?: () => void
 }
 
 function statusBadgeClass(status: ReturnType<typeof getCardDueStatus>): string {
@@ -102,10 +113,17 @@ export default function CardListItem({
   skipReason,
   batchStatus,
   batchError,
-  onToggleSelect
+  onToggleSelect,
+  manageSelect = false,
+  manageSelected = false,
+  manageSelectDisabled = false,
+  actionsDisabled = false,
+  onToggleManageSelect
 }: CardListItemProps) {
   const status = getCardDueStatus(card)
   const resets = card.srs.resets ?? 0
+  const isSuspended = !!card.isSuspended
+  const isPending = !!card.isPending && !isSuspended
 
   const handleGoToClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -141,9 +159,45 @@ export default function CardListItem({
               />
             </label>
           )}
+          {manageSelect && !batchMode && (
+            <label
+              className={`srs-manage-select-check${
+                manageSelectDisabled ? " srs-manage-select-check--disabled" : ""
+              }`}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              title={
+                manageSelectDisabled
+                  ? "批量操作进行中"
+                  : manageSelected
+                    ? "取消选择"
+                    : "选择此卡"
+              }
+            >
+              <input
+                type="checkbox"
+                checked={manageSelected}
+                disabled={manageSelectDisabled}
+                onChange={() => {
+                  if (manageSelectDisabled) return
+                  onToggleManageSelect?.()
+                }}
+                aria-label="选择此卡进行批量管理"
+              />
+            </label>
+          )}
           <orca.components.BlockBreadcrumb blockId={card.id} />
         </div>
         <div className="srs-card-frame__type-badges">
+          {isSuspended && (
+            <span className="srs-card-badge srs-card-badge--suspended">
+              已暂停
+            </span>
+          )}
+          {isPending && (
+            <span className="srs-card-badge srs-card-badge--pending">
+              待激活
+            </span>
+          )}
           {card.clozeNumber != null && card.clozeNumber > 0 && (
             <span className="srs-card-badge srs-card-badge--meta">
               {card.cardType === "image-occlusion"
@@ -195,6 +249,11 @@ export default function CardListItem({
               </span>
             </>
           )}
+          {card.deck && (
+            <span className="srs-card-badge srs-card-badge--meta" title="来源牌组">
+              {card.deck}
+            </span>
+          )}
           {resets > 0 && (
             <span className="srs-card-badge srs-card-badge--warn">
               重置 {resets} 次
@@ -206,6 +265,7 @@ export default function CardListItem({
           <ConfirmBox
             text={deleteConfirmText(card)}
             onConfirm={(_e: unknown, close: () => void) => {
+              if (actionsDisabled) return
               onCardDelete(card)
               close()
             }}
@@ -215,9 +275,12 @@ export default function CardListItem({
                 variant="plain"
                 onClick={(e: React.MouseEvent) => {
                   e.stopPropagation()
+                  if (actionsDisabled) return
                   open(e)
                 }}
-                className="srs-card-action srs-card-action--danger"
+                className={`srs-card-action srs-card-action--danger${
+                  actionsDisabled ? " srs-btn-disabled" : ""
+                }`}
                 title={
                   card.clozeNumber || card.directionType
                     ? "删除此变体（仅该变体 SRS 数据；最后一个变体时移除 Card 标记）"
@@ -233,6 +296,7 @@ export default function CardListItem({
           <ConfirmBox
             text="确定将此卡片重置为新卡？当前进度会丢失。"
             onConfirm={(_e: unknown, close: () => void) => {
+              if (actionsDisabled) return
               onCardReset(card)
               close()
             }}
@@ -242,9 +306,12 @@ export default function CardListItem({
                 variant="plain"
                 onClick={(e: React.MouseEvent) => {
                   e.stopPropagation()
+                  if (actionsDisabled) return
                   open(e)
                 }}
-                className="srs-card-action srs-card-action--warn"
+                className={`srs-card-action srs-card-action--warn${
+                  actionsDisabled ? " srs-btn-disabled" : ""
+                }`}
                 title="重置卡片为新卡状态"
               >
                 <i className="ti ti-refresh srs-card-action__icon" />
@@ -255,8 +322,8 @@ export default function CardListItem({
 
           <Button
             variant="plain"
-            onClick={handleGoToClick}
-            className="srs-card-action"
+            onClick={actionsDisabled ? undefined : handleGoToClick}
+            className={`srs-card-action${actionsDisabled ? " srs-btn-disabled" : ""}`}
             title="在右侧面板打开编辑"
           >
             <i className="ti ti-external-link srs-card-action__icon" />
