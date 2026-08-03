@@ -247,17 +247,17 @@ makeAICard / interactiveAICard（别名）
 | plugin **data** `ai.chapterQuiz` | `questionCount` / `language` / `customPrompt` / `model` | `10` / `auto` / `""` / `""` | 章末小测偏好（默认出题数 / 题目语言 / 自定义提示词 / 专用模型）；面板内独立分区；见 [渐进阅读_章末小测.md](渐进阅读_章末小测.md) |
 | plugin **data** `tts.connection` | `apiKey` / `region` / `endpoint` / `voice` / `format` / `rate` / `pitch` | Azure 默认 | **语音 TTS**（Azure Speech REST）；**独立 Key**，不复用 AI；见 [SRS_TTS语音.md](SRS_TTS语音.md) |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
-| plugin **settings**（原 key，**非** data） | `review.newCardsPerDay` / `review.reviewCardsPerDay` / `review.fsrsRequestRetention` | 30 / 200 / 0.9 | **复习** 页签编辑；不迁存储；helper 见 `reviewServiceSettings.ts`；[SRS_记忆算法.md](SRS_记忆算法.md) |
+| plugin **settings**（原 key，**非** data） | `review.newCardsPerDay` / `review.reviewCardsPerDay` / `review.fsrsRequestRetention` / `review.passFailButtons` / `review.showNextReviewTime` | 30 / 200 / 0.9 / false / false | **复习** 页签编辑；后两项仅 UI；helper 见 `reviewServiceSettings.ts`；[SRS_记忆算法.md](SRS_记忆算法.md) |
 | 同上（无面板 UI） | `review.fsrsWeights` / `review.fsrsMaximumInterval` | FSRS v6 默认 | 算法 runtime +「恢复 FSRS 默认」命令；普通面板保存**不**写回 |
 
-- 读取：`getAISettings` / `getWebImportSettings` / `getTtsSettings`（内存缓存 → 默认）；复习可见三项用 `loadReviewServiceSettings`（`src/srs/settings/reviewServiceSettings.ts`，settings 原 key）
+- 读取：`getAISettings` / `getWebImportSettings` / `getTtsSettings`（内存缓存 → 默认）；复习页用 `loadReviewServiceSettings`（`src/srs/settings/reviewServiceSettings.ts`，settings 原 key）
 - hydrate：插件 load + 打开面板；旧 AI settings 键可迁移到 setData；缺省字段归一为默认（旧数据无联网/强度键时安全）
 - 面板：`AIServiceSettingsDialog` — **分段 Tab**（默认「连接」；标题「服务与算法设置」）
   - **连接**：Key / URL / 模型 / 拉取 / 测连；模型 chips 默认 8 个，「浏览全部」展开
   - **行为**：联网 / 思考强度 / max tokens；长说明「了解更多」折叠
   - **快捷制卡** / **章末小测** / **复习**（每日新卡 / 每日复习 / 目标保留率；「恢复默认值」仅改草稿 30/200/0.9；**不**显示权重与最大间隔）/ **语音 TTS**（Azure region·endpoint·Key·voice·试听）/ **网页导入** / **诊断**（请求日志）各一页
   - 保存一次提交整份 draft（`ai` + `firecrawl` + `quickCard` + `chapterQuiz` + **`tts`** + **`review`**）
-  - **复习三项先严格校验**（`reviewServiceSettings.ts`）：`parseReviewServiceSettingsDraftStrict` 失败则整包中止（面板 banner + notify），**不会**先保存 AI/Firecrawl 再发现复习项非法；合法时 `saveReviewServiceSettingsFromForm` → `setSettings` **仅写三项** + `clearFsrsRuntimeState()`（不覆盖个人权重/最大间隔）
+  - **复习页先严格校验**（`reviewServiceSettings.ts`）：`parseReviewServiceSettingsDraftStrict` 失败则整包中止（面板 banner + notify），**不会**先保存 AI/Firecrawl 再发现复习项非法；合法时 `saveReviewServiceSettingsFromForm` → `setSettings` 写额度/保留率三项 + 两项 UI 开关 + `clearFsrsRuntimeState()`（不覆盖个人权重/最大间隔）
   - 打开时若可见复习项非法：表单显示安全生效值 + 全局 warning banner；隐藏权重/最大间隔错误不由本面板阻止保存
 - 请求：`buildChatCompletionsBody` 用于制卡 / 块解释 / 快捷交互 / 连接测试
   - 原生联网（`resolveWebSearchRoute` / `resolveWebSearchTool` / `materializeWebSearchTool`）：

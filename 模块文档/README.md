@@ -39,7 +39,7 @@
 > - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：首轮分类（确定答对/猜对或不确定/答错/跳过）+ 弱项冻结；修复轮（选项重排、X/Y、不改首轮）；动作小结替换正确率 hero；整理薄弱点 Panel 子视图顺序制卡；定向反馈字段；键盘与 aria-live
 >
 > **索引增补：2026-08-02（复习设置迁独立服务面板「复习」页）**：
-> - [SRS_记忆算法.md](SRS_记忆算法.md)：每日新卡/复习上限 + 目标保留率离开原生 schema，进入服务设置面板 **复习** 页签；权重/最大间隔无 UI 但底层保留；helper：`src/srs/settings/reviewServiceSettings.ts`；保存 patch 仅三项、不覆盖个人权重
+> - [SRS_记忆算法.md](SRS_记忆算法.md) / [SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)：复习页增加 Pass-Fail 与「显示下次复习时间」两项 UI 开关（默认关）；helper 仍为 `reviewServiceSettings.ts`
 > - [SRS_AI模块.md](SRS_AI模块.md)：面板标题「服务与算法设置」；Tab「复习」与 draft 含 `review`（非权重表单）
 > - [SRS_插件入口与命令.md](SRS_插件入口与命令.md) / [SRS_卡片复习窗口.md](SRS_卡片复习窗口.md)：schema 与 `reviewServiceSettings` 路径同步
 >

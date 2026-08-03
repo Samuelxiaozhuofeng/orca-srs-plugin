@@ -151,7 +151,8 @@ export default function ImageOcclusionReviewRenderer({
     onGrade: handleGrade,
     onBury: onPostpone,
     onSuspend,
-    readOnly
+    readOnly,
+    pluginName
   })
 
   const preview = useMemo(() => {
@@ -313,6 +314,8 @@ export default function ImageOcclusionReviewRenderer({
           onGrade={handleGrade}
           onSkip={onSkip}
           readOnly={readOnly}
+          pluginName={pluginName}
+          isGrading={isGrading}
         />
       ) : (
         <div className="srs-review-actions">

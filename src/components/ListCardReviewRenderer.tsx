@@ -13,9 +13,10 @@ const { Button } = orca.components
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
-import { previewIntervals, previewDueDates, formatDueDate } from "../srs/algorithm"
+import { previewIntervals, previewDueDates } from "../srs/algorithm"
 import { removeHashTags } from "../srs/blockUtils"
 import CardInfoPanel from "./review-card/CardInfoPanel"
+import ReviewGradeButtons from "./review-card/ReviewGradeButtons"
 
 type ListCardReviewRendererProps = {
   blockId: DbId
@@ -114,6 +115,7 @@ export default function ListCardReviewRenderer({
     onBury: onPostpone,
     onSuspend,
     readOnly,
+    pluginName,
   })
 
   const intervals = useMemo(() => {
@@ -309,63 +311,15 @@ export default function ListCardReviewRenderer({
             </Button>
           </div>
         ) : (
-          <div className="srs-card-grade-buttons srs-grade-buttons">
-            {/* 跳过按钮 */}
-            {onSkip && (
-              <button
-                onClick={onSkip}
-                className="srs-grade-btn srs-grade-btn--skip"
-              >
-                <div className="srs-grade-btn__preview">不评分</div>
-                <span className="srs-grade-btn__emoji">⏭️</span>
-                <span className="srs-grade-btn__label">跳过</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => handleGrade("again")}
-              className={`srs-grade-btn srs-grade-btn--again ${
-                isGrading ? "srs-grade-btn--busy" : ""
-              }`}
-            >
-              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.again)}</div>
-              <span className="srs-grade-btn__emoji">😞</span>
-              <span className="srs-grade-btn__label">忘记</span>
-            </button>
-
-            <button
-              onClick={() => handleGrade("hard")}
-              className={`srs-grade-btn srs-grade-btn--hard ${
-                isGrading ? "srs-grade-btn--busy" : ""
-              }`}
-            >
-              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.hard)}</div>
-              <span className="srs-grade-btn__emoji">😐</span>
-              <span className="srs-grade-btn__label">困难</span>
-            </button>
-
-            <button
-              onClick={() => handleGrade("good")}
-              className={`srs-grade-btn srs-grade-btn--good ${
-                isGrading ? "srs-grade-btn--busy" : ""
-              }`}
-            >
-              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.good)}</div>
-              <span className="srs-grade-btn__emoji">😊</span>
-              <span className="srs-grade-btn__label">良好</span>
-            </button>
-
-            <button
-              onClick={() => handleGrade("easy")}
-              className={`srs-grade-btn srs-grade-btn--easy ${
-                isGrading ? "srs-grade-btn--busy" : ""
-              }`}
-            >
-              <div className="srs-grade-btn__preview">{formatDueDate(dueDates.easy)}</div>
-              <span className="srs-grade-btn__emoji">😄</span>
-              <span className="srs-grade-btn__label">简单</span>
-            </button>
-          </div>
+          <ReviewGradeButtons
+            intervals={intervals}
+            dueDates={dueDates}
+            onGrade={handleGrade}
+            onSkip={onSkip}
+            readOnly={readOnly}
+            pluginName={pluginName}
+            isGrading={isGrading}
+          />
         )}
       </div>
     </div>

@@ -20,7 +20,7 @@
 | `src/srs/pluginUnloadSequence.ts` | 卸载顺序 helper：flush → cleanup 步骤 |
 | `src/srs/registry/*` | 命令、UI、渲染器、转换器、右键菜单 |
 | `src/srs/settings/reviewSettingsSchema.ts` | 原生复习设置 schema（**不含**每日额度与 FSRS UI 字段）；FSRS 校验 / runtime read / 默认 patch；key 仍为 `review.*` |
-| `src/srs/settings/reviewServiceSettings.ts` | 独立服务面板「复习」页 load / 严格 parse / save（仅三项可见 key + `clearFsrsRuntimeState`） |
+| `src/srs/settings/reviewServiceSettings.ts` | 独立服务面板「复习」页 load / 严格 parse / save（额度三项 + Pass-Fail / 显示下次时间两项 UI 开关 + `clearFsrsRuntimeState`） |
 | `src/srs/settings/incrementalReadingSettingsSchema.ts` | 渐进阅读设置 |
 | `src/srs/settings/webImportSettingsSchema.ts` | 网页导入 / Firecrawl 设置 |
 | `src/srs/ai/aiSettingsSchema.ts` | AI 设置 |
@@ -44,7 +44,7 @@ Orca 启用插件
 要点：
 
 - `registerCommands(pluginName)` **不再**接收 `openFlashcardHome` 等回调；命令内动态 import `main` 导出函数。
-- 设置合并：`reviewSettingsSchema` + `incrementalReadingSettingsSchema`（AI / Firecrawl / TTS / **复习可见三项** 走独立服务面板「复习」页；每日额度与 FSRS **存储**仍为 plugin settings 原 key，不在原生 schema 中注册；权重/最大间隔无面板 UI）。
+- 设置合并：`reviewSettingsSchema` + `incrementalReadingSettingsSchema`（AI / Firecrawl / TTS / **复习页**（额度三项 + 两项界面开关）走独立服务面板「复习」；每日额度与 FSRS **存储**仍为 plugin settings 原 key，不在原生 schema 中注册；权重/最大间隔无面板 UI）。
 - **`ensureCardTagProperties`（2026-07-29）**：插件加载时后台确保 `card` alias 标签块存在并补齐 `type` / `牌组` / `status` / `priority` schema。全新安装可直接导入 EPUB + Book IR，无需先创建普通卡片。宿主数据初始化失败**不**导致整个插件无法加载；函数自身仍 reject，Book IR / 制卡路径（如 `IRBookDialogMount`）会再试并阻止依赖 schema 的流程静默继续。详见 [SRS_卡片创建与管理.md](./SRS_卡片创建与管理.md)「标签属性自动初始化」。
 
 ### unload 流程

@@ -17,10 +17,17 @@ import {
   REVIEW_SETTINGS_KEYS
 } from "./reviewSettingsSchema"
 import {
+  DEFAULT_PASS_FAIL_BUTTONS,
+  DEFAULT_SHOW_NEXT_REVIEW_TIME,
   getDefaultReviewServiceSettingsDraft,
+  getReviewUiDisplayRevision,
+  getReviewUiDisplaySettings,
   loadReviewServiceSettings,
+  notifyReviewUiDisplaySettingsChanged,
   parseReviewServiceSettingsDraftStrict,
-  saveReviewServiceSettingsFromForm
+  REVIEW_UI_DISPLAY_KEYS,
+  saveReviewServiceSettingsFromForm,
+  subscribeReviewUiDisplaySettings
 } from "./reviewServiceSettings"
 
 const PLUGIN = "test-review-service-settings-plugin"
@@ -66,6 +73,8 @@ describe("复习服务设置 form helper", () => {
       [REVIEW_SETTINGS_KEYS.newCardsPerDay]: 15,
       [REVIEW_SETTINGS_KEYS.reviewCardsPerDay]: 80,
       [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: 0.85,
+      [REVIEW_UI_DISPLAY_KEYS.passFailButtons]: true,
+      [REVIEW_UI_DISPLAY_KEYS.showNextReviewTime]: true,
       // 隐藏字段即使「非默认」也不应进入草稿 / 警告
       [REVIEW_SETTINGS_KEYS.fsrsWeights]: "1,2,3",
       [REVIEW_SETTINGS_KEYS.fsrsMaximumInterval]: 0
@@ -76,6 +85,8 @@ describe("复习服务设置 form helper", () => {
     expect(loaded.draft.newCardsPerDay).toBe("15")
     expect(loaded.draft.reviewCardsPerDay).toBe("80")
     expect(loaded.draft.requestRetention).toBe("0.85")
+    expect(loaded.draft.passFailButtons).toBe(true)
+    expect(loaded.draft.showNextReviewTime).toBe(true)
     expect(loaded.draft).not.toHaveProperty("weights")
     expect(loaded.draft).not.toHaveProperty("maximumInterval")
   })
@@ -111,18 +122,22 @@ describe("复习服务设置 form helper", () => {
     expect(loaded.draft.requestRetention).toBe("0.9")
   })
 
-  it("parseReviewServiceSettingsDraftStrict：合法草稿仅产出三项 patch", () => {
+  it("parseReviewServiceSettingsDraftStrict：合法草稿产出五项 patch", () => {
     const result = parseReviewServiceSettingsDraftStrict({
       newCardsPerDay: "12",
       reviewCardsPerDay: "99",
-      requestRetention: "0.88"
+      requestRetention: "0.88",
+      passFailButtons: true,
+      showNextReviewTime: false
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.patch).toEqual({
       [REVIEW_SETTINGS_KEYS.newCardsPerDay]: 12,
       [REVIEW_SETTINGS_KEYS.reviewCardsPerDay]: 99,
-      [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: 0.88
+      [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: 0.88,
+      [REVIEW_UI_DISPLAY_KEYS.passFailButtons]: true,
+      [REVIEW_UI_DISPLAY_KEYS.showNextReviewTime]: false
     })
     expect(result.patch).not.toHaveProperty(REVIEW_SETTINGS_KEYS.fsrsWeights)
     expect(result.patch).not.toHaveProperty(
@@ -132,7 +147,9 @@ describe("复习服务设置 form helper", () => {
       [
         REVIEW_SETTINGS_KEYS.fsrsRequestRetention,
         REVIEW_SETTINGS_KEYS.newCardsPerDay,
-        REVIEW_SETTINGS_KEYS.reviewCardsPerDay
+        REVIEW_SETTINGS_KEYS.reviewCardsPerDay,
+        REVIEW_UI_DISPLAY_KEYS.passFailButtons,
+        REVIEW_UI_DISPLAY_KEYS.showNextReviewTime
       ].sort()
     )
   })
@@ -141,7 +158,9 @@ describe("复习服务设置 form helper", () => {
     const result = parseReviewServiceSettingsDraftStrict({
       newCardsPerDay: "0",
       reviewCardsPerDay: "0",
-      requestRetention: "0.9"
+      requestRetention: "0.9",
+      passFailButtons: false,
+      showNextReviewTime: false
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -153,7 +172,9 @@ describe("复习服务设置 form helper", () => {
     const result = parseReviewServiceSettingsDraftStrict({
       newCardsPerDay: "-3",
       reviewCardsPerDay: "10001",
-      requestRetention: "2"
+      requestRetention: "2",
+      passFailButtons: true,
+      showNextReviewTime: true
     })
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -162,14 +183,42 @@ describe("复习服务设置 form helper", () => {
     expect(result.issues.length).toBe(3)
   })
 
-  it("getDefaultReviewServiceSettingsDraft 为 30 / 200 / 0.9", () => {
+  it("getDefaultReviewServiceSettingsDraft 为 30 / 200 / 0.9 / 两项开关关闭", () => {
     const draft = getDefaultReviewServiceSettingsDraft()
     expect(draft.newCardsPerDay).toBe(String(DEFAULT_NEW_CARDS_PER_DAY))
     expect(draft.reviewCardsPerDay).toBe(String(DEFAULT_REVIEW_CARDS_PER_DAY))
     expect(draft.requestRetention).toBe(String(DEFAULT_REQUEST_RETENTION))
+    expect(draft.passFailButtons).toBe(DEFAULT_PASS_FAIL_BUTTONS)
+    expect(draft.showNextReviewTime).toBe(DEFAULT_SHOW_NEXT_REVIEW_TIME)
+    expect(draft.passFailButtons).toBe(false)
+    expect(draft.showNextReviewTime).toBe(false)
   })
 
-  it("saveReviewServiceSettingsFromForm：合法值只写三项并清理 runtime", async () => {
+  it("getReviewUiDisplaySettings：缺省与非 true 均为 false", () => {
+    installOrca({})
+    expect(getReviewUiDisplaySettings(PLUGIN)).toEqual({
+      passFailButtons: false,
+      showNextReviewTime: false
+    })
+    installOrca({
+      [REVIEW_UI_DISPLAY_KEYS.passFailButtons]: "true",
+      [REVIEW_UI_DISPLAY_KEYS.showNextReviewTime]: 1
+    })
+    expect(getReviewUiDisplaySettings(PLUGIN)).toEqual({
+      passFailButtons: false,
+      showNextReviewTime: false
+    })
+    installOrca({
+      [REVIEW_UI_DISPLAY_KEYS.passFailButtons]: true,
+      [REVIEW_UI_DISPLAY_KEYS.showNextReviewTime]: true
+    })
+    expect(getReviewUiDisplaySettings(PLUGIN)).toEqual({
+      passFailButtons: true,
+      showNextReviewTime: true
+    })
+  })
+
+  it("saveReviewServiceSettingsFromForm：合法值写五项并清理 runtime", async () => {
     const personalWeights =
       "9.9, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542"
     const { setSettings } = installOrca({
@@ -185,7 +234,9 @@ describe("复习服务设置 form helper", () => {
     await saveReviewServiceSettingsFromForm(PLUGIN, {
       newCardsPerDay: "20",
       reviewCardsPerDay: "150",
-      requestRetention: "0.75"
+      requestRetention: "0.75",
+      passFailButtons: true,
+      showNextReviewTime: true
     })
 
     expect(setSettings).toHaveBeenCalledTimes(1)
@@ -193,7 +244,9 @@ describe("复习服务设置 form helper", () => {
     expect(patchArg).toEqual({
       [REVIEW_SETTINGS_KEYS.newCardsPerDay]: 20,
       [REVIEW_SETTINGS_KEYS.reviewCardsPerDay]: 150,
-      [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: 0.75
+      [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: 0.75,
+      [REVIEW_UI_DISPLAY_KEYS.passFailButtons]: true,
+      [REVIEW_UI_DISPLAY_KEYS.showNextReviewTime]: true
     })
     expect(patchArg).not.toHaveProperty(REVIEW_SETTINGS_KEYS.fsrsWeights)
     expect(patchArg).not.toHaveProperty(REVIEW_SETTINGS_KEYS.fsrsMaximumInterval)
@@ -204,6 +257,8 @@ describe("复习服务设置 form helper", () => {
     expect(settings?.[REVIEW_SETTINGS_KEYS.newCardsPerDay]).toBe(20)
     expect(settings?.[REVIEW_SETTINGS_KEYS.reviewCardsPerDay]).toBe(150)
     expect(settings?.[REVIEW_SETTINGS_KEYS.fsrsRequestRetention]).toBe(0.75)
+    expect(settings?.[REVIEW_UI_DISPLAY_KEYS.passFailButtons]).toBe(true)
+    expect(settings?.[REVIEW_UI_DISPLAY_KEYS.showNextReviewTime]).toBe(true)
     // 个人权重与最大间隔不得被规范化或覆盖
     expect(settings?.[REVIEW_SETTINGS_KEYS.fsrsWeights]).toBe(personalWeights)
     expect(settings?.[REVIEW_SETTINGS_KEYS.fsrsMaximumInterval]).toBe(999)
@@ -231,7 +286,9 @@ describe("复习服务设置 form helper", () => {
       saveReviewServiceSettingsFromForm(PLUGIN, {
         newCardsPerDay: "abc",
         reviewCardsPerDay: "200",
-        requestRetention: "0.9"
+        requestRetention: "0.9",
+        passFailButtons: true,
+        showNextReviewTime: true
       })
     ).rejects.toThrow(/无法保存|每日新卡/)
 
@@ -251,9 +308,47 @@ describe("复习服务设置 form helper", () => {
       saveReviewServiceSettingsFromForm(PLUGIN, {
         newCardsPerDay: "30",
         reviewCardsPerDay: "200",
-        requestRetention: "0.5"
+        requestRetention: "0.5",
+        passFailButtons: false,
+        showNextReviewTime: false
       })
     ).rejects.toThrow(/无法保存|保留率/)
     expect(setSettings).not.toHaveBeenCalled()
+  })
+
+  it("save 成功通知 UI revision；非法保存不通知", async () => {
+    const listener = vi.fn()
+    const unsub = subscribeReviewUiDisplaySettings(listener)
+    installOrca({
+      [REVIEW_SETTINGS_KEYS.newCardsPerDay]: 30,
+      [REVIEW_SETTINGS_KEYS.reviewCardsPerDay]: 200,
+      [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: 0.9
+    })
+    const rev0 = getReviewUiDisplayRevision()
+
+    await expect(
+      saveReviewServiceSettingsFromForm(PLUGIN, {
+        newCardsPerDay: "x",
+        reviewCardsPerDay: "200",
+        requestRetention: "0.9",
+        passFailButtons: true,
+        showNextReviewTime: true
+      })
+    ).rejects.toThrow()
+    expect(listener).not.toHaveBeenCalled()
+    expect(getReviewUiDisplayRevision()).toBe(rev0)
+
+    await saveReviewServiceSettingsFromForm(PLUGIN, {
+      newCardsPerDay: "30",
+      reviewCardsPerDay: "200",
+      requestRetention: "0.9",
+      passFailButtons: true,
+      showNextReviewTime: false
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(getReviewUiDisplayRevision()).toBe(rev0 + 1)
+    unsub()
+    notifyReviewUiDisplaySettingsChanged()
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 })

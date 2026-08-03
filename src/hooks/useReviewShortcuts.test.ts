@@ -93,4 +93,35 @@ describe("resolveReviewShortcut", () => {
       resolveReviewShortcut({ ...base, enabled: false, key: "3" })
     ).toEqual({ type: "none" })
   })
+
+  it("passFailButtons：仅 again/good；hard/easy 无效；空格仍 good", () => {
+    const pf = { ...base, passFailButtons: true }
+    expect(resolveReviewShortcut({ ...pf, key: "1" })).toEqual({
+      type: "grade",
+      grade: "again"
+    })
+    expect(resolveReviewShortcut({ ...pf, key: "3" })).toEqual({
+      type: "grade",
+      grade: "good"
+    })
+    expect(resolveReviewShortcut({ ...pf, key: " " })).toEqual({
+      type: "grade",
+      grade: "good"
+    })
+    expect(resolveReviewShortcut({ ...pf, key: "2" })).toEqual({ type: "none" })
+    expect(resolveReviewShortcut({ ...pf, key: "4" })).toEqual({ type: "none" })
+  })
+
+  it("passFailButtons 不阻止选择题选题阶段数字键", () => {
+    const choice = { mode: "single" as const, optionCount: 4 }
+    expect(
+      resolveReviewShortcut({
+        ...base,
+        showAnswer: false,
+        passFailButtons: true,
+        choiceCard: choice,
+        key: "2"
+      })
+    ).toEqual({ type: "choiceSelect", index: 1 })
+  })
 })

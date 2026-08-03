@@ -58,7 +58,7 @@ export interface AIServiceSettingsState {
   /** Azure TTS 连接（独立 key，不复用 AI） */
   initialTts: TtsSettings
   /**
-   * 复习页可见三项（日新卡 / 日复习 / 保留率；仍存 plugin settings）。
+   * 复习页可见项（日新卡 / 日复习 / 保留率 / Pass-Fail / 显示下次时间；仍存 plugin settings）。
    * 打开时填安全生效值；非法旧配置时见 reviewLoadWarning。
    * 不含权重 / 最大间隔草稿。
    */

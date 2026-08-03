@@ -88,6 +88,8 @@ export function AIServiceSettingsMount({
     snap.initialReview.newCardsPerDay,
     snap.initialReview.reviewCardsPerDay,
     snap.initialReview.requestRetention,
+    snap.initialReview.passFailButtons ? "pf1" : "pf0",
+    snap.initialReview.showNextReviewTime ? "t1" : "t0",
     snap.reviewLoadWarning ? "review-warn" : "review-ok"
   ].join(":")
 
@@ -110,7 +112,7 @@ export function AIServiceSettingsMount({
       await saveQuickCardPrefs(activePlugin, draft.quickCard)
       await saveChapterQuizPrefs(activePlugin, draft.chapterQuiz)
       await saveTtsSettings(activePlugin, draft.tts)
-      // 写回三项可见 review.* 原 key 并 clearFsrsRuntimeState（不写权重/最大间隔）
+      // 写回复习页可见项（额度 / 保留率 / 界面开关）并 clearFsrsRuntimeState（不写权重/最大间隔）
       await saveReviewServiceSettingsFromForm(activePlugin, draft.review)
       orca.notify("success", "服务设置已保存", { title: "服务设置" })
       closeAIServiceSettings()

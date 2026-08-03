@@ -229,6 +229,12 @@ function ServiceSettingsForm(props: {
   const [requestRetention, setRequestRetention] = useState(
     props.initialReview.requestRetention
   )
+  const [passFailButtons, setPassFailButtons] = useState(
+    props.initialReview.passFailButtons
+  )
+  const [showNextReviewTime, setShowNextReviewTime] = useState(
+    props.initialReview.showNextReviewTime
+  )
 
   const busy = props.busy
   const draft = (): ServiceSettingsDraft => ({
@@ -273,7 +279,9 @@ function ServiceSettingsForm(props: {
     review: {
       newCardsPerDay,
       reviewCardsPerDay,
-      requestRetention
+      requestRetention,
+      passFailButtons,
+      showNextReviewTime
     }
   })
 
@@ -282,6 +290,8 @@ function ServiceSettingsForm(props: {
     setNewCardsPerDay(defaults.newCardsPerDay)
     setReviewCardsPerDay(defaults.reviewCardsPerDay)
     setRequestRetention(defaults.requestRetention)
+    setPassFailButtons(defaults.passFailButtons)
+    setShowNextReviewTime(defaults.showNextReviewTime)
   }
 
   const modelList = props.modelOptions
@@ -743,7 +753,7 @@ function ServiceSettingsForm(props: {
               复习
             </h3>
             <p className="ai-service-settings__section-desc">
-              控制每天进入队列的新卡与复习卡数量，以及目标记忆保留率。
+              控制每天进入队列的新卡与复习卡数量、目标记忆保留率，以及复习界面按钮显示。
             </p>
 
             <label className="ai-service-settings__field">
@@ -806,6 +816,47 @@ function ServiceSettingsForm(props: {
               />
             </label>
 
+            <label className="ai-service-settings__field ai-service-settings__field--toggle">
+              <span className="ai-service-settings__label">仅失败 / 通过按钮</span>
+              <label className="ai-service-settings__checkbox-row">
+                <input
+                  type="checkbox"
+                  className="ai-service-settings__checkbox"
+                  checked={passFailButtons}
+                  onChange={(e) => setPassFailButtons(e.target.checked)}
+                  onKeyDown={stopKeys}
+                  onMouseDown={stopBubble}
+                  disabled={busy}
+                />
+                <span>复习界面只显示失败与通过（映射为 Again / Good）</span>
+              </label>
+              <FieldHint
+                summary="默认关闭，显示四级评分（忘记 / 困难 / 良好 / 简单）。开启后隐藏困难与简单。"
+                details="失败写入 again、通过写入 good；不改变 FSRS 算法本身。快捷键：1=失败，3 或空格=通过；2/4 无效。选择题始终保持四级（含「困难」建议），不受此开关影响。"
+              />
+            </label>
+
+            <label className="ai-service-settings__field ai-service-settings__field--toggle">
+              <span className="ai-service-settings__label">
+                按钮上方显示下次复习时间
+              </span>
+              <label className="ai-service-settings__checkbox-row">
+                <input
+                  type="checkbox"
+                  className="ai-service-settings__checkbox"
+                  checked={showNextReviewTime}
+                  onChange={(e) => setShowNextReviewTime(e.target.checked)}
+                  onKeyDown={stopKeys}
+                  onMouseDown={stopBubble}
+                  disabled={busy}
+                />
+                <span>Show next review time over buttons</span>
+              </label>
+              <FieldHint
+                summary="默认关闭（隐藏时间，便于专注答题）。开启后在评分按钮上方显示预估间隔与到期日。"
+              />
+            </label>
+
             <div className="ai-service-settings__row-actions">
               <button
                 type="button"
@@ -817,7 +868,7 @@ function ServiceSettingsForm(props: {
                 恢复默认值
               </button>
             </div>
-            <FieldHint summary="「恢复默认值」只改当前草稿（30 / 200 / 0.9），仍须底部保存才会生效。" />
+            <FieldHint summary="「恢复默认值」只改当前草稿（30 / 200 / 0.9，两项界面开关关闭），仍须底部保存才会生效。" />
           </section>
         ) : null}
 

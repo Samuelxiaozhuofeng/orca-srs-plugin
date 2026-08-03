@@ -209,7 +209,8 @@ export default function BasicCardReviewRenderer({
     onGrade: handleGrade,
     onBury: onPostpone,
     onSuspend,
-    readOnly
+    readOnly,
+    pluginName
   })
 
   const fullState = useMemo(() => completeState(srsInfo), [srsInfo])
@@ -229,6 +230,8 @@ export default function BasicCardReviewRenderer({
       onGrade={handleGrade}
       onSkip={onSkip}
       readOnly={readOnly}
+      pluginName={pluginName}
+      isGrading={isGrading}
     />
   )
 

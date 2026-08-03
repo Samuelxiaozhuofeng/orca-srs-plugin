@@ -17,7 +17,7 @@ const { Button } = orca.components
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState, ChoiceOption, ChoiceMode } from "../srs/types"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
-import { previewDueDates, formatDueDate } from "../srs/algorithm"
+import { previewIntervals, previewDueDates } from "../srs/algorithm"
 import {
   canFireSingleSubmit,
   completeSingleSubmit,
@@ -32,6 +32,7 @@ import {
 import ChoiceOptionRenderer from "./ChoiceOptionRenderer"
 import SafeBlockPreview from "./SafeBlockPreview"
 import CardInfoPanel from "./review-card/CardInfoPanel"
+import ReviewGradeButtons from "./review-card/ReviewGradeButtons"
 
 const SINGLE_SUBMIT_DELAY_MS = 150
 
@@ -265,26 +266,35 @@ export default function ChoiceCardReviewRenderer({
     setCurrentSuggestedGrade(null)
   }, [isGrading, onGrade, clearPendingTimeout])
 
+  const fullSrsState = useMemo((): SrsState | null => {
+    if (!srsInfo) return null
+    return {
+      stability: srsInfo.stability ?? 0,
+      difficulty: srsInfo.difficulty ?? 0,
+      interval: srsInfo.interval ?? 0,
+      due: srsInfo.due ?? new Date(),
+      lastReviewed: srsInfo.lastReviewed ?? null,
+      reps: srsInfo.reps ?? 0,
+      lapses: srsInfo.lapses ?? 0,
+      state: srsInfo.state,
+    }
+  }, [srsInfo])
+
+  const intervals = useMemo(
+    () => previewIntervals(fullSrsState, undefined, pluginName),
+    [fullSrsState, pluginName]
+  )
+
   // 预览到期日期
-  const dueDates = useMemo(() => {
-    const fullState: SrsState | null = srsInfo
-      ? {
-          stability: srsInfo.stability ?? 0,
-          difficulty: srsInfo.difficulty ?? 0,
-          interval: srsInfo.interval ?? 0,
-          due: srsInfo.due ?? new Date(),
-          lastReviewed: srsInfo.lastReviewed ?? null,
-          reps: srsInfo.reps ?? 0,
-          lapses: srsInfo.lapses ?? 0,
-          state: srsInfo.state,
-        }
-      : null
-    return previewDueDates(fullState, undefined, pluginName)
-  }, [srsInfo, pluginName])
+  const dueDates = useMemo(
+    () => previewDueDates(fullSrsState, undefined, pluginName),
+    [fullSrsState, pluginName]
+  )
 
   // 快捷键支持（包括选择题特有的数字键和Enter键）
   // Requirements: 5.1, 5.2, 5.3, 5.4
   // FC-06：readOnly 禁用评分/bury/suspend/choice 选择与提交
+  // 选择题始终四级评分（again/hard/good/easy），不跟 Pass/Fail 设置，以便「部分正确→hard」可用
   useReviewShortcuts({
     showAnswer: isAnswerRevealed,
     isGrading,
@@ -292,6 +302,8 @@ export default function ChoiceCardReviewRenderer({
     onBury: onPostpone,
     onSuspend,
     readOnly,
+    pluginName,
+    passFailButtons: false,
     choiceCard: {
       mode,
       optionCount: options.length,
@@ -466,63 +478,18 @@ export default function ChoiceCardReviewRenderer({
         </div>
       )}
 
-      {/* 评分按钮（答案揭晓后显示；只读时隐藏） */}
+      {/* 评分按钮（答案揭晓后显示；只读时隐藏）；选择题强制四级，不用 Pass/Fail */}
       {!readOnly && isAnswerRevealed && (
-        <div className="srs-card-grade-buttons srs-grade-buttons">
-          {/* 跳过按钮 */}
-          {onSkip && (
-            <button
-              onClick={onSkip}
-              className="srs-grade-btn srs-grade-btn--skip"
-            >
-              <div className="srs-grade-btn__preview">不评分</div>
-              <span className="srs-grade-btn__emoji">⏭️</span>
-              <span className="srs-grade-btn__label">跳过</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => handleGrade("again")}
-            className={`srs-grade-btn srs-grade-btn--again ${
-              currentSuggestedGrade === "again" ? "srs-grade-btn--suggested" : ""
-            }`}
-          >
-            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.again)}</div>
-            <span className="srs-grade-btn__emoji">😞</span>
-            <span className="srs-grade-btn__label">忘记</span>
-          </button>
-
-          <button
-            onClick={() => handleGrade("hard")}
-            className={`srs-grade-btn srs-grade-btn--hard ${
-              currentSuggestedGrade === "hard" ? "srs-grade-btn--suggested" : ""
-            }`}
-          >
-            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.hard)}</div>
-            <span className="srs-grade-btn__emoji">😐</span>
-            <span className="srs-grade-btn__label">困难</span>
-          </button>
-
-          <button
-            onClick={() => handleGrade("good")}
-            className={`srs-grade-btn srs-grade-btn--good ${
-              currentSuggestedGrade === "good" ? "srs-grade-btn--suggested" : ""
-            }`}
-          >
-            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.good)}</div>
-            <span className="srs-grade-btn__emoji">😊</span>
-            <span className="srs-grade-btn__label">良好</span>
-          </button>
-
-          <button
-            onClick={() => handleGrade("easy")}
-            className="srs-grade-btn srs-grade-btn--easy"
-          >
-            <div className="srs-grade-btn__preview">{formatDueDate(dueDates.easy)}</div>
-            <span className="srs-grade-btn__emoji">😄</span>
-            <span className="srs-grade-btn__label">简单</span>
-          </button>
-        </div>
+        <ReviewGradeButtons
+          intervals={intervals}
+          dueDates={dueDates}
+          onGrade={handleGrade}
+          onSkip={onSkip}
+          pluginName={pluginName}
+          passFailButtons={false}
+          suggestedGrade={currentSuggestedGrade}
+          isGrading={isGrading}
+        />
       )}
 
       {/* 自动评分提示 */}

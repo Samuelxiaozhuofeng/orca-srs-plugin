@@ -1,7 +1,7 @@
 # SRS 记忆算法模块
 
 > **文档同步日期：2026-08-02**
-> 变更说明：每日新卡/复习上限 + 目标保留率迁入独立服务面板 **「复习」** 页签；原生 schema 不含每日额度与 FSRS 五项 UI。权重 / 最大间隔底层存储与算法读取保留，**无**面板编辑 UI。表单 helper：`reviewServiceSettings.ts`。
+> 变更说明：每日新卡/复习上限 + 目标保留率迁入独立服务面板 **「复习」** 页签；同页另有两项**仅 UI** 开关（Pass-Fail 按钮、显示下次复习时间，默认关闭，不改排期）。原生 schema 不含每日额度与 FSRS 五项 UI。权重 / 最大间隔底层存储与算法读取保留，**无**面板编辑 UI。表单 helper：`reviewServiceSettings.ts`。
 > 2026-07-26：新增「FSRS Fuzz」小节——运行时实例创建启用 `enable_fuzz: true`。
 > 2026-07-13：校正 `nextReviewState` / 预览函数的 `pluginName` 参数位置；对齐 F2-08 校验与运行时 cache。
 
@@ -22,7 +22,7 @@
 
 - `src/srs/algorithm.ts` — FSRS 运行时实例、评分、预览
 - `src/srs/settings/reviewSettingsSchema.ts` — 原生复习 Schema（**不含**每日额度与 FSRS 五项 UI）+ `validateFsrsConfig` / runtime read / default patch；key 与 `getReviewSettings` 仍保留
-- `src/srs/settings/reviewServiceSettings.ts` — 独立面板「复习」页 load / 严格 parse / save（仅三项可见字段）
+- `src/srs/settings/reviewServiceSettings.ts` — 独立面板「复习」页 load / 严格 parse / save（额度三项 + 两项 UI 显示开关；`getReviewUiDisplaySettings`）
 - `src/srs/reviewSessionBudget.ts` — 每日额度统一规则（`isValidDailyCardLimit` / `resolveDailyQueueLimits`）
 - `src/components/AIServiceSettingsDialog.tsx` / `AIServiceSettingsMount.tsx` — 「复习」页签 UI 与整包保存
 - `src/srs/types.ts` — `SrsState` / `Grade`
@@ -154,13 +154,13 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 | --- | --- |
 | **存储** | 仍为 Orca plugin settings 原 key：`review.newCardsPerDay` / `review.reviewCardsPerDay` / `review.fsrsWeights` / `review.fsrsRequestRetention` / `review.fsrsMaximumInterval`。**不**迁到 plugin data。 |
 | **原生设置页** | `reviewSettingsSchema` **不再**注册每日额度两项与 FSRS 三项（避免出现在 Orca 原生插件设置 UI）。 |
-| **独立面板「复习」页** | 仅展示三项：每日新卡上限、每日复习上限、目标记忆保留率 +「恢复默认值」（仅改草稿 30/200/0.9）。**不**显示权重与最大间隔。 |
+| **独立面板「复习」页** | 数值三项：每日新卡上限、每日复习上限、目标记忆保留率；界面两项（默认关）：仅失败/通过按钮、`Show next review time over buttons`；+「恢复默认值」（草稿 30/200/0.9 + 两开关关）。**不**显示权重与最大间隔。 |
 | **权重 / 最大间隔** | 无面板编辑 UI；仍由算法 runtime 读取与严格校验；命令 `resetFsrsSettingsToDefaults` 可写回默认。普通面板保存**不得**写回或规范化这两项（保护个人优化权重）。 |
 | **算法 / 额度读取** | 不变：`getFsrsInstance` / `readAndValidateFsrsSettings` 读 FSRS 三项；`resolveDailyQueueLimits` / `getReviewSettings` 读每日额度。 |
 | **兼容** | 已有用户数据与恢复 FSRS 默认命令共用同一 key / patch。 |
 
 打开独立面板：`loadReviewServiceSettings`（`reviewServiceSettings.ts`）→ 可见三项填**安全生效值**；若旧值非法，全局 banner 展示中文警告。隐藏权重/最大间隔的旧错误由算法 runtime 警告负责，**不**阻止保存可见三项。
-保存：`parseReviewServiceSettingsDraftStrict` 先严格校验可见三项；失败则**整包保存中止**（不先写 AI/Firecrawl 等）；合法则 `saveReviewServiceSettingsFromForm` → `setSettings` 仅写三项 patch + `clearFsrsRuntimeState()`（使 retention 立即生效）。
+保存：`parseReviewServiceSettingsDraftStrict` 先严格校验可见数值三项；失败则**整包保存中止**（不先写 AI/Firecrawl 等）；合法则 `saveReviewServiceSettingsFromForm` → `setSettings` 写三项数值 + 两项 UI 开关 patch + `clearFsrsRuntimeState()`（使 retention 立即生效）。UI 开关**不**参与 FSRS 计算。
 
 ### 校验规则（`src/srs/settings/reviewSettingsSchema.ts`）
 

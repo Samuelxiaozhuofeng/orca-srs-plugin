@@ -1,6 +1,7 @@
 # SRS 卡片复习窗口模块
 
-> 文档同步日期：2026-07-27  
+> 文档同步日期：2026-08-03  
+> 变更说明（2026-08-03）：复习界面两项显示偏好（默认均关闭）——仅失败/通过按钮、按钮上方显示下次复习时间；设置在服务面板「复习」页；统一经 `ReviewGradeButtons` + `getReviewUiDisplaySettings`，不改 FSRS 排期逻辑。  
 > 变更说明（2026-07-27）：复习面板 UI 对齐 Apple HIG 基线，视觉层内联样式全部迁移到 `srs-review.css` 的 CSS 类，见下方「视觉规范」。**仅视觉层**，交互/数据流未变。  
 > 变更说明（2026-07-20）：Basic 答案区改为 CSS 精确隐藏卡根正文（移除长期 MutationObserver）；显示答案后题目改静态 `front`，同 panel 仅一份卡根 live Block。自动化契约已覆盖；**Orca 实例 Tab/Enter 编辑会话仍待用户验证**。
 >
@@ -84,6 +85,8 @@ borderRadius / boxShadow）已全部迁移到 `src/styles/srs-review.css` 的 `s
 | `src/components/DirectionCardReviewRenderer.tsx` | 方向卡复习 |
 | `src/components/ListCardReviewRenderer.tsx` | 列表卡复习 |
 | `src/components/ChoiceCardReviewRenderer.tsx` | 选择题复习 |
+| `src/components/review-card/ReviewGradeButtons.tsx` | 统一评分按钮（四级 / Pass-Fail、是否显示下次时间） |
+| `src/srs/settings/reviewServiceSettings.ts` | 服务面板「复习」页 + `getReviewUiDisplaySettings` |
 | `src/srs/reviewSessionDescriptor.ts` | 版本化会话描述 |
 | `src/srs/reviewSessionActionGate.ts` | F2-05 会话动作 gate |
 | `src/srs/reviewSessionBlockLoad.ts` | F2-06 当前卡 required 块决策 |
@@ -390,7 +393,7 @@ stateDiagram-v2
 - **Tab / Enter 策略（当前）**：**不**全局禁止 Tab；**不** `preventDefault` + `indentSelection` + 过期 `CursorData` 回写（半成品已证明可输入但 Enter 无法建块）。优先让宿主原生 handler 完整执行；若回归仍坏，再独立可测逻辑接管，且不得用 indent 前快照覆盖选区。
 - 摘录路径不变：不走题目剥离/答案子块嵌入策略。
 - 复习中可直接编辑答案子块（依赖编辑器能力，非 `contentEditable: false` 锁死）。
-- 评分按钮：Again / Hard / Good / Easy；间隔/到期预览走 F2-08。
+- 评分按钮：默认 Again / Hard / Good / Easy；开启 `review.passFailButtons` 时为失败/通过（again/good）。**选择题始终四级**（`passFailButtons={false}`），以便「部分正确 → hard」建议可用。间隔/到期预览走 F2-08，是否显示由 `review.showNextReviewTime` 控制（默认关）。
 - 界面默认**不展示**完整 SRS 技术字段（稳定度、完整时间戳等）；评分后日志可用简化日期 `M-D`。
 - **「卡片信息」面板统一实现**：`src/components/review-card/CardInfoPanel.tsx`（Basic / Cloze / Direction / List / Choice 复习渲染器共用，替代此前各渲染器内联的重复实现）。`formatCardState` / `formatDateTime` 为 named export，唯一实现在该文件。可选 prop `showSchedulingDetails`（默认 `true`）控制「间隔天数 / 稳定性 / 难度」三行；`ChoiceCardReviewRenderer` 传 `false` 保持其历史 5 行输出。回归：`CardInfoPanel.test.ts`（含与旧实现逐输入等价断言）。
 
@@ -423,12 +426,14 @@ stateDiagram-v2
 | ------ | ---- | ------ |
 | `review.disableNotifications` | 关闭通知提醒 | 原生插件设置 |
 | `review.newCardsPerDay` | 每日新卡上限（0..10000；0=当天不安排新卡） | 服务设置面板 **复习** 页（**不**在原生 schema；helper：`reviewServiceSettings.ts`） |
+| `review.passFailButtons` | 仅失败/通过按钮（默认 `false`；失败→again，通过→good；**选择题除外**） | 同上；仅 UI，不改算法 |
+| `review.showNextReviewTime` | 按钮上方显示下次复习时间（默认 `false`） | 同上；仅 UI |
 | `review.reviewCardsPerDay` | 每日复习上限（同上） | 同上 |
 | `review.fsrsRequestRetention` | 目标保留率（0.7..0.99） | 同上 |
 | `review.fsrsWeights` | FSRS 权重（21 个） | **无 UI**；算法 runtime +「恢复 FSRS 默认」命令 |
 | `review.fsrsMaximumInterval` | 最大间隔（天） | **无 UI**；同上 |
 
-> 每日额度与 FSRS 参数仍存 plugin settings 原 key，算法/额度读取路径不变；可见三项 UI 在独立「复习」页，权重/最大间隔不在面板编辑。详见 [SRS_记忆算法.md](SRS_记忆算法.md)。
+> 每日额度与 FSRS 参数仍存 plugin settings 原 key，算法/额度读取路径不变；复习页含额度/保留率 + 两项界面开关（Pass-Fail、显示下次时间），权重/最大间隔不在面板编辑。详见 [SRS_记忆算法.md](SRS_记忆算法.md)。
 >
 > **不存在** `review.showSiblingBlocks` / `review.maxSiblingBlocks`（旧文档或设想；全库 `src/` 无此键）。Basic 答案区同级子块展示不由上述设置控制。
 
@@ -448,14 +453,17 @@ stateDiagram-v2
 | 按键 | 条件 | 操作 |
 | ---- | ---- | ---- |
 | `空格` | 答案未显示 | 显示答案（多选 Choice 未揭晓时为空格提交，见规则模块） |
-| `空格` | 答案已显示 | 评 Good |
-| `1`–`4` | 答案已显示 | again / hard / good / easy |
+| `空格` | 答案已显示 | 评 Good / 通过 |
+| `1`–`4` | 答案已显示（四级模式） | again / hard / good / easy |
+| `1` / `3` | 答案已显示（Pass/Fail 模式） | again（失败）/ good（通过）；`2`/`4` 无效 |
 | `b` / `s` | — | 推迟 / 暂停 |
 | Choice `1`–`9` | 未揭晓 | 选选项 |
 | Choice `Enter` | 多选未揭晓 | 提交 |
 
 - `isGrading` / `readOnly` 禁用评分类键；输入框 / contenteditable 内不触发。
 - 各专用 ReviewRenderer 各自挂 `useReviewShortcuts`；Basic 仅在 `shouldRenderBasicCard` 时启用。
+- **Pass/Fail 不作用于选择题**：`ChoiceCardReviewRenderer` 固定 `passFailButtons: false`（四级 + hard 建议）。
+- 服务设置保存成功后 `notifyReviewUiDisplaySettingsChanged`：已挂载的评分按钮与快捷键立即对齐新开关，避免「键已变、钮未变」。
 
 ## 用户交互
 

@@ -19,6 +19,10 @@
  */
 
 import type { Grade, ChoiceMode } from "../srs/types"
+import {
+  getReviewUiDisplaySettings,
+  subscribeReviewUiDisplaySettings
+} from "../srs/settings/reviewServiceSettings"
 import { resolveReviewShortcut } from "./reviewShortcutRules"
 
 export {
@@ -27,7 +31,7 @@ export {
   type ResolveReviewShortcutInput
 } from "./reviewShortcutRules"
 
-const { useEffect, useCallback } = window.React
+const { useEffect, useCallback, useState } = window.React
 
 /**
  * 选择题卡片配置
@@ -63,6 +67,13 @@ type UseReviewShortcutsOptions = {
    * 仍允许显示答案以便回看。
    */
   readOnly?: boolean
+  /**
+   * 读取 `review.passFailButtons`；与评分按钮 UI 一致。
+   * 也可显式传 `passFailButtons` 覆盖。
+   */
+  pluginName?: string
+  /** 覆盖设置：Pass/Fail 时禁用 hard/easy 快捷键 */
+  passFailButtons?: boolean
   /** 选择题卡片配置（可选） */
   choiceCard?: ChoiceCardOptions
 }
@@ -79,8 +90,18 @@ export function useReviewShortcuts({
   onSuspend,
   enabled = true,
   readOnly = false,
+  pluginName,
+  passFailButtons: passFailProp,
   choiceCard
 }: UseReviewShortcutsOptions): void {
+  // 与评分按钮同一 revision：设置保存后重建 keydown 闭包中的 passFail 读取路径
+  const [displayRevision, setDisplayRevision] = useState(0)
+  useEffect(() => {
+    return subscribeReviewUiDisplaySettings(() => {
+      setDisplayRevision((n: number) => n + 1)
+    })
+  }, [])
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (!enabled) return
@@ -94,12 +115,19 @@ export function useReviewShortcuts({
         return
       }
 
+      const passFailButtons =
+        passFailProp ??
+        (pluginName
+          ? getReviewUiDisplaySettings(pluginName).passFailButtons
+          : false)
+
       const resolved = resolveReviewShortcut({
         key: event.key,
         showAnswer,
         isGrading,
         enabled,
         readOnly,
+        passFailButtons,
         choiceCard: choiceCard
           ? { mode: choiceCard.mode, optionCount: choiceCard.optionCount }
           : undefined,
@@ -143,7 +171,10 @@ export function useReviewShortcuts({
       onSuspend,
       enabled,
       readOnly,
-      choiceCard
+      pluginName,
+      passFailProp,
+      choiceCard,
+      displayRevision
     ]
   )
 

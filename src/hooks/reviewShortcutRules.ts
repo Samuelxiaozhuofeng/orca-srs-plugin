@@ -32,6 +32,11 @@ export type ResolveReviewShortcutInput = {
   isGrading: boolean
   enabled?: boolean
   readOnly?: boolean
+  /**
+   * Pass/Fail UI：仅允许 again / good 评分键（1、3、空格→good）；
+   * hard/easy（2/4）无效。选择题选题阶段不受影响。
+   */
+  passFailButtons?: boolean
   choiceCard?: {
     mode: ChoiceMode
     optionCount: number
@@ -53,6 +58,7 @@ export function resolveReviewShortcut(
     isGrading,
     enabled = true,
     readOnly = false,
+    passFailButtons = false,
     choiceCard,
     hasShowAnswer = true,
     hasBury = true,
@@ -88,6 +94,7 @@ export function resolveReviewShortcut(
       return { type: "none" }
     }
     if (readOnly) return { type: "none" }
+    // 空格 = 通过 / 良好（Pass/Fail 与四级模式一致）
     return { type: "grade", grade: "good" }
   }
 
@@ -103,6 +110,9 @@ export function resolveReviewShortcut(
 
   if (showAnswer) {
     if (readOnly) return { type: "none" }
+    if (passFailButtons && (action === "hard" || action === "easy")) {
+      return { type: "none" }
+    }
     return { type: "grade", grade: action }
   }
 
