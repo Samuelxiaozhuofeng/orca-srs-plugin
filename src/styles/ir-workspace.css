@@ -4727,6 +4727,166 @@
   white-space: pre;
 }
 
+/* ── 测验 vs 复习关系提示（launch + 答题界面）────────────── */
+.chapter-quiz__quiz-vs-cards {
+  font-size: var(--srs-text-caption);
+  line-height: 1.5;
+  color: var(--orca-color-text-2);
+  border-left: 2px solid var(--srs-hairline-strong);
+  padding: 2px 0 2px 10px;
+  margin-bottom: var(--srs-space-2);
+}
+
+/* ── 「不知道」次要动作（揭晓前）────────────────────────── */
+.chapter-quiz__unknown-row {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--srs-space-2);
+}
+
+.chapter-quiz__unknown-btn {
+  border: 1px solid var(--srs-hairline);
+  background: transparent;
+  color: var(--orca-color-text-2);
+  font: inherit;
+  font-size: var(--srs-text-secondary);
+  padding: 6px 18px;
+  border-radius: var(--srs-radius-pill);
+  cursor: pointer;
+  transition:
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease);
+}
+
+.chapter-quiz__unknown-btn:hover:not(:disabled) {
+  border-color: var(--srs-hairline-strong);
+  color: var(--orca-color-text-1);
+}
+
+.chapter-quiz__unknown-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* ── 「这是猜的」标记（揭晓后、答对时）──────────────────── */
+.chapter-quiz__guessed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--srs-space-2);
+  font-size: var(--srs-text-secondary);
+  color: var(--orca-color-text-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chapter-quiz__guessed input {
+  accent-color: var(--orca-color-primary-5);
+  cursor: pointer;
+}
+
+.chapter-quiz__guessed:has(input:disabled) {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.chapter-quiz__hint--muted {
+  color: var(--orca-color-text-2);
+  font-size: var(--srs-text-caption);
+}
+
+/* ── 启动对话框：数量预设 + 时长估算 ─────────────────────── */
+.chapter-quiz__count-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+  margin-top: var(--srs-space-1);
+}
+
+.chapter-quiz__count-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--srs-space-2);
+}
+
+.chapter-quiz__count-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 96px;
+  padding: 8px 12px;
+  border-radius: var(--srs-radius-md);
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-1);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    border-color var(--srs-duration-base) var(--srs-ease),
+    background var(--srs-duration-base) var(--srs-ease);
+}
+
+.chapter-quiz__count-option:hover:not(:disabled) {
+  border-color: var(--srs-hairline-strong);
+  background: var(--srs-surface-sunken);
+}
+
+.chapter-quiz__count-option.is-selected {
+  border-color: var(--orca-color-primary-5);
+  background: color-mix(in srgb, var(--orca-color-primary-1, rgba(59,130,246,0.1)) 40%, var(--srs-surface-base));
+}
+
+.chapter-quiz__count-option.is-preference::after {
+  content: "默认";
+  align-self: flex-start;
+  font-size: 0.72em;
+  line-height: 1;
+  color: var(--orca-color-text-2);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-pill);
+  padding: 2px 6px;
+  margin-top: 2px;
+}
+
+.chapter-quiz__count-option:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.chapter-quiz__count-option-label {
+  font-size: var(--srs-text-body);
+  font-weight: 600;
+}
+
+.chapter-quiz__count-option-duration {
+  font-size: var(--srs-text-caption);
+  color: var(--orca-color-text-2);
+}
+
+.chapter-quiz__count-expand {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--orca-color-text-2);
+  font: inherit;
+  font-size: var(--srs-text-secondary);
+  padding: 4px 2px;
+  cursor: pointer;
+  border-radius: var(--srs-radius-sm);
+}
+
+.chapter-quiz__count-expand:hover:not(:disabled) {
+  color: var(--orca-color-text-1);
+}
+
+.chapter-quiz__count-expand:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .chapter-quiz-repr-content {
   width: 100%;
 }

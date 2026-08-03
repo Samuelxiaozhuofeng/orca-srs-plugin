@@ -833,34 +833,40 @@ export default function IRSessionShell({
     }
   }, [releasePostCompleteHoldAndAdvance])
 
-  const handleChapterQuizConfirm = useCallback(async () => {
-    if (chapterQuizTopicId == null) {
-      setChapterQuizConfirmOpen(false)
-      return
-    }
-    if (!isAIConfigured(pluginName)) {
-      orca.notify("warn", CHAPTER_QUIZ_COPY.needAi, { title: "章末小测" })
-      return
-    }
-    setIsWorking(true)
-    try {
-      await launchChapterQuiz({
-        pluginName,
-        topicBlockId: chapterQuizTopicId,
-        // 仅「完成后续停留」需要测完推进会话
-        sessionContinueNext: postCompleteQuizHoldRef.current
-      })
-      setChapterQuizConfirmOpen(false)
-      // 保留 postCompleteQuizHold：测完点「继续下一篇」再推进
-      setChapterQuizTopicId(null)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error("[IR Session] 章末小测启动失败:", error)
-      orca.notify("error", message, { title: "章末小测" })
-    } finally {
-      setIsWorking(false)
-    }
-  }, [chapterQuizTopicId, pluginName])
+  const handleChapterQuizConfirm = useCallback(
+    async (count?: number) => {
+      if (chapterQuizTopicId == null) {
+        setChapterQuizConfirmOpen(false)
+        return
+      }
+      if (!isAIConfigured(pluginName)) {
+        orca.notify("warn", CHAPTER_QUIZ_COPY.needAi, { title: "章末小测" })
+        return
+      }
+      setIsWorking(true)
+      try {
+        await launchChapterQuiz({
+          pluginName,
+          topicBlockId: chapterQuizTopicId,
+          // 用户选择的题数（5/10/15 或「按设置 N 题」）冻结进本轮 repr；
+          // 未传时读偏好默认（兼容旧调用方）
+          questionCount: count,
+          // 仅「完成后续停留」需要测完推进会话
+          sessionContinueNext: postCompleteQuizHoldRef.current
+        })
+        setChapterQuizConfirmOpen(false)
+        // 保留 postCompleteQuizHold：测完点「继续下一篇」再推进
+        setChapterQuizTopicId(null)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error("[IR Session] 章末小测启动失败:", error)
+        orca.notify("error", message, { title: "章末小测" })
+      } finally {
+        setIsWorking(false)
+      }
+    },
+    [chapterQuizTopicId, pluginName]
+  )
 
   // 小测块「继续下一篇」→ 推进完成后续停留
   useEffect(() => {
@@ -1385,8 +1391,10 @@ export default function IRSessionShell({
         onArchiveConfirmClose={() => setArchiveConfirmOpen(false)}
         onArchiveConfirm={() => void handleArchiveThenOfferQuiz()}
         chapterQuizConfirmOpen={chapterQuizConfirmOpen}
+        chapterQuizMode={postCompleteQuizHold ? "post-complete" : "normal"}
+        pluginName={pluginName}
         onChapterQuizConfirmClose={handleChapterQuizConfirmClose}
-        onChapterQuizConfirm={() => void handleChapterQuizConfirm()}
+        onChapterQuizConfirm={(count) => void handleChapterQuizConfirm(count)}
       />
 
       <IREndOfContentDialog

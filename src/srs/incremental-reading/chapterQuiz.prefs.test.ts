@@ -10,6 +10,7 @@ vi.mock("../ai/aiChatClient", () => ({
 import {
   buildQuizSystemPrompt,
   generateChapterQuizQuestions,
+  generateChapterQuizWithRetries,
   insertChapterQuizBlock
 } from "./chapterQuiz"
 import {
@@ -229,6 +230,122 @@ describe("generateChapterQuizQuestions uses prefs defaults", () => {
     const messages = call[0].messages as Array<{ role: string; content: string }>
     const user = messages.find((m) => m.role === "user")!.content
     expect(user).toContain("Generate 30 single-choice questions.")
+  })
+})
+
+describe("generateChapterQuizWithRetries reports retry attempts", () => {
+  beforeEach(() => {
+    callChatCompletionsMock.mockReset()
+  })
+
+  afterEach(() => {
+    clearChapterQuizPrefsCache()
+    clearAISettingsCache()
+    delete (globalThis as any).orca
+    vi.restoreAllMocks()
+  })
+
+  it("fires onRetryAttempt with 1-based next attempt before each retry", async () => {
+    const attempts: number[] = []
+    // 前两次返回坏 JSON，第三次成功
+    callChatCompletionsMock
+      .mockResolvedValueOnce({
+        success: true,
+        content: "not json",
+        status: 200,
+        attempts: 1
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        content: "still not json",
+        status: 200,
+        attempts: 1
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        content: JSON.stringify({
+          questions: [
+            {
+              text: "Q",
+              options: ["a", "b", "c"],
+              correctIndex: 0,
+              explanation: "e"
+            }
+          ]
+        }),
+        status: 200,
+        attempts: 1
+      })
+
+    const result = await generateChapterQuizWithRetries({
+      pluginName: "orca-srs",
+      sourceText: "[block:1]\n正文",
+      maxRetries: 3,
+      onRetryAttempt: (nextAttempt) => {
+        attempts.push(nextAttempt)
+      }
+    })
+
+    expect(result.success).toBe(true)
+    expect(attempts).toEqual([2, 3])
+    expect(callChatCompletionsMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not fire onRetryAttempt when the first attempt succeeds", async () => {
+    callChatCompletionsMock.mockResolvedValue({
+      success: true,
+      content: JSON.stringify({
+        questions: [
+          {
+            text: "Q",
+            options: ["a", "b", "c"],
+            correctIndex: 0,
+            explanation: "e"
+          }
+        ]
+      }),
+      status: 200,
+      attempts: 1
+    })
+    const attempts: number[] = []
+
+    const result = await generateChapterQuizWithRetries({
+      pluginName: "orca-srs",
+      sourceText: "[block:1]\n正文",
+      onRetryAttempt: (nextAttempt) => {
+        attempts.push(nextAttempt)
+      }
+    })
+
+    expect(result.success).toBe(true)
+    expect(attempts).toEqual([])
+  })
+
+  it("stops retrying on abort without further callbacks", async () => {
+    callChatCompletionsMock.mockResolvedValue({
+      success: true,
+      content: "not json",
+      status: 200,
+      attempts: 1
+    })
+    const controller = new AbortController()
+    const attempts: number[] = []
+    const resultPromise = generateChapterQuizWithRetries({
+      pluginName: "orca-srs",
+      sourceText: "[block:1]\n正文",
+      maxRetries: 3,
+      signal: controller.signal,
+      onRetryAttempt: (nextAttempt) => {
+        attempts.push(nextAttempt)
+        controller.abort()
+      }
+    })
+
+    const result = await resultPromise
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error("expected failure")
+    expect(result.error.code).toBe("CANCELLED")
+    expect(attempts).toEqual([2])
   })
 })
 

@@ -33,6 +33,9 @@ export type IRSessionChromeProps = {
   completeChapterOpen: boolean
   archiveConfirmOpen: boolean
   chapterQuizConfirmOpen?: boolean
+  /** post-complete = 完成 Topic 后停留的轻量 offer；normal = 更多菜单/阅读中 */
+  chapterQuizMode?: "normal" | "post-complete"
+  pluginName?: string
   showReturn?: boolean
   onNext: () => void
   onExtract: () => void
@@ -59,7 +62,7 @@ export type IRSessionChromeProps = {
   onArchiveConfirmClose: () => void
   onArchiveConfirm: () => void
   onChapterQuizConfirmClose?: () => void
-  onChapterQuizConfirm?: () => void
+  onChapterQuizConfirm?: (count: number) => void
 }
 
 export default function IRSessionChrome({
@@ -78,6 +81,8 @@ export default function IRSessionChrome({
   completeChapterOpen,
   archiveConfirmOpen,
   chapterQuizConfirmOpen = false,
+  chapterQuizMode = "normal",
+  pluginName = "orca-srs",
   showReturn,
   onNext,
   onExtract,
@@ -181,8 +186,10 @@ export default function IRSessionChrome({
       <ChapterQuizConfirmDialog
         open={chapterQuizConfirmOpen}
         isWorking={isWorking}
+        mode={chapterQuizMode}
+        pluginName={pluginName}
         onClose={() => onChapterQuizConfirmClose?.()}
-        onConfirm={() => onChapterQuizConfirm?.()}
+        onConfirm={(count) => onChapterQuizConfirm?.(count)}
       />
     </>
   )

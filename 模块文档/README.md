@@ -32,6 +32,9 @@
 > - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：新增「生成偏好」小节——「AI / Firecrawl 服务设置」→「章末小测」Tab 可配默认出题数量（3–30）、题目语言（auto/zh/en/ja）、自定义提示词（≤500）、专用模型；持久化 plugin data `ai.chapterQuiz`（`chapterQuizSettingsSchema.ts`），`insertChapterQuizBlock` / `generateChapterQuizQuestions` 未显式传参时读取
 > - [SRS_AI模块.md](SRS_AI模块.md)：设置项表格 + 面板 Tab 清单同步
 >
+> **索引增补：2026-08-03（章末小测 P0 UX：题数选择 / 不知道 / 这是猜的 / 即时理解结果 / 生成进度 / 轻量 offer）**：
+> - [渐进阅读_章末小测.md](渐进阅读_章末小测.md)：启动可选 5/10/15 题（时长估算、「按设置 N 题」兼容、默认跟偏好且不改偏好）；「不知道」揭晓记薄弱、「这是猜的」即使答对也归入薄弱；摘要改「即时理解结果」（当前清晰 / 薄弱），回看改「薄弱题回看」；生成三阶段进度（读取本章→生成→整理）+ 自动重试「第 N/4 次尝试」（block/panel 同步）；生成后一次性稳定打乱题目/选项（同 seed 可复现、可测）；完成后续 offer 改轻量（继续下一篇 / 快速测一下 · 5题 / 展开选数），更多菜单保持正常启动对话框；「测验本身不进复习」同屏提示
+>
 > **索引增补：2026-08-02（复习设置迁独立服务面板「复习」页）**：
 > - [SRS_记忆算法.md](SRS_记忆算法.md)：每日新卡/复习上限 + 目标保留率离开原生 schema，进入服务设置面板 **复习** 页签；权重/最大间隔无 UI 但底层保留；helper：`src/srs/settings/reviewServiceSettings.ts`；保存 patch 仅三项、不覆盖个人权重
 > - [SRS_AI模块.md](SRS_AI模块.md)：面板标题「服务与算法设置」；Tab「复习」与 draft 含 `review`（非权重表单）
@@ -163,7 +166,7 @@
 ### 渐进阅读与导入
 
 24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-01 更新 — due-only 分散 Phase 0+1 短记；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
-24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-01 更新 — Topic 章末小测；Custom Panel + 共享生成取消 / live 同步 / 错题回看制卡；panel 制卡不用 invokeGroup + 短暂切左侧编辑焦点；**制卡落点=当前题 sourceBlockId 子块** + 只剩 Panel 时自动打开原文 block 视图；「原文」优先左侧 IR 正文定位（识别兼容 properties._repr / ir.isSessionBlock，有 IR 不叠第三侧栏），无阅读面板才开/复用右侧侧栏；panel nav A→B
+24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-03 更新 — Topic 章末小测；Custom Panel + 共享生成取消 / live 同步 / **薄弱题回看制卡**；panel 制卡不用 invokeGroup + 短暂切左侧编辑焦点；**制卡落点=当前题 sourceBlockId 子块** + 只剩 Panel 时自动打开原文 block 视图；「原文」优先左侧 IR 正文定位（识别兼容 properties._repr / ir.isSessionBlock，有 IR 不叠第三侧栏），无阅读面板才开/复用右侧侧栏；panel nav A→B；**P0 UX：5/10/15 题选择（含时长、「按设置 N 题」兼容）、「不知道」/「这是猜的」、即时理解结果与薄弱题回看、生成三阶段+重试计数、稳定打乱、完成后续轻量 offer、测验 vs 复习提示**
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
     - **mixed 复习卡块可用性**（2026-07-27）：`IRMixedReviewPane` 挂载前 `preflightMixedReviewCard`（`writeToState` + missing/unknown 三态），修复 state miss 永久「加载中」；`SrsCardDemo` 改为纯渲染器

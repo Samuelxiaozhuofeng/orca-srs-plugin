@@ -60,6 +60,19 @@ export const CHAPTER_QUIZ_SOURCE_MAX_BLOCKS = 150
 export const CHAPTER_QUIZ_SOURCE_MAX_DEPTH = 12
 export const CHAPTER_QUIZ_GET_BLOCKS_BATCH = 50
 
+/**
+ * 启动时可选的数量预设（每轮选择冻结进 repr，不自动改偏好）。
+ * 偏好不在预设内时额外提供「按设置 N 题」兼容项。
+ */
+export const CHAPTER_QUIZ_COUNT_PRESETS = [5, 10, 15] as const
+export const CHAPTER_QUIZ_PRESET_LABELS: Record<number, string> = {
+  5: "快速",
+  10: "标准",
+  15: "深入"
+}
+/** 每道题预估耗时（秒）：确定性估算，用于展示「约 X 分钟」 */
+export const CHAPTER_QUIZ_SECONDS_PER_QUESTION = 20
+
 const QUIZ_GEN_TIMEOUT_MS = CARD_GENERATION_TIMEOUT_MS
 const QUIZ_FOLLOWUP_TIMEOUT_MS = GENERATION_TIMEOUT_MS
 const QUIZ_CLOZE_TIMEOUT_MS = GENERATION_TIMEOUT_MS
@@ -91,6 +104,12 @@ export type ChapterQuizCardAdds = {
   clozeBlockId?: number
 }
 
+/**
+ * 生成进度阶段（仅 phase=generating 时展示）。
+ * collecting=读取本章 → generating=AI 出题 → polishing=整理打乱/落盘。
+ */
+export type ChapterQuizGenStage = "collecting" | "generating" | "polishing"
+
 export type ChapterQuizRepr = {
   type: typeof CHAPTER_QUIZ_REPR_TYPE
   pluginName: string
@@ -103,14 +122,35 @@ export type ChapterQuizRepr = {
   answers?: Record<string, number>
   /** questionId → revealed */
   revealed?: Record<string, boolean>
+  /**
+   * questionId → true：用户选「不知道」揭示答案（未选任何选项）。
+   * 计为已答、不算正确、计入弱项。显式状态，不用选项索引哨兵。
+   */
+  unknowns?: Record<string, boolean>
+  /**
+   * questionId → true：用户标记「这是猜的」。
+   * 猜对的题不计入「掌握」，计入弱项；旧存储缺省归一为空对象。
+   */
+  guessed?: Record<string, boolean>
   /** questionId → written card ids */
   cardAdds?: Record<string, ChapterQuizCardAdds>
   errorMessage?: string
+  /** 生成进度阶段（additive；旧 repr 缺省不显示阶段细分） */
+  genStage?: ChapterQuizGenStage
+  /** 当前为第几次生成尝试（1-based；≥2 表示自动重试中，总尝试 = 1 + retries） */
+  genAttempt?: number
   /**
    * 完成 Topic 后停留做小测：结束态显示「继续下一篇」，
    * 点击派发 CHAPTER_QUIZ_ADVANCE_EVENT 推进 IR 会话 UI。
    */
   sessionContinueNext?: boolean
+}
+
+/** 弱项判定输入：答错 / 不知道 / 猜对（与旧 `answers` 语义独立）。 */
+export type ChapterQuizWeakInput = {
+  answers?: Record<string, number>
+  unknowns?: Record<string, boolean>
+  guessed?: Record<string, boolean>
 }
 
 export type ChapterQuizCollectResult = {
@@ -130,12 +170,19 @@ export type ChapterQuizCollectResult = {
 export const CHAPTER_QUIZ_COPY = {
   confirmTitle: "章末小测",
   confirmBody:
-    "刚读完这一章。要不要根据本章内容出一组选择题，快速检验一下理解？\n\n默认 10 道单选，一次一题；做完即可，不会进入日常复习队列。",
+    "刚读完这一章。要不要根据本章内容出一组选择题，快速检验一下理解？\n\n一次一题；做完即可，不会进入日常复习队列。",
+  /** 完成 Topic 后停留的轻量 offer：不再重复大段说明 */
+  postCompleteBody: "刚读完这一章。要不要快速检验一下理解？",
   confirmCancel: "暂不需要",
   confirmStart: "开始出题",
+  /** 完成后续停留 offer 的固定快捷入口（展开可换 10/15/按设置） */
+  postCompleteQuick: (count: number) => `快速测一下 · ${count}题`,
+  moreCountOptions: "更多题数",
+  moreCountOptionsTitle: "展开 5 / 10 / 15 或按设置题数（带预计用时）",
+  collapseCountOptions: "收起题数",
   moreMenuLabel: "章末小测",
   moreMenuTitle: "根据本章内容生成一次性选择题小测",
-  generating: "正在根据本章内容出题…",
+  generating: "正在生成",
   cancelGenerate: "取消",
   genFailedTitle: "出题失败",
   genFailedBody: "请检查网络或 AI 设置后重试。",
@@ -149,6 +196,14 @@ export const CHAPTER_QUIZ_COPY = {
   quizTitle: "章末小测",
   correct: "回答正确",
   incorrect: "回答错误",
+  /** 选「不知道」揭示答案后的裁定 */
+  unknownVerdict: "不知道答案",
+  /** 揭晓前可选的次要动作：不选选项直接揭示答案并记为弱项 */
+  unknown: "不知道",
+  unknownTitle: "不选选项直接揭示正确答案；本题计为已答并记入弱项",
+  /** 揭晓后：猜对的题不计入掌握 */
+  guessed: "这是猜的",
+  guessedTitle: "勾选后即使答对也归入薄弱题，避免把不确定理解算作当前清晰",
   correctAnswerLabel: "正确答案",
   rememberPrompt: "想记住这道题？",
   addBasic: "加入简答卡",
@@ -160,9 +215,14 @@ export const CHAPTER_QUIZ_COPY = {
   followUpSend: "发送",
   next: "下一题",
   finish: "完成本轮",
-  doneSummary: (correct: number, total: number) =>
-    `本轮 ${correct} / ${total} 正确`,
+  /** 即时理解结果：confident（确定答对且未标记猜）与弱项数 */
+  resultTitle: "即时理解结果",
+  resultSummary: (confident: number, weak: number) =>
+    `当前清晰 ${confident} 道 · 薄弱 ${weak} 道`,
+  resultWeakScope: "薄弱包括答错、不知道与标记“这是猜的”的题",
   doneHint: "测验为一次性检查，不会进入日常复习队列。",
+  /** 测验 vs 复习的关系说明：launch 与答题界面都要可见 */
+  quizVsCardsHint: "测验本身不进复习；你主动加入的卡会进入日常复习。",
   deleteQuiz: "删除测验",
   /** 完成 Topic 后停留做小测：测完推进会话下一篇 */
   continueNext: "继续下一篇",
@@ -185,7 +245,7 @@ export const CHAPTER_QUIZ_COPY = {
   startQuizTitle: "在右侧专注面板开始答题",
   continueQuizTitle: "在右侧专注面板继续未完成的题目",
   reviewDone: "查看结果",
-  reviewDoneTitle: "在右侧面板查看本轮结果与错题",
+  reviewDoneTitle: "在右侧面板查看本轮结果与薄弱题",
   compactProgress: (answered: number, total: number) =>
     `进度 ${answered} / ${total}`,
   compactReady: "题目已就绪，请在侧栏专注作答。",
@@ -202,11 +262,13 @@ export const CHAPTER_QUIZ_COPY = {
   intentAskAi: "问 AI",
   intentAskAiTitle: "对本题追问 AI",
   intentSource: "原文",
-  reviewWrong: "回看错题",
-  reviewWrongTitle: "只读回看本轮错题，可加入复习或追问",
+  /** 弱项回看（答错 / 不知道 / 猜对），替代旧「错题回看」 */
+  reviewWeak: "回看薄弱题",
+  reviewWeakTitle: "只读回看本轮薄弱题（答错 / 不知道 / 猜对），可加入复习或追问",
   backToSummary: "返回总结",
-  wrongCountLabel: (n: number) => (n === 0 ? "全部正确" : `${n} 道错题`),
-  reviewModeLabel: "错题回看",
+  weakCountLabel: (n: number) =>
+    n === 0 ? "本轮没有薄弱题" : `${n} 道薄弱题`,
+  reviewModeLabel: "薄弱题回看",
   panelMissingId: "无法打开小测：缺少有效的测验块 ID",
   panelLoadError: "无法加载小测状态",
   jumpToSource: "跳转原文",
@@ -552,6 +614,189 @@ export function countCorrectAnswers(
   return n
 }
 
+// ── Weak-item semantics（即时理解结果）─────────────────────
+
+/**
+ * 弱项判定（与旧「错题」独立，向后兼容旧存储）：
+ * 选「不知道」、答错、猜对（标记「这是猜的」）都算弱项。
+ * 未作答（未揭晓）不算弱项，也不计入任何一侧。
+ */
+export function isQuestionWeak(
+  question: ChapterQuizQuestion,
+  input: ChapterQuizWeakInput
+): boolean {
+  if (input.unknowns?.[question.id] === true) return true
+  const a = input.answers?.[question.id]
+  if (typeof a !== "number") return false
+  if (!isAnswerCorrect(question, a)) return true
+  return input.guessed?.[question.id] === true
+}
+
+/** 本轮弱项列表（保持题序）：答错 / 不知道 / 猜对。 */
+export function listWeakQuestions(
+  questions: ChapterQuizQuestion[],
+  input: ChapterQuizWeakInput
+): ChapterQuizQuestion[] {
+  return questions.filter((q) => isQuestionWeak(q, input))
+}
+
+/**
+ * 确定掌握（confident-correct）题数：答对且未标记「这是猜的」。
+ * 猜对不计入掌握、计入弱项；unknown 没有 answers 条目天然不计入，
+ * 但若数据矛盾（unknown 与 answers 并存）仍以 unknown 优先，绝不误计掌握。
+ */
+export function countConfidentCorrect(
+  questions: ChapterQuizQuestion[],
+  input: ChapterQuizWeakInput
+): number {
+  let n = 0
+  for (const q of questions) {
+    if (input.unknowns?.[q.id] === true) continue
+    const a = input.answers?.[q.id]
+    if (typeof a !== "number") continue
+    if (!isAnswerCorrect(q, a)) continue
+    if (input.guessed?.[q.id] === true) continue
+    n += 1
+  }
+  return n
+}
+
+// ── 数量选择与时长估算（启动对话框）────────────────────────
+
+/** 每道题预估耗时（秒）。 */
+export function estimateQuizDurationSeconds(count: number): number {
+  const safe =
+    typeof count === "number" && Number.isFinite(count)
+      ? Math.max(1, Math.floor(count))
+      : CHAPTER_QUIZ_DEFAULT_COUNT
+  return safe * CHAPTER_QUIZ_SECONDS_PER_QUESTION
+}
+
+/** 「约 X 分钟」的确定性展示文案。 */
+export function formatQuizDurationEstimate(count: number): string {
+  const minutes = Math.max(
+    1,
+    Math.round(estimateQuizDurationSeconds(count) / 60)
+  )
+  return `约 ${minutes} 分钟`
+}
+
+export type ChapterQuizCountChoice = {
+  count: number
+  /** 如 `快速 5 题` / `标准 10 题` / `深入 15 题` / `按设置 12 题` */
+  label: string
+  durationLabel: string
+  isPreset: boolean
+  /** 是否为当前偏好值（启动对话框默认选中项） */
+  isPreference: boolean
+}
+
+/**
+ * 启动数量选择：预设 5/10/15 + 偏好不在预设内时的「按设置 N 题」兼容项。
+ * 不修改偏好本身；选中数量经 launchChapterQuiz 冻结进本轮 repr。
+ */
+export function buildQuizCountChoices(preferenceCount: number): ChapterQuizCountChoice[] {
+  const choices: ChapterQuizCountChoice[] = CHAPTER_QUIZ_COUNT_PRESETS.map(
+    (count) => ({
+      count,
+      label: `${CHAPTER_QUIZ_PRESET_LABELS[count]} ${count} 题`,
+      durationLabel: formatQuizDurationEstimate(count),
+      isPreset: true,
+      isPreference: count === preferenceCount
+    })
+  )
+  if (!(CHAPTER_QUIZ_COUNT_PRESETS as readonly number[]).includes(preferenceCount)) {
+    choices.push({
+      count: preferenceCount,
+      label: `按设置 ${preferenceCount} 题`,
+      durationLabel: formatQuizDurationEstimate(preferenceCount),
+      isPreset: false,
+      isPreference: true
+    })
+  }
+  return choices
+}
+
+// ── 稳定随机顺序（生成后仅打乱一次并持久化）────────────────
+
+export type QuizRng = () => number
+
+/**
+ * 将同一测验块的进度写入接到上一笔写入之后，避免连续重试时乱序落盘。
+ * `previous` 为 null 时立即启动第一笔；失败仍向上传播，由调用方统一显错。
+ */
+export function enqueueChapterQuizPersist(
+  previous: Promise<boolean> | null,
+  next: () => Promise<boolean>
+): Promise<boolean> {
+  return previous ? previous.then(next) : next()
+}
+
+/** 确定性 PRNG（mulberry32）：同一 seed 产生同一序列，供测试与稳定顺序。 */
+export function createSeededRng(seed: number): QuizRng {
+  let s = seed >>> 0
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function shuffledIndexes(length: number, rng: QuizRng): number[] {
+  const indexes = Array.from({ length }, (_, i) => i)
+  for (let i = indexes.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[indexes[i], indexes[j]] = [indexes[j], indexes[i]]
+  }
+  return indexes
+}
+
+/**
+ * 生成成功后打乱一次：题目顺序 + 每题的选项顺序，correctIndex 同步重映射。
+ * 结果随 repr 持久化，整轮（含 reload / block-panel 同步）保持稳定；
+ * 渲染路径绝不重复打乱。同一 seed 幂等（可测）。
+ */
+export function shuffleQuizQuestions(
+  questions: ChapterQuizQuestion[],
+  rng: QuizRng = Math.random
+): ChapterQuizQuestion[] {
+  const questionOrder = shuffledIndexes(questions.length, rng)
+  return questionOrder.map((srcIndex) => {
+    const src = questions[srcIndex]
+    const optionOrder = shuffledIndexes(src.options.length, rng)
+    return {
+      ...src,
+      options: optionOrder.map((i) => src.options[i]),
+      correctIndex: optionOrder.indexOf(src.correctIndex)
+    }
+  })
+}
+
+// ── 生成进度文案（读取本章 → 生成 → 整理；重试可见）────────
+
+/**
+ * 生成中用户可见阶段文案。
+ * 总尝试 = 1 + CHAPTER_QUIZ_GEN_MAX_RETRIES；attempt ≥ 2 时显式标注
+ * 「第 N/4 次尝试」，避免把自动重试误读为一次长时间生成。
+ */
+export function formatQuizGenProgressLabel(
+  stage?: ChapterQuizGenStage,
+  attempt?: number
+): string {
+  if (stage === "collecting") return "正在读取本章"
+  if (stage === "polishing") return "正在整理"
+  const total = 1 + CHAPTER_QUIZ_GEN_MAX_RETRIES
+  const n =
+    typeof attempt === "number" && Number.isFinite(attempt)
+      ? Math.max(1, Math.floor(attempt))
+      : 1
+  return n >= 2
+    ? `正在生成（第 ${Math.min(n, total)}/${total} 次尝试）`
+    : CHAPTER_QUIZ_COPY.generating
+}
+
 /** 选项字母：0→A, 1→B, … */
 export function quizOptionLetter(i: number): string {
   return String.fromCharCode(65 + i)
@@ -850,6 +1095,8 @@ export async function generateChapterQuizQuestions(options: {
 /**
  * 生成失败时最多重试 genMaxRetries 次（总尝试 = 1 + retries）。
  * 每次失败若可解析为格式问题则仍重试；用户 abort 立即停止。
+ * `onRetryAttempt` 在即将开始下一次尝试前回调（参数为 1-based 下一次尝试序号），
+ * 供 UI 展示「第 N/4 次尝试」。
  */
 export async function generateChapterQuizWithRetries(options: {
   pluginName: string
@@ -859,6 +1106,7 @@ export async function generateChapterQuizWithRetries(options: {
   allowedBlockIds?: ReadonlySet<number> | readonly number[]
   signal?: AbortSignal
   maxRetries?: number
+  onRetryAttempt?: (nextAttempt: number) => void
 }): Promise<GenerateChapterQuizResult> {
   const maxRetries = options.maxRetries ?? CHAPTER_QUIZ_GEN_MAX_RETRIES
   let last: GenerateChapterQuizResult = {
@@ -877,6 +1125,9 @@ export async function generateChapterQuizWithRetries(options: {
     if (last.success) return last
     if (last.error.code === "CANCELLED" || last.error.code === "NO_API_KEY") {
       return last
+    }
+    if (attempt < maxRetries) {
+      options.onRetryAttempt?.(attempt + 2)
     }
   }
   return last
@@ -1059,6 +1310,8 @@ export function buildInitialQuizRepr(input: {
     currentIndex: 0,
     answers: {},
     revealed: {},
+    unknowns: {},
+    guessed: {},
     cardAdds: {},
     sessionContinueNext: input.sessionContinueNext === true
   }
@@ -1111,8 +1364,12 @@ export async function saveChapterQuizRepr(
     currentIndex: repr.currentIndex ?? 0,
     answers: repr.answers ?? {},
     revealed: repr.revealed ?? {},
+    unknowns: repr.unknowns ?? {},
+    guessed: repr.guessed ?? {},
     cardAdds: repr.cardAdds ?? {},
     sessionContinueNext: repr.sessionContinueNext === true,
+    ...(repr.genStage ? { genStage: repr.genStage } : {}),
+    ...(repr.genAttempt != null ? { genAttempt: repr.genAttempt } : {}),
     ...(repr.questions ? { questions: repr.questions } : {}),
     ...(repr.errorMessage ? { errorMessage: repr.errorMessage } : {})
   })
@@ -1909,10 +2166,27 @@ export function normalizeChapterQuizRepr(
     answers: raw?.answers && typeof raw.answers === "object" ? raw.answers : {},
     revealed:
       raw?.revealed && typeof raw.revealed === "object" ? raw.revealed : {},
+    // 旧存储没有 unknowns/guessed：归一为空对象（弱项判定向后兼容）
+    unknowns:
+      raw?.unknowns && typeof raw.unknowns === "object" ? raw.unknowns : {},
+    guessed:
+      raw?.guessed && typeof raw.guessed === "object" ? raw.guessed : {},
     cardAdds:
       raw?.cardAdds && typeof raw.cardAdds === "object" ? raw.cardAdds : {},
     errorMessage:
       typeof raw?.errorMessage === "string" ? raw.errorMessage : undefined,
+    genStage:
+      raw?.genStage === "collecting" ||
+      raw?.genStage === "generating" ||
+      raw?.genStage === "polishing"
+        ? raw.genStage
+        : undefined,
+    genAttempt:
+      typeof raw?.genAttempt === "number" &&
+      Number.isFinite(raw.genAttempt) &&
+      raw.genAttempt >= 1
+        ? Math.floor(raw.genAttempt)
+        : undefined,
     sessionContinueNext: raw?.sessionContinueNext === true
   }
 }

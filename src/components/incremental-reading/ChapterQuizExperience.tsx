@@ -7,11 +7,12 @@
 import {
   CHAPTER_QUIZ_COPY,
   countAnsweredQuestions,
-  countCorrectAnswers,
+  countConfidentCorrect,
   dispatchChapterQuizAdvance,
+  formatQuizGenProgressLabel,
   isAnswerCorrect,
   jumpToQuizSourceBlock,
-  listWrongQuestions,
+  listWeakQuestions,
   quizOptionLetter,
   type ChapterQuizQuestion
 } from "../../srs/incremental-reading/chapterQuiz"
@@ -65,6 +66,8 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
     cardBusyId,
     localError,
     handleSelect,
+    handleUnknown,
+    handleToggleGuessed,
     handleNext,
     handleAddBasicFor,
     handleStartClozeFor,
@@ -76,14 +79,15 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
     clearEphemeralForQuestion
   } = ctl
 
-  const wrongQuestions = listWrongQuestions(questions, repr.answers)
-  const correctCount = countCorrectAnswers(questions, repr.answers ?? {})
+  // 弱项 = 答错 / 不知道 / 猜对（旧「错题」语义扩展，向后兼容）
+  const weakQuestions = listWeakQuestions(questions, repr)
+  const confidentCorrect = countConfidentCorrect(questions, repr)
   const answeredCount = countAnsweredQuestions(questions, repr.revealed)
-  const isReviewingWrong = reviewMode === "wrong" && wrongQuestions.length > 0
+  const isReviewingWrong = reviewMode === "wrong" && weakQuestions.length > 0
 
   const activeQuestion: ChapterQuizQuestion | undefined = isReviewingWrong
-    ? wrongQuestions[
-        Math.min(wrongCursor, Math.max(0, wrongQuestions.length - 1))
+    ? weakQuestions[
+        Math.min(wrongCursor, Math.max(0, weakQuestions.length - 1))
       ]
     : question
 
@@ -102,6 +106,11 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
     : activeQuestion
       ? repr.revealed?.[activeQuestion.id] === true
       : false
+  /** 选「不知道」的题：未选选项即揭示，算弱项 */
+  const activeUnknown =
+    activeQuestion != null && repr.unknowns?.[activeQuestion.id] === true
+  const activeGuessed =
+    activeQuestion != null && repr.guessed?.[activeQuestion.id] === true
   const activeCardAdds = activeQuestion
     ? repr.cardAdds?.[activeQuestion.id]
     : undefined
@@ -109,6 +118,11 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
     typeof activeSelected === "number" &&
     activeQuestion != null &&
     isAnswerCorrect(activeQuestion, activeSelected)
+  /** 意图条/弱项语义：猜对也按弱项处理（偏理解排序） */
+  const activeWeak = Boolean(
+    activeQuestion != null &&
+      (activeUnknown || activeGuessed || activeIsCorrect === false)
+  )
 
   const handleJumpToSource = useCallback(() => {
     if (!activeQuestion?.sourceBlockId) {
@@ -125,11 +139,11 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
   }, [activeQuestion, panelId, repr.topicBlockId])
 
   const startWrongReview = useCallback(() => {
-    if (wrongQuestions.length === 0) return
+    if (weakQuestions.length === 0) return
     setReviewMode("wrong")
     setWrongCursor(0)
     clearEphemeralForQuestion()
-  }, [clearEphemeralForQuestion, wrongQuestions.length])
+  }, [clearEphemeralForQuestion, weakQuestions.length])
 
   const exitWrongReview = useCallback(() => {
     setReviewMode("live")
@@ -153,7 +167,7 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
         <header className="chapter-quiz-panel__header">
           <div className="chapter-quiz-panel__header-top">
             <span className="srs-card-badge srs-card-badge--reading">
-              {isReviewingWrong ? "错题回看" : "章末小测"}
+              {isReviewingWrong ? CHAPTER_QUIZ_COPY.reviewModeLabel : "章末小测"}
             </span>
           </div>
           <div className="chapter-quiz-panel__header-main">
@@ -166,7 +180,7 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
             (repr.phase === "quiz" || isReviewingWrong) ? (
               <span className="chapter-quiz-panel__progress">
                 {isReviewingWrong
-                  ? `错题 ${Math.min(wrongCursor + 1, wrongQuestions.length)} / ${wrongQuestions.length}`
+                  ? `弱项 ${Math.min(wrongCursor + 1, weakQuestions.length)} / ${weakQuestions.length}`
                   : `第 ${index + 1} / ${questions.length} 题`}
               </span>
             ) : null}
@@ -186,7 +200,7 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                 style={{
                   width: `${
                     isReviewingWrong
-                      ? ((Math.min(wrongCursor + 1, wrongQuestions.length)) / wrongQuestions.length) * 100
+                      ? ((Math.min(wrongCursor + 1, weakQuestions.length)) / weakQuestions.length) * 100
                       : ((index + 1) / questions.length) * 100
                   }%`
                 }}
@@ -198,7 +212,7 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
         {repr.phase === "generating" ? (
             <section className="chapter-quiz-panel__section">
               <div className="chapter-quiz__status">
-                {CHAPTER_QUIZ_COPY.generating}
+                {formatQuizGenProgressLabel(repr.genStage, repr.genAttempt)}
               </div>
               <Button variant="outline" onClick={handleCancelGenerate}>
                 {CHAPTER_QUIZ_COPY.cancelGenerate}
@@ -236,6 +250,11 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
 
           {(repr.phase === "quiz" || isReviewingWrong) && activeQuestion ? (
             <section className="chapter-quiz-panel__section">
+              {repr.phase === "quiz" && !isReviewingWrong ? (
+                <div className="chapter-quiz__quiz-vs-cards">
+                  {CHAPTER_QUIZ_COPY.quizVsCardsHint}
+                </div>
+              ) : null}
               <div className="chapter-quiz__stem">{activeQuestion.text}</div>
               <div className="chapter-quiz__options" role="radiogroup">
                 {activeQuestion.options.map((opt, oi) => {
@@ -268,26 +287,45 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                 })}
               </div>
 
+              {!activeRevealed ? (
+                <div className="chapter-quiz__unknown-row">
+                  <button
+                    type="button"
+                    className="chapter-quiz__unknown-btn"
+                    title={CHAPTER_QUIZ_COPY.unknownTitle}
+                    disabled={busy || isReviewingWrong}
+                    onClick={() => {
+                      if (isReviewingWrong) return
+                      void handleUnknown()
+                    }}
+                  >
+                    {CHAPTER_QUIZ_COPY.unknown}
+                  </button>
+                </div>
+              ) : null}
+
               {activeRevealed ? (
                 <div
                   className={
-                    activeIsCorrect
-                      ? "chapter-quiz-panel__feedback chapter-quiz-panel__feedback--ok"
-                      : "chapter-quiz-panel__feedback chapter-quiz-panel__feedback--bad"
+                    activeUnknown || !activeIsCorrect
+                      ? "chapter-quiz-panel__feedback chapter-quiz-panel__feedback--bad"
+                      : "chapter-quiz-panel__feedback chapter-quiz-panel__feedback--ok"
                   }
                 >
                   <div className="chapter-quiz__verdict-row">
                     <div
                       className={
-                        activeIsCorrect
-                          ? "chapter-quiz__verdict chapter-quiz__verdict--ok"
-                          : "chapter-quiz__verdict chapter-quiz__verdict--bad"
+                        activeUnknown || !activeIsCorrect
+                          ? "chapter-quiz__verdict chapter-quiz__verdict--bad"
+                          : "chapter-quiz__verdict chapter-quiz__verdict--ok"
                       }
                     >
-                      {activeIsCorrect
-                        ? CHAPTER_QUIZ_COPY.correct
-                        : CHAPTER_QUIZ_COPY.incorrect}
-                      {!activeIsCorrect ? (
+                      {activeUnknown
+                        ? CHAPTER_QUIZ_COPY.unknownVerdict
+                        : activeIsCorrect
+                          ? CHAPTER_QUIZ_COPY.correct
+                          : CHAPTER_QUIZ_COPY.incorrect}
+                      {activeUnknown || !activeIsCorrect ? (
                         <span className="chapter-quiz__answer-inline">
                           {" · "}
                           {CHAPTER_QUIZ_COPY.correctAnswerLabel}：
@@ -302,6 +340,20 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                       {activeQuestion.explanation}
                     </div>
                   ) : null}
+                  {activeIsCorrect ? (
+                    <label className="chapter-quiz__guessed" title={CHAPTER_QUIZ_COPY.guessedTitle}>
+                      <input
+                        type="checkbox"
+                        checked={activeGuessed}
+                        disabled={busy || isReviewingWrong}
+                        onChange={() => {
+                          if (isReviewingWrong) return
+                          void handleToggleGuessed(activeQuestion.id)
+                        }}
+                      />
+                      <span>{CHAPTER_QUIZ_COPY.guessed}</span>
+                    </label>
+                  ) : null}
                 </div>
               ) : (
                 <p className="chapter-quiz__primary-hint">
@@ -311,7 +363,7 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
 
               {activeRevealed ? (
                 <IntentActionSection
-                  isCorrect={activeIsCorrect === true}
+                  isWeak={activeWeak}
                   intentPanel={intentPanel}
                   setIntentPanel={setIntentPanel}
                   question={activeQuestion}
@@ -361,13 +413,13 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                     >
                       上一题
                     </Button>
-                    {wrongCursor < wrongQuestions.length - 1 ? (
+                    {wrongCursor < weakQuestions.length - 1 ? (
                       <Button
                         variant="solid"
                         className="chapter-quiz__next-btn chapter-quiz-panel__cta"
                         onClick={() => {
                           setWrongCursor((c: number) =>
-                            Math.min(wrongQuestions.length - 1, c + 1)
+                            Math.min(weakQuestions.length - 1, c + 1)
                           )
                           clearEphemeralForQuestion()
                         }}
@@ -417,25 +469,29 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
               <div className="chapter-quiz-panel__done-hero">
                 <div className="chapter-quiz-panel__done-score">
                   <span className="chapter-quiz-panel__done-score-num">
-                    {correctCount}
+                    {confidentCorrect}
                   </span>
                   <span className="chapter-quiz-panel__done-score-total">
                     / {questions.length}
                   </span>
                 </div>
                 <div className="chapter-quiz-panel__done-badge">
-                  {Math.round((correctCount / (questions.length || 1)) * 100)}% 正确率
+                  {Math.round((confidentCorrect / (questions.length || 1)) * 100)}% 当前清晰
                 </div>
               </div>
               <div className="chapter-quiz__status">
-                {CHAPTER_QUIZ_COPY.doneSummary(correctCount, questions.length)}
+                {CHAPTER_QUIZ_COPY.resultTitle}
               </div>
               <div className="chapter-quiz__hint">
-                {CHAPTER_QUIZ_COPY.wrongCountLabel(
-                  Math.max(0, questions.length - correctCount)
+                {CHAPTER_QUIZ_COPY.resultSummary(
+                  confidentCorrect,
+                  weakQuestions.length
                 )}
                 {" · "}
                 {CHAPTER_QUIZ_COPY.doneHint}
+              </div>
+              <div className="chapter-quiz__hint chapter-quiz__hint--muted">
+                {CHAPTER_QUIZ_COPY.resultWeakScope}
               </div>
               <div className="chapter-quiz-panel__primary">
                 {repr.sessionContinueNext ? (
@@ -452,13 +508,13 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
                     {CHAPTER_QUIZ_COPY.continueNext}
                   </Button>
                 ) : null}
-                {wrongQuestions.length > 0 ? (
+                {weakQuestions.length > 0 ? (
                   <Button
                     variant="outline"
-                    title={CHAPTER_QUIZ_COPY.reviewWrongTitle}
+                    title={CHAPTER_QUIZ_COPY.reviewWeakTitle}
                     onClick={startWrongReview}
                   >
-                    {CHAPTER_QUIZ_COPY.reviewWrong}
+                    {CHAPTER_QUIZ_COPY.reviewWeak}
                   </Button>
                 ) : null}
                 <Button
@@ -480,7 +536,8 @@ export default function ChapterQuizExperience(props: ChapterQuizExperienceProps)
 // ---------------------------------------------------------------------------
 
 type IntentActionProps = {
-  isCorrect: boolean
+  /** 弱项（答错 / 不知道 / 猜对）：意图条偏理解排序；对题偏捕获 */
+  isWeak: boolean
   intentPanel: IntentPanel
   setIntentPanel: (v: IntentPanel | ((prev: IntentPanel) => IntentPanel)) => void
   question: ChapterQuizQuestion
@@ -503,7 +560,7 @@ type IntentActionProps = {
 
 function IntentActionSection(props: IntentActionProps) {
   const {
-    isCorrect,
+    isWeak,
     intentPanel,
     setIntentPanel,
     question,
@@ -668,10 +725,10 @@ function IntentActionSection(props: IntentActionProps) {
     </button>
   ) : null
 
-  // 错题偏理解（原文 / 问 AI 靠前）；对题偏捕获（加入复习靠前）
-  const orderedActions = isCorrect
-    ? [reviewSplit, askAiBtn, sourceBtn]
-    : [sourceBtn, askAiBtn, reviewSplit]
+  // 弱项偏理解（原文 / 问 AI 靠前）；对题偏捕获（加入复习靠前）
+  const orderedActions = isWeak
+    ? [sourceBtn, askAiBtn, reviewSplit]
+    : [reviewSplit, askAiBtn, sourceBtn]
 
   return (
     <div className="chapter-quiz-panel__intent">

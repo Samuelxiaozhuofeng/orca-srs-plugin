@@ -3,14 +3,24 @@ import {
   buildBasicCardFromQuestion,
   buildInitialQuizRepr,
   buildMinimalQuizReprShell,
+  buildQuizCountChoices,
+  CHAPTER_QUIZ_COPY,
+  CHAPTER_QUIZ_COUNT_PRESETS,
   CHAPTER_QUIZ_LOCATE_EVENT,
   CHAPTER_QUIZ_PANEL_VIEW,
   countAnsweredQuestions,
+  countConfidentCorrect,
   countCorrectAnswers,
+  createSeededRng,
+  estimateQuizDurationSeconds,
+  enqueueChapterQuizPersist,
   findPanelNodeById,
+  formatQuizDurationEstimate,
+  formatQuizGenProgressLabel,
   isAnswerCorrect,
+  isQuestionWeak,
   jumpToQuizSourceBlock,
-  listWrongQuestions,
+  listWeakQuestions,
   normalizeChapterQuizRepr,
   openChapterQuizInSidePanel,
   parseChapterQuizQuestions,
@@ -19,6 +29,7 @@ import {
   requireQuizCardSourceBlockId,
   resetQuizSourceSidePanelCacheForTests,
   resolveQuizBlockIdForPanel,
+  shuffleQuizQuestions,
   toPlainJsonValue,
   type ChapterQuizQuestion
 } from "./chapterQuiz"
@@ -227,6 +238,216 @@ describe("answer helpers", () => {
   })
 })
 
+describe("weak-item semantics（答错 / 不知道 / 猜对）", () => {
+  it("isQuestionWeak: wrong / unknown / guessed-correct are weak", () => {
+    // 答错
+    expect(
+      isQuestionWeak(sampleQuestions[0], { answers: { q0: 0 } })
+    ).toBe(true)
+    // 答对且未标记猜 → 不弱
+    expect(
+      isQuestionWeak(sampleQuestions[0], { answers: { q0: 1 } })
+    ).toBe(false)
+    // 猜对 → 弱
+    expect(
+      isQuestionWeak(sampleQuestions[0], {
+        answers: { q0: 1 },
+        guessed: { q0: true }
+      })
+    ).toBe(true)
+    // 不知道 → 弱（无 answers 条目）
+    expect(
+      isQuestionWeak(sampleQuestions[0], { unknowns: { q0: true } })
+    ).toBe(true)
+    // 未作答 → 不弱
+    expect(isQuestionWeak(sampleQuestions[0], {})).toBe(false)
+  })
+
+  it("listWeakQuestions keeps question order and covers all weak kinds", () => {
+    const weak = listWeakQuestions(sampleQuestions, {
+      answers: { q0: 0, q1: 1 },
+      guessed: { q1: true },
+      unknowns: { q0: true }
+    })
+    // q0 既答错又标了不知道（防御性只算一道）；q1 猜对
+    expect(weak.map((q) => q.id)).toEqual(["q0", "q1"])
+  })
+
+  it("listWeakQuestions ignores un-answered questions", () => {
+    expect(
+      listWeakQuestions(sampleQuestions, { answers: { q0: 1 } }).map(
+        (q) => q.id
+      )
+    ).toEqual([])
+  })
+
+  it("countConfidentCorrect excludes unknown and guessed-correct", () => {
+    const repr = {
+      answers: { q0: 1, q1: 1 },
+      unknowns: { q0: true },
+      guessed: { q1: true }
+    }
+    // q0 unknown 不计；q1 猜对不计 → 0 道掌握
+    expect(countConfidentCorrect(sampleQuestions, repr)).toBe(0)
+  })
+
+  it("countConfidentCorrect counts only confident correct", () => {
+    expect(
+      countConfidentCorrect(sampleQuestions, { answers: { q0: 1 } })
+    ).toBe(1)
+    expect(
+      countConfidentCorrect(sampleQuestions, {
+        answers: { q0: 1, q1: 0 }
+      })
+    ).toBe(1)
+  })
+})
+
+describe("count presets + duration estimates", () => {
+  it("presets are 5/10/15 with deterministic duration", () => {
+    expect(CHAPTER_QUIZ_COUNT_PRESETS).toEqual([5, 10, 15])
+    expect(estimateQuizDurationSeconds(5)).toBe(100)
+    expect(formatQuizDurationEstimate(5)).toBe("约 2 分钟")
+    expect(formatQuizDurationEstimate(10)).toBe("约 3 分钟")
+    expect(formatQuizDurationEstimate(15)).toBe("约 5 分钟")
+    // 非法输入不抛错，回退到安全值
+    expect(formatQuizDurationEstimate(NaN)).toBe("约 3 分钟")
+  })
+
+  it("buildQuizCountChoices: presets only when preference is one of them", () => {
+    const choices = buildQuizCountChoices(10)
+    expect(choices.map((c) => c.count)).toEqual([5, 10, 15])
+    expect(choices.find((c) => c.count === 10)?.isPreference).toBe(true)
+    expect(choices.find((c) => c.count === 5)?.isPreference).toBe(false)
+    expect(choices.every((c) => c.isPreset)).toBe(true)
+    expect(choices[0]?.label).toBe("快速 5 题")
+    expect(choices[1]?.label).toBe("标准 10 题")
+    expect(choices[2]?.label).toBe("深入 15 题")
+    expect(choices[0]?.durationLabel).toBe("约 2 分钟")
+  })
+
+  it("buildQuizCountChoices: preserves non-preset preference as 按设置 N 题", () => {
+    const choices = buildQuizCountChoices(12)
+    expect(choices.map((c) => c.count)).toEqual([5, 10, 15, 12])
+    const custom = choices[3]
+    expect(custom?.label).toBe("按设置 12 题")
+    expect(custom?.isPreset).toBe(false)
+    expect(custom?.isPreference).toBe(true)
+    expect(custom?.durationLabel).toBe("约 4 分钟")
+  })
+})
+
+describe("stable randomized order", () => {
+  const questions: ChapterQuizQuestion[] = sampleQuestions.map((q) => ({
+    ...q,
+    options: [...q.options],
+    sourceBlockId: 100 + Number(q.id.slice(1))
+  }))
+
+  it("same seed produces identical output (stable across rerenders/reload)", () => {
+    const a = shuffleQuizQuestions(questions, createSeededRng(42))
+    const b = shuffleQuizQuestions(questions, createSeededRng(42))
+    expect(a).toEqual(b)
+    expect(a.map((q) => q.id)).toEqual(b.map((q) => q.id))
+    expect(a.map((q) => q.correctIndex)).toEqual(b.map((q) => q.correctIndex))
+  })
+
+  it("keeps the correct option text at the remapped correctIndex", () => {
+    const shuffled = shuffleQuizQuestions(questions, createSeededRng(7))
+    expect(shuffled).toHaveLength(questions.length)
+    for (const q of shuffled) {
+      const src = questions.find((s) => s.id === q.id)!
+      expect(q.options[q.correctIndex]).toBe(src.options[src.correctIndex])
+      // 选项集合不变
+      expect([...q.options].sort()).toEqual([...src.options].sort())
+      expect(q.sourceBlockId).toBe(src.sourceBlockId)
+      expect(q.explanation).toBe(src.explanation)
+    }
+  })
+
+  it("shuffles at least one of the two questions (order no longer source order)", () => {
+    const shuffled = shuffleQuizQuestions(questions, createSeededRng(99))
+    const orderChanged =
+      shuffled[0]?.id !== questions[0]?.id ||
+      shuffled[1]?.id !== questions[1]?.id
+    const optionsChanged = shuffled.some(
+      (q, i) =>
+        q.options.some((opt, oi) => opt !== questions[i]!.options[oi]) ||
+        q.correctIndex !== questions[i]!.correctIndex
+    )
+    expect(orderChanged || optionsChanged).toBe(true)
+  })
+
+  it("empty input stays empty", () => {
+    expect(shuffleQuizQuestions([], createSeededRng(1))).toEqual([])
+  })
+})
+
+describe("generation progress persistence order", () => {
+  it("queues consecutive retry writes instead of starting them concurrently", async () => {
+    const events: string[] = []
+    let releaseFirst!: () => void
+
+    const first = enqueueChapterQuizPersist(null, async () => {
+      events.push("first:start")
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve
+      })
+      events.push("first:end")
+      return true
+    })
+    const second = enqueueChapterQuizPersist(first, async () => {
+      events.push("second:start")
+      events.push("second:end")
+      return true
+    })
+
+    await Promise.resolve()
+    expect(events).toEqual(["first:start"])
+    releaseFirst()
+    await second
+    expect(events).toEqual([
+      "first:start",
+      "first:end",
+      "second:start",
+      "second:end"
+    ])
+  })
+})
+
+describe("generation progress labels", () => {
+  it("maps stages to user-facing copy", () => {
+    expect(formatQuizGenProgressLabel("collecting")).toBe("正在读取本章")
+    expect(formatQuizGenProgressLabel("generating")).toBe(
+      CHAPTER_QUIZ_COPY.generating
+    )
+    expect(formatQuizGenProgressLabel("polishing")).toBe("正在整理")
+    expect(formatQuizGenProgressLabel(undefined, undefined)).toBe("正在生成")
+  })
+
+  it("labels the score as an immediate result without long-term mastery copy", () => {
+    expect(CHAPTER_QUIZ_COPY.resultTitle).toBe("即时理解结果")
+    expect(CHAPTER_QUIZ_COPY.resultSummary(3, 2)).toBe(
+      "当前清晰 3 道 · 薄弱 2 道"
+    )
+    expect(CHAPTER_QUIZ_COPY.resultSummary(3, 2)).not.toContain("掌握")
+  })
+
+  it("shows attempt count on automatic retries (total = 1 + retries)", () => {
+    expect(formatQuizGenProgressLabel("generating", 1)).toBe("正在生成")
+    expect(formatQuizGenProgressLabel("generating", 2)).toBe(
+      "正在生成（第 2/4 次尝试）"
+    )
+    expect(formatQuizGenProgressLabel("generating", 4)).toBe(
+      "正在生成（第 4/4 次尝试）"
+    )
+    // 越界尝试号被钳制到总尝试数内
+    expect(formatQuizGenProgressLabel("generating", 9)).toBe(
+      "正在生成（第 4/4 次尝试）"
+    )
+  })
+})
+
 describe("repr helpers", () => {
   it("buildInitialQuizRepr defaults", () => {
     const r = buildInitialQuizRepr({
@@ -247,7 +468,41 @@ describe("repr helpers", () => {
     expect(r.pluginName).toBe("p")
     expect(r.topicBlockId).toBe(9)
     expect(r.answers).toEqual({})
+    expect(r.unknowns).toEqual({})
+    expect(r.guessed).toEqual({})
     expect(r.phase).toBe("quiz")
+  })
+
+  it("normalizeChapterQuizRepr keeps additive fields and legacy maps", () => {
+    const r = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "generating" as const,
+        unknowns: { q0: true },
+        guessed: { q1: true },
+        genStage: "collecting" as const,
+        genAttempt: 3
+      },
+      { pluginName: "p" }
+    )
+    expect(r.unknowns).toEqual({ q0: true })
+    expect(r.guessed).toEqual({ q1: true })
+    expect(r.genStage).toBe("collecting")
+    expect(r.genAttempt).toBe(3)
+  })
+
+  it("normalizeChapterQuizRepr drops illegal genStage/genAttempt", () => {
+    const r = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "generating" as const,
+        genStage: "bogus" as never,
+        genAttempt: 0
+      },
+      { pluginName: "p" }
+    )
+    expect(r.genStage).toBeUndefined()
+    expect(r.genAttempt).toBeUndefined()
   })
 
   it("buildMinimalQuizReprShell omits questions payload", () => {
@@ -298,10 +553,12 @@ describe("panel viewArgs + progress helpers", () => {
     )
   })
 
-  it("listWrongQuestions keeps order of wrong items only", () => {
-    const wrong = listWrongQuestions(sampleQuestions, { q0: 0, q1: 1 })
-    expect(wrong).toHaveLength(1)
-    expect(wrong[0].id).toBe("q0")
+  it("listWeakQuestions keeps order of weak items only", () => {
+    const weak = listWeakQuestions(sampleQuestions, {
+      answers: { q0: 0, q1: 1 }
+    })
+    expect(weak).toHaveLength(1)
+    expect(weak[0].id).toBe("q0")
   })
 
   it("findPanelNodeById walks nested tree", () => {

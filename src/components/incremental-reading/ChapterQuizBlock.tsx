@@ -6,8 +6,10 @@
 import {
   CHAPTER_QUIZ_COPY,
   countAnsweredQuestions,
-  countCorrectAnswers,
+  countConfidentCorrect,
   dispatchChapterQuizAdvance,
+  formatQuizGenProgressLabel,
+  listWeakQuestions,
   openChapterQuizInSidePanel
 } from "../../srs/incremental-reading/chapterQuiz"
 import { useChapterQuizController } from "./useChapterQuizController"
@@ -76,7 +78,9 @@ export default function ChapterQuizBlock(props: Props) {
   })
 
   const answered = countAnsweredQuestions(questions, repr.revealed)
-  const correctCount = countCorrectAnswers(questions, repr.answers ?? {})
+  // 与面板同一语义：当前清晰 = 确定答对；薄弱 = 答错 / 不知道 / 猜对
+  const confidentCorrect = countConfidentCorrect(questions, repr)
+  const weakCount = listWeakQuestions(questions, repr).length
   const total = questions.length
 
   const handleOpenPanel = () => {
@@ -114,7 +118,7 @@ export default function ChapterQuizBlock(props: Props) {
       {hydrated && repr.phase === "generating" ? (
         <div className="chapter-quiz__panel">
           <div className="chapter-quiz__status">
-            {CHAPTER_QUIZ_COPY.generating}
+            {formatQuizGenProgressLabel(repr.genStage, repr.genAttempt)}
           </div>
           <div className="chapter-quiz__actions">
             <Button variant="outline" onClick={handleCancelGenerate}>
@@ -187,9 +191,13 @@ export default function ChapterQuizBlock(props: Props) {
       {hydrated && repr.phase === "done" ? (
         <div className="chapter-quiz__panel">
           <div className="chapter-quiz__status">
-            {CHAPTER_QUIZ_COPY.doneSummary(correctCount, total)}
+            {CHAPTER_QUIZ_COPY.resultTitle}：
+            {CHAPTER_QUIZ_COPY.resultSummary(confidentCorrect, weakCount)}
           </div>
-          <div className="chapter-quiz__hint">{CHAPTER_QUIZ_COPY.doneHint}</div>
+          <div className="chapter-quiz__hint">
+            {weakCount > 0 ? `${CHAPTER_QUIZ_COPY.weakCountLabel(weakCount)} · ` : ""}
+            {CHAPTER_QUIZ_COPY.doneHint}
+          </div>
           <div className="chapter-quiz__actions">
             {repr.sessionContinueNext ? (
               <Button

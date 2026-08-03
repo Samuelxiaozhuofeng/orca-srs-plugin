@@ -12,6 +12,7 @@ import {
   CHAPTER_QUIZ_DEFAULT_COUNT,
   collectTopicPlainText,
   deleteChapterQuizBlock,
+  enqueueChapterQuizPersist,
   generateChapterQuizFollowUp,
   generateChapterQuizWithRetries,
   loadChapterQuizState,
@@ -19,6 +20,7 @@ import {
   requireQuizCardSourceBlockId,
   rewriteQuestionAsCloze,
   saveChapterQuizRepr,
+  shuffleQuizQuestions,
   writeBasicCardFromQuizQuestion,
   writeClozeCardFromQuizQuestion,
   type ChapterQuizQuestion,
@@ -104,6 +106,8 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
   const genStartedRef = useRef(false)
   const reprRef = useRef(repr)
   reprRef.current = repr
+  /** 在途的「重试进度」写入（null = 无在途）：终态落盘前先排空，避免被迟到写入回滚 */
+  const retryPersistRef = useRef<Promise<boolean> | null>(null)
 
   const applyLocalRepr = useCallback((next: ChapterQuizRepr) => {
     setRepr(next)
@@ -186,6 +190,22 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     [applyLocalRepr, blockId, instanceId]
   )
 
+  /**
+   * 排空在途的「重试进度」写入并复位 ref。
+   * persist 契约返回 Promise<boolean> 且内部已保证错误可见（notify + localError），
+   * 此处仅做防御性捕获，绝不阻断终态写入。
+   */
+  const flushRetryProgress = useCallback(async () => {
+    const pending = retryPersistRef.current
+    retryPersistRef.current = null
+    if (!pending) return
+    try {
+      await pending
+    } catch (error) {
+      console.error("[章末小测] 重试进度写入异常:", error)
+    }
+  }, [])
+
   const runGeneration = useCallback(async () => {
     const existing = getSharedGeneration(defaultGenerationRegistry, blockId)
     if (existing && !existing.cancelled) {
@@ -208,11 +228,16 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     }
 
     const current = reprRef.current
+    // 新 generation 起点：排空上一轮在途的重试进度写入并复位，
+    // 避免残留写入把新状态（含 needAi 终态）回滚
+    await flushRetryProgress()
     if (!isAIConfigured(current.pluginName)) {
       await persist({
         ...current,
         phase: "error",
-        errorMessage: CHAPTER_QUIZ_COPY.needAi
+        errorMessage: CHAPTER_QUIZ_COPY.needAi,
+        genStage: undefined,
+        genAttempt: undefined
       })
       return
     }
@@ -226,24 +251,36 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       async ({ signal, isCurrent }) => {
         try {
           if (!isCurrent()) return
+          // 新 generation 起点（双保险）：ref 已由 runGeneration 复位，此处再确认
+          await flushRetryProgress()
+          // 阶段 1：读取本章
           await persist({
             ...current,
             phase: "generating",
             errorMessage: undefined,
-            questions: undefined
+            questions: undefined,
+            genStage: "collecting",
+            genAttempt: 1
           })
 
           const collected = await collectTopicPlainText(current.topicBlockId)
           if (!isCurrent() || signal.aborted) return
           if (!collected.text) {
             if (!isCurrent()) return
+            await flushRetryProgress()
             await persist({
               ...reprRef.current,
               phase: "error",
-              errorMessage: CHAPTER_QUIZ_COPY.emptySource
+              errorMessage: CHAPTER_QUIZ_COPY.emptySource,
+              genStage: undefined,
+              genAttempt: undefined
             })
             return
           }
+
+          // 阶段 2：AI 出题（自动重试时更新尝试序号，block/panel 同步可见）
+          if (!isCurrent() || signal.aborted) return
+          await persist({ ...reprRef.current, genStage: "generating" })
 
           const result = await generateChapterQuizWithRetries({
             pluginName: current.pluginName,
@@ -251,29 +288,58 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
             questionCount: current.questionCount || CHAPTER_QUIZ_DEFAULT_COUNT,
             truncated: collected.truncated,
             allowedBlockIds: collected.blockIds,
-            signal
+            signal,
+            onRetryAttempt: (nextAttempt) => {
+              if (!isCurrent() || signal.aborted) return
+              // 串行追加进度写入：连续重试时不能只记住最后一个 Promise，
+              // 否则更早的慢写入仍可能在终态之后落盘。
+              retryPersistRef.current = enqueueChapterQuizPersist(
+                retryPersistRef.current,
+                () =>
+                  persist({
+                    ...reprRef.current,
+                    genAttempt: nextAttempt
+                  })
+              )
+            }
           })
 
           // 取消后禁止迟到结果覆盖
           if (!isCurrent() || signal.aborted) return
 
           if (!result.success) {
+            await flushRetryProgress()
             await persist({
               ...reprRef.current,
               phase: "error",
-              errorMessage: result.error.message
+              errorMessage: result.error.message,
+              genStage: undefined,
+              genAttempt: undefined
             })
             return
           }
 
+          // 阶段 3：整理 —— 打乱题目与选项顺序（仅此一次，随 repr 持久化，
+          // 整轮稳定；渲染路径不重打乱），随后进入答题态
+          if (!isCurrent() || signal.aborted) return
+          await flushRetryProgress()
+          await persist({ ...reprRef.current, genStage: "polishing" })
+          const shuffled = shuffleQuizQuestions(result.questions)
+
+          // 成功终态前排空重试进度写入，保证落盘顺序
+          await flushRetryProgress()
           await persist({
             ...reprRef.current,
             phase: "quiz",
-            questions: result.questions,
+            questions: shuffled,
             currentIndex: 0,
             answers: {},
             revealed: {},
+            unknowns: {},
+            guessed: {},
             cardAdds: {},
+            genStage: undefined,
+            genAttempt: undefined,
             errorMessage: undefined
           })
           clearEphemeralForQuestion()
@@ -281,10 +347,13 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
           if (!isCurrent() || signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
           console.error("[章末小测] 生成失败:", error)
+          await flushRetryProgress()
           await persist({
             ...reprRef.current,
             phase: "error",
-            errorMessage: message
+            errorMessage: message,
+            genStage: undefined,
+            genAttempt: undefined
           })
         }
       }
@@ -295,7 +364,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     } finally {
       setBusy(false)
     }
-  }, [applyLocalRepr, blockId, clearEphemeralForQuestion, persist])
+  }, [applyLocalRepr, blockId, clearEphemeralForQuestion, flushRetryProgress, persist])
 
   useEffect(() => {
     if (!autoGenerate) return
@@ -337,6 +406,38 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       })
     },
     [busy, clearEphemeralForQuestion, persist, question, revealed, repr]
+  )
+
+  /**
+   * 选「不知道」：不选选项直接揭示正确答案。
+   * 计为已答（revealed）但不算正确，持久化 unknowns 记入弱项。
+   */
+  const handleUnknown = useCallback(async () => {
+    const q = question
+    if (!q || revealed || busy) return
+    if (repr.phase !== "quiz") return
+    const unknowns = { ...(repr.unknowns ?? {}), [q.id]: true }
+    const revealedMap = { ...(repr.revealed ?? {}), [q.id]: true }
+    clearEphemeralForQuestion()
+    await persist({
+      ...repr,
+      unknowns,
+      revealed: revealedMap
+    })
+  }, [busy, clearEphemeralForQuestion, persist, question, revealed, repr])
+
+  /**
+   * 揭晓后标记/取消「这是猜的」。猜对的题不计入掌握、计入弱项；
+   * 答错的题本就弱项，标记只作记录，绝不升级结果。
+   */
+  const handleToggleGuessed = useCallback(
+    async (questionId: string) => {
+      if (busy) return
+      const cur = repr.guessed?.[questionId] === true
+      const guessed = { ...(repr.guessed ?? {}), [questionId]: !cur }
+      await persist({ ...repr, guessed })
+    },
+    [busy, persist, repr]
   )
 
   const handleNext = useCallback(async () => {
@@ -565,19 +666,25 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       blockId
     )
     setBusy(false)
-    // 立即写取消态并广播，防止迟到成功结果覆盖（成功路径会 check isCurrent）
-    void persist({
-      ...reprRef.current,
-      phase: "error",
-      errorMessage: CHAPTER_QUIZ_COPY.cancelled
-    })
+    // 先排空在途的重试进度写入，再落盘取消终态（含清理陈旧进度字段），
+    // 防止迟到进度写回滚 phase: "error"
+    void (async () => {
+      await flushRetryProgress()
+      await persist({
+        ...reprRef.current,
+        phase: "error",
+        errorMessage: CHAPTER_QUIZ_COPY.cancelled,
+        genStage: undefined,
+        genAttempt: undefined
+      })
+    })()
     if (didCancel) {
       orca.notify("info", CHAPTER_QUIZ_COPY.cancelled, { title: "章末小测" })
     } else {
       // 无在途生成时仍展示取消/错误态（用户可见）
       orca.notify("info", CHAPTER_QUIZ_COPY.cancelled, { title: "章末小测" })
     }
-  }, [blockId, persist])
+  }, [blockId, flushRetryProgress, persist])
 
   const handleRetryGenerate = useCallback(() => {
     if (busy) return
@@ -619,6 +726,8 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     setLocalError,
     persist,
     handleSelect,
+    handleUnknown,
+    handleToggleGuessed,
     handleNext,
     handleAddBasic,
     handleStartCloze,
