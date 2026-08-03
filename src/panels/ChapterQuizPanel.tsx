@@ -83,6 +83,7 @@ export default function ChapterQuizPanel(props: PanelProps) {
           key={quizBlockId}
           panelId={panelId}
           quizBlockId={quizBlockId}
+          active={active}
         />
       </SrsErrorBoundary>
     </div>

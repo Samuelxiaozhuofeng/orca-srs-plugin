@@ -8,16 +8,24 @@
  */
 
 import {
+  buildRepairRoundState,
   CHAPTER_QUIZ_COPY,
   CHAPTER_QUIZ_DEFAULT_COUNT,
+  classifyFirstRoundAnswer,
   collectTopicPlainText,
   deleteChapterQuizBlock,
+  ensureRepairOptionOrder,
+  freezeWeakItemsIfNeeded,
   generateChapterQuizFollowUp,
   generateChapterQuizWithRetries,
+  isAnswerCorrect,
+  listUnresolvedWeakItemIds,
   loadChapterQuizState,
+  mapRepairDisplayIndexToOriginal,
   normalizeChapterQuizRepr,
   requireQuizCardSourceBlockId,
   rewriteQuestionAsCloze,
+  rollbackCreatedQuizCardBlock,
   saveChapterQuizRepr,
   writeBasicCardFromQuizQuestion,
   writeClozeCardFromQuizQuestion,
@@ -103,6 +111,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
 
   const genStartedRef = useRef(false)
   const reprRef = useRef(repr)
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve())
   reprRef.current = repr
 
   const applyLocalRepr = useCallback((next: ChapterQuizRepr) => {
@@ -167,15 +176,31 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
 
   const persist = useCallback(
     async (next: ChapterQuizRepr): Promise<boolean> => {
+      const previous = reprRef.current
       applyLocalRepr(next)
       // broadcast before/after write so peer UIs stay live; no extra backend write
       publishQuizLive(defaultLiveSyncRegistry, blockId, next, instanceId)
+      const queuedSave = persistQueueRef.current.then(() =>
+        saveChapterQuizRepr(blockId, next)
+      )
+      // A failed save must not poison later writes in the same controller.
+      persistQueueRef.current = queuedSave.catch(() => undefined)
       try {
-        await saveChapterQuizRepr(blockId, next)
+        await queuedSave
         return true
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         console.error("[章末小测] 保存状态失败:", error)
+        // 仅当仍停留在本次乐观值时回滚，避免覆盖更新的 live 状态
+        if (reprRef.current === next) {
+          applyLocalRepr(previous)
+          publishQuizLive(
+            defaultLiveSyncRegistry,
+            blockId,
+            previous,
+            instanceId
+          )
+        }
         orca.notify("error", `小测状态保存失败：${message}`, {
           title: "章末小测"
         })
@@ -274,6 +299,17 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
             answers: {},
             revealed: {},
             cardAdds: {},
+            uncertainMarks: {},
+            skipped: {},
+            firstCategories: {},
+            weakItemIds: [],
+            repaired: {},
+            repairActive: false,
+            repairQueue: [],
+            repairIndex: 0,
+            repairAnswers: {},
+            repairRevealed: {},
+            repairOptionOrders: {},
             errorMessage: undefined
           })
           clearEphemeralForQuestion()
@@ -322,58 +358,427 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
   const revealed = question ? repr.revealed?.[question.id] === true : false
   const cardAdds = question ? repr.cardAdds?.[question.id] : undefined
 
+  const handleToggleUncertain = useCallback(async () => {
+    const current = reprRef.current
+    const currentQuestions = current.questions ?? []
+    const currentIndex = Math.min(
+      Math.max(0, current.currentIndex ?? 0),
+      Math.max(0, currentQuestions.length - 1)
+    )
+    const q = currentQuestions[currentIndex]
+    if (!q || current.revealed?.[q.id] === true || busy) return
+    if (current.phase !== "quiz" || current.repairActive) return
+    const marks = { ...(current.uncertainMarks ?? {}) }
+    if (marks[q.id]) delete marks[q.id]
+    else marks[q.id] = true
+    await persist({ ...current, uncertainMarks: marks })
+  }, [busy, persist])
+
   const handleSelect = useCallback(
     async (optionIndex: number) => {
-      const q = question
-      if (!q || revealed || busy) return
-      if (repr.phase !== "quiz") return
-      const answers = { ...(repr.answers ?? {}), [q.id]: optionIndex }
-      const revealedMap = { ...(repr.revealed ?? {}), [q.id]: true }
+      const current = reprRef.current
+      const currentQuestions = current.questions ?? []
+      const currentIndex = Math.min(
+        Math.max(0, current.currentIndex ?? 0),
+        Math.max(0, currentQuestions.length - 1)
+      )
+      const q = currentQuestions[currentIndex]
+      if (!q || current.revealed?.[q.id] === true || busy) return
+      if (current.phase !== "quiz" || current.repairActive) return
+      if (
+        !Number.isInteger(optionIndex) ||
+        optionIndex < 0 ||
+        optionIndex >= q.options.length
+      ) {
+        return
+      }
+      const uncertain = current.uncertainMarks?.[q.id] === true
+      const category = classifyFirstRoundAnswer({
+        correct: isAnswerCorrect(q, optionIndex),
+        uncertain,
+        skipped: false
+      })
+      const answers = { ...(current.answers ?? {}), [q.id]: optionIndex }
+      const revealedMap = { ...(current.revealed ?? {}), [q.id]: true }
+      const skipped = { ...(current.skipped ?? {}) }
+      delete skipped[q.id]
+      const firstCategories = {
+        ...(current.firstCategories ?? {}),
+        [q.id]: category
+      }
       clearEphemeralForQuestion()
       await persist({
-        ...repr,
+        ...current,
         answers,
-        revealed: revealedMap
+        revealed: revealedMap,
+        skipped,
+        firstCategories
       })
     },
-    [busy, clearEphemeralForQuestion, persist, question, revealed, repr]
+    [busy, clearEphemeralForQuestion, persist]
   )
 
-  const handleNext = useCallback(async () => {
-    if (!question) return
-    if (index >= questions.length - 1) {
-      await persist({ ...repr, phase: "done", currentIndex: index })
+  const handleSkip = useCallback(async () => {
+    const current = reprRef.current
+    const currentQuestions = current.questions ?? []
+    const currentIndex = Math.min(
+      Math.max(0, current.currentIndex ?? 0),
+      Math.max(0, currentQuestions.length - 1)
+    )
+    const q = currentQuestions[currentIndex]
+    if (!q || current.revealed?.[q.id] === true || busy) return
+    if (current.phase !== "quiz" || current.repairActive) return
+    const revealedMap = { ...(current.revealed ?? {}), [q.id]: true }
+    const skipped = { ...(current.skipped ?? {}), [q.id]: true }
+    const answers = { ...(current.answers ?? {}) }
+    delete answers[q.id]
+    const firstCategories = {
+      ...(current.firstCategories ?? {}),
+      [q.id]: "skipped" as const
+    }
+    clearEphemeralForQuestion()
+    // 跳过：记入弱项并直接前进（首轮不揭晓）
+    if (currentIndex >= currentQuestions.length - 1) {
+      const done = freezeWeakItemsIfNeeded({
+        ...current,
+        answers,
+        revealed: revealedMap,
+        skipped,
+        firstCategories,
+        phase: "done",
+        currentIndex,
+        repairActive: false
+      })
+      await persist(done)
       return
     }
-    const ok = await persist({ ...repr, currentIndex: index + 1 })
+    await persist({
+      ...current,
+      answers,
+      revealed: revealedMap,
+      skipped,
+      firstCategories,
+      currentIndex: currentIndex + 1
+    })
+  }, [busy, clearEphemeralForQuestion, persist])
+
+  const handleNext = useCallback(async () => {
+    const current = reprRef.current
+    const currentQuestions = current.questions ?? []
+    const currentIndex = Math.min(
+      Math.max(0, current.currentIndex ?? 0),
+      Math.max(0, currentQuestions.length - 1)
+    )
+    const currentQuestion = currentQuestions[currentIndex]
+    if (!currentQuestion || current.revealed?.[currentQuestion.id] !== true) return
+    if (current.repairActive) return
+    if (currentIndex >= currentQuestions.length - 1) {
+      const done = freezeWeakItemsIfNeeded({
+        ...current,
+        phase: "done",
+        currentIndex,
+        repairActive: false
+      })
+      await persist(done)
+      return
+    }
+    const ok = await persist({ ...current, currentIndex: currentIndex + 1 })
     if (!ok) return
     clearEphemeralForQuestion()
-  }, [clearEphemeralForQuestion, index, persist, question, questions.length, repr])
+  }, [clearEphemeralForQuestion, persist])
 
-  /** Explicit-target: write basic card for a specific question (wrong-review safe). */
+  /** 开始 / 继续修复：未解决弱项各答一次 */
+  const handleStartRepair = useCallback(
+    async (roundSeed?: string) => {
+      if (busy) return
+      const current = reprRef.current
+      const unresolved = listUnresolvedWeakItemIds(
+        current.weakItemIds?.length
+          ? current.weakItemIds
+          : freezeWeakItemsIfNeeded(current).weakItemIds,
+        current.repaired
+      )
+      if (unresolved.length === 0) {
+        orca.notify("info", "没有待修复的薄弱点", { title: "章末小测" })
+        return
+      }
+      clearEphemeralForQuestion()
+      await persist(buildRepairRoundState(current, roundSeed))
+    },
+    [busy, clearEphemeralForQuestion, persist]
+  )
+
+  const handleRepairSelect = useCallback(
+    async (displayIndex: number) => {
+      const current = reprRef.current
+      if (!current.repairActive || busy) return
+      const queue = current.repairQueue ?? []
+      const ri = Math.min(
+        Math.max(0, current.repairIndex ?? 0),
+        Math.max(0, queue.length - 1)
+      )
+      const qid = queue[ri]
+      if (!qid) return
+      if (current.repairRevealed?.[qid] === true) return
+      const q = (current.questions ?? []).find(
+        (x: ChapterQuizQuestion) => x.id === qid
+      )
+      if (!q) return
+      const order = ensureRepairOptionOrder(
+        current.repairOptionOrders?.[qid],
+        q.options.length,
+        `repair:${qid}`
+      )
+      const originalIndex = mapRepairDisplayIndexToOriginal(displayIndex, order)
+      if (originalIndex < 0 || originalIndex >= q.options.length) return
+
+      const repairAnswers = {
+        ...(current.repairAnswers ?? {}),
+        [qid]: originalIndex
+      }
+      const repairRevealed = {
+        ...(current.repairRevealed ?? {}),
+        [qid]: true
+      }
+      const repaired = { ...(current.repaired ?? {}) }
+      if (isAnswerCorrect(q, originalIndex)) {
+        repaired[qid] = true
+      }
+      const repairOptionOrders = {
+        ...(current.repairOptionOrders ?? {}),
+        [qid]: order
+      }
+      clearEphemeralForQuestion()
+      await persist({
+        ...current,
+        repairAnswers,
+        repairRevealed,
+        repaired,
+        repairOptionOrders
+      })
+    },
+    [busy, clearEphemeralForQuestion, persist]
+  )
+
+  const handleRepairNext = useCallback(async () => {
+    const current = reprRef.current
+    if (!current.repairActive) return
+    const queue = current.repairQueue ?? []
+    const ri = current.repairIndex ?? 0
+    const qid = queue[ri]
+    if (qid && current.repairRevealed?.[qid] !== true) return
+
+    if (ri >= queue.length - 1) {
+      // 本轮结束 → 回到结果小结，保留 repaired / firstCategories
+      clearEphemeralForQuestion()
+      await persist({
+        ...current,
+        phase: "done",
+        repairActive: false,
+        repairQueue: [],
+        repairIndex: 0,
+        repairAnswers: {},
+        repairRevealed: {},
+        repairOptionOrders: {}
+      })
+      return
+    }
+    const ok = await persist({
+      ...current,
+      repairIndex: ri + 1
+    })
+    if (!ok) return
+    clearEphemeralForQuestion()
+  }, [clearEphemeralForQuestion, persist])
+
+  /**
+   * 批量制卡：顺序执行，每成功一项立即 merge cardAdds（用 reprRef 避免覆盖）。
+   * 失败项不记入 cardAdds，可重试。
+   */
+  const handleBatchCreateCards = useCallback(
+    async (
+      items: Array<{
+        question: ChapterQuizQuestion
+        kind: "basic" | "cloze"
+        clozePreview?: { text: string; clozeText: string }
+      }>,
+      onItemResult?: (
+        questionId: string,
+        result: { ok: true; blockId: number } | { ok: false; error: string }
+      ) => void
+    ): Promise<{ succeeded: number; failed: number }> => {
+      let succeeded = 0
+      let failed = 0
+      for (const item of items) {
+        const target = item.question
+        const existing = reprRef.current.cardAdds?.[target.id]
+        if (item.kind === "basic" && existing?.basicBlockId) {
+          onItemResult?.(target.id, {
+            ok: true,
+            blockId: existing.basicBlockId
+          })
+          succeeded += 1
+          continue
+        }
+        if (item.kind === "cloze" && existing?.clozeBlockId) {
+          onItemResult?.(target.id, {
+            ok: true,
+            blockId: existing.clozeBlockId
+          })
+          succeeded += 1
+          continue
+        }
+        setCardBusyId(target.id)
+        try {
+          const parentBlockId = requireQuizCardSourceBlockId(target)
+          const saved = await runWithChapterQuizEditorContext(
+            writeContextPanelId,
+            async () => {
+              const latest = reprRef.current
+              if (item.kind === "basic") {
+                const id = await writeBasicCardFromQuizQuestion({
+                  pluginName: latest.pluginName,
+                  parentBlockId,
+                  question: target
+                })
+                const nextAdds = mergeQuestionCardAdds(
+                  latest.cardAdds,
+                  target.id,
+                  { basicBlockId: id }
+                )
+                const ok = await persist({ ...latest, cardAdds: nextAdds })
+                if (!ok) {
+                  try {
+                    await rollbackCreatedQuizCardBlock(id)
+                  } catch (rollbackError) {
+                    const rb =
+                      rollbackError instanceof Error
+                        ? rollbackError.message
+                        : String(rollbackError)
+                    console.error("[章末小测] 批量简答卡回滚失败:", rb)
+                    return {
+                      ok: false as const,
+                      blockId: id,
+                      error: `状态未保存且回滚失败：${rb}`
+                    }
+                  }
+                  return {
+                    ok: false as const,
+                    blockId: id,
+                    error: "卡片已创建但测验状态未保存；已回滚新块"
+                  }
+                }
+                return { ok: true as const, blockId: id }
+              }
+              if (!item.clozePreview) {
+                throw new Error(CHAPTER_QUIZ_COPY.organizerClozeNeedPreview)
+              }
+              const id = await writeClozeCardFromQuizQuestion({
+                pluginName: latest.pluginName,
+                parentBlockId,
+                text: item.clozePreview.text,
+                clozeText: item.clozePreview.clozeText
+              })
+              const nextAdds = mergeQuestionCardAdds(
+                latest.cardAdds,
+                target.id,
+                { clozeBlockId: id }
+              )
+              const ok = await persist({ ...latest, cardAdds: nextAdds })
+              if (!ok) {
+                try {
+                  await rollbackCreatedQuizCardBlock(id)
+                } catch (rollbackError) {
+                  const rb =
+                    rollbackError instanceof Error
+                      ? rollbackError.message
+                      : String(rollbackError)
+                  console.error("[章末小测] 批量填空卡回滚失败:", rb)
+                  return {
+                    ok: false as const,
+                    blockId: id,
+                    error: `状态未保存且回滚失败：${rb}`
+                  }
+                }
+                return {
+                  ok: false as const,
+                  blockId: id,
+                  error: "卡片已创建但测验状态未保存；已回滚新块"
+                }
+              }
+              return { ok: true as const, blockId: id }
+            },
+            {
+              openPanel: {
+                view: "block",
+                viewArgs: { blockId: parentBlockId }
+              }
+            }
+          )
+          if (!saved.ok) {
+            failed += 1
+            onItemResult?.(target.id, {
+              ok: false,
+              error: saved.error || "制卡状态未保存"
+            })
+            continue
+          }
+          succeeded += 1
+          onItemResult?.(target.id, { ok: true, blockId: saved.blockId })
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error)
+          console.error("[章末小测] 批量制卡失败:", target.id, error)
+          failed += 1
+          onItemResult?.(target.id, { ok: false, error: message })
+        } finally {
+          setCardBusyId(null)
+        }
+      }
+      return { succeeded, failed }
+    },
+    [persist, writeContextPanelId]
+  )
+
+  // Fix single-card handlers to use reprRef for cardAdds merge (avoid stale overwrites)
   const handleAddBasicFor = useCallback(
     async (target: ChapterQuizQuestion) => {
-      const existing = repr.cardAdds?.[target.id]
+      const existing = reprRef.current.cardAdds?.[target.id]
       if (existing?.basicBlockId) return
       setCardBusyId(target.id)
       setLocalError(null)
       try {
-        // 制卡父块必须是当前题 sourceBlockId（与「跳转原文」同一来源）
         const parentBlockId = requireQuizCardSourceBlockId(target)
-        // 写卡 + cardAdds persist 同在编辑器焦点上下文内（Custom Panel 需切左侧）
-        // 只剩小测 Panel 时自动在旁边打开原文块视图再写入，Custom Panel 不被顶掉
-        const saved = await runWithChapterQuizEditorContext(
+        const result = await runWithChapterQuizEditorContext(
           writeContextPanelId,
           async () => {
+            const latest = reprRef.current
             const id = await writeBasicCardFromQuizQuestion({
-              pluginName: repr.pluginName,
+              pluginName: latest.pluginName,
               parentBlockId,
               question: target
             })
-            const nextAdds = mergeQuestionCardAdds(repr.cardAdds, target.id, {
+            const nextAdds = mergeQuestionCardAdds(latest.cardAdds, target.id, {
               basicBlockId: id
             })
-            return persist({ ...repr, cardAdds: nextAdds })
+            const ok = await persist({ ...latest, cardAdds: nextAdds })
+            if (!ok) {
+              try {
+                await rollbackCreatedQuizCardBlock(id)
+              } catch (rollbackError) {
+                const rb =
+                  rollbackError instanceof Error
+                    ? rollbackError.message
+                    : String(rollbackError)
+                console.error("[章末小测] 简答卡回滚失败:", rb)
+                return { ok: false as const, error: rb }
+              }
+              return {
+                ok: false as const,
+                error: "简答卡已创建但状态未保存；已回滚新块，可重试"
+              }
+            }
+            return { ok: true as const }
           },
           {
             openPanel: {
@@ -382,12 +787,9 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
             }
           }
         )
-        if (!saved) {
-          orca.notify(
-            "warn",
-            "简答卡已创建，但测验状态未保存；请避免重复点击",
-            { title: "章末小测" }
-          )
+        if (!result.ok) {
+          setLocalError(result.error)
+          orca.notify("error", result.error, { title: "章末小测" })
           return
         }
         orca.notify("success", CHAPTER_QUIZ_COPY.basicAdded, {
@@ -402,19 +804,19 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
         setCardBusyId(null)
       }
     },
-    [persist, repr, writeContextPanelId]
+    [persist, writeContextPanelId]
   )
 
   const handleStartClozeFor = useCallback(
     async (target: ChapterQuizQuestion) => {
-      const existing = repr.cardAdds?.[target.id]
+      const existing = reprRef.current.cardAdds?.[target.id]
       if (existing?.clozeBlockId) return
       setClozeBusy(true)
       setLocalError(null)
       setClozePreview(null)
       try {
         const result = await rewriteQuestionAsCloze({
-          pluginName: repr.pluginName,
+          pluginName: reprRef.current.pluginName,
           question: target
         })
         if (!result.success) {
@@ -436,7 +838,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
         setClozeBusy(false)
       }
     },
-    [repr.cardAdds, repr.pluginName]
+    []
   )
 
   const handleConfirmClozeFor = useCallback(
@@ -446,21 +848,38 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       setLocalError(null)
       try {
         const preview = clozePreview
-        // 制卡父块必须是当前题 sourceBlockId（与「跳转原文」同一来源）
         const parentBlockId = requireQuizCardSourceBlockId(target)
-        const saved = await runWithChapterQuizEditorContext(
+        const result = await runWithChapterQuizEditorContext(
           writeContextPanelId,
           async () => {
+            const latest = reprRef.current
             const id = await writeClozeCardFromQuizQuestion({
-              pluginName: repr.pluginName,
+              pluginName: latest.pluginName,
               parentBlockId,
               text: preview.text,
               clozeText: preview.clozeText
             })
-            const nextAdds = mergeQuestionCardAdds(repr.cardAdds, target.id, {
+            const nextAdds = mergeQuestionCardAdds(latest.cardAdds, target.id, {
               clozeBlockId: id
             })
-            return persist({ ...repr, cardAdds: nextAdds })
+            const ok = await persist({ ...latest, cardAdds: nextAdds })
+            if (!ok) {
+              try {
+                await rollbackCreatedQuizCardBlock(id)
+              } catch (rollbackError) {
+                const rb =
+                  rollbackError instanceof Error
+                    ? rollbackError.message
+                    : String(rollbackError)
+                console.error("[章末小测] 填空卡回滚失败:", rb)
+                return { ok: false as const, error: rb }
+              }
+              return {
+                ok: false as const,
+                error: "填空卡已创建但状态未保存；已回滚新块，可重试"
+              }
+            }
+            return { ok: true as const }
           },
           {
             openPanel: {
@@ -470,12 +889,9 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
           }
         )
         setClozePreview(null)
-        if (!saved) {
-          orca.notify(
-            "warn",
-            "填空卡已创建，但测验状态未保存；请避免重复点击",
-            { title: "章末小测" }
-          )
+        if (!result.ok) {
+          setLocalError(result.error)
+          orca.notify("error", result.error, { title: "章末小测" })
           return
         }
         orca.notify("success", CHAPTER_QUIZ_COPY.clozeAdded, {
@@ -492,7 +908,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
         setCardBusyId(null)
       }
     },
-    [clozePreview, persist, repr, writeContextPanelId]
+    [clozePreview, persist, writeContextPanelId]
   )
 
   /** Explicit-target follow-up: context is the given question + its selectedIndex. */
@@ -619,7 +1035,13 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     setLocalError,
     persist,
     handleSelect,
+    handleSkip,
+    handleToggleUncertain,
     handleNext,
+    handleStartRepair,
+    handleRepairSelect,
+    handleRepairNext,
+    handleBatchCreateCards,
     handleAddBasic,
     handleStartCloze,
     handleConfirmCloze,
