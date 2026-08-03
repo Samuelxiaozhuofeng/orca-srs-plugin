@@ -1,38 +1,58 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  applyBatchCardAddOutcome,
   buildBasicCardFromQuestion,
   buildInitialQuizRepr,
   buildMinimalQuizReprShell,
   buildQuizCountChoices,
+  buildRepairOptionOrder,
+  buildRepairRoundState,
   CHAPTER_QUIZ_COPY,
   CHAPTER_QUIZ_COUNT_PRESETS,
   CHAPTER_QUIZ_LOCATE_EVENT,
   CHAPTER_QUIZ_PANEL_VIEW,
+  classifyFirstRoundAnswer,
   countAnsweredQuestions,
   countConfidentCorrect,
   countCorrectAnswers,
+  countFirstCategories,
+  countRecordedCardAdds,
+  countRepairedWeakItems,
   createSeededRng,
   estimateQuizDurationSeconds,
   enqueueChapterQuizPersist,
   findPanelNodeById,
   formatQuizDurationEstimate,
   formatQuizGenProgressLabel,
+  formatSelectedWrongChoiceLabel,
+  freezeWeakItemsIfNeeded,
   isAnswerCorrect,
   isQuestionWeak,
   jumpToQuizSourceBlock,
+  listUnresolvedWeakItemIds,
   listWeakQuestions,
+  listWeakItemIds,
+  listWrongQuestions,
+  mapRepairDisplayIndexToOriginal,
   normalizeChapterQuizRepr,
   openChapterQuizInSidePanel,
   parseChapterQuizQuestions,
+  parseOptionalQuestionFeedback,
   parseQuizBlockIdFromViewArgs,
   quizOptionLetter,
   requireQuizCardSourceBlockId,
   resetQuizSourceSidePanelCacheForTests,
+  resolveDisplayedOptionIndices,
+  resolveQuestionFeedbackDisplay,
   resolveQuizBlockIdForPanel,
+  resolveQuizKeyboardDecision,
   shuffleQuizQuestions,
   toPlainJsonValue,
-  type ChapterQuizQuestion
+  type ChapterQuizFirstCategory,
+  type ChapterQuizQuestion,
+  type ChapterQuizRepr
 } from "./chapterQuiz"
+import { mergeQuestionCardAdds } from "./chapterQuizLive"
 
 const sampleQuestions: ChapterQuizQuestion[] = [
   {
@@ -1031,5 +1051,579 @@ describe("jumpToQuizSourceBlock (IR session panel first)", () => {
     expect(ok).toBe(false)
     expect(addTo).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalled()
+  })
+})
+
+// ── P1 learning loop: classification / repair / feedback / keyboard ──
+
+const loopQs: ChapterQuizQuestion[] = [
+  {
+    id: "q0",
+    text: "Q0",
+    options: ["a", "b", "c", "d"],
+    correctIndex: 1,
+    explanation: "e0"
+  },
+  {
+    id: "q1",
+    text: "Q1",
+    options: ["a", "b", "c", "d"],
+    correctIndex: 0,
+    explanation: "e1"
+  },
+  {
+    id: "q2",
+    text: "Q2",
+    options: ["a", "b", "c", "d"],
+    correctIndex: 2,
+    explanation: "e2"
+  },
+  {
+    id: "q3",
+    text: "Q3",
+    options: ["a", "b", "c", "d"],
+    correctIndex: 3,
+    explanation: "e3"
+  }
+]
+
+describe("first-round classification", () => {
+  it("classifies certain / uncertain / wrong / skipped as disjoint", () => {
+    expect(
+      classifyFirstRoundAnswer({ correct: true, uncertain: false, skipped: false })
+    ).toBe("certain_correct")
+    expect(
+      classifyFirstRoundAnswer({ correct: true, uncertain: true, skipped: false })
+    ).toBe("uncertain_correct")
+    expect(
+      classifyFirstRoundAnswer({ correct: false, uncertain: true, skipped: false })
+    ).toBe("wrong")
+    expect(
+      classifyFirstRoundAnswer({ correct: false, uncertain: false, skipped: false })
+    ).toBe("wrong")
+    expect(
+      classifyFirstRoundAnswer({ correct: true, uncertain: false, skipped: true })
+    ).toBe("skipped")
+  })
+
+  it("lists weak items in original order and freezes Y", () => {
+    const firstCategories: Record<string, ChapterQuizFirstCategory> = {
+      q0: "certain_correct",
+      q1: "uncertain_correct",
+      q2: "wrong",
+      q3: "skipped"
+    }
+    const weak = listWeakItemIds(loopQs, firstCategories)
+    expect(weak).toEqual(["q1", "q2", "q3"])
+    const counts = countFirstCategories(loopQs, firstCategories)
+    expect(counts).toEqual({
+      certain_correct: 1,
+      uncertain_correct: 1,
+      wrong: 1,
+      skipped: 1
+    })
+    const frozen = freezeWeakItemsIfNeeded({
+      type: "srs.chapter-quiz",
+      pluginName: "p",
+      topicBlockId: 1,
+      phase: "done",
+      questionCount: 4,
+      questions: loopQs,
+      firstCategories,
+      answers: { q0: 1, q1: 0, q2: 0 },
+      skipped: { q3: true }
+    })
+    expect(frozen.weakItemIds).toEqual(["q1", "q2", "q3"])
+    // second freeze does not change
+    expect(freezeWeakItemsIfNeeded(frozen).weakItemIds).toEqual(["q1", "q2", "q3"])
+  })
+})
+
+describe("repair rounds", () => {
+  it("freezes first result vs repair answers; tracks repaired X/Y across rounds", () => {
+    const base: ChapterQuizRepr = {
+      type: "srs.chapter-quiz",
+      pluginName: "p",
+      topicBlockId: 1,
+      phase: "done",
+      questionCount: 4,
+      questions: loopQs,
+      answers: { q0: 1, q1: 0, q2: 0 },
+      revealed: { q0: true, q1: true, q2: true, q3: true },
+      firstCategories: {
+        q0: "certain_correct",
+        q1: "uncertain_correct",
+        q2: "wrong",
+        q3: "skipped"
+      },
+      uncertainMarks: { q1: true },
+      skipped: { q3: true },
+      weakItemIds: ["q1", "q2", "q3"],
+      repaired: {}
+    }
+
+    const round1 = buildRepairRoundState(base, "seed-r1")
+    expect(round1.repairActive).toBe(true)
+    expect(round1.repairQueue).toEqual(["q1", "q2", "q3"])
+    // first-round answers untouched
+    expect(round1.answers).toEqual(base.answers)
+    expect(round1.firstCategories).toEqual(base.firstCategories)
+
+    // repair q1 correct, q2 wrong — map via order
+    const orderQ1 = round1.repairOptionOrders!.q1
+    const displayCorrect1 = orderQ1.indexOf(loopQs[1].correctIndex)
+    expect(displayCorrect1).toBeGreaterThanOrEqual(0)
+    const origFromDisplay = mapRepairDisplayIndexToOriginal(
+      displayCorrect1,
+      orderQ1
+    )
+    expect(origFromDisplay).toBe(loopQs[1].correctIndex)
+
+    const afterR1: ChapterQuizRepr = {
+      ...round1,
+      repairAnswers: {
+        q1: loopQs[1].correctIndex,
+        q2: 1, // wrong
+        q3: 0 // wrong
+      },
+      repairRevealed: { q1: true, q2: true, q3: true },
+      repaired: { q1: true },
+      repairActive: false,
+      repairQueue: [],
+      repairIndex: 0
+    }
+    expect(countRepairedWeakItems(afterR1.weakItemIds, afterR1.repaired)).toBe(1)
+    expect(listUnresolvedWeakItemIds(afterR1.weakItemIds, afterR1.repaired)).toEqual([
+      "q2",
+      "q3"
+    ])
+
+    const round2 = buildRepairRoundState(afterR1, "seed-r2")
+    expect(round2.repairQueue).toEqual(["q2", "q3"])
+    // first round still frozen
+    expect(round2.answers?.q2).toBe(0)
+    expect(round2.firstCategories?.q2).toBe("wrong")
+  })
+
+  it("buildRepairOptionOrder is deterministic and maps display→original", () => {
+    const a = buildRepairOptionOrder(4, "q2:r1")
+    const b = buildRepairOptionOrder(4, "q2:r1")
+    expect(a).toEqual(b)
+    expect(a).toHaveLength(4)
+    expect(new Set(a).size).toBe(4)
+    // identity forced away when n>1
+    const isIdentity = a.every((v, i) => v === i)
+    expect(isIdentity).toBe(false)
+    for (let d = 0; d < a.length; d++) {
+      expect(mapRepairDisplayIndexToOriginal(d, a)).toBe(a[d])
+    }
+  })
+})
+
+describe("normalize + targeted feedback compatibility", () => {
+  it("loads old repr with only explanation and optional state", () => {
+    const r = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "done",
+        pluginName: "orca-srs",
+        topicBlockId: 9,
+        questionCount: 2,
+        questions: sampleQuestions,
+        answers: { q0: 0, q1: 1 },
+        revealed: { q0: true, q1: true }
+      },
+      { pluginName: "p", topicBlockId: 1 }
+    )
+    expect(r.questions).toHaveLength(2)
+    expect(r.questions![0].explanation).toBeTruthy()
+    expect(r.questions![0].correctReason).toBeUndefined()
+    // inferred categories from answers
+    expect(r.firstCategories?.q0).toBe("wrong")
+    expect(r.firstCategories?.q1).toBe("certain_correct")
+    expect(r.weakItemIds).toContain("q0")
+  })
+
+  it("drops malformed optional feedback fields without failing", () => {
+    const parsed = parseOptionalQuestionFeedback(
+      {
+        correctReason: "  why right  ",
+        optionExplanations: ["w0", "w1"], // wrong length
+        confusion: 123,
+        sourceExcerpt: "  excerpt  "
+      },
+      4,
+      { allowSourceExcerpt: true }
+    )
+    expect(parsed.correctReason).toBe("why right")
+    expect(parsed.optionExplanations).toBeUndefined()
+    expect(parsed.confusion).toBeUndefined()
+    expect(parsed.sourceExcerpt).toBe("excerpt")
+  })
+
+  it("parseChapterQuizQuestions accepts targeted feedback when aligned", () => {
+    const raw = JSON.stringify({
+      questions: [
+        {
+          text: "T",
+          options: ["A", "B", "C", "D"],
+          correctIndex: 1,
+          explanation: "general",
+          correctReason: "B is grounded",
+          optionExplanations: ["not A", "", "not C", "not D"],
+          confusion: "A vs B",
+          sourceExcerpt: "from source",
+          sourceBlockId: 10
+        }
+      ]
+    })
+    const result = parseChapterQuizQuestions(raw, 1, [10])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const q = result.questions[0]
+    expect(q.correctReason).toBe("B is grounded")
+    expect(q.optionExplanations).toEqual(["not A", "", "not C", "not D"])
+    const fb = resolveQuestionFeedbackDisplay(q, 0)
+    expect(fb.correctReason).toBe("B is grounded")
+    expect(fb.selectedWrongReason).toBe("not A")
+    expect(fb.confusion).toBe("A vs B")
+    expect(fb.sourceExcerpt).toBe("from source")
+  })
+
+  it("falls back to explanation when new fields absent", () => {
+    const fb = resolveQuestionFeedbackDisplay(sampleQuestions[0], 0)
+    expect(fb.correctReason).toBeNull()
+    expect(fb.generalExplanation).toContain("渐进阅读")
+  })
+})
+
+describe("cardAdds accounting + batch merge", () => {
+  it("counts actual recorded basic/cloze ids only", () => {
+    expect(countRecordedCardAdds(undefined)).toBe(0)
+    expect(
+      countRecordedCardAdds({
+        q0: { basicBlockId: 1 },
+        q1: { clozeBlockId: 2 },
+        q2: { basicBlockId: 3, clozeBlockId: 4 },
+        q3: {}
+      })
+    ).toBe(4)
+  })
+
+  it("mergeQuestionCardAdds does not overwrite earlier cards in a batch", () => {
+    let cardAdds = mergeQuestionCardAdds({}, "q1", { basicBlockId: 10 })
+    cardAdds = mergeQuestionCardAdds(cardAdds, "q2", { basicBlockId: 20 })
+    cardAdds = mergeQuestionCardAdds(cardAdds, "q1", { clozeBlockId: 11 })
+    expect(cardAdds.q1).toEqual({ basicBlockId: 10, clozeBlockId: 11 })
+    expect(cardAdds.q2).toEqual({ basicBlockId: 20 })
+    // failed item never merged
+    expect(cardAdds.q3).toBeUndefined()
+    expect(countRecordedCardAdds(cardAdds)).toBe(3)
+  })
+})
+
+describe("quiz keyboard decision helper", () => {
+  const base = {
+    answeringAllowed: true,
+    feedbackRevealed: false,
+    optionCount: 4,
+    focusInEditable: false,
+    isComposing: false,
+    hasModifier: false,
+    blockAdvance: false,
+    focusedOptionIndex: 1
+  }
+
+  it("maps 1-6 to select when answering allowed", () => {
+    expect(resolveQuizKeyboardDecision("1", base)).toEqual({
+      type: "select",
+      index: 0
+    })
+    expect(resolveQuizKeyboardDecision("4", base)).toEqual({
+      type: "select",
+      index: 3
+    })
+    expect(resolveQuizKeyboardDecision("5", base)).toEqual({ type: "none" })
+  })
+
+  it("Enter advances only after feedback and not when blocked", () => {
+    expect(
+      resolveQuizKeyboardDecision("Enter", { ...base, feedbackRevealed: true })
+    ).toEqual({ type: "advance" })
+    expect(
+      resolveQuizKeyboardDecision("Enter", {
+        ...base,
+        feedbackRevealed: true,
+        blockAdvance: true
+      })
+    ).toEqual({ type: "none" })
+    expect(resolveQuizKeyboardDecision("Enter", base)).toEqual({ type: "none" })
+  })
+
+  it("Arrow keys move focus; ignores editable/IME/modifiers", () => {
+    expect(resolveQuizKeyboardDecision("ArrowDown", base)).toEqual({
+      type: "focusOption",
+      index: 2
+    })
+    expect(resolveQuizKeyboardDecision("ArrowUp", base)).toEqual({
+      type: "focusOption",
+      index: 0
+    })
+    expect(
+      resolveQuizKeyboardDecision("1", { ...base, focusInEditable: true })
+    ).toEqual({ type: "none" })
+    expect(
+      resolveQuizKeyboardDecision("1", { ...base, isComposing: true })
+    ).toEqual({ type: "none" })
+    expect(
+      resolveQuizKeyboardDecision("1", { ...base, hasModifier: true })
+    ).toEqual({ type: "none" })
+  })
+})
+
+// ── Codex acceptance fixes ──
+
+describe("partial reload must not freeze weak items early", () => {
+  it("phase=quiz with early weak answer does not freeze weakItemIds", () => {
+    const r = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "quiz",
+        pluginName: "p",
+        topicBlockId: 1,
+        questionCount: 4,
+        questions: loopQs,
+        answers: { q0: 0 }, // wrong
+        revealed: { q0: true },
+        firstCategories: { q0: "wrong" },
+        // buggy mid-quiz freeze must be ignored
+        weakItemIds: ["q0"]
+      },
+      { pluginName: "p", topicBlockId: 1 }
+    )
+    expect(r.phase).toBe("quiz")
+    expect(r.weakItemIds).toEqual([])
+  })
+
+  it("after full first round, freeze contains all weak items in order", () => {
+    const mid = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "quiz",
+        questions: loopQs,
+        answers: { q0: 0 },
+        firstCategories: { q0: "wrong" },
+        weakItemIds: ["q0"]
+      },
+      { pluginName: "p", topicBlockId: 1 }
+    )
+    expect(mid.weakItemIds).toEqual([])
+
+    const done = freezeWeakItemsIfNeeded({
+      ...mid,
+      phase: "done",
+      answers: { q0: 0, q1: 0, q2: 0, q3: 3 },
+      firstCategories: {
+        q0: "wrong",
+        q1: "certain_correct",
+        q2: "uncertain_correct",
+        q3: "certain_correct"
+      },
+      uncertainMarks: { q2: true },
+      revealed: { q0: true, q1: true, q2: true, q3: true }
+    })
+    expect(done.weakItemIds).toEqual(["q0", "q2"])
+  })
+})
+
+describe("malformed repair-state normalization", () => {
+  it("clears repairActive with empty/unknown queue and clamps index", () => {
+    const r = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "done",
+        questions: loopQs,
+        answers: { q0: 0, q1: 1, q2: 0, q3: 0 },
+        firstCategories: {
+          q0: "wrong",
+          q1: "certain_correct",
+          q2: "wrong",
+          q3: "skipped"
+        },
+        skipped: { q3: true },
+        weakItemIds: ["q0", "q2", "q3"],
+        repaired: { q0: true, ghost: true },
+        repairActive: true,
+        repairQueue: ["missing", "q0", "q0", "q2"],
+        repairIndex: 99,
+        repairAnswers: { q2: 1, q0: 0, ghost: 1 },
+        repairRevealed: { q2: true, ghost: true },
+        repairOptionOrders: {
+          q2: [0, 0, 1, 2], // duplicate invalid
+          q3: [3, 2, 1, 0]
+        }
+      },
+      { pluginName: "p", topicBlockId: 1 }
+    )
+    // repaired only weak ids; q0 repaired so queue is unresolved only
+    expect(r.repaired).toEqual({ q0: true })
+    expect(r.repairActive).toBe(true)
+    expect(r.repairQueue).toEqual(["q2"]) // q0 repaired filtered; missing dropped; deduped; order from weak
+    expect(r.repairIndex).toBe(0)
+    expect(r.repairAnswers).toEqual({ q2: 1 })
+    expect(r.repairRevealed).toEqual({ q2: true })
+    expect(r.repairOptionOrders?.q2).toBeUndefined() // malformed dropped
+    expect(r.repairOptionOrders?.q3).toBeUndefined() // not in active queue
+  })
+
+  it("repairActive false when queue empty after validation", () => {
+    const r = normalizeChapterQuizRepr(
+      {
+        type: "srs.chapter-quiz",
+        phase: "done",
+        questions: loopQs,
+        firstCategories: { q0: "wrong" },
+        weakItemIds: ["q0"],
+        repaired: { q0: true },
+        repairActive: true,
+        repairQueue: ["q0"],
+        repairIndex: 0
+      },
+      { pluginName: "p", topicBlockId: 1 }
+    )
+    expect(r.repairActive).toBe(false)
+    expect(r.repairQueue).toEqual([])
+  })
+})
+
+describe("displayed option letters after shuffle", () => {
+  it("maps original correct/selected to display indices", () => {
+    const order = [2, 0, 3, 1] // display 0 shows original 2, …
+    const displayOptions = order.map((originalIndex, displayIndex) => ({
+      displayIndex,
+      originalIndex
+    }))
+    const r = resolveDisplayedOptionIndices(displayOptions, 1, 0)
+    // correct original 1 → display index 3
+    expect(r.displayedCorrectIndex).toBe(3)
+    // selected original 0 → display index 1
+    expect(r.displayedSelectedIndex).toBe(1)
+    expect(
+      formatSelectedWrongChoiceLabel({
+        displayedSelectedIndex: 1,
+        selectedOptionText: "optA"
+      })
+    ).toBe("你的选择（B. optA）")
+  })
+})
+
+describe("sourceExcerpt grounding boundary", () => {
+  it("drops sourceExcerpt when sourceBlockId missing or rejected", () => {
+    const noId = parseChapterQuizQuestions(
+      JSON.stringify({
+        questions: [
+          {
+            text: "T",
+            options: ["a", "b", "c"],
+            correctIndex: 0,
+            explanation: "e",
+            sourceExcerpt: "should drop"
+          }
+        ]
+      }),
+      1
+    )
+    expect(noId.ok).toBe(true)
+    if (noId.ok) expect(noId.questions[0].sourceExcerpt).toBeUndefined()
+
+    const rejected = parseChapterQuizQuestions(
+      JSON.stringify({
+        questions: [
+          {
+            text: "T",
+            options: ["a", "b", "c"],
+            correctIndex: 0,
+            explanation: "e",
+            sourceBlockId: 999,
+            sourceExcerpt: "should drop"
+          }
+        ]
+      }),
+      1,
+      [1, 2, 3]
+    )
+    expect(rejected.ok).toBe(true)
+    if (rejected.ok) {
+      expect(rejected.questions[0].sourceBlockId).toBeUndefined()
+      expect(rejected.questions[0].sourceExcerpt).toBeUndefined()
+    }
+
+    const ok = parseChapterQuizQuestions(
+      JSON.stringify({
+        questions: [
+          {
+            text: "T",
+            options: ["a", "b", "c"],
+            correctIndex: 0,
+            explanation: "e",
+            sourceBlockId: 2,
+            sourceExcerpt: "keep me"
+          }
+        ]
+      }),
+      1,
+      [2]
+    )
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.questions[0].sourceExcerpt).toBe("keep me")
+  })
+
+  it("parseOptionalQuestionFeedback requires allowSourceExcerpt", () => {
+    expect(
+      parseOptionalQuestionFeedback(
+        { sourceExcerpt: "x" },
+        3
+      ).sourceExcerpt
+    ).toBeUndefined()
+    expect(
+      parseOptionalQuestionFeedback(
+        { sourceExcerpt: "x" },
+        3,
+        { allowSourceExcerpt: true }
+      ).sourceExcerpt
+    ).toBe("x")
+  })
+})
+
+describe("batch cardAdds failure isolation", () => {
+  it("failed item does not erase earlier successes", () => {
+    let adds = applyBatchCardAddOutcome(undefined, {
+      questionId: "q1",
+      kind: "basic",
+      ok: true,
+      blockId: 10
+    })
+    adds = applyBatchCardAddOutcome(adds, {
+      questionId: "q2",
+      kind: "basic",
+      ok: true,
+      blockId: 20
+    })
+    // failure must not wipe prior
+    adds = applyBatchCardAddOutcome(adds, {
+      questionId: "q3",
+      kind: "basic",
+      ok: false
+    })
+    expect(adds.q1?.basicBlockId).toBe(10)
+    expect(adds.q2?.basicBlockId).toBe(20)
+    expect(adds.q3).toBeUndefined()
+    // optimistic write then fail-remove for q2
+    adds = applyBatchCardAddOutcome(
+      { ...adds, q2: { basicBlockId: 20 } },
+      { questionId: "q2", kind: "basic", ok: false }
+    )
+    expect(adds.q1?.basicBlockId).toBe(10)
+    expect(adds.q2).toBeUndefined()
   })
 })

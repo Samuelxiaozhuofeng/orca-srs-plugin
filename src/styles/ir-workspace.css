@@ -4400,48 +4400,238 @@
   box-shadow: var(--srs-shadow-pill, 0 1px 2px rgba(0, 0, 0, 0.08));
 }
 
-/* Completion Hero Card */
-.chapter-quiz-panel__done-card {
-  align-items: center;
-  text-align: center;
-  padding: var(--srs-space-5) var(--srs-space-4);
+/* Action summary (replaces percentage hero) */
+.chapter-quiz-panel__action-summary {
+  padding: var(--srs-space-4);
 }
 
-.chapter-quiz-panel__done-hero {
+.chapter-quiz-panel__action-title {
+  margin: 0 0 var(--srs-space-3);
+  font-size: var(--srs-text-title, 1.05rem);
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+}
+
+.chapter-quiz-panel__action-counts {
+  list-style: none;
+  margin: 0 0 var(--srs-space-3);
+  padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--orca-color-text-1);
+  font-size: var(--srs-text-body, 0.95rem);
+}
+
+.chapter-quiz-panel__action-counts--muted {
+  color: var(--orca-color-text-3);
+}
+
+.chapter-quiz-panel__action-recs {
+  margin-bottom: var(--srs-space-3);
+}
+
+.chapter-quiz-panel__primary--wrap {
+  flex-wrap: wrap;
+}
+
+.chapter-quiz-panel__sr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chapter-quiz-panel__feedback--skip {
+  border-color: var(--srs-hairline);
+  background: var(--srs-surface-sunken);
+}
+
+.chapter-quiz__verdict--skip {
+  color: var(--orca-color-text-2);
+}
+
+.chapter-quiz__pre-answer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--srs-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--srs-space-2);
+}
+
+.chapter-quiz__uncertain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--srs-text-caption, 0.85rem);
+  color: var(--orca-color-text-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chapter-quiz__option-mark {
+  margin-left: auto;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.chapter-quiz__details {
+  margin-top: var(--srs-space-2);
+}
+
+.chapter-quiz__details-summary {
+  cursor: pointer;
+  font-size: var(--srs-text-caption, 0.85rem);
+  color: var(--orca-color-text-2);
+  list-style-position: outside;
+}
+
+.chapter-quiz__details-summary:focus-visible {
+  outline: 2px solid var(--orca-color-primary-1, #4a8);
+  outline-offset: 2px;
+}
+
+.chapter-quiz__explain--excerpt {
+  border-left: 2px solid var(--srs-hairline-strong, var(--srs-hairline));
+  padding-left: var(--srs-space-2);
+  color: var(--orca-color-text-2);
+}
+
+/* Weakness organizer subview */
+.chapter-quiz-organizer__header {
+  display: flex;
   align-items: center;
   gap: var(--srs-space-2);
   margin-bottom: var(--srs-space-2);
 }
 
-.chapter-quiz-panel__done-score {
-  font-size: var(--srs-text-hero);
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--orca-color-text-1);
-}
-
-.chapter-quiz-panel__done-score-num {
-  color: var(--srs-accent-success);
-}
-
-.chapter-quiz-panel__done-score-total {
-  font-size: var(--srs-text-title);
-  color: var(--orca-color-text-3);
-  font-weight: 500;
-}
-
-.chapter-quiz-panel__done-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: var(--srs-radius-pill);
-  font-size: var(--srs-text-caption);
+.chapter-quiz-organizer__title {
+  margin: 0;
+  font-size: var(--srs-text-title, 1.05rem);
   font-weight: 600;
-  background: color-mix(in srgb, var(--srs-accent-success) 15%, var(--srs-surface-base));
-  color: var(--srs-accent-success);
+}
+
+.chapter-quiz-organizer__list {
+  list-style: none;
+  margin: 0 0 var(--srs-space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-quiz-organizer__row {
+  padding: var(--srs-space-3) 0;
+  border: none;
+  border-bottom: 1px solid var(--srs-hairline);
+  border-radius: 0;
+  background: transparent;
+}
+
+.chapter-quiz-organizer__row:last-child {
+  border-bottom: none;
+}
+
+.chapter-quiz-organizer__row-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--srs-space-2);
+  justify-content: space-between;
+}
+
+.chapter-quiz-organizer__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.chapter-quiz-organizer__stem {
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+  line-height: 1.45;
+}
+
+.chapter-quiz-organizer__badge {
+  flex-shrink: 0;
+  font-size: var(--srs-text-caption, 0.75rem);
+  padding: 2px 8px;
+  border-radius: var(--srs-radius-pill);
+  border: 1px solid var(--srs-hairline);
+  color: var(--orca-color-text-2);
+}
+
+.chapter-quiz-organizer__badge.is-repaired {
+  color: var(--srs-accent-success, #2a7);
+}
+
+.chapter-quiz-organizer__badge.is-unresolved {
+  color: var(--orca-color-text-2);
+}
+
+.chapter-quiz-organizer__preview {
+  margin: var(--srs-space-2) 0;
+  padding: var(--srs-space-2);
+  border-radius: var(--srs-radius-sm);
+  background: var(--srs-surface-sunken);
+  font-size: var(--srs-text-caption, 0.85rem);
+  color: var(--orca-color-text-2);
+}
+
+.chapter-quiz-organizer__preview-q {
+  font-weight: 600;
+  color: var(--orca-color-text-1);
+  margin-bottom: 4px;
+}
+
+.chapter-quiz-organizer__preview-a {
+  white-space: pre-wrap;
+}
+
+.chapter-quiz-organizer__kinds {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chapter-quiz-organizer__kind {
+  padding: 4px 10px;
+  border-radius: var(--srs-radius-pill);
+  border: 1px solid var(--srs-hairline);
+  background: var(--srs-surface-base);
+  color: var(--orca-color-text-2);
+  font-size: var(--srs-text-caption, 0.85rem);
+  cursor: pointer;
+}
+
+.chapter-quiz-organizer__kind.is-active {
+  border-color: var(--orca-color-primary-1, #4a8);
+  color: var(--orca-color-text-1);
+  font-weight: 600;
+}
+
+.chapter-quiz-organizer__kind.is-done {
+  opacity: 0.7;
+}
+
+.chapter-quiz-organizer__kind:focus-visible {
+  outline: 2px solid var(--orca-color-primary-1, #4a8);
+  outline-offset: 2px;
+}
+
+/* Legacy done-card tokens kept for any residual references */
+.chapter-quiz-panel__done-card {
+  align-items: stretch;
+  text-align: left;
+  padding: var(--srs-space-4);
 }
 
 /* Chapter Quiz Stem & Options */

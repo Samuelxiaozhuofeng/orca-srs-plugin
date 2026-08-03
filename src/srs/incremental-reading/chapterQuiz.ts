@@ -85,13 +85,41 @@ export type ChapterQuizPhase =
   | "done"
   | "error"
 
+/**
+ * 首轮分类（互斥、冻结）。弱项 = uncertain_correct ∪ wrong ∪ skipped。
+ */
+export type ChapterQuizFirstCategory =
+  | "certain_correct"
+  | "uncertain_correct"
+  | "wrong"
+  | "skipped"
+
 export type ChapterQuizQuestion = {
   id: string
   text: string
   options: string[]
   /** 0-based correct option index */
   correctIndex: number
+  /**
+   * 通用讲解（兼容旧卷）。新卷优先用 correctReason / optionExplanations 等定向反馈。
+   */
   explanation: string
+  /**
+   * 为何正确答案正确（新卷可选）。
+   */
+  correctReason?: string
+  /**
+   * 与 options 等长：各干扰项为何错误；正确项可为 ""。对齐失败则整段丢弃。
+   */
+  optionExplanations?: string[]
+  /**
+   * 易混概念 / 区分点（新卷可选）。
+   */
+  confusion?: string
+  /**
+   * 出处摘录（须 grounded 在 source 块；新卷可选）。
+   */
+  sourceExcerpt?: string
   /**
    * 出题依据的源块 ID（AI 从带 [block:id] 标注的 SOURCE 中选取）。
    * 有效时用于「跳转原文」；缺失或非法 ID 时不显示按钮。
@@ -118,9 +146,9 @@ export type ChapterQuizRepr = {
   questionCount: number
   questions?: ChapterQuizQuestion[]
   currentIndex?: number
-  /** questionId → selected option index */
+  /** questionId → selected option index（原选项下标；跳过的题无此键） */
   answers?: Record<string, number>
-  /** questionId → revealed */
+  /** questionId → revealed（含跳过） */
   revealed?: Record<string, boolean>
   /**
    * questionId → true：用户选「不知道」揭示答案（未选任何选项）。
@@ -134,6 +162,36 @@ export type ChapterQuizRepr = {
   guessed?: Record<string, boolean>
   /** questionId → written card ids */
   cardAdds?: Record<string, ChapterQuizCardAdds>
+  /**
+   * 答题前标记「我不确定」。仅首轮写入；正确+不确定 → uncertain_correct。
+   */
+  uncertainMarks?: Record<string, boolean>
+  /** questionId → 首轮跳过（无 selected answer） */
+  skipped?: Record<string, boolean>
+  /** 首轮冻结分类（揭晓/跳过后写入，此后不变） */
+  firstCategories?: Record<string, ChapterQuizFirstCategory>
+  /**
+   * 原始弱项 questionId 列表（首轮完成时冻结，保持原题序）。
+   * Y = length；已修复 X 从此列表中 count repaired。
+   */
+  weakItemIds?: string[]
+  /** questionId → 某次修复答对后为 true（不改 firstCategories） */
+  repaired?: Record<string, boolean>
+  /** 是否在修复轮作答中 */
+  repairActive?: boolean
+  /** 当前修复轮队列（未解决弱项 ids，本轮每人一题） */
+  repairQueue?: string[]
+  /** 当前修复轮游标 */
+  repairIndex?: number
+  /** 当前修复轮：questionId → 所选原选项下标 */
+  repairAnswers?: Record<string, number>
+  /** 当前修复轮：questionId → 已揭晓 */
+  repairRevealed?: Record<string, boolean>
+  /**
+   * 当前修复轮：questionId → 展示顺序（原选项下标排列）。
+   * 中途 reload 不重排；新修复轮可重建。
+   */
+  repairOptionOrders?: Record<string, number[]>
   errorMessage?: string
   /** 生成进度阶段（additive；旧 repr 缺省不显示阶段细分） */
   genStage?: ChapterQuizGenStage
@@ -220,9 +278,11 @@ export const CHAPTER_QUIZ_COPY = {
   resultSummary: (confident: number, weak: number) =>
     `当前清晰 ${confident} 道 · 薄弱 ${weak} 道`,
   resultWeakScope: "薄弱包括答错、不知道与标记“这是猜的”的题",
-  doneHint: "测验为一次性检查，不会进入日常复习队列。",
   /** 测验 vs 复习的关系说明：launch 与答题界面都要可见 */
   quizVsCardsHint: "测验本身不进复习；你主动加入的卡会进入日常复习。",
+  doneSummary: (correct: number, total: number) =>
+    `本轮 ${correct} / ${total} 正确`,
+  doneHint: "测验为一次性检查，不会自动进入日常复习队列。",
   deleteQuiz: "删除测验",
   /** 完成 Topic 后停留做小测：测完推进会话下一篇 */
   continueNext: "继续下一篇",
@@ -278,7 +338,53 @@ export const CHAPTER_QUIZ_COPY = {
   jumpToSourceOk: "已在侧栏打开原文",
   sourceBasis: "原文依据",
   cardSourceMissing: "本题未标注原文出处块，无法制卡",
-  cardSourceMissingTitle: "制卡需要有效的原文出处块（与「原文」一致）"
+  cardSourceMissingTitle: "制卡需要有效的原文出处块（与「原文」一致）",
+  // 首轮 / 修复学习闭环
+  uncertainToggle: "我不确定",
+  uncertainToggleTitle: "标记后仍须作答；答对记入「猜对或不确定」并进入修复",
+  skip: "跳过",
+  skipTitle: "跳过本题并进入修复列表（首轮不揭晓答案）",
+  skipVerdict: "已跳过",
+  certainCorrectLabel: "确定答对",
+  uncertainCorrectLabel: "猜对或不确定",
+  wrongLabel: "答错",
+  skippedLabel: "跳过",
+  repairedProgress: (x: number, y: number) => `已修复 ${x}/${y}`,
+  cardsAddedCount: (n: number) => `已加入复习: ${n} 张卡`,
+  startRepair: "开始修复",
+  continueRepair: "继续修复",
+  startRepairTitle: "对薄弱点进行一轮再作答（每题一次）",
+  repairModeLabel: "薄弱点修复",
+  repairRoundDone: "本轮修复结束",
+  organizeWeak: "整理薄弱点",
+  organizeWeakTitle: "选择要加入复习的薄弱点并制卡",
+  backToActionSummary: "返回结果",
+  actionSummaryTitle: "本轮小结",
+  recommendRepair: (n: number) => `修复 ${n} 个薄弱点`,
+  recommendContinue: "继续下一篇",
+  recommendOrganize: "整理薄弱点并加入复习",
+  correctReasonLabel: "为何正确",
+  wrongOptionReasonLabel: "你选的选项",
+  confusionLabel: "易混概念",
+  sourceExcerptLabel: "出处依据",
+  feedbackDetails: "查看讲解",
+  feedbackDetailsHide: "收起讲解",
+  repairCorrect: "修复正确",
+  repairIncorrect: "本次未修复",
+  organizerTitle: "整理薄弱点",
+  organizerHint: "勾选要加入复习的题目；填空须先预览确认。不会默认全选。",
+  organizerCreate: "创建选中卡片",
+  organizerCreating: "正在创建…",
+  organizerCardTypeBasic: "简答",
+  organizerCardTypeCloze: "填空",
+  organizerAlreadyAdded: "已加入",
+  organizerNoSource: "无出处，无法制卡",
+  organizerSelectNone: "请先勾选要创建的题目",
+  organizerClozeNeedPreview: "填空须先生成预览",
+  organizerProgress: (done: number, total: number) =>
+    `进度 ${done} / ${total}`,
+  repairedBadge: "已修复",
+  unresolvedBadge: "待修复"
 } as const
 
 /** 小测结束后请求 IR 会话推进下一篇（完成后续停留模式） */
@@ -455,6 +561,413 @@ export async function collectTopicPlainText(
 
 // ── Parse / validate AI quiz JSON ──────────────────────────
 
+const FEEDBACK_TEXT_MAX = 800
+const SOURCE_EXCERPT_MAX = 600
+
+/**
+ * 解析可选定向反馈字段。对齐失败 / 畸形时丢弃该字段，不整卷失败。
+ * 旧卷仅有 explanation 时全部返回空。
+ */
+export function parseOptionalQuestionFeedback(
+  row: Record<string, unknown>,
+  optionCount: number,
+  /**
+   * 仅当有合法正数 sourceBlockId 时才保留 sourceExcerpt（接地证据）。
+   * 缺省 / 非法 / 被 allowed 集拒绝时丢弃摘录。
+   */
+  options?: { allowSourceExcerpt?: boolean }
+): Pick<
+  ChapterQuizQuestion,
+  "correctReason" | "optionExplanations" | "confusion" | "sourceExcerpt"
+> {
+  const out: Pick<
+    ChapterQuizQuestion,
+    "correctReason" | "optionExplanations" | "confusion" | "sourceExcerpt"
+  > = {}
+
+  const correctReasonRaw =
+    row.correctReason ?? row.correct_reason ?? row.whyCorrect
+  if (typeof correctReasonRaw === "string" && correctReasonRaw.trim()) {
+    out.correctReason = correctReasonRaw.trim().slice(0, FEEDBACK_TEXT_MAX)
+  }
+
+  const confusionRaw = row.confusion ?? row.confusedConcepts ?? row.distinction
+  if (typeof confusionRaw === "string" && confusionRaw.trim()) {
+    out.confusion = confusionRaw.trim().slice(0, FEEDBACK_TEXT_MAX)
+  }
+
+  if (options?.allowSourceExcerpt === true) {
+    const excerptRaw =
+      row.sourceExcerpt ?? row.source_excerpt ?? row.sourceBasisText
+    if (typeof excerptRaw === "string" && excerptRaw.trim()) {
+      out.sourceExcerpt = excerptRaw.trim().slice(0, SOURCE_EXCERPT_MAX)
+    }
+  }
+
+  const optExpRaw =
+    row.optionExplanations ??
+    row.option_explanations ??
+    row.wrongOptionExplanations
+  if (Array.isArray(optExpRaw) && optExpRaw.length === optionCount) {
+    const aligned: string[] = []
+    let ok = true
+    for (let i = 0; i < optionCount; i++) {
+      const item = optExpRaw[i]
+      if (item == null) {
+        aligned.push("")
+        continue
+      }
+      if (typeof item !== "string") {
+        ok = false
+        break
+      }
+      aligned.push(item.trim().slice(0, FEEDBACK_TEXT_MAX))
+    }
+    if (ok) out.optionExplanations = aligned
+  }
+
+  return out
+}
+
+/**
+ * 规范化已持久化的题目（兼容旧卷、丢弃畸形可选字段）。
+ */
+export function normalizeChapterQuizQuestion(
+  raw: unknown,
+  index: number
+): ChapterQuizQuestion | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Record<string, unknown>
+  const text = typeof row.text === "string" ? row.text.trim() : ""
+  const explanation =
+    typeof row.explanation === "string" ? row.explanation.trim() : ""
+  if (!text || !Array.isArray(row.options)) return null
+  const options: string[] = []
+  for (const o of row.options) {
+    if (typeof o !== "string" || !o.trim()) return null
+    options.push(o.trim().slice(0, FIELD_LIMITS.optionText))
+  }
+  if (
+    options.length < CHAPTER_QUIZ_OPTION_MIN ||
+    options.length > CHAPTER_QUIZ_OPTION_MAX
+  ) {
+    return null
+  }
+  let correctIndex =
+    typeof row.correctIndex === "number" && Number.isInteger(row.correctIndex)
+      ? row.correctIndex
+      : -1
+  if (correctIndex < 0 || correctIndex >= options.length) return null
+  if (!explanation) return null
+
+  let sourceBlockId: number | undefined
+  const rawSrc = row.sourceBlockId
+  if (typeof rawSrc === "number" && Number.isFinite(rawSrc) && rawSrc > 0) {
+    sourceBlockId = Math.trunc(rawSrc)
+  }
+
+  const feedback = parseOptionalQuestionFeedback(row, options.length, {
+    allowSourceExcerpt: sourceBlockId != null
+  })
+  const id =
+    typeof row.id === "string" && row.id.trim()
+      ? row.id.trim().slice(0, 64)
+      : `q${index}`
+
+  return {
+    id,
+    text: text.slice(0, FIELD_LIMITS.question * 2),
+    options,
+    correctIndex,
+    explanation: explanation.slice(0, 1200),
+    ...feedback,
+    ...(sourceBlockId != null ? { sourceBlockId } : {})
+  }
+}
+
+/** 解析 number 字典（答案下标等）；非法键/值丢弃 */
+function normalizeNumberRecord(
+  raw: unknown
+): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k) continue
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0) {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+function normalizeBooleanRecord(
+  raw: unknown
+): Record<string, boolean> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, boolean> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k) continue
+    if (v === true) out[k] = true
+  }
+  return out
+}
+
+function normalizeFirstCategories(
+  raw: unknown
+): Record<string, ChapterQuizFirstCategory> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, ChapterQuizFirstCategory> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k) continue
+    if (isChapterQuizFirstCategory(v)) out[k] = v
+  }
+  return out
+}
+
+function normalizeStringIdList(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const ids = raw.filter(
+    (x): x is string => typeof x === "string" && x.length > 0
+  )
+  return ids
+}
+
+/** 完整合法排列：长度=n，元素为 0..n-1 各一次 */
+export function isValidOptionPermutation(
+  order: unknown,
+  optionCount: number
+): order is number[] {
+  if (!Array.isArray(order) || order.length !== optionCount || optionCount <= 0) {
+    return false
+  }
+  const seen = new Set<number>()
+  for (const v of order) {
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v >= optionCount) {
+      return false
+    }
+    if (seen.has(v)) return false
+    seen.add(v)
+  }
+  return seen.size === optionCount
+}
+
+/**
+ * 仅保留相对对应题目为完整合法排列的 order；畸形丢弃（后续 ensure 可确定性重建）。
+ */
+export function normalizeRepairOptionOrders(
+  raw: unknown,
+  questionsById?: Map<string, ChapterQuizQuestion>
+): Record<string, number[]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, number[]> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k || !Array.isArray(v)) continue
+    const q = questionsById?.get(k)
+    const n = q?.options.length
+    if (typeof n === "number" && isValidOptionPermutation(v, n)) {
+      out[k] = v.slice()
+    } else if (n == null && Array.isArray(v)) {
+      // 无题目上下文时：仅当像合法排列才保留
+      const nums = v.filter(
+        (x): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0
+      )
+      if (nums.length > 0 && isValidOptionPermutation(nums, nums.length)) {
+        out[k] = nums
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * 展示序下的正确/已选下标（用于反馈字母与读屏）。
+ */
+export function resolveDisplayedOptionIndices(
+  displayOptions: ReadonlyArray<{
+    displayIndex: number
+    originalIndex: number
+  }>,
+  correctOriginalIndex: number,
+  selectedOriginalIndex: number | undefined
+): {
+  displayedCorrectIndex: number
+  displayedSelectedIndex: number | undefined
+} {
+  let displayedCorrectIndex = -1
+  let displayedSelectedIndex: number | undefined
+  for (const opt of displayOptions) {
+    if (opt.originalIndex === correctOriginalIndex) {
+      displayedCorrectIndex = opt.displayIndex
+    }
+    if (
+      typeof selectedOriginalIndex === "number" &&
+      opt.originalIndex === selectedOriginalIndex
+    ) {
+      displayedSelectedIndex = opt.displayIndex
+    }
+  }
+  if (displayedCorrectIndex < 0) {
+    displayedCorrectIndex = correctOriginalIndex
+  }
+  return { displayedCorrectIndex, displayedSelectedIndex }
+}
+
+/**
+ * 构建错题反馈中「你的选择（B. …）」展示用文案片段。
+ */
+export function formatSelectedWrongChoiceLabel(input: {
+  displayedSelectedIndex: number | undefined
+  selectedOptionText: string | undefined
+}): string | null {
+  if (
+    typeof input.displayedSelectedIndex !== "number" ||
+    input.displayedSelectedIndex < 0 ||
+    !input.selectedOptionText
+  ) {
+    return null
+  }
+  return `你的选择（${quizOptionLetter(input.displayedSelectedIndex)}. ${input.selectedOptionText}）`
+}
+
+/**
+ * 批量制卡：合并成功项后，失败项不得出现在 cardAdds（纯状态辅助，可测）。
+ * 成功项保留；失败 questionId 若误写入则移除对应 kind。
+ */
+export function applyBatchCardAddOutcome(
+  cardAdds: Record<string, ChapterQuizCardAdds> | undefined,
+  outcome: {
+    questionId: string
+    kind: "basic" | "cloze"
+    ok: boolean
+    blockId?: number
+  }
+): Record<string, ChapterQuizCardAdds> {
+  const next = { ...(cardAdds ?? {}) }
+  if (outcome.ok && typeof outcome.blockId === "number" && outcome.blockId > 0) {
+    const patch =
+      outcome.kind === "basic"
+        ? { basicBlockId: outcome.blockId }
+        : { clozeBlockId: outcome.blockId }
+    next[outcome.questionId] = {
+      ...(next[outcome.questionId] ?? {}),
+      ...patch
+    }
+    return next
+  }
+  // 失败：确保不残留本 kind 的 id
+  const existing = next[outcome.questionId]
+  if (!existing) return next
+  if (outcome.kind === "basic") {
+    const { basicBlockId: _b, ...rest } = existing
+    if (rest.clozeBlockId) next[outcome.questionId] = rest
+    else delete next[outcome.questionId]
+  } else {
+    const { clozeBlockId: _c, ...rest } = existing
+    if (rest.basicBlockId) next[outcome.questionId] = rest
+    else delete next[outcome.questionId]
+  }
+  return next
+}
+
+/**
+ * 删除新创建的制卡块（cardAdds 持久化失败时回滚）。
+ * 使用 `core.editor.deleteBlocks`；删除失败抛出含 blockId 的错误。
+ */
+export async function rollbackCreatedQuizCardBlock(
+  blockId: number
+): Promise<void> {
+  if (!Number.isFinite(blockId) || blockId <= 0) {
+    throw new Error(`回滚制卡失败：非法 blockId ${String(blockId)}`)
+  }
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.deleteBlocks",
+      null,
+      [blockId]
+    )
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `cardAdds 未保存且回滚删除失败，残留块 #${blockId}：${msg}`
+    )
+  }
+}
+
+function normalizeCardAddsRecord(
+  raw: unknown
+): Record<string, ChapterQuizCardAdds> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, ChapterQuizCardAdds> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k || !v || typeof v !== "object") continue
+    const entry = v as Record<string, unknown>
+    const adds: ChapterQuizCardAdds = {}
+    if (
+      typeof entry.basicBlockId === "number" &&
+      Number.isFinite(entry.basicBlockId) &&
+      entry.basicBlockId > 0
+    ) {
+      adds.basicBlockId = Math.trunc(entry.basicBlockId)
+    }
+    if (
+      typeof entry.clozeBlockId === "number" &&
+      Number.isFinite(entry.clozeBlockId) &&
+      entry.clozeBlockId > 0
+    ) {
+      adds.clozeBlockId = Math.trunc(entry.clozeBlockId)
+    }
+    if (adds.basicBlockId != null || adds.clozeBlockId != null) {
+      out[k] = adds
+    }
+  }
+  return out
+}
+
+/**
+ * 定向反馈展示：优先新字段；旧卷仅 explanation 时作为 generalExplanation。
+ */
+export function resolveQuestionFeedbackDisplay(
+  question: ChapterQuizQuestion,
+  selectedOriginalIndex: number | undefined
+): {
+  correctReason: string | null
+  selectedWrongReason: string | null
+  confusion: string | null
+  sourceExcerpt: string | null
+  generalExplanation: string | null
+} {
+  const correctReason =
+    (question.correctReason && question.correctReason.trim()) || null
+  let selectedWrongReason: string | null = null
+  if (
+    typeof selectedOriginalIndex === "number" &&
+    selectedOriginalIndex !== question.correctIndex &&
+    Array.isArray(question.optionExplanations) &&
+    typeof question.optionExplanations[selectedOriginalIndex] === "string"
+  ) {
+    const t = question.optionExplanations[selectedOriginalIndex].trim()
+    if (t) selectedWrongReason = t
+  }
+  const confusion =
+    (question.confusion && question.confusion.trim()) || null
+  const sourceExcerpt =
+    (question.sourceExcerpt && question.sourceExcerpt.trim()) || null
+  const explanation =
+    (question.explanation && question.explanation.trim()) || null
+  return {
+    correctReason,
+    selectedWrongReason,
+    confusion,
+    sourceExcerpt,
+    // 有 correctReason 时 explanation 作补充；否则 explanation 即主讲解（旧卷）
+    generalExplanation: correctReason
+      ? explanation && explanation !== correctReason
+        ? explanation
+        : null
+      : explanation
+  }
+}
+
 export function parseChapterQuizQuestions(
   rawContent: string,
   expectedCount: number,
@@ -550,10 +1063,11 @@ export function parseChapterQuizQuestions(
     let sourceBlockId: number | undefined
     const rawSrc =
       row.sourceBlockId ?? row.blockId ?? row.sourceId ?? row.source_block_id
-    if (typeof rawSrc === "number" && Number.isFinite(rawSrc)) {
+    if (typeof rawSrc === "number" && Number.isFinite(rawSrc) && rawSrc > 0) {
       sourceBlockId = Math.trunc(rawSrc)
     } else if (typeof rawSrc === "string" && /^\d+$/.test(rawSrc.trim())) {
-      sourceBlockId = Number(rawSrc.trim())
+      const n = Number(rawSrc.trim())
+      if (n > 0) sourceBlockId = n
     }
     // 非法 ID 丢弃（不整卷失败）：仍可答题，只是没有「跳转原文」
     if (
@@ -564,12 +1078,17 @@ export function parseChapterQuizQuestions(
       sourceBlockId = undefined
     }
 
+    const feedback = parseOptionalQuestionFeedback(row, options.length, {
+      allowSourceExcerpt: sourceBlockId != null
+    })
+
     questions.push({
       id: `q${i}`,
       text: text.slice(0, FIELD_LIMITS.question * 2),
       options,
       correctIndex,
       explanation: explanation.slice(0, 1200),
+      ...feedback,
       ...(sourceBlockId != null ? { sourceBlockId } : {})
     })
   }
@@ -802,6 +1321,314 @@ export function quizOptionLetter(i: number): string {
   return String.fromCharCode(65 + i)
 }
 
+const FIRST_CATEGORIES: ReadonlySet<string> = new Set([
+  "certain_correct",
+  "uncertain_correct",
+  "wrong",
+  "skipped"
+])
+
+export function isChapterQuizFirstCategory(
+  value: unknown
+): value is ChapterQuizFirstCategory {
+  return typeof value === "string" && FIRST_CATEGORIES.has(value)
+}
+
+/**
+ * 首轮分类（互斥）：
+ * - skipped：用户跳过
+ * - wrong：选错（不论是否不确定）
+ * - uncertain_correct：选对且标记不确定
+ * - certain_correct：选对且未标不确定
+ */
+export function classifyFirstRoundAnswer(input: {
+  correct: boolean
+  uncertain: boolean
+  skipped: boolean
+}): ChapterQuizFirstCategory {
+  if (input.skipped) return "skipped"
+  if (!input.correct) return "wrong"
+  if (input.uncertain) return "uncertain_correct"
+  return "certain_correct"
+}
+
+export function isWeakFirstCategory(
+  category: ChapterQuizFirstCategory | undefined
+): boolean {
+  return (
+    category === "uncertain_correct" ||
+    category === "wrong" ||
+    category === "skipped"
+  )
+}
+
+/** 从已冻结 firstCategories / 或即时推断，按原题序列出弱项 id */
+export function listWeakItemIds(
+  questions: ChapterQuizQuestion[],
+  firstCategories: Record<string, ChapterQuizFirstCategory> | undefined,
+  opts?: {
+    answers?: Record<string, number>
+    uncertainMarks?: Record<string, boolean>
+    skipped?: Record<string, boolean>
+  }
+): string[] {
+  return questions
+    .filter((q) => {
+      const frozen = firstCategories?.[q.id]
+      if (isChapterQuizFirstCategory(frozen)) {
+        return isWeakFirstCategory(frozen)
+      }
+      // 回退：旧卷或尚未写 firstCategories
+      if (opts?.skipped?.[q.id] === true) return true
+      const a = opts?.answers?.[q.id]
+      if (typeof a !== "number") return false
+      if (!isAnswerCorrect(q, a)) return true
+      if (opts?.uncertainMarks?.[q.id] === true) return true
+      return false
+    })
+    .map((q) => q.id)
+}
+
+export function countFirstCategories(
+  questions: ChapterQuizQuestion[],
+  firstCategories: Record<string, ChapterQuizFirstCategory> | undefined
+): Record<ChapterQuizFirstCategory, number> {
+  const counts: Record<ChapterQuizFirstCategory, number> = {
+    certain_correct: 0,
+    uncertain_correct: 0,
+    wrong: 0,
+    skipped: 0
+  }
+  for (const q of questions) {
+    const c = firstCategories?.[q.id]
+    if (isChapterQuizFirstCategory(c)) counts[c] += 1
+  }
+  return counts
+}
+
+/** 已修复数 X（仅计 weakItemIds / 弱项中 repaired===true） */
+export function countRepairedWeakItems(
+  weakItemIds: readonly string[] | undefined,
+  repaired: Record<string, boolean> | undefined
+): number {
+  if (!weakItemIds?.length) return 0
+  let n = 0
+  for (const id of weakItemIds) {
+    if (repaired?.[id] === true) n += 1
+  }
+  return n
+}
+
+/** 仍未解决的弱项（原题序） */
+export function listUnresolvedWeakItemIds(
+  weakItemIds: readonly string[] | undefined,
+  repaired: Record<string, boolean> | undefined
+): string[] {
+  if (!weakItemIds?.length) return []
+  return weakItemIds.filter((id) => repaired?.[id] !== true)
+}
+
+/**
+ * 实际已写入的卡数：basic / cloze 各计 1（意图不计）。
+ */
+export function countRecordedCardAdds(
+  cardAdds: Record<string, ChapterQuizCardAdds> | undefined
+): number {
+  if (!cardAdds || typeof cardAdds !== "object") return 0
+  let n = 0
+  for (const entry of Object.values(cardAdds)) {
+    if (!entry || typeof entry !== "object") continue
+    if (
+      typeof entry.basicBlockId === "number" &&
+      Number.isFinite(entry.basicBlockId) &&
+      entry.basicBlockId > 0
+    ) {
+      n += 1
+    }
+    if (
+      typeof entry.clozeBlockId === "number" &&
+      Number.isFinite(entry.clozeBlockId) &&
+      entry.clozeBlockId > 0
+    ) {
+      n += 1
+    }
+  }
+  return n
+}
+
+/** 确定性字符串 hash → 32-bit unsigned */
+export function hashSeedString(seed: string): number {
+  let h = 2166136261 >>> 0
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i)
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  return h >>> 0
+}
+
+/** mulberry32 PRNG */
+export function createSeededRandom(seed: number): () => number {
+  let t = seed >>> 0
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0
+    let r = Math.imul(t ^ (t >>> 15), 1 | t)
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r)
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * 修复轮选项展示顺序：原下标的排列。确定性、可测；不改原题 options。
+ * 若 shuffle 结果与恒等相同且 n>1，再交换一次避免「未打乱」。
+ */
+export function buildRepairOptionOrder(
+  optionCount: number,
+  seed: string
+): number[] {
+  const n = Math.max(0, Math.floor(optionCount))
+  const order = Array.from({ length: n }, (_, i) => i)
+  if (n <= 1) return order
+  const rand = createSeededRandom(hashSeedString(seed))
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    const tmp = order[i]
+    order[i] = order[j]
+    order[j] = tmp
+  }
+  // 若碰巧未打乱，强制交换首尾，保证修复轮视觉重排
+  let identity = true
+  for (let i = 0; i < n; i++) {
+    if (order[i] !== i) {
+      identity = false
+      break
+    }
+  }
+  if (identity) {
+    const tmp = order[0]
+    order[0] = order[n - 1]
+    order[n - 1] = tmp
+  }
+  return order
+}
+
+/** 展示下标 → 原选项下标 */
+export function mapRepairDisplayIndexToOriginal(
+  displayIndex: number,
+  order: readonly number[]
+): number {
+  if (
+    !Number.isInteger(displayIndex) ||
+    displayIndex < 0 ||
+    displayIndex >= order.length
+  ) {
+    return -1
+  }
+  return order[displayIndex] ?? -1
+}
+
+/** 原选项下标 → 展示下标；找不到返回 -1 */
+export function mapRepairOriginalIndexToDisplay(
+  originalIndex: number,
+  order: readonly number[]
+): number {
+  return order.indexOf(originalIndex)
+}
+
+export function ensureRepairOptionOrder(
+  existing: number[] | undefined,
+  optionCount: number,
+  seed: string
+): number[] {
+  if (
+    Array.isArray(existing) &&
+    existing.length === optionCount &&
+    existing.every(
+      (v, _i, arr) =>
+        typeof v === "number" &&
+        Number.isInteger(v) &&
+        v >= 0 &&
+        v < optionCount &&
+        arr.indexOf(v) === arr.lastIndexOf(v)
+    )
+  ) {
+    return existing
+  }
+  return buildRepairOptionOrder(optionCount, seed)
+}
+
+// ── Keyboard decision helpers（纯函数，组件只负责绑定） ──
+
+export type QuizKeyboardDecisionContext = {
+  /** 允许用数字键选选项 */
+  answeringAllowed: boolean
+  /** 已揭晓，允许 Enter 前进 */
+  feedbackRevealed: boolean
+  optionCount: number
+  /** 焦点在 input/textarea/select/contenteditable */
+  focusInEditable: boolean
+  isComposing: boolean
+  /** Ctrl/Meta/Alt/Shift */
+  hasModifier: boolean
+  /**
+   * 阻止 Enter 推进（如 AI 追问区、整理器控件、填空预览）
+   */
+  blockAdvance: boolean
+  focusedOptionIndex?: number
+}
+
+export type QuizKeyboardDecision =
+  | { type: "select"; index: number }
+  | { type: "advance" }
+  | { type: "focusOption"; index: number }
+  | { type: "none" }
+
+/**
+ * 键盘决策：1–6 选选项；Enter 揭晓后前进；↑↓ 在选项间移动焦点。
+ * 不在 editable / IME / 修饰键 时生效。
+ */
+export function resolveQuizKeyboardDecision(
+  key: string,
+  ctx: QuizKeyboardDecisionContext
+): QuizKeyboardDecision {
+  if (ctx.focusInEditable || ctx.isComposing || ctx.hasModifier) {
+    return { type: "none" }
+  }
+  if (key === "Enter") {
+    if (ctx.blockAdvance || !ctx.feedbackRevealed) return { type: "none" }
+    return { type: "advance" }
+  }
+  if (key === "ArrowUp" || key === "ArrowDown") {
+    if (ctx.optionCount <= 0) return { type: "none" }
+    const cur =
+      typeof ctx.focusedOptionIndex === "number" &&
+      ctx.focusedOptionIndex >= 0 &&
+      ctx.focusedOptionIndex < ctx.optionCount
+        ? ctx.focusedOptionIndex
+        : 0
+    const delta = key === "ArrowDown" ? 1 : -1
+    const next =
+      (cur + delta + ctx.optionCount * 10) % ctx.optionCount
+    return { type: "focusOption", index: next }
+  }
+  if (ctx.answeringAllowed && /^[1-6]$/.test(key)) {
+    const index = Number(key) - 1
+    if (index >= 0 && index < ctx.optionCount && index < 6) {
+      return { type: "select", index }
+    }
+  }
+  return { type: "none" }
+}
+
+export function isKeyboardEventFromEditableTarget(
+  target: EventTarget | null
+): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+  if (target.isContentEditable) return true
+  return target.closest("[contenteditable='true']") != null
+}
+
 /**
  * 从 Custom Panel `viewArgs` 解析 quizBlockId。
  * 接受 number 或纯数字 string；非法返回 null。
@@ -972,13 +1799,17 @@ export function buildQuizSystemPrompt(options?: {
     languageLine,
     "SOURCE is split into blocks. Each block starts with a line like [block:12345] where 12345 is the block id.",
     "Return ONLY valid JSON of shape:",
-    '{"questions":[{"id":"q0","text":"...","options":["...","...","...","..."],"correctIndex":0,"explanation":"...","sourceBlockId":12345}]}',
+    '{"questions":[{"id":"q0","text":"...","options":["...","...","...","..."],"correctIndex":0,"explanation":"...","correctReason":"...","optionExplanations":["","","",""],"confusion":"...","sourceExcerpt":"...","sourceBlockId":12345}]}',
     "Rules:",
     `- Generate exactly the requested number of single-choice questions when the source supports it; fewer is OK if the source is thin, never invent filler.`,
     `- Each question: ${CHAPTER_QUIZ_OPTION_MIN}–${CHAPTER_QUIZ_OPTION_MAX} options; exactly one correct (correctIndex is 0-based).`,
     "- Do NOT put option letters (A/B/C) or numbers inside option text.",
     "- Distractors must be plausible and mutually exclusive with the correct answer.",
-    "- explanation: 1–3 sentences teaching why the correct option is right (and briefly why a common mistake is wrong).",
+    "- explanation: short general fallback (1–2 sentences). Still REQUIRED for compatibility.",
+    "- correctReason: why the correct option is right (1–2 sentences). Prefer this over packing everything into explanation.",
+    "- optionExplanations: array SAME LENGTH as options. For each wrong option, one concise sentence why it is wrong; for the correct index use \"\".",
+    "- confusion: the likely confused concepts or distinction the learner may mix up (one short sentence; omit or \"\" if none).",
+    "- sourceExcerpt: a short verbatim or near-verbatim excerpt from the SOURCE block named by sourceBlockId that grounds the answer. Do NOT invent text not supported by that block.",
     "- Each question tests one clear fact or distinction from the source.",
     "- sourceBlockId is REQUIRED: the numeric id of the single SOURCE block that best grounds the correct answer. Copy it exactly from a [block:N] line. Never invent ids.",
     ...(customPrompt
@@ -1367,6 +2198,17 @@ export async function saveChapterQuizRepr(
     unknowns: repr.unknowns ?? {},
     guessed: repr.guessed ?? {},
     cardAdds: repr.cardAdds ?? {},
+    uncertainMarks: repr.uncertainMarks ?? {},
+    skipped: repr.skipped ?? {},
+    firstCategories: repr.firstCategories ?? {},
+    weakItemIds: repr.weakItemIds ?? [],
+    repaired: repr.repaired ?? {},
+    repairActive: repr.repairActive === true,
+    repairQueue: repr.repairQueue ?? [],
+    repairIndex: repr.repairIndex ?? 0,
+    repairAnswers: repr.repairAnswers ?? {},
+    repairRevealed: repr.repairRevealed ?? {},
+    repairOptionOrders: repr.repairOptionOrders ?? {},
     sessionContinueNext: repr.sessionContinueNext === true,
     ...(repr.genStage ? { genStage: repr.genStage } : {}),
     ...(repr.genAttempt != null ? { genAttempt: repr.genAttempt } : {}),
@@ -2130,7 +2972,7 @@ export async function writeClozeCardFromQuizQuestion(options: {
   return createdId
 }
 
-/** Normalize partial _repr from host into a usable ChapterQuizRepr. */
+/** Normalize partial _repr / property payload into a usable ChapterQuizRepr. */
 export function normalizeChapterQuizRepr(
   raw: Partial<ChapterQuizRepr> | null | undefined,
   fallback: { pluginName: string; topicBlockId?: number }
@@ -2146,6 +2988,187 @@ export function normalizeChapterQuizRepr(
       ? phase
       : "generating"
 
+  let questions: ChapterQuizQuestion[] | undefined
+  if (Array.isArray(raw?.questions)) {
+    const normalized: ChapterQuizQuestion[] = []
+    const usedIds = new Set<string>()
+    for (let i = 0; i < raw!.questions!.length; i++) {
+      const q = normalizeChapterQuizQuestion(raw!.questions![i], i)
+      if (!q) continue
+      // 保留已存 id 以匹配 answers/cardAdds；冲突时回退 q{i}
+      let id = q.id
+      if (!id || usedIds.has(id)) id = `q${i}`
+      while (usedIds.has(id)) id = `${id}_${normalized.length}`
+      usedIds.add(id)
+      normalized.push({ ...q, id })
+    }
+    questions = normalized.length > 0 ? normalized : undefined
+  }
+
+  const answers = normalizeNumberRecord(raw?.answers)
+  const revealed = normalizeBooleanRecord(raw?.revealed)
+  const uncertainMarks = normalizeBooleanRecord(
+    (raw as { uncertainMarks?: unknown })?.uncertainMarks
+  )
+  const skipped = normalizeBooleanRecord(
+    (raw as { skipped?: unknown })?.skipped
+  )
+  let firstCategories = normalizeFirstCategories(
+    (raw as { firstCategories?: unknown })?.firstCategories
+  )
+  // 旧卷回填：已作答但无 firstCategories 时按 answers 推断（不写 uncertain/skip）
+  if (
+    questions &&
+    Object.keys(firstCategories).length === 0 &&
+    Object.keys(answers).length > 0
+  ) {
+    for (const q of questions) {
+      if (skipped[q.id]) {
+        firstCategories[q.id] = "skipped"
+        continue
+      }
+      const a = answers[q.id]
+      if (typeof a !== "number") continue
+      firstCategories[q.id] = classifyFirstRoundAnswer({
+        correct: isAnswerCorrect(q, a),
+        uncertain: uncertainMarks[q.id] === true,
+        skipped: false
+      })
+    }
+  }
+
+  const questionList = questions ?? []
+  const questionIds = new Set(questionList.map((q) => q.id))
+  const questionsById = new Map(questionList.map((q) => [q.id, q]))
+
+  // 首轮未完成（非 done）绝不冻结 weakItemIds，避免 partial reload 锁死早期弱项
+  let weakItemIds: string[] = []
+  if (safePhase === "done" && questionList.length > 0) {
+    const rawWeak = normalizeStringIdList(
+      (raw as { weakItemIds?: unknown })?.weakItemIds
+    )
+    if (rawWeak && rawWeak.length > 0) {
+      // 校验：仅保留存在于题集的 id，按原题序去重
+      const seen = new Set<string>()
+      for (const q of questionList) {
+        if (rawWeak.includes(q.id) && !seen.has(q.id)) {
+          seen.add(q.id)
+          weakItemIds.push(q.id)
+        }
+      }
+    }
+    if (weakItemIds.length === 0) {
+      weakItemIds = listWeakItemIds(questionList, firstCategories, {
+        answers,
+        uncertainMarks,
+        skipped
+      })
+    }
+  }
+
+  const weakSet = new Set(weakItemIds)
+  // repaired 仅保留弱项 id
+  const repairedRaw = normalizeBooleanRecord(
+    (raw as { repaired?: unknown })?.repaired
+  )
+  const repaired: Record<string, boolean> = {}
+  for (const id of weakItemIds) {
+    if (repairedRaw[id] === true) repaired[id] = true
+  }
+
+  // 修复队列：仅未解决弱项，去重，保持 weakItemIds / 原题序
+  const rawQueue =
+    normalizeStringIdList((raw as { repairQueue?: unknown })?.repairQueue) ?? []
+  const unresolvedOrdered = listUnresolvedWeakItemIds(weakItemIds, repaired)
+  const unresolvedSet = new Set(unresolvedOrdered)
+  const repairQueue: string[] = []
+  const queueSeen = new Set<string>()
+  // 先按 weak 原序收 rawQueue 中合法项，再补未列入但未解决的
+  for (const id of unresolvedOrdered) {
+    if (rawQueue.includes(id) && !queueSeen.has(id)) {
+      queueSeen.add(id)
+      repairQueue.push(id)
+    }
+  }
+  for (const id of unresolvedOrdered) {
+    if (!queueSeen.has(id)) {
+      // raw 为空或残缺时：仅当标记 repairActive 才用全量未解决
+      if (rawQueue.length === 0) {
+        // 下面用 repairActive 决定是否填满
+      } else if (unresolvedSet.has(id)) {
+        // raw 有内容但不含此项：不自动塞入（保持用户本轮队列）
+      }
+    }
+  }
+  // raw 为空且 repairActive：用全部未解决
+  let repairActiveRequested =
+    (raw as { repairActive?: unknown })?.repairActive === true
+  if (repairActiveRequested && rawQueue.length === 0) {
+    for (const id of unresolvedOrdered) {
+      if (!queueSeen.has(id)) {
+        queueSeen.add(id)
+        repairQueue.push(id)
+      }
+    }
+  } else if (repairActiveRequested && repairQueue.length === 0) {
+    // raw 有 id 但全部非法 → 无有效队列
+  }
+
+  // 交叉校验：仅保留在题集+弱项+未解决中的
+  const validatedQueue = repairQueue.filter(
+    (id) =>
+      questionIds.has(id) && weakSet.has(id) && repaired[id] !== true
+  )
+
+  const repairActive =
+    repairActiveRequested &&
+    validatedQueue.length > 0 &&
+    safePhase === "done"
+
+  const finalQueue = repairActive ? validatedQueue : []
+
+  const repairIndexRaw = (raw as { repairIndex?: unknown })?.repairIndex
+  let repairIndex =
+    typeof repairIndexRaw === "number" &&
+    Number.isInteger(repairIndexRaw) &&
+    repairIndexRaw >= 0
+      ? repairIndexRaw
+      : 0
+  if (finalQueue.length === 0) repairIndex = 0
+  else repairIndex = Math.min(repairIndex, finalQueue.length - 1)
+
+  const repairAnswersRaw = normalizeNumberRecord(
+    (raw as { repairAnswers?: unknown })?.repairAnswers
+  )
+  const repairRevealedRaw = normalizeBooleanRecord(
+    (raw as { repairRevealed?: unknown })?.repairRevealed
+  )
+  const repairAnswers: Record<string, number> = {}
+  const repairRevealed: Record<string, boolean> = {}
+  if (repairActive) {
+    for (const id of finalQueue) {
+      const q = questionsById.get(id)
+      if (!q) continue
+      const a = repairAnswersRaw[id]
+      if (typeof a === "number" && a >= 0 && a < q.options.length) {
+        repairAnswers[id] = a
+      }
+      if (repairRevealedRaw[id] === true) repairRevealed[id] = true
+    }
+  }
+
+  const repairOptionOrders = normalizeRepairOptionOrders(
+    (raw as { repairOptionOrders?: unknown })?.repairOptionOrders,
+    questionsById
+  )
+  // 仅保留活跃队列中题目的合法 order
+  const filteredOrders: Record<string, number[]> = {}
+  if (repairActive) {
+    for (const id of finalQueue) {
+      if (repairOptionOrders[id]) filteredOrders[id] = repairOptionOrders[id]
+    }
+  }
+
   return {
     type: CHAPTER_QUIZ_REPR_TYPE,
     pluginName:
@@ -2158,21 +3181,28 @@ export function normalizeChapterQuizRepr(
       typeof raw?.questionCount === "number" && raw.questionCount > 0
         ? raw.questionCount
         : CHAPTER_QUIZ_DEFAULT_COUNT,
-    questions: Array.isArray(raw?.questions) ? raw!.questions : undefined,
+    questions,
     currentIndex:
       typeof raw?.currentIndex === "number" && raw.currentIndex >= 0
         ? raw.currentIndex
         : 0,
-    answers: raw?.answers && typeof raw.answers === "object" ? raw.answers : {},
-    revealed:
-      raw?.revealed && typeof raw.revealed === "object" ? raw.revealed : {},
-    // 旧存储没有 unknowns/guessed：归一为空对象（弱项判定向后兼容）
-    unknowns:
-      raw?.unknowns && typeof raw.unknowns === "object" ? raw.unknowns : {},
-    guessed:
-      raw?.guessed && typeof raw.guessed === "object" ? raw.guessed : {},
-    cardAdds:
-      raw?.cardAdds && typeof raw.cardAdds === "object" ? raw.cardAdds : {},
+    answers,
+    revealed,
+    // 保留上一版显式状态用于旧卷兼容；新首轮写 uncertainMarks / skipped。
+    unknowns: normalizeBooleanRecord(raw?.unknowns),
+    guessed: normalizeBooleanRecord(raw?.guessed),
+    cardAdds: normalizeCardAddsRecord(raw?.cardAdds),
+    uncertainMarks,
+    skipped,
+    firstCategories,
+    weakItemIds,
+    repaired,
+    repairActive,
+    repairQueue: finalQueue,
+    repairIndex,
+    repairAnswers,
+    repairRevealed,
+    repairOptionOrders: filteredOrders,
     errorMessage:
       typeof raw?.errorMessage === "string" ? raw.errorMessage : undefined,
     genStage:
@@ -2188,5 +3218,58 @@ export function normalizeChapterQuizRepr(
         ? Math.floor(raw.genAttempt)
         : undefined,
     sessionContinueNext: raw?.sessionContinueNext === true
+  }
+}
+
+/**
+ * 首轮全部揭晓后冻结 weakItemIds（若尚未冻结）。
+ */
+export function freezeWeakItemsIfNeeded(
+  repr: ChapterQuizRepr
+): ChapterQuizRepr {
+  const questions = repr.questions ?? []
+  if (questions.length === 0) return repr
+  if (repr.weakItemIds && repr.weakItemIds.length > 0) return repr
+  const ids = listWeakItemIds(questions, repr.firstCategories, {
+    answers: repr.answers,
+    uncertainMarks: repr.uncertainMarks,
+    skipped: repr.skipped
+  })
+  return { ...repr, weakItemIds: ids }
+}
+
+/**
+ * 构建新修复轮：仅未解决弱项；每人一题；重排选项顺序并清空本轮答案。
+ */
+export function buildRepairRoundState(
+  repr: ChapterQuizRepr,
+  roundSeed?: string
+): ChapterQuizRepr {
+  const base = freezeWeakItemsIfNeeded(repr)
+  const unresolved = listUnresolvedWeakItemIds(
+    base.weakItemIds,
+    base.repaired
+  )
+  const questions = base.questions ?? []
+  const byId = new Map(questions.map((q) => [q.id, q]))
+  const seedBase = roundSeed ?? `r${Date.now()}`
+  const orders: Record<string, number[]> = {}
+  for (const id of unresolved) {
+    const q = byId.get(id)
+    if (!q) continue
+    orders[id] = buildRepairOptionOrder(
+      q.options.length,
+      `${seedBase}:${id}`
+    )
+  }
+  return {
+    ...base,
+    phase: "done",
+    repairActive: unresolved.length > 0,
+    repairQueue: unresolved,
+    repairIndex: 0,
+    repairAnswers: {},
+    repairRevealed: {},
+    repairOptionOrders: orders
   }
 }
