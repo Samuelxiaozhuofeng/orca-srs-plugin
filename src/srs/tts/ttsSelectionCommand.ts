@@ -3,7 +3,11 @@
  */
 
 import type { Block, CursorData, DbId } from "../../orca.d.ts"
-import { extractSelectedTextFromCursor } from "../ai/aiQuickPrompt"
+import {
+  describeSelectedTextExtractFailure,
+  QUICK_SELECTION_MAX,
+  resolveSelectedTextFromCursor
+} from "../ai/aiQuickPrompt"
 import { buildCardKey } from "../cardIdentity"
 import { extractCardType } from "../deckUtils"
 import { isCardTag } from "../tagUtils"
@@ -100,14 +104,17 @@ export async function runSelectionTtsCommand(
     return { ok: false, reason: "语音生成进行中，请稍候" }
   }
 
-  const extracted = extractSelectedTextFromCursor(cursor)
-  if (!extracted) {
+  // TTS 只读选区/块正文，不展开 AI 子树、不套制卡排除语义以外的扩展
+  const resolved = resolveSelectedTextFromCursor(cursor, {
+    expandSubtree: false
+  })
+  if (!resolved.ok) {
     return {
       ok: false,
-      reason:
-        "请先在同一文本片段内选中要朗读的文字（不支持跨块/空选区）"
+      reason: describeSelectedTextExtractFailure(resolved.reason)
     }
   }
+  const extracted = resolved.extract
 
   if (!isTtsConfigured(pluginName)) {
     return {
@@ -120,6 +127,15 @@ export async function runSelectionTtsCommand(
   const text = extracted.selectedText.trim()
   if (!text) {
     return { ok: false, reason: "选中文本为空" }
+  }
+
+  // 共用选区字数上限；截断必须可见
+  if (extracted.truncated) {
+    orca.notify(
+      "info",
+      `选区过长，已截断至 ${QUICK_SELECTION_MAX} 字后朗读`,
+      { title: "TTS" }
+    )
   }
 
   const targetKey = resolveTargetKeyForBlock(extracted.blockId)

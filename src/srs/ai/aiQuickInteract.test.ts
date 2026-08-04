@@ -8,7 +8,10 @@ import {
   isStrictDescendantOf,
   keepSelectedQuickResultBlocks,
   QUICK_SELECTION_MAX,
-  toggleQuickResultBlockSelection
+  toggleQuickResultBlockSelection,
+  AI_SOURCE_SUBTREE_MAX_BLOCKS,
+  collectBoundedSubtreePlainText,
+  createSubtreeCollectBudget
 } from "./aiQuickInteract"
 import {
   clearToolbarAIPromptCache,
@@ -34,11 +37,18 @@ function makeCursor(partial: {
   anchorIndex?: number
   focusIndex?: number
   focusBlockId?: number
+  isForward?: boolean
 }): CursorData {
   const anchorIndex = partial.anchorIndex ?? 0
   const focusIndex = partial.focusIndex ?? anchorIndex
+  const focusBlockId = partial.focusBlockId ?? partial.blockId
+  const isForward =
+    partial.isForward ??
+    (focusBlockId !== partial.blockId
+      ? true
+      : partial.focusOffset >= partial.anchorOffset)
   return {
-    isForward: partial.focusOffset >= partial.anchorOffset,
+    isForward,
     panelId: "p1",
     rootBlockId: partial.blockId,
     anchor: {
@@ -48,7 +58,7 @@ function makeCursor(partial: {
       offset: partial.anchorOffset
     },
     focus: {
-      blockId: partial.focusBlockId ?? partial.blockId,
+      blockId: focusBlockId,
       isInline: true,
       index: focusIndex,
       offset: partial.focusOffset
@@ -61,15 +71,36 @@ describe("extractSelectedTextFromCursor", () => {
     ;(globalThis as any).orca = {
       state: {
         blocks: {
+          10: {
+            id: 10,
+            parent: null,
+            children: [1, 2, 3],
+            text: "parent",
+            content: [{ t: "t", v: "parent" }]
+          },
           1: {
             id: 1,
+            parent: 10,
             text: "Hello world example",
             content: [{ t: "t", v: "Hello world example" }]
           },
           2: {
             id: 2,
+            parent: 10,
             text: "other",
             content: [{ t: "t", v: "other" }]
+          },
+          3: {
+            id: 3,
+            parent: 10,
+            text: "third",
+            content: [{ t: "t", v: "third" }]
+          },
+          99: {
+            id: 99,
+            parent: 999,
+            text: "orphan",
+            content: [{ t: "t", v: "orphan" }]
           }
         },
         plugins: { [PLUGIN]: { settings: {} } }
@@ -93,6 +124,10 @@ describe("extractSelectedTextFromCursor", () => {
     expect(got!.blockId).toBe(1)
     expect(got!.selectedText).toBe("world")
     expect(got!.blockText).toBe("Hello world example")
+    expect(got!.multiBlock).toBe(false)
+    expect(got!.truncated).toBe(false)
+    expect(got!.charTruncated).toBe(false)
+    expect(got!.structureTruncated).toBe(false)
   })
 
   it("returns null when no real selection (collapsed)", () => {
@@ -104,20 +139,88 @@ describe("extractSelectedTextFromCursor", () => {
     expect(extractSelectedTextFromCursor(cursor)).toBeNull()
   })
 
-  it("returns null when selection spans blocks", () => {
+  it("extracts cross-block sibling selection and anchors on end block", () => {
     const cursor = makeCursor({
       blockId: 1,
       focusBlockId: 2,
-      anchorOffset: 0,
-      focusOffset: 2
+      anchorOffset: 6,
+      focusOffset: 3
     })
-    expect(extractSelectedTextFromCursor(cursor)).toBeNull()
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.multiBlock).toBe(true)
+    // first from offset 6 → "world example"; second to offset 3 → "oth"
+    expect(got!.selectedText).toBe("world example\noth")
+    expect(got!.blockId).toBe(2)
+    expect(got!.blockText).toBe("")
   })
 
-  it("returns null when selection spans fragments", () => {
+  it("joins whole-block multi-select when isInline is false", () => {
+    const cursor = makeCursor({
+      blockId: 1,
+      focusBlockId: 3,
+      anchorOffset: 0,
+      focusOffset: 0
+    })
+    cursor.anchor.isInline = false
+    cursor.focus.isInline = false
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("Hello world example\nother\nthird")
+    expect(got!.blockId).toBe(3)
+  })
+
+  it("treats both-ends-at-block-start as whole-block range (isInline true)", () => {
+    // Sol 复现：两端 offset=0 时行内切片会丢掉末块
+    const cursor = makeCursor({
+      blockId: 1,
+      focusBlockId: 3,
+      anchorOffset: 0,
+      focusOffset: 0,
+      isForward: true
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("Hello world example\nother\nthird")
+    expect(got!.blockId).toBe(3)
+    expect(got!.multiBlock).toBe(true)
+  })
+
+  it("keeps partial cross-block when start is mid-block and end offset is 0", () => {
+    const cursor = makeCursor({
+      blockId: 1,
+      focusBlockId: 2,
+      anchorOffset: 6,
+      focusOffset: 0,
+      isForward: true
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    // first from 6 → "world example"; last empty → dropped
+    expect(got!.selectedText).toBe("world example")
+    expect(got!.blockId).toBe(2)
+  })
+
+  it("anchors on document-order end block when isForward is false", () => {
+    const cursor = makeCursor({
+      blockId: 2,
+      focusBlockId: 1,
+      anchorOffset: 3,
+      focusOffset: 0,
+      isForward: false
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    // reading order: block1 from 0 → full, block2 to offset 3 → "oth"
+    expect(got!.selectedText).toBe("Hello world example\noth")
+    expect(got!.blockId).toBe(2)
+  })
+
+  it("extracts cross-fragment selection within one block", () => {
     ;(globalThis as any).orca.state.blocks[1] = {
       id: 1,
-      text: "ab",
+      parent: 10,
+      text: "aabb",
       content: [
         { t: "t", v: "aa" },
         { t: "t", v: "bb" }
@@ -130,18 +233,249 @@ describe("extractSelectedTextFromCursor", () => {
       anchorIndex: 0,
       focusIndex: 1
     })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("aab")
+    expect(got!.multiBlock).toBe(false)
+  })
+
+  it("returns null when blocks are not same-parent siblings", () => {
+    const cursor = makeCursor({
+      blockId: 1,
+      focusBlockId: 99,
+      anchorOffset: 0,
+      focusOffset: 2
+    })
     expect(extractSelectedTextFromCursor(cursor)).toBeNull()
   })
 
   it("returns null for whitespace-only selection", () => {
     ;(globalThis as any).orca.state.blocks[1] = {
       id: 1,
+      parent: 10,
       text: "a   b",
       content: [{ t: "t", v: "a   b" }]
     }
     const cursor = makeCursor({
       blockId: 1,
       anchorOffset: 1,
+      focusOffset: 4
+    })
+    expect(extractSelectedTextFromCursor(cursor)).toBeNull()
+  })
+
+  it("caps overlong selection without injecting truncated marker into source text", () => {
+    const long = "x".repeat(QUICK_SELECTION_MAX + 50)
+    ;(globalThis as any).orca.state.blocks[1] = {
+      id: 1,
+      parent: 10,
+      text: long,
+      content: [{ t: "t", v: long }]
+    }
+    const cursor = makeCursor({
+      blockId: 1,
+      anchorOffset: 0,
+      focusOffset: long.length
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.truncated).toBe(true)
+    expect(got!.selectedText.length).toBe(QUICK_SELECTION_MAX)
+    expect(got!.selectedText.includes("truncated")).toBe(false)
+  })
+
+  it("includes indented child subtrees for whole-block multi-select", () => {
+    ;(globalThis as any).orca.state.blocks[1] = {
+      id: 1,
+      parent: 10,
+      children: [11, 12],
+      text: "父A",
+      content: [{ t: "t", v: "父A" }]
+    }
+    ;(globalThis as any).orca.state.blocks[11] = {
+      id: 11,
+      parent: 1,
+      children: [],
+      text: "子A1",
+      content: [{ t: "t", v: "子A1" }]
+    }
+    ;(globalThis as any).orca.state.blocks[12] = {
+      id: 12,
+      parent: 1,
+      children: [],
+      text: "子A2",
+      content: [{ t: "t", v: "子A2" }]
+    }
+    ;(globalThis as any).orca.state.blocks[2] = {
+      id: 2,
+      parent: 10,
+      children: [21],
+      text: "父B",
+      content: [{ t: "t", v: "父B" }]
+    }
+    ;(globalThis as any).orca.state.blocks[21] = {
+      id: 21,
+      parent: 2,
+      children: [],
+      text: "子B1",
+      content: [{ t: "t", v: "子B1" }]
+    }
+    // #card 子块应跳过
+    ;(globalThis as any).orca.state.blocks[2].children = [21, 22]
+    ;(globalThis as any).orca.state.blocks[22] = {
+      id: 22,
+      parent: 2,
+      children: [],
+      text: "这是卡片",
+      content: [{ t: "t", v: "这是卡片" }],
+      refs: [{ type: 2, alias: "card" }]
+    }
+
+    const cursor = makeCursor({
+      blockId: 1,
+      focusBlockId: 2,
+      anchorOffset: 0,
+      focusOffset: 0,
+      isForward: true
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("父A\n  子A1\n  子A2\n父B\n  子B1")
+    expect(got!.selectedText.includes("这是卡片")).toBe(false)
+    expect(got!.blockId).toBe(2)
+  })
+
+  it("shares a global 80-block budget across sibling subtrees", () => {
+    // 两个兄弟各带很多叶子；共享预算合计不超过 80
+    const parent = 10
+    const blocks: Record<number, any> = {
+      [parent]: {
+        id: parent,
+        parent: null,
+        children: [1, 2],
+        text: "p",
+        content: []
+      },
+      1: {
+        id: 1,
+        parent,
+        children: [] as number[],
+        text: "A",
+        content: [{ t: "t", v: "A" }]
+      },
+      2: {
+        id: 2,
+        parent,
+        children: [] as number[],
+        text: "B",
+        content: [{ t: "t", v: "B" }]
+      }
+    }
+    for (let i = 0; i < 50; i++) {
+      const id = 100 + i
+      blocks[1].children.push(id)
+      blocks[id] = {
+        id,
+        parent: 1,
+        children: [],
+        text: `a${i}`,
+        content: [{ t: "t", v: `a${i}` }]
+      }
+    }
+    for (let i = 0; i < 50; i++) {
+      const id = 200 + i
+      blocks[2].children.push(id)
+      blocks[id] = {
+        id,
+        parent: 2,
+        children: [],
+        text: `b${i}`,
+        content: [{ t: "t", v: `b${i}` }]
+      }
+    }
+    ;(globalThis as any).orca.state.blocks = blocks
+
+    const budget = createSubtreeCollectBudget()
+    collectBoundedSubtreePlainText(1, { budget })
+    collectBoundedSubtreePlainText(2, { budget })
+    expect(budget.blocksUsed).toBeLessThanOrEqual(AI_SOURCE_SUBTREE_MAX_BLOCKS)
+    expect(budget.truncatedByStructure).toBe(true)
+  })
+
+  it("extractSelectedTextFromCursor applies shared budget on whole multi-select", () => {
+    // 公开入口：两棵各 50 叶的兄弟 → 合计触顶 structureTruncated，而非 100 块全进源文
+    const parent = 10
+    const blocks: Record<number, any> = {
+      [parent]: {
+        id: parent,
+        parent: null,
+        children: [1, 2],
+        text: "p",
+        content: []
+      },
+      1: {
+        id: 1,
+        parent,
+        children: [] as number[],
+        text: "RootA",
+        content: [{ t: "t", v: "RootA" }]
+      },
+      2: {
+        id: 2,
+        parent,
+        children: [] as number[],
+        text: "RootB",
+        content: [{ t: "t", v: "RootB" }]
+      }
+    }
+    for (let i = 0; i < 50; i++) {
+      const idA = 1000 + i
+      const idB = 2000 + i
+      blocks[1].children.push(idA)
+      blocks[2].children.push(idB)
+      blocks[idA] = {
+        id: idA,
+        parent: 1,
+        children: [],
+        text: `leafA${i}`,
+        content: [{ t: "t", v: `leafA${i}` }]
+      }
+      blocks[idB] = {
+        id: idB,
+        parent: 2,
+        children: [],
+        text: `leafB${i}`,
+        content: [{ t: "t", v: `leafB${i}` }]
+      }
+    }
+    ;(globalThis as any).orca.state.blocks = blocks
+    const cursor = makeCursor({
+      blockId: 1,
+      focusBlockId: 2,
+      anchorOffset: 0,
+      focusOffset: 0,
+      isForward: true
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.structureTruncated).toBe(true)
+    expect(got!.truncated).toBe(true)
+    // 若每棵树各 80，会看到更多 leafB；共享 80 后第二棵大量叶子进不来
+    const leafBCount = (got!.selectedText.match(/leafB/g) ?? []).length
+    expect(leafBCount).toBeLessThan(50)
+  })
+
+  it("rejects partial selection on a #card block", () => {
+    ;(globalThis as any).orca.state.blocks[1] = {
+      id: 1,
+      parent: 10,
+      text: "card body here",
+      content: [{ t: "t", v: "card body here" }],
+      refs: [{ type: 2, alias: "card" }]
+    }
+    const cursor = makeCursor({
+      blockId: 1,
+      anchorOffset: 0,
       focusOffset: 4
     })
     expect(extractSelectedTextFromCursor(cursor)).toBeNull()

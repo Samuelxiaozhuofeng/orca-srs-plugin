@@ -17,7 +17,14 @@ import { generateFlashcardDrafts } from "./aiService"
 import { resolveBlockBackendFirst, writeAICardDrafts } from "./aiCardWriter"
 import { getQuickCardPrefs } from "./aiQuickCardPrefs"
 import { isAIConfigured } from "./aiSettingsSchema"
-import { extractSelectedTextFromCursor } from "./aiQuickPrompt"
+import {
+  collectBoundedSubtreePlainText,
+  describeSelectedTextExtractFailure,
+  describeSourceTruncation,
+  isMultiBlockSourceFailure,
+  QUICK_SELECTION_MAX,
+  resolveSelectedTextFromCursor
+} from "./aiQuickPrompt"
 import {
   aiQuickJobsState,
   captureActivePanelViewSnapshot,
@@ -90,28 +97,60 @@ function removeJob(jobId: string): void {
 }
 
 /**
- * 取制卡源文本：优先选区，没有选区就用整块正文。
+ * 取制卡源文本：优先选区（含同块跨样式 / 同父相邻跨块），没有选区就用锚点块正文。
  *
  * 选区为空不是错误——「光标停在块里直接按快捷键」是最顺手的用法。
+ * 跨块时 blockId 为文档阅读方向末块（结果挂在其下）。
  */
 export function resolveQuickCardSource(
   cursor: CursorData
-): { blockId: number; text: string; fromSelection: boolean } | null {
-  const selection = extractSelectedTextFromCursor(cursor)
-  if (selection && selection.selectedText.trim()) {
+): {
+  blockId: number
+  text: string
+  fromSelection: boolean
+  multiBlock: boolean
+  truncated: boolean
+  charTruncated: boolean
+  structureTruncated: boolean
+} | null {
+  const selection = resolveSelectedTextFromCursor(cursor)
+  if (selection.ok && selection.extract.selectedText.trim()) {
     return {
-      blockId: selection.blockId,
-      text: selection.selectedText.trim(),
-      fromSelection: true
+      blockId: selection.extract.blockId,
+      text: selection.extract.selectedText.trim(),
+      fromSelection: true,
+      multiBlock: selection.extract.multiBlock,
+      truncated: selection.extract.truncated,
+      charTruncated: selection.extract.charTruncated,
+      structureTruncated: selection.extract.structureTruncated
     }
+  }
+
+  // 跨块相关失败（含 empty_selection）不得退回锚点全文
+  if (isMultiBlockSourceFailure(cursor, selection)) {
+    return null
   }
 
   const blockId = Number(cursor?.anchor?.blockId)
   if (!Number.isFinite(blockId)) return null
-  const block = orca.state.blocks?.[blockId] as Block | undefined
-  const text = (block?.text ?? "").trim()
+  // 无选区时：锚点块全文 + 有界子树（缩进），排除 #card / AI 结果预览
+  const subtree = collectBoundedSubtreePlainText(blockId)
+  const text = subtree.text.trim()
   if (!text) return null
-  return { blockId, text, fromSelection: false }
+  const charTruncated = text.length > QUICK_SELECTION_MAX
+  const cappedText = charTruncated
+    ? text.slice(0, QUICK_SELECTION_MAX)
+    : text
+  const structureTruncated = subtree.truncatedByStructure
+  return {
+    blockId,
+    text: cappedText,
+    fromSelection: false,
+    multiBlock: false,
+    truncated: charTruncated || structureTruncated,
+    charTruncated,
+    structureTruncated
+  }
 }
 
 /** 预览包装块标题。 */
@@ -145,8 +184,27 @@ export async function startQuickCardJob(
 
   const source = resolveQuickCardSource(cursor)
   if (!source) {
+    const failed = resolveSelectedTextFromCursor(cursor)
+    if (!failed.ok && isMultiBlockSourceFailure(cursor, failed)) {
+      orca.notify("warn", describeSelectedTextExtractFailure(failed.reason), {
+        title: TITLE
+      })
+      return null
+    }
     orca.notify("warn", "请选中文本，或把光标放在有内容的块上", { title: TITLE })
     return null
+  }
+
+  if (source.truncated) {
+    orca.notify(
+      "info",
+      describeSourceTruncation({
+        truncated: source.truncated,
+        charTruncated: source.charTruncated,
+        structureTruncated: source.structureTruncated
+      }),
+      { title: TITLE }
+    )
   }
 
   const prefs = getQuickCardPrefs(pluginName)

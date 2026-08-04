@@ -10,13 +10,28 @@
 import type { CursorData } from "../../orca.d.ts"
 import { isAIConfigured } from "./aiSettingsSchema"
 import { findToolbarAIPrompt } from "./aiToolbarPromptStore"
-import { extractSelectedTextFromCursor } from "./aiQuickPrompt"
+import {
+  describeSelectedTextExtractFailure,
+  describeSourceTruncation,
+  resolveSelectedTextFromCursor
+} from "./aiQuickPrompt"
 
 export {
+  AI_SOURCE_SUBTREE_MAX_BLOCKS,
+  AI_SOURCE_SUBTREE_MAX_DEPTH,
   buildQuickInteractSystemPrompt,
   buildQuickInteractUserPrompt,
   clipText,
+  collectBoundedSubtreePlainText,
+  createSubtreeCollectBudget,
+  cursorSpansBlocks,
+  describeSelectedTextExtractFailure,
+  describeSourceTruncation,
   extractSelectedTextFromCursor,
+  isExcludedAiSourceBlock,
+  isMultiBlockSourceFailure,
+  resolveSelectedTextFromCursor,
+  shouldUseWholeBlockTextsForCrossBlock,
   QUICK_BLOCK_CONTEXT_MAX,
   QUICK_RESULT_MAX,
   QUICK_SELECTION_MAX,
@@ -25,7 +40,9 @@ export {
 export type {
   RunToolbarAIPromptOptions,
   RunToolbarAIPromptResult,
-  SelectedTextExtract
+  SelectedTextExtract,
+  SelectedTextExtractFailureReason,
+  SelectedTextExtractResult
 } from "./aiQuickPrompt"
 export {
   clearReuseInsertSerialLocksForTests,
@@ -84,15 +101,20 @@ export async function startAIQuickInteractFlow(
     return
   }
 
-  const extract = extractSelectedTextFromCursor(cursor)
-  if (!extract) {
-    orca.notify(
-      "warn",
-      "请先在同一段文本内选中非空内容（不支持跨块/跨样式选区）",
-      { title }
-    )
+  const resolved = resolveSelectedTextFromCursor(cursor)
+  if (!resolved.ok) {
+    orca.notify("warn", describeSelectedTextExtractFailure(resolved.reason), {
+      title
+    })
     return
   }
+  const extract = resolved.extract
+  if (extract.truncated) {
+    orca.notify("info", describeSourceTruncation(extract), { title })
+  }
+
+  // 跨块时仅发送选区拼接结果，不再附带单块 context
+  const includeBlockContextForCustom = !extract.multiBlock
 
   if (opts.mode === "custom") {
     openAIQuickInteract({
@@ -102,7 +124,7 @@ export async function startAIQuickInteractFlow(
       blockText: extract.blockText,
       promptLabel: "自定义提示词",
       promptText: "",
-      includeBlockContext: true,
+      includeBlockContext: includeBlockContextForCustom,
       mode: "custom"
     })
     return
@@ -113,6 +135,9 @@ export async function startAIQuickInteractFlow(
     orca.notify("warn", "未找到该提示词，请打开 AI 提示词库检查", { title })
     return
   }
+
+  const includeBlockContext =
+    !extract.multiBlock && prompt.includeBlockContext === true
 
   // 后台插入：预览确认 或 直接写入（均不弹窗）
   if (prompt.directWriteBelow || prompt.insertBelowOnComplete) {
@@ -126,7 +151,7 @@ export async function startAIQuickInteractFlow(
       blockText: extract.blockText,
       promptLabel: prompt.label,
       promptText: prompt.prompt,
-      includeBlockContext: prompt.includeBlockContext,
+      includeBlockContext,
       model: prompt.model,
       commitMode: prompt.directWriteBelow ? "direct" : "preview",
       tags: prompt.resultTags,
@@ -142,7 +167,7 @@ export async function startAIQuickInteractFlow(
     blockText: extract.blockText,
     promptLabel: prompt.label,
     promptText: prompt.prompt,
-    includeBlockContext: prompt.includeBlockContext,
+    includeBlockContext,
     resultTags: prompt.resultTags,
     reuseSameResultBlock: prompt.reuseSameResultBlock,
     model: prompt.model,

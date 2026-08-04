@@ -1,5 +1,5 @@
 /**
- * AI 生成闪卡入口：读取当前块 → 打开 Plan B 弹窗
+ * AI 生成闪卡入口：读取当前块 / 多块选区 → 打开 Plan B 弹窗
  */
 
 import type { Block, CursorData } from "../../orca.d.ts"
@@ -8,6 +8,14 @@ import {
   isAIDialogBusyOrInReview,
   openAIDialog
 } from "./aiDialogState"
+import {
+  collectBoundedSubtreePlainText,
+  describeSelectedTextExtractFailure,
+  describeSourceTruncation,
+  isMultiBlockSourceFailure,
+  QUICK_SELECTION_MAX,
+  resolveSelectedTextFromCursor
+} from "./aiQuickPrompt"
 import { isAIConfigured } from "./aiSettingsSchema"
 
 /**
@@ -29,7 +37,12 @@ export async function readBlockText(blockId: number): Promise<{
       return { text: "", block: null }
     }
     block = fromBackend
-  } catch {
+  } catch (error) {
+    console.warn(
+      "[AI 生成闪卡] get-block 失败，回退 state.blocks:",
+      blockId,
+      error
+    )
     block = (orca.state.blocks[blockId] as Block | undefined) ?? null
   }
 
@@ -87,12 +100,62 @@ export async function startAIFlashcardFlow(
     return
   }
 
-  const blockId = cursor.anchor.blockId
-  const { text } = await readBlockText(blockId)
+  const title = "AI 生成闪卡"
 
-  if (!text) {
-    orca.notify("warn", "当前块内容为空，无法生成卡片", { title: "AI 生成闪卡" })
+  // 跨块有效选区 → 拼接文本 + 末块锚点；单块（含部分选区）仍用当前块全文
+  const selection = resolveSelectedTextFromCursor(cursor)
+  if (
+    selection.ok &&
+    selection.extract.multiBlock &&
+    selection.extract.selectedText.trim()
+  ) {
+    if (selection.extract.truncated) {
+      orca.notify("info", describeSourceTruncation(selection.extract), {
+        title
+      })
+    }
+    openAIDialog(selection.extract.selectedText, selection.extract.blockId)
     return
+  }
+
+  if (!selection.ok && isMultiBlockSourceFailure(cursor, selection)) {
+    orca.notify("warn", describeSelectedTextExtractFailure(selection.reason), {
+      title
+    })
+    return
+  }
+
+  const blockId = Number(cursor.anchor.blockId)
+  // 单块：全文 + 有界子树（与跨块整段范围一致）；部分文字选区已在上方 multiBlock 分支处理
+  // 先确认块仍存在（backend-first），再从 state 展开子树
+  const { block } = await readBlockText(blockId)
+  if (!block) {
+    orca.notify("warn", "当前块内容为空，无法生成卡片", { title })
+    return
+  }
+
+  const subtree = collectBoundedSubtreePlainText(blockId)
+  let text = subtree.text.trim()
+  if (!text) {
+    orca.notify("warn", "当前块内容为空，无法生成卡片", { title })
+    return
+  }
+
+  const charTruncated = text.length > QUICK_SELECTION_MAX
+  if (charTruncated) {
+    text = text.slice(0, QUICK_SELECTION_MAX)
+  }
+  const structureTruncated = subtree.truncatedByStructure
+  if (charTruncated || structureTruncated) {
+    orca.notify(
+      "info",
+      describeSourceTruncation({
+        truncated: true,
+        charTruncated,
+        structureTruncated
+      }),
+      { title }
+    )
   }
 
   openAIDialog(text, blockId)
