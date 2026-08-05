@@ -12,8 +12,17 @@
 - [Backend API](documents/Backend-API.md)
 - [Custom Renderers](documents/Custom-Renderers.md)
 
-## Modules
+## Constants
 
 - [constants/configs](constants/configs.md)
 - [constants/db](constants/db.md)
-- [types/orca](types/orca.md)
+
+## Types (`types/`)
+
+- [types/README Index](types/README.md)
+- [types/orca-api (Global API)](types/orca-api.md)
+- [types/block-types (Block Models)](types/block-types.md)
+- [types/command-types (Commands & Menus)](types/command-types.md)
+- [types/query-types (Queries & Database)](types/query-types.md)
+- [types/ui-layout-types (UI & Layouts)](types/ui-layout-types.md)
+- [types/plugin-runtime-types (Plugin Runtime & Utils)](types/plugin-runtime-types.md)

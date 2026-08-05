@@ -160,11 +160,16 @@ await orca.commands.invokeEditorCommand(
 - **Description**: Moves the given blocks to a new position relative to a reference block.
 - **Parameters**:
 - `blockIds: DbId[]`: An array of block IDs (numbers) to move.
-- `refBlockId: DbId`: The ID (number) of the reference block.
-- `position: "before" | "after" | "firstChild" | "lastChild"`: The target position relative to `refBlockId`.
+- `refBlockId: DbId | null`: The ID (number) of the reference block. Can be `null` for root-level positioning.
+- `position: "before" | "after" | "firstChild" | "lastChild" | null`: The target position relative to `refBlockId`. `null` may be used when `refBlockId` is also `null`.
+- `opts?: BlockMoveOptions`: Optional settings for the move operation:
+  - `autoMatchType?: boolean`: Whether to automatically match the block type of the target position (e.g., when moving into a list).
+  - `extraMoves?: [DbId[], DbId | null, "before" | "after" | "firstChild" | "lastChild" | null][]`: Additional move operations to perform atomically alongside the primary move.
 - **Usage**: Reorders blocks in the hierarchy. Prevents moving a block to be a descendant of itself.
 
 ```typescript
+import type { BlockMoveOptions } from "@/types/orca"
+
 const blockIdsToMove: DbId[] = [101]
 const targetRefBlockId: DbId = 102
 await orca.commands.invokeEditorCommand(
@@ -173,6 +178,31 @@ await orca.commands.invokeEditorCommand(
   blockIdsToMove,
   targetRefBlockId,
   "lastChild", // Move block 101 to be the last child of block 102
+)
+
+// With options: auto-match type for list indentation
+const opts: BlockMoveOptions = { autoMatchType: true }
+await orca.commands.invokeEditorCommand(
+  "core.editor.moveBlocks",
+  null,
+  blockIdsToMove,
+  targetRefBlockId,
+  "lastChild",
+  opts,
+)
+
+// With extra moves (atomic batch)
+await orca.commands.invokeEditorCommand(
+  "core.editor.moveBlocks",
+  null,
+  blockIdsToMove,
+  targetRefBlockId,
+  "lastChild",
+  {
+    extraMoves: [
+      [[103, 104], 105, "after"],
+    ],
+  },
 )
 ```
 
@@ -291,7 +321,7 @@ await orca.commands.invokeEditorCommand(
   - `1` (`RefType.Inline`): An inline reference.
   - `2` (`RefType.Property`): A reference via a block property.
   - `3` (`RefType.RefData`): A reference via a reference data.
-  - `4` (`RefType.Whiteboard`): A reference via a whiteboard.
+  - `4` (`RefType.Media`): A reference via a media, like a whiteboard, pdf or epub.
 - `alias?: string`: An optional alias for this specific reference instance (often used with `RefType.Property`).
 - **Usage**: Establishes relationships between blocks, like properties or embeds.
 
@@ -340,24 +370,34 @@ if (blockRef) {
 ### `core.editor.setProperties`
 
 - **Description**: Sets or updates specified properties of the given blocks. Properties are stored as key-value pairs.
-- **Parameters**:
-- `blockIds: DbId[]`: An array of block IDs (numbers) whose properties are to be set.
-- `properties: BlockProperty[]`: An array of property objects (`{ name: string, value: any, type: number }`) to set on the blocks.
+- **Parameters**: Supports two calling conventions:
+
+  **Old format** (separate `blockIds` and `properties` arrays):
+  - `blockIds: DbId[]`: An array of block IDs (numbers) whose properties are to be set.
+  - `properties: BlockProperty[]`: An array of property objects to set on *all* the specified blocks.
+
+  **New format** (single array of per-block property sets):
+  - `items: { blockId: DbId; properties: BlockProperty[] }[]`: An array where each item specifies a block ID and the properties to set on that block.
+
+  `BlockProperty` fields:
   - `name: string`: The property's unique identifier.
-  - `value: any`: The data associated with the property. Its type should correspond to the `type` field.
   - `type: number`: Specifies the data type of the property. This influences how the `value` is stored and interpreted. See `PropType` for possible values:
-  - `0` (`PropType.JSON`): `value` is any valid JSON object or primitive.
-  - `1` (`PropType.Text`): `value` is a string.
-  - `2` (`PropType.BlockRefs`): `value` is an array of ref IDs.
-  - `3` (`PropType.Number`): `value` is a number.
-  - `4` (`PropType.Boolean`): `value` is `true` or `false`.
-  - `5` (`PropType.DateTime`): `value` represents a date/time.
-  - `6` (`PropType.TextChoices`): `value` is an array of strings representing selected options.
+    - `0` (`PropType.JSON`): `value` is any valid JSON object or primitive.
+    - `1` (`PropType.Text`): `value` is a string.
+    - `2` (`PropType.BlockRefs`): `value` is an array of ref IDs.
+    - `3` (`PropType.Number`): `value` is a number.
+    - `4` (`PropType.Boolean`): `value` is `true` or `false`.
+    - `5` (`PropType.DateTime`): `value` represents a date/time.
+    - `6` (`PropType.TextChoices`): `value` is an array of strings representing selected options.
+  - `value?: any`: The data associated with the property. Its type should correspond to the `type` field.
+  - `typeArgs?: any`: Optional arguments specific to the property type.
+  - `pos?: number`: Optional position for visual ordering of properties.
 - **Usage**: Attaches metadata or structured data to blocks, allowing for typed properties.
 
 ```typescript
-import { PropType } from "@/constants/db" // Assuming PropType is exported
+import { PropType } from "@/constants/db"
 
+// Old format: same properties applied to multiple blocks
 const blockIdsToUpdate: DbId[] = [601, 602]
 const propertiesToSet = [
   { name: "status", value: "completed", type: PropType.Text },
@@ -376,6 +416,27 @@ await orca.commands.invokeEditorCommand(
   null,
   blockIdsToUpdate,
   propertiesToSet,
+)
+
+// New format: different properties per block
+await orca.commands.invokeEditorCommand(
+  "core.editor.setProperties",
+  null,
+  [
+    {
+      blockId: 601,
+      properties: [
+        { name: "status", value: "active", type: PropType.Text },
+      ],
+    },
+    {
+      blockId: 602,
+      properties: [
+        { name: "status", value: "completed", type: PropType.Text },
+        { name: "priority", value: 2, type: PropType.Number },
+      ],
+    },
+  ],
 )
 ```
 
@@ -1063,7 +1124,7 @@ await orca.commands.invokeEditorCommand(
 )
 ```
 
-### `core.editor.formatUderlineWavyCustomColor` (note the typo in command name)
+### `core.editor.formatUderlineWavyCustomColor`
 
 - **Description**: Formats the selected text with a wavy underline with custom color.
 - **Parameters**:

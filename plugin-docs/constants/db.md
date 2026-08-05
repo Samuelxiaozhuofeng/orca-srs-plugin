@@ -24,6 +24,10 @@ Types used for properties.
 
 > `readonly` **Boolean**: `4` = `4`
 
+##### Computed
+
+> `readonly` **Computed**: `7` = `7`
+
 ##### DateTime
 
 > `readonly` **DateTime**: `5` = `5`
@@ -58,6 +62,10 @@ Types used for references.
 
 > `readonly` **Inline**: `1` = `1`
 
+##### Media
+
+> `readonly` **Media**: `4` = `4`
+
 ##### Property
 
 > `readonly` **Property**: `2` = `2`
@@ -65,7 +73,3 @@ Types used for references.
 ##### RefData
 
 > `readonly` **RefData**: `3` = `3`
-
-##### Whiteboard
-
-> `readonly` **Whiteboard**: `4` = `4`
