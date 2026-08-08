@@ -216,6 +216,56 @@ describe("extractSelectedTextFromCursor", () => {
     expect(got!.blockId).toBe(2)
   })
 
+  it("extracts ancestor→descendant drag P→child3 and anchors on P", () => {
+    // 块 10 = P，子块 1/2/3；从 P 的 offset 4 拖到子块 3 的 offset 3
+    const cursor = makeCursor({
+      blockId: 10,
+      focusBlockId: 3,
+      anchorOffset: 4,
+      focusOffset: 3
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.multiBlock).toBe(true)
+    // P 从 offset 4 切片 → "nt"；中间块 1/2 全文；子块 3 到 offset 3 → "thi"
+    expect(got!.selectedText).toBe("nt\nHello world example\nother\nthi")
+    expect(got!.blockId).toBe(10)
+  })
+
+  it("anchors on ancestor P when dragging up from child to P", () => {
+    const cursor = makeCursor({
+      blockId: 3,
+      focusBlockId: 10,
+      anchorOffset: 3,
+      focusOffset: 0,
+      isForward: false
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("parent\nHello world example\nother\nthi")
+    expect(got!.blockId).toBe(10)
+  })
+
+  it("whole-block multi-select of P+child3 includes P subtree and anchors on P", () => {
+    const cursor = makeCursor({
+      blockId: 10,
+      focusBlockId: 3,
+      anchorOffset: 0,
+      focusOffset: 0,
+      isForward: true
+    })
+    cursor.anchor.isInline = false
+    cursor.focus.isInline = false
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.multiBlock).toBe(true)
+    // P 整棵子树（2 空格缩进），visited 去重避免子块重复
+    expect(got!.selectedText).toBe(
+      "parent\n  Hello world example\n  other\n  third"
+    )
+    expect(got!.blockId).toBe(10)
+  })
+
   it("extracts cross-fragment selection within one block", () => {
     ;(globalThis as any).orca.state.blocks[1] = {
       id: 1,

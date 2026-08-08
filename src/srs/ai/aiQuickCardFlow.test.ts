@@ -116,7 +116,41 @@ describe("resolveQuickCardSource", () => {
     })
   })
 
-  it("returns null for cross-parent multi-block selection", () => {
+  it("resolves cross-parent selection when both share a common root", () => {
+    // 7 挂在 1 下、8 挂在 2 下，但 1/2 同属根 0 → 前序连续区间可解析。
+    // 前序：0,1,7,2,8 → 7 到 8 的区间 = [7, 2, 8]，中间块 2 全文 + 子树
+    installBlocks({
+      0: { id: 0, parent: null, children: [1, 2], text: "root", content: [] },
+      1: { id: 1, parent: 0, children: [7], text: "p1", content: [] },
+      2: { id: 2, parent: 0, children: [8], text: "p2", content: [] },
+      7: {
+        id: 7,
+        parent: 1,
+        text: "第一块",
+        content: [{ t: "t", v: "第一块" }]
+      },
+      8: {
+        id: 8,
+        parent: 2,
+        text: "第二块",
+        content: [{ t: "t", v: "第二块" }]
+      }
+    })
+    expect(
+      resolveQuickCardSource(cursor(7, { focusBlockId: 8, from: 0, to: 2 }))
+    ).toEqual({
+      blockId: 8,
+      text: "第一块\np2\n  第二块\n第二",
+      fromSelection: true,
+      multiBlock: true,
+      truncated: false,
+      charTruncated: false,
+      structureTruncated: false
+    })
+  })
+
+  it("returns null when ancestors are missing (cannot build a connected chain)", () => {
+    // 父块 1/2 不在 state → 无法连通 → null（不退回锚点全文）
     installBlocks({
       7: {
         id: 7,
@@ -134,6 +168,42 @@ describe("resolveQuickCardSource", () => {
     expect(
       resolveQuickCardSource(cursor(7, { focusBlockId: 8, from: 0, to: 2 }))
     ).toBeNull()
+  })
+
+  it("selects P+children for card source and anchors on P", () => {
+    installBlocks({
+      10: {
+        id: 10,
+        parent: null,
+        children: [7, 8],
+        text: "父句",
+        content: [{ t: "t", v: "父句" }]
+      },
+      7: {
+        id: 7,
+        parent: 10,
+        text: "第一块",
+        content: [{ t: "t", v: "第一块" }]
+      },
+      8: {
+        id: 8,
+        parent: 10,
+        text: "第二块",
+        content: [{ t: "t", v: "第二块" }]
+      }
+    })
+    // 从父块 10 拖到子块 8：源文 = 父句 + 第一块 + 第二（切片），锚点挂在 P=10
+    expect(
+      resolveQuickCardSource(cursor(10, { focusBlockId: 8, from: 0, to: 2 }))
+    ).toEqual({
+      blockId: 10,
+      text: "父句\n第一块\n第二",
+      fromSelection: true,
+      multiBlock: true,
+      truncated: false,
+      charTruncated: false,
+      structureTruncated: false
+    })
   })
 
   it("does not fall back to anchor text on multi-block empty_selection", () => {

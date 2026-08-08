@@ -162,11 +162,16 @@ describe("resolveInitialDue ir_item modes", () => {
 
 describe("formatInitialDueHint", () => {
   it("describes dispersed delay", () => {
-    const hint = formatInitialDueHint({
-      effectiveMode: "dispersed",
-      delayDays: 5.2,
-      due: new Date(2026, 7, 3)
-    })
+    // 固定 now，避免墙钟日期越过 due 后断言漂移
+    const now = new Date(2026, 6, 29) // 2026-07-29
+    const hint = formatInitialDueHint(
+      {
+        effectiveMode: "dispersed",
+        delayDays: 5.2,
+        due: new Date(2026, 7, 3) // 2026-08-03
+      },
+      now
+    )
     expect(hint).toContain("5")
     expect(hint).toContain("8月3日")
   })

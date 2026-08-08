@@ -9,8 +9,9 @@ import type { Block, ContentFragment, CursorData, DbId } from "../../orca.d.ts"
 import {
   buildCrossBlockSegments,
   extractTextFromFragments,
+  isAncestorOf,
   planExtractSelection,
-  resolveSiblingBlockChain,
+  resolvePreOrderChain,
   type ExtractSelectionPlan
 } from "../incremental-reading/irRichExtract"
 import { isCardTag } from "../tagUtils"
@@ -70,7 +71,6 @@ export type SelectedTextExtractFailureReason =
   | "no_selection"
   | "empty_selection"
   | "block_missing"
-  | "cross_parent"
   | "non_sibling"
   | "blocks_missing"
 
@@ -91,10 +91,8 @@ export function describeSelectedTextExtractFailure(
       return "选中内容为空"
     case "block_missing":
       return "选区所在块不存在"
-    case "cross_parent":
-      return "跨块选区仅支持同一父块下的相邻兄弟块"
     case "non_sibling":
-      return "跨块选区无法解析为同一父块下的连续兄弟链"
+      return "跨块选区无法解析为连续的块区间"
     case "blocks_missing":
       return "跨块选区中的部分块不存在"
     default: {
@@ -326,7 +324,6 @@ export function isMultiBlockSourceFailure(
 ): boolean {
   if (result.ok) return false
   if (
-    result.reason === "cross_parent" ||
     result.reason === "non_sibling" ||
     result.reason === "blocks_missing"
   ) {
@@ -423,31 +420,23 @@ function extractCrossBlockText(
     return { ok: false, reason: "blocks_missing" }
   }
 
-  const parentId = startBlock.parent
-  if (!parentId || endBlock.parent !== parentId) {
-    return { ok: false, reason: "cross_parent" }
-  }
-
-  const parent = asBlock(parentId)
-  const siblings = (parent?.children ?? []) as DbId[]
-  const chainIds = resolveSiblingBlockChain(
+  // 前序连续区间：兄弟链（现状）/ 父子链（P+子块）/ 跨分支统一解析，链已按阅读方向定向
+  const chainRes = resolvePreOrderChain(
     plan.startBlockId,
     plan.endBlockId,
-    siblings
+    asBlock
   )
-  if (!chainIds || chainIds.length === 0) {
-    return { ok: false, reason: "non_sibling" }
+  if (!chainRes.ok) {
+    return { ok: false, reason: chainRes.reason }
   }
-
-  // plan 已按 isForward 归一为 start→end 阅读方向；chain 按 siblings 升序
-  const iStart = siblings.indexOf(plan.startBlockId)
-  const iEnd = siblings.indexOf(plan.endBlockId)
-  const forwardIds =
-    iStart <= iEnd ? chainIds : [...chainIds].reverse()
+  const forwardIds = chainRes.chain
 
   const wholeBlockRange = shouldUseWholeBlockTextsForCrossBlock(cursor, plan)
-  // 整次提取共享预算，避免每兄弟各 80 → 合计无界
+  // 整次提取共享预算，避免每块各 80 → 合计无界
   const budget = createSubtreeCollectBudget()
+  if (chainRes.truncatedByStructure) {
+    budget.truncatedByStructure = true
+  }
 
   let selectedText: string
   if (wholeBlockRange) {
@@ -551,6 +540,11 @@ function extractCrossBlockText(
     return { ok: false, reason: "block_missing" }
   }
 
+  // 祖先↔后代跨度挂在祖先（P）下；纯兄弟 / 跨分支保持阅读方向末块（现状）
+  const anchorId = isAncestorOf(plan.startBlockId, plan.endBlockId, asBlock)
+    ? Number(plan.startBlockId)
+    : endBlockId
+
   const finalized = finalizeExtractText(
     selectedText,
     budget.truncatedByStructure
@@ -558,7 +552,7 @@ function extractCrossBlockText(
   return {
     ok: true,
     extract: {
-      blockId: endBlockId,
+      blockId: anchorId,
       selectedText: finalized.selectedText,
       // 跨块不提供单块 context；调用方应关闭 includeBlockContext
       blockText: "",
@@ -571,7 +565,7 @@ function extractCrossBlockText(
 }
 
 /**
- * 从光标解析 AI 源选区：同 fragment / 同块跨样式 / 同父相邻跨块。
+ * 从光标解析 AI 源选区：同 fragment / 同块跨样式 / 同树任意跨块（前序连续区间）。
  * 不 notify；调用方根据 reason 提示。
  */
 export function resolveSelectedTextFromCursor(

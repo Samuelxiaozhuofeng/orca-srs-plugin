@@ -20,6 +20,9 @@
 > - [SRS_卡片浏览器.md](SRS_卡片浏览器.md)：Flash Home `resolveBlock` 三态；`insertBlock` 有限正数校验；列表 React key 统一 `cardKeyFromReviewCard`
 > - [渐进阅读.md](渐进阅读.md)：IR 会话块 `insertBlock` ID 校验（与复习会话块对齐）
 >
+> **索引增补：2026-08-05（AI 跨块选区升级为 DFS 前序连续区间）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：`resolveSelectedTextFromCursor` 跨块解析从「同父相邻兄弟」升级为 **前序连续区间**——兄弟链 / 父子链（P+子块）/ 跨分支统一（`irRichExtract.ts` 新增 `resolvePreOrderChain` / `isAncestorOf`）；祖先↔后代跨度结果锚点挂祖先 P（纯兄弟仍挂阅读方向末块）；`cross_parent` 错误语义移除，`non_sibling` 改为「无法解析为连续的块区间」
+>
 > **索引增补：2026-08-01（Extract 摘录处理建议 AI 虚拟块）**：
 > - [SRS_AI模块.md](SRS_AI模块.md)：新增请求类型 `extract-coach`（标签「摘录处理建议」）；只读顾问，有界上下文 ≤8 块 / ≤8000 字符，严格 JSON 协议 + `cloze.quote` 接地校验，会话缓存 ≤50 条
 > - [渐进阅读.md](渐进阅读.md)：Extract 正文底部 AI 处理思路虚拟块（`enableExtractCoach` 默认关；仅 `extract_focus` 显示；不写库 / 不改排期 / 不建卡）
