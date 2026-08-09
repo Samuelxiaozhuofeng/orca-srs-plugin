@@ -1774,6 +1774,32 @@
   z-index: 10000 !important;
 }
 
+/*
+ * Orca removes the selection toolbar one render after the DOM selection collapses.
+ * Hide the complete popup during that gap; hiding only the inner bar leaves the
+ * popup background/border visible for one frame.
+ */
+html.ir-stb-dismissing .orca-popup.orca-editor-toolbar {
+  display: none !important;
+}
+
+/*
+ * IR-only native toolbar actions (摘录 / 一键解释):
+ * stable base hide outside selection scope — does not depend on controller startup.
+ * Marker classes: orca-srs-stb-extract / orca-srs-stb-explain (see irSelectionToolbarSettings).
+ * Cloze / TTS / AI remain visible on ordinary pages (pre-existing behavior).
+ * When html.ir-stb-scope is set, :not(.ir-stb-scope) no longer matches → buttons can show;
+ * generated settings CSS may still hide them by toggle / card type / current-body.
+ */
+html:not(.ir-stb-scope)
+  .orca-editor-toolbar-bar
+  .orca-editor-toolbar-button-item:has(.orca-srs-stb-extract),
+html:not(.ir-stb-scope)
+  .orca-editor-toolbar-bar
+  .orca-editor-toolbar-button-item:has(.orca-srs-stb-explain) {
+  display: none !important;
+}
+
 .ir-reading__postpone,
 .ir-reading__importance {
   display: flex;

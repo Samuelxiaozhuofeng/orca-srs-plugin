@@ -40,6 +40,12 @@ import {
   loadReviewServiceSettings,
   type ReviewServiceSettingsDraft
 } from "../settings/reviewServiceSettings"
+import {
+  getDefaultIRSelectionToolbarSettings,
+  getIRSelectionToolbarSettings,
+  hydrateIRSelectionToolbarSettings,
+  type IRSelectionToolbarSettings
+} from "../settings/irSelectionToolbarSettings"
 
 const { proxy } = window.Valtio
 
@@ -55,6 +61,8 @@ export interface AIServiceSettingsState {
   initialQuickCard: QuickCardPrefs
   /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
   initialChapterQuiz: ChapterQuizPrefs
+  /** IR 选区工具栏紧凑偏好 */
+  initialIRSelectionToolbar: IRSelectionToolbarSettings
   /** Azure TTS 连接（独立 key，不复用 AI） */
   initialTts: TtsSettings
   /**
@@ -96,6 +104,9 @@ const emptyChapterQuiz: ChapterQuizPrefs = {
   model: ""
 }
 
+const emptyIRSelectionToolbar: IRSelectionToolbarSettings =
+  getDefaultIRSelectionToolbarSettings()
+
 const emptyTts: TtsSettings = {
   provider: "azure",
   region: DEFAULT_TTS_REGION,
@@ -119,6 +130,10 @@ export const aiServiceSettingsState = proxy({
   initialAI: { ...emptyAI },
   initialFirecrawl: { ...emptyFirecrawl },
   initialChapterQuiz: { ...emptyChapterQuiz },
+  initialIRSelectionToolbar: {
+    actions: { ...emptyIRSelectionToolbar.actions },
+    formatGroups: { ...emptyIRSelectionToolbar.formatGroups }
+  },
   initialTts: { ...emptyTts },
   initialReview: { ...emptyReview },
   reviewLoadWarning: null as string | null
@@ -153,6 +168,8 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   aiServiceSettingsState.initialFirecrawl = getWebImportSettings(pluginName)
   aiServiceSettingsState.initialQuickCard = getQuickCardPrefs(pluginName)
   aiServiceSettingsState.initialChapterQuiz = getChapterQuizPrefs(pluginName)
+  aiServiceSettingsState.initialIRSelectionToolbar =
+    getIRSelectionToolbarSettings(pluginName)
   aiServiceSettingsState.initialTts = getTtsSettings(pluginName)
   // 复习可见项存 plugin settings，同步可读；非法旧值展示安全草稿 + 警告
   const reviewLoaded = loadReviewServiceSettings(pluginName)
@@ -161,13 +178,15 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   aiServiceSettingsState.isOpen = true
 
   try {
-    const [ai, firecrawl, quickCard, chapterQuiz, tts] = await Promise.all([
-      hydrateAISettings(pluginName),
-      hydrateWebImportSettings(pluginName),
-      hydrateQuickCardPrefs(pluginName),
-      hydrateChapterQuizPrefs(pluginName),
-      hydrateTtsSettings(pluginName)
-    ])
+    const [ai, firecrawl, quickCard, chapterQuiz, irToolbar, tts] =
+      await Promise.all([
+        hydrateAISettings(pluginName),
+        hydrateWebImportSettings(pluginName),
+        hydrateQuickCardPrefs(pluginName),
+        hydrateChapterQuizPrefs(pluginName),
+        hydrateIRSelectionToolbarSettings(pluginName),
+        hydrateTtsSettings(pluginName)
+      ])
     if (
       !aiServiceSettingsState.isOpen ||
       aiServiceSettingsState.pluginName !== pluginName
@@ -178,6 +197,7 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
     aiServiceSettingsState.initialFirecrawl = firecrawl
     aiServiceSettingsState.initialQuickCard = quickCard
     aiServiceSettingsState.initialChapterQuiz = chapterQuiz
+    aiServiceSettingsState.initialIRSelectionToolbar = irToolbar
     aiServiceSettingsState.initialTts = tts
     // 复习无独立 hydrate；再次同步读，避免打开后 settings 已变
     const reviewAgain = loadReviewServiceSettings(pluginName)
@@ -213,6 +233,10 @@ export function closeAIServiceSettings(): void {
     aiServiceSettingsState.initialAI = { ...emptyAI }
     aiServiceSettingsState.initialFirecrawl = { ...emptyFirecrawl }
     aiServiceSettingsState.initialChapterQuiz = { ...emptyChapterQuiz }
+    aiServiceSettingsState.initialIRSelectionToolbar = {
+      actions: { ...emptyIRSelectionToolbar.actions },
+      formatGroups: { ...emptyIRSelectionToolbar.formatGroups }
+    }
     aiServiceSettingsState.initialTts = { ...emptyTts }
     aiServiceSettingsState.initialReview = { ...emptyReview }
     aiServiceSettingsState.reviewLoadWarning = null

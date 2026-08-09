@@ -44,12 +44,23 @@ import {
   getDefaultReviewServiceSettingsDraft,
   type ReviewServiceSettingsDraft
 } from "../srs/settings/reviewServiceSettings"
+import {
+  getDefaultIRSelectionToolbarSettings,
+  IR_NATIVE_FORMAT_GROUP_IDS,
+  IR_NATIVE_FORMAT_GROUP_LABELS,
+  IR_TOOLBAR_ACTION_IDS,
+  IR_TOOLBAR_ACTION_LABELS,
+  type IRNativeFormatGroupId,
+  type IRSelectionToolbarSettings,
+  type IRToolbarActionId
+} from "../srs/settings/irSelectionToolbarSettings"
 
 export type ServiceSettingsDraft = {
   ai: AISettings
   firecrawl: WebImportSettings
   quickCard: QuickCardPrefs
   chapterQuiz: ChapterQuizPrefs
+  irSelectionToolbar: IRSelectionToolbarSettings
   tts: TtsSettings
   review: ReviewServiceSettingsDraft
 }
@@ -66,6 +77,8 @@ export interface AIServiceSettingsDialogProps {
   initialQuickCard: QuickCardPrefs
   /** 章末小测偏好（出题数量 / 语言 / 自定义提示词 / 专用模型） */
   initialChapterQuiz: ChapterQuizPrefs
+  /** IR 选区工具栏紧凑偏好 */
+  initialIRSelectionToolbar: IRSelectionToolbarSettings
   initialTts: TtsSettings
   initialReview: ReviewServiceSettingsDraft
   /** 打开时非法可见复习设置的警告（runtime 文案） */
@@ -88,6 +101,7 @@ type SettingsTabId =
   | "behavior"
   | "quickCard"
   | "chapterQuiz"
+  | "incrementalReading"
   | "review"
   | "tts"
   | "webImport"
@@ -102,6 +116,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "behavior", label: "行为", icon: "ti-adjustments" },
   { id: "quickCard", label: "快捷制卡", icon: "ti-bolt" },
   { id: "chapterQuiz", label: "章末小测", icon: "ti-clipboard-list" },
+  { id: "incrementalReading", label: "渐进阅读", icon: "ti-book-2" },
   { id: "review", label: "复习", icon: "ti-cards" },
   { id: "tts", label: "语音 TTS", icon: "ti-volume" },
   { id: "webImport", label: "网页导入", icon: "ti-world-www" },
@@ -158,6 +173,7 @@ function ServiceSettingsForm(props: {
   initialFirecrawl: WebImportSettings
   initialQuickCard: QuickCardPrefs
   initialChapterQuiz: ChapterQuizPrefs
+  initialIRSelectionToolbar: IRSelectionToolbarSettings
   initialTts: TtsSettings
   initialReview: ReviewServiceSettingsDraft
   busy: boolean
@@ -213,6 +229,12 @@ function ServiceSettingsForm(props: {
     props.initialChapterQuiz.customPrompt
   )
   const [quizModel, setQuizModel] = useState(props.initialChapterQuiz.model)
+  const [stbActions, setStbActions] = useState(
+    () => ({ ...props.initialIRSelectionToolbar.actions })
+  )
+  const [stbFormatGroups, setStbFormatGroups] = useState(
+    () => ({ ...props.initialIRSelectionToolbar.formatGroups })
+  )
   const [ttsApiKey, setTtsApiKey] = useState(props.initialTts.apiKey)
   const [ttsShowKey, setTtsShowKey] = useState(false)
   const [ttsRegion, setTtsRegion] = useState(props.initialTts.region)
@@ -266,6 +288,10 @@ function ServiceSettingsForm(props: {
       customPrompt: quizCustomPrompt,
       model: quizModel
     },
+    irSelectionToolbar: {
+      actions: { ...stbActions },
+      formatGroups: { ...stbFormatGroups }
+    },
     tts: {
       provider: "azure",
       apiKey: ttsApiKey,
@@ -292,6 +318,23 @@ function ServiceSettingsForm(props: {
     setRequestRetention(defaults.requestRetention)
     setPassFailButtons(defaults.passFailButtons)
     setShowNextReviewTime(defaults.showNextReviewTime)
+  }
+
+  const restoreIRSelectionToolbarDefaults = () => {
+    const defaults = getDefaultIRSelectionToolbarSettings()
+    setStbActions({ ...defaults.actions })
+    setStbFormatGroups({ ...defaults.formatGroups })
+  }
+
+  const setStbAction = (id: IRToolbarActionId, value: boolean) => {
+    setStbActions((prev: typeof stbActions) => ({ ...prev, [id]: value }))
+  }
+
+  const setStbFormatGroup = (id: IRNativeFormatGroupId, value: boolean) => {
+    setStbFormatGroups((prev: typeof stbFormatGroups) => ({
+      ...prev,
+      [id]: value
+    }))
   }
 
   const modelList = props.modelOptions
@@ -741,6 +784,84 @@ function ServiceSettingsForm(props: {
           </section>
         ) : null}
 
+        {activeTab === "incrementalReading" ? (
+          <section
+            className="ai-service-settings__section"
+            role="tabpanel"
+            id="ai-service-panel-incrementalReading"
+            aria-labelledby="ai-service-tab-incrementalReading"
+          >
+            <h3 className="ai-service-settings__section-title">
+              <i className="ti ti-book-2" aria-hidden="true" />
+              渐进阅读
+            </h3>
+            <p className="ai-service-settings__section-desc">
+              仅影响渐进阅读会话内的 Orca 原生选区工具栏；会话外工具栏保持宿主原样。
+            </p>
+
+            <div className="ai-service-settings__subsection">
+              <h4 className="ai-service-settings__subsection-title">选区工具栏</h4>
+              <FieldHint
+                summary="在阅读/编辑模式选中文字时，按开关显示已知按钮；未知的新宿主按钮默认仍可见。"
+                details="Topic 选区永不显示「挖空」；Extract 选区永不显示「摘录」。一键「解释」仅在 IR 内生效，使用现有块下内联解释（选区为 FOCUS）。右侧主栏不再放摘录/挖空，快捷键 Alt+X / Alt+Z 仍可用。"
+              />
+
+              <span className="ai-service-settings__label">插件动作</span>
+              {IR_TOOLBAR_ACTION_IDS.map((id) => (
+                <label
+                  key={id}
+                  className="ai-service-settings__checkbox-row"
+                >
+                  <input
+                    type="checkbox"
+                    className="ai-service-settings__checkbox"
+                    checked={stbActions[id]}
+                    onChange={(e) => setStbAction(id, e.target.checked)}
+                    onKeyDown={stopKeys}
+                    onMouseDown={stopBubble}
+                    disabled={busy}
+                  />
+                  <span>{IR_TOOLBAR_ACTION_LABELS[id]}</span>
+                </label>
+              ))}
+
+              <span className="ai-service-settings__label ai-service-settings__label--spaced">
+                原生格式（分组）
+              </span>
+              {IR_NATIVE_FORMAT_GROUP_IDS.map((id) => (
+                <label
+                  key={id}
+                  className="ai-service-settings__checkbox-row"
+                >
+                  <input
+                    type="checkbox"
+                    className="ai-service-settings__checkbox"
+                    checked={stbFormatGroups[id]}
+                    onChange={(e) => setStbFormatGroup(id, e.target.checked)}
+                    onKeyDown={stopKeys}
+                    onMouseDown={stopBubble}
+                    disabled={busy}
+                  />
+                  <span>{IR_NATIVE_FORMAT_GROUP_LABELS[id]}</span>
+                </label>
+              ))}
+
+              <div className="ai-service-settings__row-actions">
+                <button
+                  type="button"
+                  className="ai-service-settings__btn ai-service-settings__btn--secondary"
+                  onClick={restoreIRSelectionToolbarDefaults}
+                  disabled={busy}
+                  title="仅更新本页草稿，需点底部「保存」才生效"
+                >
+                  恢复推荐设置
+                </button>
+              </div>
+              <FieldHint summary="推荐：摘录 / 挖空 / 一键解释 开；AI 菜单与 TTS 关；全部原生格式组关。须底部保存后立即作用于当前会话。" />
+            </div>
+          </section>
+        ) : null}
+
         {activeTab === "review" ? (
           <section
             className="ai-service-settings__section"
@@ -1168,6 +1289,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     initialFirecrawl,
     initialQuickCard,
     initialChapterQuiz,
+    initialIRSelectionToolbar,
     initialTts,
     initialReview,
     reviewLoadWarning,
@@ -1208,7 +1330,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
               <span>服务与算法设置</span>
             </h2>
             <p className="ai-service-settings__subtitle">
-              连接 AI、语音 TTS、网页导入与每日复习额度。
+              连接 AI、语音 TTS、网页导入、渐进阅读选区工具栏与每日复习额度。
             </p>
           </div>
           <button
@@ -1253,6 +1375,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             initialFirecrawl={initialFirecrawl}
             initialQuickCard={initialQuickCard}
             initialChapterQuiz={initialChapterQuiz}
+            initialIRSelectionToolbar={initialIRSelectionToolbar}
             initialTts={initialTts}
             initialReview={initialReview}
             busy={busy}

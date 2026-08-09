@@ -38,8 +38,6 @@ export type IRSessionChromeProps = {
   pluginName?: string
   showReturn?: boolean
   onNext: () => void
-  onExtract: () => void
-  onItemize: () => void
   onConvertToQA?: () => void
   onConvertToDirection?: () => void
   onChapterQuiz?: () => void
@@ -85,8 +83,6 @@ export default function IRSessionChrome({
   pluginName = "orca-srs",
   showReturn,
   onNext,
-  onExtract,
-  onItemize,
   onConvertToQA,
   onConvertToDirection,
   onChapterQuiz,
@@ -147,11 +143,8 @@ export default function IRSessionChrome({
       />
 
       <IRActionBar
-        isTopic={isTopic}
         isWorking={isWorking}
         onNext={onNext}
-        onExtract={onExtract}
-        onItemize={onItemize}
         onImportance={onImportance}
         importanceOpen={importanceOpen}
         importanceTierLabel={formatImportanceTierCompact(importanceToTier(priority))}

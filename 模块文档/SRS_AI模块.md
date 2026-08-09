@@ -262,6 +262,7 @@ makeAICard / interactiveAICard（别名）
 | 同上 | `reasoningEffort` | `default` | `default` 不传字段；`low`/`medium`/`high` → `reasoning_effort` |
 | plugin **data** `ai.quickCard` | `cardLanguage` / `customInstruction` / `model` | `auto` / `""` / `""` | 快捷制卡偏好；面板内独立分区 |
 | plugin **data** `ai.chapterQuiz` | `questionCount` / `language` / `customPrompt` / `model` | `10` / `auto` / `""` / `""` | 章末小测偏好（默认出题数 / 题目语言 / 自定义提示词 / 专用模型）；面板内独立分区；见 [渐进阅读_章末小测.md](渐进阅读_章末小测.md) |
+| plugin **data** `ir.selectionToolbar` | `actions` / `formatGroups` | 摘录·挖空·解释开；AI 菜单·TTS 关；格式组全关 | IR 原生选区工具栏 allow-list；面板 **渐进阅读** Tab「选区工具栏」；见 [渐进阅读.md](渐进阅读.md) §选区工具栏 |
 | plugin **data** `tts.connection` | `apiKey` / `region` / `endpoint` / `voice` / `format` / `rate` / `pitch` | Azure 默认 | **语音 TTS**（Azure Speech REST）；**独立 Key**，不复用 AI；见 [SRS_TTS语音.md](SRS_TTS语音.md) |
 | plugin **data** `webImport.firecrawl` | `firecrawlApiKey` / `firecrawlApiUrl` | 官方 v2 scrape | 与 AI 同面板；**不**写 `setSettings` |
 | plugin **settings**（原 key，**非** data） | `review.newCardsPerDay` / `review.reviewCardsPerDay` / `review.fsrsRequestRetention` / `review.passFailButtons` / `review.showNextReviewTime` | 30 / 200 / 0.9 / false / false | **复习** 页签编辑；后两项仅 UI；helper 见 `reviewServiceSettings.ts`；[SRS_记忆算法.md](SRS_记忆算法.md) |
@@ -272,7 +273,7 @@ makeAICard / interactiveAICard（别名）
 - 面板：`AIServiceSettingsDialog` — **分段 Tab**（默认「连接」；标题「服务与算法设置」）
   - **连接**：Key / URL / 模型 / 拉取 / 测连；模型 chips 默认 8 个，「浏览全部」展开
   - **行为**：联网 / 思考强度 / max tokens；长说明「了解更多」折叠
-  - **快捷制卡** / **章末小测** / **复习**（每日新卡 / 每日复习 / 目标保留率；「恢复默认值」仅改草稿 30/200/0.9；**不**显示权重与最大间隔）/ **语音 TTS**（Azure region·endpoint·Key·voice·试听）/ **网页导入** / **诊断**（请求日志）各一页
+  - **快捷制卡** / **章末小测** / **渐进阅读**（选区工具栏动作与格式组开关；「恢复推荐设置」仅改草稿）/ **复习**（每日新卡 / 每日复习 / 目标保留率；「恢复默认值」仅改草稿 30/200/0.9；**不**显示权重与最大间隔）/ **语音 TTS**（Azure region·endpoint·Key·voice·试听）/ **网页导入** / **诊断**（请求日志）各一页
   - 保存一次提交整份 draft（`ai` + `firecrawl` + `quickCard` + `chapterQuiz` + **`tts`** + **`review`**）
   - **复习页先严格校验**（`reviewServiceSettings.ts`）：`parseReviewServiceSettingsDraftStrict` 失败则整包中止（面板 banner + notify），**不会**先保存 AI/Firecrawl 再发现复习项非法；合法时 `saveReviewServiceSettingsFromForm` → `setSettings` 写额度/保留率三项 + 两项 UI 开关 + `clearFsrsRuntimeState()`（不覆盖个人权重/最大间隔）
   - 打开时若可见复习项非法：表单显示安全生效值 + 全局 warning banner；隐藏权重/最大间隔错误不由本面板阻止保存

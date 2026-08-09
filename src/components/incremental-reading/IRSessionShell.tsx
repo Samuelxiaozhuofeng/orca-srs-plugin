@@ -747,7 +747,7 @@ export default function IRSessionShell({
   const {
     handleNext,
     handlePostpone,
-    handleExtract,
+    // 摘录 UI 已迁至原生选区工具栏；Alt+X 仍走 createExtract 编辑器命令
     handleItemize,
     handleConvertToQA,
     handleConvertToDirection,
@@ -1283,6 +1283,8 @@ export default function IRSessionShell({
       ref={sessionRootRef}
       className="ir-reading"
       data-ir-view-mode={viewMode}
+      data-ir-card-type={isTopic ? "topic" : "extract"}
+      data-ir-card-id={String(currentCard.id)}
       data-ir-theme={theme}
       data-ir-content-width={String(contentWidth)}
       style={readerWidthStyle}
@@ -1356,8 +1358,6 @@ export default function IRSessionShell({
         archiveConfirmOpen={archiveConfirmOpen}
         showReturn={readingContext.showReturn}
         onNext={requestNext}
-        onExtract={handleExtract}
-        onItemize={handleItemize}
         onConvertToQA={handleConvertToQA}
         onConvertToDirection={handleConvertToDirection}
         onChapterQuiz={handleChapterQuizRequest}

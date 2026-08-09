@@ -4,6 +4,10 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-09（IR 可配置紧凑原生选区工具栏）**：
+> - [渐进阅读.md](渐进阅读.md)：选区工具栏 allow-list + Topic/Extract 过滤；主栏去掉摘录/挖空；一键解释进工具栏；折叠选区时完整浮层无闪烁退出
+> - [SRS_AI模块.md](SRS_AI模块.md)：服务设置新增「渐进阅读」Tab；plugin data `ir.selectionToolbar`
+>
 > **索引增补：2026-07-26**（「今日学习」统一主页与可恢复入口已落地；见 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) / [SRS_插件入口与命令.md](SRS_插件入口与命令.md)）。
 >
 > **索引增补：2026-07-26（制卡 undo + 选择题命令 + IR Extract→Q&A/Direction）**：
@@ -173,7 +177,7 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-09 更新 — due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-09 更新 — **可配置紧凑原生选区工具栏**（服务设置「渐进阅读」Tab；摘录/挖空/一键解释在工具栏；主栏 下篇→重要→完成→⋯）；due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
 24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-03 更新 — Topic 章末小测；**P0 UX**：5/10/15 题选择、生成三阶段+重试计数、稳定打乱、完成后续轻量 offer；**P1 学习闭环**：首轮分类/修复轮/动作小结/整理薄弱点/定向反馈；Custom Panel + 共享生成 / live 同步；制卡落点=sourceBlockId 子块；键盘与 aria-live；panel nav A→B
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
@@ -183,12 +187,12 @@
     - **误点回撤 + 文末防呆**（2026-07-27）：会话内**单步**「撤销上一篇」（`performNext` 回传动作前 IR 快照 → `undoPerformNext` 整体写回真回滚排期，队列按原下标回插并按快照修正断点/新卡判定；入口=会话头部按钮 + `Alt+U` + **「下一篇」成功通知 action**（ref 接到最新 `handleUndoNext`，失效再点可见 info）；当前篇一旦有写库动作即失效，完成页不提供）；读到文末（触底或一屏装下全文）且停留 ≥4s 时「下一篇」先确认「以后再复习 / 完成，移出队列 / 取消」，完成分支仍走既有二次确认，本会话处理一次后不再弹。新增 `irNextUndo.ts` / `irEndOfContentGate.ts` / `useIRReadingEndZone.ts` / `IREndOfContentDialog.tsx`
     - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：新增「视觉规范（Apple HIG 基线）」小节；`ir-workspace.css` 全面令牌化——52 处裸圆角（4/5/6/7/8/9/10/12/14/16px 十档）归一到 `--srs-radius-*` 六档阶梯、18 处自定义阴影收敛为 `--srs-shadow-1/2/hero/overlay/pill`、37 处裸秒数动效改 `--srs-duration-*`；排版走 `--srs-text-*` / `--srs-weight-*` 且统计数字统一 `tabular-nums`；徽章/筛选 chip/次级按钮/托盘/空态按规范统一；IR 组件 ~150 处视觉内联样式迁移到 CSS 类（仅保留动作栏与正文宽度等运行时几何量）。**边界**：专注阅读保持块宿主（面板宿主深树死循环，见 [问题经验.md](问题经验.md)）；`*-host-chrome-managed` 作用域选择器原样保留；正文宽度仍是用户偏好（`irReaderWidthStorage`），未被 `--srs-measure` 覆盖；阅读纸张主题（mint/sepia/academic）改为每主题一份 `--ir-paper-*` 调色板（无法由 Orca 主题变量派生）
     - 2026-07-27（死代码清理）：`IRCardList.tsx` / `IRStatistics.tsx`（零引用旧平面列表/统计 UI）已删，随之删除 `incrementalReadingManagerUtils.ts` 中仅服务于它们的 `groupIRCardsByDate` / `calculateIRStats` / `IRCardStats`，以及 `ir-workspace.css` 中仅服务于它们的 `.ir-cardlist-*` / `.ir-stats-card-*`（41 条规则）；资料库分组由 `workspace/irLibraryFilters.ts` 承担，`getIRDateGroup` / `IR_GROUP_ORDER` / `IRCardGroup` 仍在使用
-    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下一篇→摘录|挖空→重要性→完成→⋯；`keep_extract` 挖空；完成主路径）**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话装配只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
+    - 统一工作区、主面板默认 Wide View 与宿主 chrome 清理、书籍/网页来源树、章节 Topic 与 Extract 层级、**已完成章节资料库保留**、**摘录近上下文 / 章节浏览**、**块下内联 AI 解释（v1）**、**重要性 UX**、**会话主栏 UX（下篇→重要→完成→⋯；摘录|挖空在原生选区工具栏；`keep_extract` 挖空；完成主路径）**、**选区工具栏 allow-list + Topic/Extract 过滤**、时间盒队列策略（Topic 最低曝光/新 Extract 最终 cap/探索）、会话装配只读（B1）、只读/混合、主题模式、阅读模式展开、切卡滚动/断点、完成页今日累计、快捷键、资料库显式溢出推后、漏斗、会话服务
     - 2026-07-26（P0 低压调度优化）：已读间隔**迟到补偿**（`computeLatenessEffectiveBase`）；队列排序改**加性得分老化**（终结低优先级饥饿）+ 探索改**真随机采样**；`applyAutoPostpone` **接回主路径**（用户显式启动会话触发、当日一次守卫、反复推迟降权、会话头部 banner + 撤销，`runSessionStartAutoPostpone.ts`）
     - 2026-07-26：**Extract→Q&A / Direction 原子转化**（`convertExtractToQA` / `convertExtractToDirection`，与 Cloze 共用事务脚手架；会话 ⋯更多「问答」「方向」）
     - 2026-07-26：断点**交互捕获守卫**（`irBreakpointInteractiveCapture.ts`，切卡清交互 debounce、过期捕获丢弃）；收集索引路径批量 `get-blocks`（批 50/并发 4）、`preheatIrBlockCache` 仅后端块、`mapPool` 并发 8
     - 2026-07-26（低危批次）：兜底仅查询失败触发；索引失败可见告警；autoMark 重入守卫/世代计数；快捷键一次性播种（`ir.defaultShortcutsSeeded`）；卸载排空断点在途写入；会话块 `resolveBlock` 三态；`IncrementalReadingSessionDemo` 已删；两套块缓存不合并决策固化
-    - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IREndOfContentDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
+    - 关联：`src/components/incremental-reading/**`（含 `IRActionBar.tsx`、`IRBlockExplain*.tsx`、`useIRBlockExplain.ts`、`IRCompleteChapterDialog.tsx`、`IRArchiveConfirmDialog.tsx`、`IREndOfContentDialog.tsx`、`IRImportanceMenu.tsx`）、`src/srs/incremental-reading/*`（含 `irSelectionToolbarController.ts`）、`src/srs/settings/irSelectionToolbarSettings.ts`、`src/srs/ai/aiBlockExplain.ts`、`incrementalReading*.ts`、`topicCardCreator.ts`、`topicIRMenu.ts`
 
 25. **[渐进阅读_BookIR.md](渐进阅读_BookIR.md)** ⭐ 2026-07-29 更新
     - `ir.bookPlan` v1、分散/顺序、章节 init、progression（完成主路径 / skip 兼容）、整本/章节移出、完成本章后大纲保留「已完成」结构、顺序徽标与 toast 文案
@@ -214,7 +218,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-01 更新 — 制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-09 更新 — 服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
     - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类

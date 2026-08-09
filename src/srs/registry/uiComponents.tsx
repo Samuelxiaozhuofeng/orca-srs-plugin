@@ -17,6 +17,7 @@ import { WebImportDialogMount } from "../../components/web-import/WebImportDialo
 import { ImageOcclusionEditorMount } from "../../components/image-occlusion/ImageOcclusionEditorMount"
 import SrsErrorBoundary from "../../components/SrsErrorBoundary"
 import { getToolbarAIPrompts } from "../ai/aiToolbarPromptStore"
+import { buildToolbarActionIconClass } from "../settings/irSelectionToolbarSettings"
 import {
   HEADBAR_MOUNT_SUFFIXES,
   LEGACY_VISIBLE_HEADBAR_BUTTON_SUFFIXES,
@@ -91,21 +92,34 @@ export function registerUIComponents(pluginName: string): void {
     ))
   }
   // ============ 工具栏按钮 ============
+  // icon = Tabler + 唯一 orca-srs-stb-* marker；过滤/分类只认 marker，避免误伤其它插件同图标。
+
+  orca.toolbar.registerToolbarButton(`${pluginName}.extractButton`, {
+    icon: buildToolbarActionIconClass("extract"),
+    tooltip: "摘录 (Alt+X)",
+    command: `${pluginName}.createExtract`
+  })
 
   orca.toolbar.registerToolbarButton(`${pluginName}.clozeButton`, {
-    icon: "ti ti-braces",
+    icon: buildToolbarActionIconClass("cloze"),
     tooltip: "创建 Cloze 填空",
     command: `${pluginName}.createCloze`
   })
 
+  orca.toolbar.registerToolbarButton(`${pluginName}.explainButton`, {
+    icon: buildToolbarActionIconClass("explain"),
+    tooltip: "一键解释（渐进阅读）",
+    command: `${pluginName}.irBlockExplainFromSelection`
+  })
+
   orca.toolbar.registerToolbarButton(`${pluginName}.ttsFromSelection`, {
-    icon: "ti ti-volume",
+    icon: buildToolbarActionIconClass("tts"),
     tooltip: "选区生成语音 (Azure TTS)",
     command: `${pluginName}.ttsFromSelection`
   })
 
   orca.toolbar.registerToolbarButton(`${pluginName}.aiQuickInteract`, {
-    icon: "ti ti-sparkles",
+    icon: buildToolbarActionIconClass("aiMenu"),
     tooltip: "AI 快捷交互",
     menu: (close) => {
       const MenuText = orca.components.MenuText
@@ -332,7 +346,9 @@ export async function unregisterUIComponents(
   }
 
   // 工具栏按钮
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.extractButton`)
   orca.toolbar.unregisterToolbarButton(`${pluginName}.clozeButton`)
+  orca.toolbar.unregisterToolbarButton(`${pluginName}.explainButton`)
   orca.toolbar.unregisterToolbarButton(`${pluginName}.ttsFromSelection`)
   orca.toolbar.unregisterToolbarButton(`${pluginName}.aiQuickInteract`)
 

@@ -22,6 +22,12 @@ import {
   type ChapterQuizPrefs
 } from "../srs/settings/chapterQuizSettingsSchema"
 import {
+  IR_NATIVE_FORMAT_GROUP_IDS,
+  saveIRSelectionToolbarSettings,
+  type IRSelectionToolbarSettings
+} from "../srs/settings/irSelectionToolbarSettings"
+import { notifyIRSelectionToolbarSettingsChanged } from "../srs/incremental-reading/irSelectionToolbarController"
+import {
   normalizeTtsSettings,
   saveTtsSettings,
   setTtsSettingsCache,
@@ -79,6 +85,16 @@ export function AIServiceSettingsMount({
     snap.initialAI.reasoningEffort,
     snap.initialChapterQuiz.questionCount,
     snap.initialChapterQuiz.language,
+    snap.initialIRSelectionToolbar.actions.extract ? "e1" : "e0",
+    snap.initialIRSelectionToolbar.actions.cloze ? "c1" : "c0",
+    snap.initialIRSelectionToolbar.actions.explain ? "x1" : "x0",
+    snap.initialIRSelectionToolbar.actions.aiMenu ? "a1" : "a0",
+    snap.initialIRSelectionToolbar.actions.tts ? "t1" : "t0",
+    // 格式组须进入 remount key，避免异步 hydrate 后草稿仍停留在旧默认
+    ...IR_NATIVE_FORMAT_GROUP_IDS.map(
+      (id) =>
+        `${id}:${snap.initialIRSelectionToolbar.formatGroups[id] ? "1" : "0"}`
+    ),
     snap.initialTts.apiKey.length,
     snap.initialTts.region,
     snap.initialTts.endpoint,
@@ -111,10 +127,42 @@ export function AIServiceSettingsMount({
       await saveWebImportSettings(activePlugin, draft.firecrawl)
       await saveQuickCardPrefs(activePlugin, draft.quickCard)
       await saveChapterQuizPrefs(activePlugin, draft.chapterQuiz)
+      await saveIRSelectionToolbarSettings(
+        activePlugin,
+        draft.irSelectionToolbar
+      )
       await saveTtsSettings(activePlugin, draft.tts)
       // 写回复习页可见项（额度 / 保留率 / 界面开关）并 clearFsrsRuntimeState（不写权重/最大间隔）
       await saveReviewServiceSettingsFromForm(activePlugin, draft.review)
-      orca.notify("success", "服务设置已保存", { title: "服务设置" })
+
+      // 持久化已成功；立即刷新失败必须可见，不得静默宣称已即时生效
+      let toolbarRefreshFailed = false
+      try {
+        notifyIRSelectionToolbarSettingsChanged(activePlugin)
+      } catch (refreshError) {
+        toolbarRefreshFailed = true
+        console.error(
+          "[AI ServiceSettings] 选区工具栏已保存但立即刷新失败:",
+          refreshError
+        )
+        const detail =
+          refreshError instanceof Error
+            ? refreshError.message
+            : String(refreshError)
+        orca.notify(
+          "warn",
+          `选区工具栏设置已保存，但未能立即应用（${detail}）。可重开渐进阅读会话或重载插件后再试。`,
+          { title: "服务设置" }
+        )
+      }
+
+      if (!toolbarRefreshFailed) {
+        orca.notify("success", "服务设置已保存", { title: "服务设置" })
+      } else {
+        orca.notify("success", "服务设置已保存（选区工具栏待重载后生效）", {
+          title: "服务设置"
+        })
+      }
       closeAIServiceSettings()
     } catch (error) {
       console.error("[AI ServiceSettings] 保存失败:", error)
@@ -262,6 +310,9 @@ export function AIServiceSettingsMount({
       initialFirecrawl={snap.initialFirecrawl as WebImportSettings}
       initialQuickCard={snap.initialQuickCard as QuickCardPrefs}
       initialChapterQuiz={snap.initialChapterQuiz as ChapterQuizPrefs}
+      initialIRSelectionToolbar={
+        snap.initialIRSelectionToolbar as IRSelectionToolbarSettings
+      }
       initialTts={snap.initialTts as TtsSettings}
       initialReview={snap.initialReview as ReviewServiceSettingsDraft}
       reviewLoadWarning={snap.reviewLoadWarning}

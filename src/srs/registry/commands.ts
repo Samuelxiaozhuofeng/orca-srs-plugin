@@ -230,6 +230,29 @@ export function registerCommands(
     }
   )
 
+  // IR 选区工具栏「一键解释」：仅渐进阅读会话内生效（由 useIRBlockExplain 监听并 preventDefault）
+  orca.commands.registerEditorCommand(
+    `${pluginName}.irBlockExplainFromSelection`,
+    async () => {
+      const event = new CustomEvent("orca-srs:ir-block-explain-request", {
+        cancelable: true,
+        detail: { pluginName: _pluginName }
+      })
+      const handled = !window.dispatchEvent(event)
+      if (!handled) {
+        orca.notify("warn", "一键解释仅在渐进阅读会话内可用（请先选中正文中的文字）", {
+          title: "块解释"
+        })
+      }
+      return null
+    },
+    () => {},
+    {
+      label: "SRS: 渐进阅读一键解释",
+      hasArgs: false
+    }
+  )
+
   // 列表卡命令：将当前块转换为列表卡（子块作为条目）
   orca.commands.registerEditorCommand(
     `${pluginName}.createListCard`,
@@ -951,6 +974,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.createTopicCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.gotitQuiz`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createExtract`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.irBlockExplainFromSelection`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createListCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.openImageOcclusionEditor`)
   orca.commands.unregisterEditorCommand(`${pluginName}.createDirectionForward`)

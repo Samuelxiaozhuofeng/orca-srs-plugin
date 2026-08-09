@@ -34,6 +34,9 @@ export const IR_BLOCK_EXPLAIN_ACTIVE_CLASS = "ir-block-explain-active"
 /** 会话正文内快捷键：讲清楚当前块 / 选区（不走 Orca 全局 assign） */
 export const IR_BLOCK_EXPLAIN_SHORTCUT_HINT = "Alt+E"
 
+/** 选区工具栏「一键解释」命令派发；仅当前会话 body 含选区时 preventDefault */
+export const IR_BLOCK_EXPLAIN_REQUEST_EVENT = "orca-srs:ir-block-explain-request"
+
 function resolveTargetBlockEl(
   body: HTMLElement,
   eventTarget: EventTarget | null
@@ -563,6 +566,51 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
 
     document.addEventListener("keydown", onKeyDown, true)
     return () => document.removeEventListener("keydown", onKeyDown, true)
+  }, [enabled, bodyRef, openForBlock])
+
+  // 选区工具栏一键解释：仅当选区/焦点落在本会话 body 内时接管（多面板不交叉）
+  useEffect(() => {
+    if (!enabled) return
+
+    const onRequest = (event: Event) => {
+      const body = bodyRef.current
+      if (!body) return
+
+      const sel = window.getSelection?.()
+      const anchor = sel?.anchorNode
+      const fromSel =
+        anchor instanceof Element
+          ? anchor
+          : anchor?.parentElement ?? null
+      const targetForResolve =
+        fromSel && body.contains(fromSel)
+          ? fromSel
+          : document.activeElement && body.contains(document.activeElement)
+            ? document.activeElement
+            : null
+      if (!targetForResolve) return
+
+      let blockEl = resolveTargetBlockEl(body, targetForResolve)
+      if (!blockEl && openRef.current) {
+        blockEl = body.querySelector<HTMLElement>(
+          `.orca-block[data-id="${openRef.current.blockId}"]`
+        )
+      }
+      if (!blockEl) {
+        // 选区在本 body 但认不出块：仍 prevent，避免外层误报「非 IR」
+        event.preventDefault()
+        orca.notify("warn", "请先将光标放在要解释的块内", { title: "块解释" })
+        return
+      }
+
+      event.preventDefault()
+      openForBlock(blockEl)
+    }
+
+    window.addEventListener(IR_BLOCK_EXPLAIN_REQUEST_EVENT, onRequest)
+    return () => {
+      window.removeEventListener(IR_BLOCK_EXPLAIN_REQUEST_EVENT, onRequest)
+    }
   }, [enabled, bodyRef, openForBlock])
 
   // Mount / update panel host when open state changes

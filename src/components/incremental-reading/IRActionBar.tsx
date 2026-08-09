@@ -1,5 +1,6 @@
 /**
- * 右侧竖排阅读动作栏：返回(可选)、下篇、摘录|挖空、重要、完成、⋯(更多)。
+ * 右侧竖排阅读动作栏：返回(可选)、下篇、重要、完成、⋯(更多)。
+ * 摘录 / 挖空已迁至 Orca 原生选区工具栏（可配置）；Alt+X / Alt+Z 仍走原命令。
  * wide/medium 可见文案统一二字；完整语义在 aria-label / title。
  * position:fixed，跟随所属 `.ir-reading` 面板的可视区域垂直居中，
  * 并按面板宽度三档（wide / medium / narrow）缩放；不覆盖正文。
@@ -14,11 +15,8 @@ const { Button } = orca.components
 const { useLayoutEffect, useRef, useState } = window.React
 
 export type IRActionBarProps = {
-  isTopic: boolean
   isWorking?: boolean
   onNext: () => void
-  onExtract?: () => void
-  onItemize?: () => void
   onImportance: () => void
   importanceOpen?: boolean
   /** Compact tier label for the importance control, e.g. 低/中/高 */
@@ -68,11 +66,8 @@ function applyPanelActionBarChrome(
 }
 
 export default function IRActionBar({
-  isTopic,
   isWorking,
   onNext,
-  onExtract,
-  onItemize,
   onImportance,
   importanceOpen,
   importanceTierLabel,
@@ -185,11 +180,9 @@ export default function IRActionBar({
     }
   }, [tier, showReturn, importanceTierLabel, importanceOpen, moreOpen, completeTitle])
 
-  // 竖排主栏：wide/medium 统一二字，避免「下一篇 / 重要性」三字与「摘录 / 完成」二字混排难看。
-  // narrow 仍用极简符号/档位字；完整语义留给 aria-label / title。
+  // 竖排主栏：wide/medium 统一二字；narrow 用极简符号/档位字。
   const returnLabel = compact ? "↩" : "返回"
   const nextLabel = compact ? "→" : "下篇"
-  const secondLabel = compact ? "+" : isTopic ? "摘录" : "挖空"
   const importanceLabel = compact
     ? (importanceTierLabel ?? "中")
     : "重要"
@@ -235,33 +228,6 @@ export default function IRActionBar({
         >
           {nextLabel}
         </Button>
-        {isTopic ? (
-          <Button
-            tabIndex={0}
-            variant="plain"
-            onClick={isWorking ? undefined : onExtract}
-            onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
-            style={style}
-            aria-disabled={isWorking}
-            aria-label="摘录"
-            title="摘录 Alt+X"
-          >
-            {secondLabel}
-          </Button>
-        ) : (
-          <Button
-            tabIndex={0}
-            variant="plain"
-            onClick={isWorking ? undefined : onItemize}
-            onMouseDown={(e: { preventDefault: () => void }) => e.preventDefault()}
-            style={style}
-            aria-disabled={isWorking}
-            aria-label="挖空 Alt+Z"
-            title="挖空 Alt+Z — 将选区制成填空卡，摘录仍留在阅读中"
-          >
-            {secondLabel}
-          </Button>
-        )}
         <Button
           tabIndex={0}
           variant="plain"

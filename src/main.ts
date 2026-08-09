@@ -134,6 +134,18 @@ export async function load(_name: string) {
     console.warn(`[${pluginName}] 加载章末小测偏好失败:`, error)
   }
   try {
+    const { hydrateIRSelectionToolbarSettings } = await import(
+      "./srs/settings/irSelectionToolbarSettings"
+    )
+    await hydrateIRSelectionToolbarSettings(pluginName)
+    const { startIRSelectionToolbarController } = await import(
+      "./srs/incremental-reading/irSelectionToolbarController"
+    )
+    startIRSelectionToolbarController(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 加载/启动 IR 选区工具栏偏好失败:`, error)
+  }
+  try {
     const { hydrateTtsSettings } = await import("./srs/tts/ttsSettingsSchema")
     await hydrateTtsSettings(pluginName)
   } catch (error) {
@@ -263,6 +275,15 @@ export async function unload() {
       },
       { name: "stopRecentDeckWatcher", run: () => stopRecentDeckWatcher() },
       { name: "stopAutoMarkExtract", run: () => stopAutoMarkExtract(name) },
+      {
+        name: "stopIRSelectionToolbarController",
+        run: async () => {
+          const { stopIRSelectionToolbarController } = await import(
+            "./srs/incremental-reading/irSelectionToolbarController"
+          )
+          stopIRSelectionToolbarController()
+        }
+      },
       { name: "unregisterCommands", run: () => unregisterCommands(name) },
       { name: "unregisterUIComponents", run: () => unregisterUIComponents(name) },
       { name: "unregisterRenderers", run: () => unregisterRenderers(name) },

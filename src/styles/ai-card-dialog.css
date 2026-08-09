@@ -1436,6 +1436,24 @@
   letter-spacing: var(--srs-tracking-wide);
 }
 
+.ai-service-settings__label--spaced {
+  display: block;
+  margin-top: var(--srs-space-3);
+}
+
+.ai-service-settings__subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--srs-space-2);
+}
+
+.ai-service-settings__subsection-title {
+  color: var(--orca-color-text-1);
+  font-size: var(--srs-text-secondary);
+  font-weight: var(--srs-weight-semibold);
+  margin: 0;
+}
+
 .ai-service-settings__checkbox-row {
   align-items: flex-start;
   color: var(--orca-color-text-1);
