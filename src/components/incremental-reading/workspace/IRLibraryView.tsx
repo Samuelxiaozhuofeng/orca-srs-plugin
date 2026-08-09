@@ -1,9 +1,10 @@
 /**
- * 资料库模式：摘要、工具栏、列表、批量栏
+ * 资料库模式：队列健康、时间导航、工具栏、列表、批量栏
+ * 顶部统计 chips 已并入工作区顶栏 statusLabel（见 IRWorkspaceShell）
  */
 
 import type { DbId } from "../../../orca.d.ts"
-import type { IRLibraryFilters, IRLibrarySummary, IRSourceOption } from "./irLibraryFilters"
+import type { IRLibraryFilters, IRSourceOption } from "./irLibraryFilters"
 import type { IRSourceTreeResult, IRTimeNavKey } from "./irSourceTreeBuilder"
 import IRBulkActionBar from "./IRBulkActionBar"
 import IRLibrarySourceTree from "./IRLibrarySourceTree"
@@ -17,7 +18,6 @@ type Props = {
   workspaceId: string
   loading: boolean
   errorMessage: string | null
-  summary: IRLibrarySummary
   filters: IRLibraryFilters
   timeNavKey: IRTimeNavKey
   sourceTreeResult: IRSourceTreeResult
@@ -61,7 +61,6 @@ export default function IRLibraryView({
   workspaceId,
   loading,
   errorMessage,
-  summary,
   filters,
   timeNavKey,
   sourceTreeResult,
@@ -102,17 +101,6 @@ export default function IRLibraryView({
       role="tabpanel"
       aria-labelledby={`${workspaceId}-mode-library`}
     >
-      <div className="ir-library__summary" aria-live="polite">
-        <div className="ir-library__summary-primary">
-          <span className="ir-library__summary-chip ir-library__summary-chip--overdue">逾期 <strong className={summary.overdue > 0 ? "ir-count--danger" : ""}>{summary.overdue}</strong></span>
-          <span className="ir-library__summary-chip ir-library__summary-chip--today">今天 <strong>{summary.today}</strong></span>
-          <span className="ir-library__summary-chip ir-library__summary-chip--new">新卡 <strong>{summary.newCount}</strong></span>
-        </div>
-        <div className="ir-library__summary-secondary">
-          主题 {summary.topics} · 摘录 {summary.extracts}
-        </div>
-      </div>
-
       <IRQueueHealthBar
         {...todayQueueInfo}
         isDeferring={isDeferringOverflow}

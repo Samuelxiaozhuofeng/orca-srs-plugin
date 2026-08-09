@@ -1,5 +1,7 @@
 /**
  * 资料库高密度行
+ * - 点标题 = 开始阅读；详情由行尾 ⓘ 常驻按钮进入
+ * - 「现在读 / 改到今天」hover·focus-within 时显形（触屏常显）
  */
 
 import type { DbId } from "../../../orca.d.ts"
@@ -48,6 +50,7 @@ export default function IRLibraryRow({
   const stageLabel = formatIRStageLabel(card.stage)
   const dueTone = getIRDueTone(card, now)
   const source = formatIRCardSourceLabel(card)
+  const startTitle = canAdvanceLearn ? "提前到今天并开始阅读" : "以该卡开始阅读"
 
   return (
     <div className={`ir-library-row${selected ? " ir-library-row--selected" : ""}`}>
@@ -64,8 +67,8 @@ export default function IRLibraryRow({
         <button
           type="button"
           className="ir-library-row__title"
-          onClick={() => onOpenDetails(card.id)}
-          title="查看详情"
+          onClick={() => onStartReading(card.id)}
+          title={startTitle}
         >
           {title}
         </button>
@@ -95,11 +98,11 @@ export default function IRLibraryRow({
         <button
           type="button"
           onClick={() => onStartReading(card.id)}
-          title={canAdvanceLearn ? "提前到今天并开始阅读" : "以该卡开始阅读"}
+          title={startTitle}
           className="ir-action-btn ir-action-btn--read"
         >
           <i className="ti ti-book-read ir-action-btn__icon" aria-hidden="true" />
-          <span>{canAdvanceLearn ? "提前阅读" : "开始阅读"}</span>
+          <span>现在读</span>
         </button>
         {canAdvanceLearn ? (
           <button
@@ -110,9 +113,18 @@ export default function IRLibraryRow({
             className="ir-action-btn ir-action-btn--advance"
           >
             <i className="ti ti-calendar-forward ir-action-btn__icon" aria-hidden="true" />
-            <span>{isAdvancing ? "处理中" : "提前到期"}</span>
+            <span>{isAdvancing ? "处理中" : "改到今天"}</span>
           </button>
         ) : null}
+        <button
+          type="button"
+          className="ir-row-icon-btn"
+          onClick={() => onOpenDetails(card.id)}
+          aria-label="查看详情"
+          title="查看详情"
+        >
+          <i className="ti ti-info-circle" aria-hidden="true" />
+        </button>
       </div>
     </div>
   )

@@ -102,6 +102,9 @@
   padding: 0;
   font-weight: var(--srs-weight-medium);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ir-workspace-header__spacer {
@@ -237,71 +240,6 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-}
-
-/*
- * 概览细带：对齐 Flash Home 的 `.srs-home-summary__strip` + `.srs-stat-chip` 形态
- * （内联 chip、radius-xs、secondary 字号、语义色取 --srs-accent-*）。
- */
-.ir-library__summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--srs-space-2) var(--srs-space-6);
-  padding: var(--srs-space-2) var(--srs-space-5);
-  background: var(--srs-surface-sunken);
-  border-bottom: 1px solid var(--srs-hairline);
-  flex-shrink: 0;
-  font-size: var(--srs-text-secondary);
-  color: var(--orca-color-text-3);
-}
-
-.ir-library__summary-primary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--srs-space-1) var(--srs-space-2);
-}
-
-/* 每个「逾期 N / 今天 N / 新卡 N」是一枚内联 stat chip */
-.ir-library__summary-primary > span {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--srs-space-1);
-  padding: 3px var(--srs-space-2);
-  border: 1px solid transparent;
-  border-radius: var(--srs-radius-xs);
-  background: transparent;
-  color: var(--orca-color-text-3);
-  box-sizing: border-box;
-}
-
-.ir-library__summary strong {
-  font-weight: var(--srs-weight-semibold);
-  color: var(--orca-color-text-1);
-  font-variant-numeric: tabular-nums;
-}
-
-.ir-library__summary-chip--overdue strong {
-  color: var(--srs-accent-due);
-}
-
-.ir-library__summary-chip--today strong {
-  color: var(--srs-accent-warn);
-}
-
-.ir-library__summary-chip--new strong {
-  color: var(--srs-accent-new);
-}
-
-.ir-library__summary .ir-count--danger {
-  color: var(--srs-accent-due);
-}
-
-.ir-library__summary-secondary {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Queue Health Bar ---------- */
@@ -853,6 +791,76 @@
   align-items: center;
   gap: var(--srs-space-2);
   flex-shrink: 0;
+}
+
+/*
+ * 主/次动作按钮：静置 opacity:0 仍占位（行高不变）；hover / focus-within / 选中显形。
+ * 禁止 display:none / visibility / pointer-events 隐藏——键盘 Tab 与读屏必须可达。
+ */
+.ir-library-row__actions .ir-action-btn {
+  opacity: 0;
+  transition:
+    opacity var(--srs-duration-base) var(--srs-ease),
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
+}
+
+.ir-library-row:hover .ir-action-btn,
+.ir-library-row:focus-within .ir-action-btn,
+.ir-library-row--selected .ir-action-btn {
+  opacity: 1;
+}
+
+/* 触屏无 hover：动作按钮常显 */
+@media (hover: none) {
+  .ir-library-row__actions .ir-action-btn {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ir-library-row__actions .ir-action-btn {
+    transition: none;
+  }
+}
+
+/* 行尾详情 ⓘ：常驻可见，不参与 hover 隐藏 */
+.ir-row-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--srs-radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--orca-color-text-3);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: var(--srs-icon-sm);
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
+}
+
+.ir-row-icon-btn:hover:not(:disabled) {
+  background: var(--srs-surface-sunken);
+  color: var(--orca-color-text-1);
+  border-color: var(--srs-hairline);
+}
+
+.ir-row-icon-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.ir-row-icon-btn:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
 }
 
 .ir-action-btn {
@@ -2440,14 +2448,6 @@
 
   .ir-workspace-header__actions {
     margin-left: auto;
-  }
-
-  .ir-library__summary {
-    padding: var(--srs-space-2) var(--srs-space-3);
-  }
-
-  .ir-library__summary-secondary {
-    display: none;
   }
 
   .ir-library-row {

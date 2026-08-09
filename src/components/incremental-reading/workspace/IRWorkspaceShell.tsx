@@ -309,7 +309,7 @@ export default function IRWorkspaceShell({
         (sum: number, source: IRSourceNode) => sum + source.stats.matchedCardCount,
         0
       )
-      return `显示 ${visibleCount}/${library.summary.total}`
+      return `显示 ${visibleCount}/${library.summary.total} · 主题 ${library.summary.topics} · 摘录 ${library.summary.extracts}`
     }
     if (reading.session.loading) return "队列加载中…"
     if (!reading.session.ready) return "待开始"
@@ -368,7 +368,6 @@ export default function IRWorkspaceShell({
             workspaceId={workspaceId}
             loading={library.libraryLoading}
             errorMessage={library.libraryError}
-            summary={library.summary}
             filters={library.filters}
             timeNavKey={library.timeNavKey}
             sourceTreeResult={library.sourceTreeResult}
