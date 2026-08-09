@@ -34,35 +34,27 @@ function getOptionLabel(index: number): string {
   return String.fromCharCode(65 + index) // A=65
 }
 
-export default function ChoiceOptionRenderer({
-  blockId,
-  index,
-  isSelected,
-  isCorrect,
-  isAnswerRevealed,
-  mode,
-  onClick,
-  disabled = false
-}: ChoiceOptionRendererProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  
-  // 为每个选项生成唯一的虚拟 panelId
-  const virtualPanelId = useMemo(() => `choice-option-${blockId}`, [blockId])
+/**
+ * 选项区注入样式文本（纯函数，供单测锁定隐藏规则）。
+ *
+ * 未揭晓：隐藏整个 `.orca-tags` 容器（与标签别名/chip 属性拼法无关）。
+ * 揭晓：不注入隐藏规则。
+ * 禁止枚举单个正确标签名（大小写/别名会漏）。
+ */
+export function buildChoiceOptionInjectedCss(args: {
+  uniqueId: string
+  isAnswerRevealed: boolean
+}): string {
+  const { uniqueId, isAnswerRevealed } = args
+  const hideTagsRule = !isAnswerRevealed
+    ? `
+      [data-choice-option="${uniqueId}"] .orca-tags {
+        display: none !important;
+      }
+      `
+    : ""
 
-  // 设置样式隐藏不需要的元素和正确标记
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const uniqueId = `choice-opt-${blockId}`
-    container.setAttribute('data-choice-option', uniqueId)
-    
-    const styleId = `style-choice-opt-${blockId}`
-    if (document.getElementById(styleId)) return
-    
-    const style = document.createElement('style')
-    style.id = styleId
-    style.textContent = `
+  return `
       [data-choice-option="${uniqueId}"] .orca-block-children,
       [data-choice-option="${uniqueId}"] .orca-repr-children {
         display: block !important;
@@ -85,15 +77,7 @@ export default function ChoiceOptionRenderer({
         margin: 0 !important;
         padding: 0 !important;
       }
-      /* 隐藏正确标记标签（答案揭晓前） */
-      ${!isAnswerRevealed ? `
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="correct"],
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="Correct"],
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="CORRECT"],
-      [data-choice-option="${uniqueId}"] .orca-tag[data-tag-name="正确"] {
-        display: none !important;
-      }
-      ` : ''}
+      ${hideTagsRule}
       /* 图片尺寸限制 */
       [data-choice-option="${uniqueId}"] img {
         max-width: 100%;
@@ -107,12 +91,49 @@ export default function ChoiceOptionRenderer({
         max-width: 100%;
       }
     `
-    document.head.appendChild(style)
+}
+
+export default function ChoiceOptionRenderer({
+  blockId,
+  index,
+  isSelected,
+  isCorrect,
+  isAnswerRevealed,
+  mode,
+  onClick,
+  disabled = false
+}: ChoiceOptionRendererProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  
+  // 为每个选项生成唯一的虚拟 panelId
+  const virtualPanelId = useMemo(() => `choice-option-${blockId}`, [blockId])
+
+  // 注入选项区样式。未揭晓时隐藏整个 .orca-tags 容器（真实 DOM 中标签在独立兄弟容器，
+  // chip 属性为 data-name；不得再按错误属性名枚举正确标签）。
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const uniqueId = `choice-opt-${blockId}`
+    container.setAttribute("data-choice-option", uniqueId)
+
+    const styleId = `style-choice-opt-${blockId}`
+    let style = document.getElementById(styleId) as HTMLStyleElement | null
+    if (!style) {
+      style = document.createElement("style")
+      style.id = styleId
+      document.head.appendChild(style)
+    }
+
+    style.textContent = buildChoiceOptionInjectedCss({
+      uniqueId,
+      isAnswerRevealed
+    })
 
     return () => {
       const existingStyle = document.getElementById(styleId)
       if (existingStyle) {
-        document.head.removeChild(existingStyle)
+        existingStyle.remove()
       }
     }
   }, [blockId, isAnswerRevealed])

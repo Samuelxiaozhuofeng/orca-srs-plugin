@@ -1,7 +1,7 @@
 # SRS 选择题卡（Choice）
 
 > **文档同步日期**：2026-08-09  
-> **变更说明**：复习题面只显示题干（`BlockTextPreview`，不挂 `SafeBlockPreview`/`ChoiceCardBlockRenderer`，避免未作答泄答）；选项顺序按 `cardKey` 冻结洗牌（`resolveFrozenShuffledOptions`）。此前：专用创建命令与对称撤销 `addedChoiceTag`。
+> **变更说明**：选项区未揭晓时隐藏整个 `.orca-tags`（真实 DOM 为 `data-name`，旧 `data-tag-name` 选择器从未匹配）；题面继续用 `BlockTextPreview` 纯文本（**已知取舍**：题干富文本/图片暂不显示，详见下方「题面富文本待办」）。选项顺序按 `cardKey` 冻结仍有效。
 
 ---
 
@@ -132,12 +132,24 @@
 
 | 场景 | 组件 | 题干 | 选项 / 正确标记 |
 | ---- | ---- | ---- | --------------- |
-| **复习未作答** | `ChoiceCardReviewRenderer` 题面 | `BlockTextPreview` 纯文本题干 | **不得**出现在题面 DOM；选项仅在下方 `ChoiceOptionRenderer` 列表，揭晓前无正确标记 |
+| **复习未作答** | `ChoiceCardReviewRenderer` 题面 | `BlockTextPreview` 纯文本题干（不挂宿主 `Block`，因此不会进 `ChoiceCardBlockRenderer.contentJsx`） | 选项只在下方 `ChoiceOptionRenderer`；未揭晓时 CSS 隐藏整个 `.orca-tags`（`#correct` 仍在 DOM，属视觉隐藏） |
+
+### 题面富文本待办
+
+题面目前是纯文本，题干中的加粗、图片、行内样式在复习时不显示。这是权衡后的暂定状态：
+
+- **不能**裸用 `SafeBlockPreview` —— 会走到 `ChoiceCardBlockRenderer`，其 `contentJsx` 直接列出选项与「正确」标记，`SafeBlockPreview` 只隐藏 children，挡不住。
+- **也不采用**「临时把 `_repr.type` 改成 `text` 再挂宿主 `Block`、卸载还原」的做法：那是为局部渲染去改全局共享 state，同块在笔记中同时打开会闪成普通文本块，卸载未执行（崩溃／错误边界）时 `_repr` 会残留错误值。已评估并否决。
+- **正确方向**：只读地自绘根块的 content fragments（不触碰 `orca.state`），单独立项实现。
 | **块编辑器** | `ChoiceCardBlockRenderer`（`srs.choice-card`） | 展示 front | 选项预览 + 绿色「正确」+ 统计指示（笔记视图，保持不变） |
 
-**禁止**在复习题面用 `SafeBlockPreview` 挂宿主 `Block`：会走到 `ChoiceCardBlockRenderer`，未作答即泄露答案。不得用 CSS 隐藏正确标记了事。
+**为何不能裸用 `SafeBlockPreview`（代码依据）**：
 
-回归：`ChoiceCardReviewRenderer.questionFace.test.ts`、`choiceUtils.shuffleFreeze.test.ts`。
+1. `ChoiceCardBlockRenderer` 在 **`contentJsx`** 里 `map(options → OptionPreviewItem)`，含绿色「正确」——不在 children 容器内。
+2. `SafeBlockPreview` 只 CSS 隐藏 `.orca-block-children` / `.orca-repr-children`，**挡不住 contentJsx 选项列表**。
+3. 真机泄题 DOM 还证明：选项块上 `#correct` 渲染在 `<span class="orca-tags">`，chip 属性为 **`data-name`**；旧选择器 `data-tag-name` 从未匹配。
+
+回归：`ChoiceOptionRenderer.tagHide.test.ts`、`ChoiceCardReviewRenderer.questionFace.test.ts`、`choiceUtils.shuffleFreeze.test.ts`。
 
 块编辑器：`ChoiceCardBlockRenderer`（`srs.choice-card`）展示题干、模式标签、子选项，并嵌入 `ChoiceStatisticsIndicator`。
 

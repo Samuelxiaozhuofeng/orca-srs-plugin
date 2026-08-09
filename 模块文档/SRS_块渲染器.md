@@ -1,10 +1,9 @@
 # SRS 块渲染器模块
 
 > 文档同步日期：2026-08-09
-> 变更说明：选择题**复习题面**不得挂 `SafeBlockPreview`→`ChoiceCardBlockRenderer`（未作答会泄选项与正确标记）；复习题干用 `BlockTextPreview`。编辑器内 `ChoiceCardBlockRenderer` 行为不变。
-> 同日：`SrsCardBlockRenderer` 结构化卡禁止破坏性行内编辑（Cloze / Direction fragment 检测）。
-> 2026-07-26：内联编辑保存链路与 Choice 复习侧清理（低危#11/#12）。
-> 2026-07-13：对齐 `registry/renderers.ts`；区分编辑器块渲染与复习 `*ReviewRenderer`。
+> 变更说明：选择题复习——选项区未揭晓隐藏 `.orca-tags`（真机 `data-name`，旧 `data-tag-name` 从未匹配）；题面暂留 `BlockTextPreview` 纯文本，不得裸用 `SafeBlockPreview`（会进 `ChoiceCardBlockRenderer.contentJsx` 泄选项），也不得靠临时改 `_repr` 绕开。编辑器内 `ChoiceCardBlockRenderer` 不变。
+> 同日：`SrsCardBlockRenderer` 结构化卡禁止破坏性行内编辑。
+> 2026-07-26 / 07-13：内联编辑保存链路；对齐 `registry/renderers.ts`。
 
 ## 概述
 
