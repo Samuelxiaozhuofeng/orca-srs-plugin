@@ -11,6 +11,7 @@ vi.mock("../tagCleanup", () => ({
 
 vi.mock("../storage", () => ({
   deleteClozeCardSrsData: vi.fn(async () => undefined),
+  deleteDirectionCardSrsData: vi.fn(async () => undefined),
   invalidateBlockCache: vi.fn()
 }))
 
@@ -30,11 +31,15 @@ globalThis.orca = {
 import {
   undoBasicCardCreation,
   undoClozeCardCreation,
+  undoDirectionCardCreation,
   undoListCardCreation,
   undoTopicCardCreation
 } from "./cardCreationUndo"
 import { cleanupSrsProperties } from "../tagCleanup"
-import { deleteClozeCardSrsData } from "../storage"
+import {
+  deleteClozeCardSrsData,
+  deleteDirectionCardSrsData
+} from "../storage"
 import { deleteIRState } from "../incrementalReadingStorage"
 
 describe("undoBasicCardCreation", () => {
@@ -317,5 +322,100 @@ describe("undoListCardCreation", () => {
 
     expect(cleanupSrsProperties).not.toHaveBeenCalled()
     expect(invokeEditorCommand).not.toHaveBeenCalled()
+  })
+})
+
+describe("undoDirectionCardCreation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockBlocks).forEach(k => delete mockBlocks[k as any])
+    mockBlocks[20] = {
+      id: 20,
+      content: [{ t: "t", v: "left" }, { t: "orca-srs.direction", v: "→" }]
+    }
+  })
+
+  it("本次新增时还原 content、删方向 SRS、srs.isCard 与 #card", async () => {
+    const originalContent = [{ t: "t", v: "left right" }]
+    await undoDirectionCardCreation({
+      blockId: 20,
+      pluginName: "orca-srs",
+      originalContent,
+      addedCardTag: true,
+      wroteIsCard: true,
+      initializedDirections: ["forward"]
+    })
+
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.setBlocksContent",
+      null,
+      [{ id: 20, content: originalContent }],
+      false
+    )
+    expect(deleteDirectionCardSrsData).toHaveBeenCalledWith(20, "forward")
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.deleteProperties",
+      null,
+      [20],
+      ["srs.isCard"]
+    )
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.removeTag",
+      null,
+      20,
+      "card"
+    )
+  })
+
+  it("创建前已是卡时只还原 content 与本次方向 SRS，不摘 #card / isCard", async () => {
+    const originalContent = [{ t: "t", v: "already a card" }]
+    await undoDirectionCardCreation({
+      blockId: 20,
+      pluginName: "orca-srs",
+      originalContent,
+      addedCardTag: false,
+      wroteIsCard: false,
+      initializedDirections: ["backward"]
+    })
+
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.setBlocksContent",
+      null,
+      [{ id: 20, content: originalContent }],
+      false
+    )
+    expect(deleteDirectionCardSrsData).toHaveBeenCalledWith(20, "backward")
+    expect(invokeEditorCommand).not.toHaveBeenCalledWith(
+      "core.editor.removeTag",
+      null,
+      20,
+      "card"
+    )
+    expect(invokeEditorCommand).not.toHaveBeenCalledWith(
+      "core.editor.deleteProperties",
+      null,
+      [20],
+      ["srs.isCard"]
+    )
+    expect(cleanupSrsProperties).not.toHaveBeenCalled()
+  })
+
+  it("撤销任一步失败时 notify 并 rethrow", async () => {
+    invokeEditorCommand.mockRejectedValueOnce(new Error("set content failed"))
+    await expect(
+      undoDirectionCardCreation({
+        blockId: 20,
+        pluginName: "orca-srs",
+        originalContent: [{ t: "t", v: "x" }],
+        addedCardTag: true,
+        wroteIsCard: true,
+        initializedDirections: ["forward"]
+      })
+    ).rejects.toThrow("set content failed")
+    expect(orca.notify).toHaveBeenCalledWith(
+      "error",
+      expect.stringContaining("撤销方向卡失败"),
+      expect.objectContaining({ title: "方向卡" })
+    )
   })
 })

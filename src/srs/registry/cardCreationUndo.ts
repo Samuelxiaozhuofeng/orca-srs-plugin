@@ -7,7 +7,11 @@
 
 import type { Block, DbId } from "../../orca.d.ts"
 import { cleanupSrsProperties } from "../tagCleanup"
-import { deleteClozeCardSrsData, invalidateBlockCache } from "../storage"
+import {
+  deleteClozeCardSrsData,
+  deleteDirectionCardSrsData,
+  invalidateBlockCache
+} from "../storage"
 import { deleteIRState } from "../incrementalReadingStorage"
 
 /** makeCard / 选择题共用 */
@@ -61,6 +65,20 @@ export type ListCardCreationUndoArgs = {
   /** 本次真正 writeInitialSrsState 的条目子块 */
   initializedItemIds?: DbId[]
   originalRepr?: unknown
+}
+
+/** 方向卡创建撤销（insertDirection） */
+export type DirectionCardCreationUndoArgs = {
+  blockId: DbId
+  pluginName?: string
+  /** 插入方向标记前的 content 快照 */
+  originalContent?: unknown
+  /** 本次是否新插入了 #card */
+  addedCardTag?: boolean
+  /** 本次是否新写入了 srs.isCard */
+  wroteIsCard?: boolean
+  /** 本次 ensure 实际新写入初始 SRS 的方向 */
+  initializedDirections?: Array<"forward" | "backward">
 }
 
 function resolvePluginName(args: { pluginName?: string }): string {
@@ -302,6 +320,79 @@ export async function undoListCardCreation(
   } catch (error) {
     console.error(`[${pluginName}] 撤销列表卡失败（块 #${blockId}）:`, error)
     orca.notify("error", `撤销列表卡失败: ${error}`, { title: "列表卡" })
+    throw error
+  }
+}
+
+/**
+ * 撤销方向卡创建：
+ * 1. 还原 originalContent（去掉方向 fragment）
+ * 2. 仅删除本次新写的 srs.forward|backward.*
+ * 3. 仅当本次新增时删除 srs.isCard / #card
+ *
+ * 创建前已是卡的块：保留 #card、srs.isCard 与既有方向进度。
+ */
+export async function undoDirectionCardCreation(
+  undoArgs: DirectionCardCreationUndoArgs
+): Promise<void> {
+  if (!undoArgs?.blockId) return
+
+  const pluginName = resolvePluginName(undoArgs)
+  const blockId = undoArgs.blockId
+
+  try {
+    if (undoArgs.originalContent != null) {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setBlocksContent",
+        null,
+        [{ id: blockId, content: undoArgs.originalContent }],
+        false
+      )
+      invalidateBlockCache(blockId)
+    }
+
+    const dirs = undoArgs.initializedDirections ?? []
+    for (const dir of dirs) {
+      await deleteDirectionCardSrsData(blockId, dir)
+      invalidateBlockCache(blockId)
+    }
+
+    if (undoArgs.wroteIsCard) {
+      try {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.deleteProperties",
+          null,
+          [blockId],
+          ["srs.isCard"]
+        )
+        invalidateBlockCache(blockId)
+      } catch (error) {
+        // 与列表卡对称：单属性失败时尝试全量 cleanup（仅当本次写了 isCard）
+        console.warn(
+          `[${pluginName}] 撤销方向卡 srs.isCard 失败，尝试全量 cleanup:`,
+          error
+        )
+        await cleanupSrsProperties(blockId, pluginName)
+      }
+    }
+
+    if (undoArgs.addedCardTag) {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.removeTag",
+        null,
+        blockId,
+        "card"
+      )
+    }
+
+    console.log(
+      `[${pluginName}] 已撤销方向卡：块 #${blockId}` +
+        (dirs.length ? `（方向 ${dirs.join(",")}）` : "") +
+        (undoArgs.addedCardTag ? "（含 #card）" : "")
+    )
+  } catch (error) {
+    console.error(`[${pluginName}] 撤销方向卡失败（块 #${blockId}）:`, error)
+    orca.notify("error", `撤销方向卡失败: ${error}`, { title: "方向卡" })
     throw error
   }
 }

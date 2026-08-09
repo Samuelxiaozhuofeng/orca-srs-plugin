@@ -1,8 +1,8 @@
 # SRS 方向卡（Direction Card）
 
-> **文档同步日期**：2026-07-26  
-> **变更说明**：补 direction 值白名单双层防御（`extractDirectionInfo` 回退 forward+warn；`getDirectionList` 硬门禁脏值返回 `[]`）。  
-> 2026-07-13：原「实现计划」长文（含大段未落地草稿代码）改为以当前仓库代码为准的实现文档。历史设计决策中与代码一致的部分保留为说明；过时计划删除。
+> **文档同步日期**：2026-08-09  
+> **变更说明**：方向卡创建对称撤销（`undoDirectionCardCreation`）：只回滚本次新增的 `#card` / `srs.isCard` / 方向 SRS，并还原 content。  
+> 2026-07-26：direction 值白名单双层防御。2026-07-13：改为以当前代码为准的实现文档。
 
 ---
 
@@ -79,6 +79,18 @@
 5. 标签：`buildCardTagData(..., "direction")` 或更新 `type`
 6. `srs.isCard` **写成功后** `invalidateBlockCache`，再初始化方向 SRS（`ensureDirectionSrsState` 走 `getBlockCached`，写后必须失效）
 7. 尝试把光标移到标记右侧，便于输入答案
+8. 返回值含对称撤销标志：`addedCardTag`、`wroteIsCard`、`initializedDirections`（仅本次 ensure **新写**的方向）、`originalContent`、`pluginName`
+
+### 对称撤销（2026-08-09）
+
+| 项 | 路径 |
+| -- | ---- |
+| Helper | `undoDirectionCardCreation`（`registry/cardCreationUndo.ts`） |
+| 命令 | `createDirectionForward` / `createDirectionBackward` 的 undo 回调 |
+
+撤销顺序：还原 `originalContent` → 删除 `initializedDirections` 上的 `srs.forward|backward.*` → 仅当 `wroteIsCard` 删 `srs.isCard` → 仅当 `addedCardTag` 摘 `#card`。任一步失败 `notify` + rethrow。创建前已是卡的块不得误删原有身份。
+
+回归：`src/srs/registry/cardCreationUndo.test.ts`（`undoDirectionCardCreation`）。
 
 ### `cycleDirection` / `updateBlockDirection`
 

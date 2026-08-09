@@ -43,7 +43,7 @@
 | `src/srs/deckUtils.ts` | `extractCardType` / `extractDeckName` |
 | `src/srs/cardIdentity.ts` | 稳定 `cardKey` |
 | `src/srs/storage.ts` | 初始 SRS 状态 |
-| `src/srs/registry/cardCreationUndo.ts` | 制卡对称撤销（只删本次新增） |
+| `src/srs/registry/cardCreationUndo.ts` | 制卡对称撤销（basic/cloze/topic/list/**direction**；只删本次新增） |
 | `src/srs/registry/commands.ts` / `uiComponents.tsx` | 命令与 UI 入口 |
 
 ---

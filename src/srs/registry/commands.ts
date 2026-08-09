@@ -16,6 +16,7 @@ import { createExtract } from "../extractUtils"
 import {
   undoBasicCardCreation,
   undoClozeCardCreation,
+  undoDirectionCardCreation,
   undoListCardCreation,
   undoTopicCardCreation
 } from "./cardCreationUndo"
@@ -323,24 +324,7 @@ export function registerCommands(
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
-      if (!undoArgs || !undoArgs.blockId) return
-
-      const block = orca.state.blocks[undoArgs.blockId] as Block
-      if (!block) return
-
-      if (undoArgs.originalContent) {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.setBlocksContent",
-          null,
-          [
-            {
-              id: undoArgs.blockId,
-              content: undoArgs.originalContent
-            }
-          ],
-          false
-        )
-      }
+      await undoDirectionCardCreation(undoArgs)
     },
     {
       label: "SRS: 创建正向方向卡 →",
@@ -369,24 +353,7 @@ export function registerCommands(
       return result ? { ret: result, undoArgs: result } : null
     },
     async undoArgs => {
-      if (!undoArgs || !undoArgs.blockId) return
-
-      const block = orca.state.blocks[undoArgs.blockId] as Block
-      if (!block) return
-
-      if (undoArgs.originalContent) {
-        await orca.commands.invokeEditorCommand(
-          "core.editor.setBlocksContent",
-          null,
-          [
-            {
-              id: undoArgs.blockId,
-              content: undoArgs.originalContent
-            }
-          ],
-          false
-        )
-      }
+      await undoDirectionCardCreation(undoArgs)
     },
     {
       label: "SRS: 创建反向方向卡 ←",

@@ -60,17 +60,41 @@ const DIRECTION_SYMBOLS: Record<DirectionType, string> = {
  * @param pluginName - 插件名称
  * @returns 插入结果，包含块ID和原始内容（用于撤销）
  */
+/** insertDirection 返回值（含对称撤销所需标志） */
+export type InsertDirectionResult = {
+  blockId: DbId
+  pluginName: string
+  originalContent?: ContentFragment[]
+  /** 本次是否新插入了 #card */
+  addedCardTag: boolean
+  /** 本次是否新写入了 srs.isCard（创建前已有则 false） */
+  wroteIsCard: boolean
+  /** 本次 ensure 实际新写入初始 SRS 的方向（已有前缀不列入） */
+  initializedDirections: Array<"forward" | "backward">
+  initialDue?: Date
+  initialDueHint?: string
+}
+
+function hasSrsIsCardProperty(block: Block | undefined): boolean {
+  return (
+    block?.properties?.some(p => p.name === "srs.isCard") === true
+  )
+}
+
+function hasDirectionSrsPrefix(
+  block: Block | undefined,
+  dir: "forward" | "backward"
+): boolean {
+  const prefix = `srs.${dir}.`
+  return block?.properties?.some(p => p.name.startsWith(prefix)) === true
+}
+
 export async function insertDirection(
   cursor: CursorData,
   direction: DirectionType,
   pluginName: string,
   options?: InsertDirectionOptions
-): Promise<{
-  blockId: DbId
-  originalContent?: ContentFragment[]
-  initialDue?: Date
-  initialDueHint?: string
-} | null> {
+): Promise<InsertDirectionResult | null> {
   if (!cursor?.anchor?.blockId) {
     orca.notify("error", "无法获取光标位置")
     return null
@@ -126,6 +150,10 @@ export async function insertDirection(
 
   // 保存原始内容供撤销使用
   const originalContent = block.content ? [...block.content] : undefined
+  const hadCardTag = block.refs?.some(
+    (ref) => ref.type === 2 && isCardTag(ref.alias)
+  ) === true
+  const hadIsCard = hasSrsIsCardProperty(block)
 
   try {
     // 更新块内容
@@ -137,11 +165,8 @@ export async function insertDirection(
     )
 
     // 添加 #card 标签，type=direction
-    const hasCardTag = block.refs?.some(
-      (ref) => ref.type === 2 && isCardTag(ref.alias)
-    )
-
-    if (!hasCardTag) {
+    const addedCardTag = !hadCardTag
+    if (addedCardTag) {
       await orca.commands.invokeEditorCommand(
         "core.editor.insertTag",
         cursor,
@@ -170,7 +195,8 @@ export async function insertDirection(
     // 注意：Direction 卡片保持为普通可编辑文本块（不设置 srs.direction-card _repr），
     // 以支持“先插入符号，再输入右侧答案”的单行编辑体验。
 
-    // 设置 srs.isCard 属性
+    // 设置 srs.isCard 属性（创建前已有则仍写入 true，但 undo 不得删除）
+    const wroteIsCard = !hadIsCard
     await orca.commands.invokeEditorCommand(
       "core.editor.setProperties",
       null,
@@ -185,11 +211,14 @@ export async function insertDirection(
     const mode = getIrItemInitialDueMode(pluginName)
     let firstHint: string | undefined
     let firstDue: Date | undefined
+    const initializedDirections: Array<"forward" | "backward"> = []
 
     const writeDir = async (
       dir: "forward" | "backward",
       legacyOffset: number
     ) => {
+      const live = orca.state.blocks?.[blockId] as Block | undefined
+      const alreadyHad = hasDirectionSrsPrefix(live, dir)
       const legacyDue = computeLegacyDueFromDaysOffset(createdAt, legacyOffset)
       const resolved = resolveInitialDue({
         origin,
@@ -214,6 +243,9 @@ export async function insertDirection(
         legacyOffset,
         origin === "ir_item" ? resolved.due : undefined
       )
+      if (!alreadyHad) {
+        initializedDirections.push(dir)
+      }
     }
 
     if (direction === "bidirectional") {
@@ -262,7 +294,11 @@ export async function insertDirection(
 
     return {
       blockId,
+      pluginName,
       originalContent,
+      addedCardTag,
+      wroteIsCard,
+      initializedDirections,
       initialDue: firstDue,
       initialDueHint: firstHint
     }
