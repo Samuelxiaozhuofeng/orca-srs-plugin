@@ -1,9 +1,9 @@
 # SRS 填空卡（Cloze）
 
-> **文档同步日期**：2026-07-29  
-> **变更说明**：IR Topic/Extract（及 live IR）上挖空时，新建编号的首次 `srs.cN.due` 走 `initialDuePolicy`（默认按 priority 分散 1–14 天，设置 `review.irItemInitialDueMode`）；普通笔记挖空仍 legacy（c1 今天、c2 明天）。`createCloze(..., options?)` 由调用方传入 `initialDueOrigin`，不在工具内猜 IR。已有 `srs.cN.*` 永不覆盖。  
-> 2026-07-26：新增导出谓词 `isClozeFragment`；创建仅新编号初始写入、已有编号 ensure 不覆盖；撤销必须还原正文。  
-> 2026-07-13：由「实现过程/阶段计划」改写为以当前代码为准的实现文档；删除过时的 `{c1::}` 纯文本方案描述，统一为 ContentFragment 机制。
+> **文档同步日期**：2026-08-09  
+> **变更说明**：删除填空变体时**解包结构 + 清进度**（`unwrapClozeNumberInContent` / `unwrapClozeFragmentsByNumber`），防止只清 `srs.cN.*` 后收集器从 fragment 复活。  
+> 2026-07-29：IR Topic/Extract 挖空首次 due 走 `initialDuePolicy`；普通笔记 legacy。  
+> 2026-07-26：导出 `isClozeFragment`；创建仅新编号初始写入；撤销必须还原正文。
 
 ---
 
@@ -100,7 +100,15 @@
 | `getMaxClozeNumberFromContent` | 当前最大编号（经 `isClozeFragment` 宽松判定，含旧前缀 fragment） |
 | `getAllClozeNumbers` | 全部编号（去重排序；同样经 `isClozeFragment`） |
 | `cloneBlockContent` | 挖空前 content 深拷贝（undo 用） |
+| `unwrapClozeNumberInContent` | 纯函数：将指定 `clozeNumber` 的**全部** fragment 解包为 `{ t:"t", v }`；同号分组全解包；**不**合并相邻纯文本（与 `buildNewContent` 惯例一致）；挖空前加粗/链接等未保存在 `v` 中，无法恢复 |
+| `unwrapClozeFragmentsByNumber` | 写库：`setBlocksContent` 解包后 `invalidateBlockCache`；失败抛错（含块 ID） |
 | `createCloze` | 创建填空 |
+
+### 删除变体（结构 + 进度）
+
+入口：`deleteReviewCardBackendData`（Flash Home）。顺序：**先解包 content，再清 `srs.cN.*`**（防止收集复活）。同块仍有其它编号时保留 `#card`；最后一个编号则整卡清 `srs.*` + removeTag。IO 遮罩**不**走本路径。
+
+回归：`clozeUtils.test.ts`（同号多 fragment）、`SrsFlashcardHome.delete.test.ts`。
 
 ---
 

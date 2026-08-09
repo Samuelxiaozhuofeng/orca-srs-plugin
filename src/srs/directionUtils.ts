@@ -441,3 +441,119 @@ export function getDirectionList(
   )
   return []
 }
+
+export type DirectionStructureAction = "downgraded" | "removed" | "noop"
+
+/**
+ * 删除某一方向后的 content 结构变换（纯函数，不写库）。
+ *
+ * - 双向删一向 → 降级为剩余单向（更新 fragment 的 `direction` 与符号 `v`）
+ * - 删最后一向 → 移除 direction fragment，左右片段原样保留（不合并相邻文本）
+ * - 块内无 direction / 要删的方向本就不在列表中 → noop
+ */
+export function removeOrDowngradeDirectionInContent(
+  content: ContentFragment[] | undefined,
+  removeDirection: "forward" | "backward",
+  pluginName: string
+): {
+  content: ContentFragment[]
+  action: DirectionStructureAction
+  remainingDirection?: "forward" | "backward"
+} {
+  if (!content || content.length === 0) {
+    return { content: content ? [...content] : [], action: "noop" }
+  }
+
+  const dirIdx = content.findIndex((f) => f.t === `${pluginName}.direction`)
+  if (dirIdx === -1) {
+    return { content: [...content], action: "noop" }
+  }
+
+  const info = extractDirectionInfo(content, pluginName)
+  if (!info) {
+    return { content: [...content], action: "noop" }
+  }
+
+  const list = getDirectionList(info.direction)
+  if (!list.includes(removeDirection)) {
+    return { content: [...content], action: "noop" }
+  }
+
+  const remaining = list.filter((d) => d !== removeDirection)
+  if (remaining.length === 0) {
+    // 最后一向：去掉 direction fragment，左右文字原样保留
+    const next = [...content.slice(0, dirIdx), ...content.slice(dirIdx + 1)]
+    return { content: next, action: "removed" }
+  }
+
+  const remainingDirection = remaining[0]
+  const next = content.map((fragment, index) => {
+    if (index !== dirIdx) return fragment
+    return {
+      ...fragment,
+      v: DIRECTION_SYMBOLS[remainingDirection],
+      direction: remainingDirection
+    } as ContentFragment
+  })
+  return {
+    content: next,
+    action: "downgraded",
+    remainingDirection
+  }
+}
+
+/**
+ * 删除某一方向后写回块 content（降级或移除 direction fragment）。
+ * 写入成功后立即 `invalidateBlockCache`。
+ *
+ * @param content - 可选：调用方已从 backend 读到的 content
+ * @throws setBlocksContent 失败时抛错（错误可见）
+ */
+export async function applyDirectionVariantRemoval(
+  blockId: DbId,
+  removeDirection: "forward" | "backward",
+  pluginName: string,
+  content?: ContentFragment[]
+): Promise<{
+  action: DirectionStructureAction
+  remainingDirection?: "forward" | "backward"
+  content: ContentFragment[]
+}> {
+  let source = content
+  if (!source) {
+    const block = orca.state.blocks?.[blockId] as Block | undefined
+    if (!block) {
+      throw new Error(
+        `删除方向结构失败：块 #${blockId} 不存在于 state`
+      )
+    }
+    source = block.content ?? []
+  }
+
+  const result = removeOrDowngradeDirectionInContent(
+    source,
+    removeDirection,
+    pluginName
+  )
+
+  if (result.action === "noop") {
+    return result
+  }
+
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.setBlocksContent",
+      null,
+      [{ id: blockId, content: result.content }],
+      false
+    )
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `更新方向卡结构失败（块 #${blockId}，删除 ${removeDirection}）：${msg}。SRS 属性尚未删除，可重试。`
+    )
+  }
+
+  invalidateBlockCache(blockId)
+  return result
+}

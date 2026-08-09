@@ -63,8 +63,9 @@ function statusBadgeLabel(card: ReviewCard, status: ReturnType<typeof getCardDue
 }
 
 /**
- * 删除确认文案：区分「删除单个 cloze/direction 变体」与「删除整卡」。
- * 变体删除只移除该变体的 SRS 数据；仅当它是本块最后一个变体时才移除 #card。
+ * 删除确认文案：区分 cloze / direction / list / IO / 普通卡。
+ * 删除 = 结构恢复为普通文本 + 清除复习进度（暂停由独立「暂停」承接）。
+ * Cloze 额外提示：挖空文本的加粗/链接等格式未保存，无法恢复。
  */
 export function deleteConfirmText(
   card: Pick<ReviewCard, "clozeNumber" | "directionType" | "cardType">
@@ -73,13 +74,16 @@ export function deleteConfirmText(
     return `确定删除此遮罩（c${card.clozeNumber}）？将移除该编号的遮罩区域与 SRS 数据；同块其它遮罩不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
   }
   if (card.clozeNumber != null && card.clozeNumber > 0) {
-    return `确定删除此填空（c${card.clozeNumber}）？将移除该填空的 SRS 数据；同块其它填空/卡片不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
+    return `确定删除此填空（c${card.clozeNumber}）？将恢复为普通文本并删除复习进度；同块其它填空/卡片不受影响，仅当它是本块最后一个卡片变体时才移除 #card。原挖空文本的格式（加粗、链接等）未被保存，无法恢复。不可撤销。`
   }
   if (card.directionType) {
     const label = card.directionType === "forward" ? "正向" : "反向"
-    return `确定删除此方向（${label}）？将移除该方向的 SRS 数据；同块另一方向不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
+    return `确定删除此方向（${label}）？将恢复为普通文本并删除复习进度；同块另一方向不受影响，仅当它是本块最后一个卡片变体时才移除 #card。不可撤销。`
   }
-  return "确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。"
+  if (card.cardType === "list") {
+    return "确定删除此列表卡？将恢复为普通文本并删除复习进度（含所有直接子条目上的进度），并移除 #card。不可撤销。"
+  }
+  return "确定删除此卡片？将恢复为普通文本并删除复习进度，并移除 #card。不可撤销。"
 }
 
 function batchStatusLabel(status?: TtsBatchItemStatus): string | null {
@@ -282,9 +286,11 @@ export default function CardListItem({
                   actionsDisabled ? " srs-btn-disabled" : ""
                 }`}
                 title={
-                  card.clozeNumber || card.directionType
-                    ? "删除此变体（仅该变体 SRS 数据；最后一个变体时移除 Card 标记）"
-                    : "删除卡片（移除 Card 标记和 SRS 数据）"
+                  card.cardType === "image-occlusion" && card.clozeNumber
+                    ? "删除此遮罩（区域与 SRS 数据；最后一个变体时移除 Card 标记）"
+                    : card.clozeNumber || card.directionType
+                      ? "删除此变体（恢复普通文本并删除复习进度；最后一个变体时移除 Card 标记）"
+                      : "删除卡片（恢复普通文本、删除复习进度并移除 Card 标记）"
                 }
               >
                 <i className="ti ti-trash srs-card-action__icon" />

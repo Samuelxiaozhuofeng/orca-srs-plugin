@@ -133,6 +133,96 @@ export function getAllClozeNumbers(content: ContentFragment[] | undefined, plugi
 }
 
 /**
+ * 将指定 clozeNumber 的全部 fragment 解包为普通文本 fragment（保留 `v`）。
+ *
+ * - 同号多 fragment 全部处理（同号分组），不得只解包第一个
+ * - 不合并相邻纯文本：与 `createCloze` / `buildNewContent` 一致，宿主自行处理 content 数组
+ * - 仅替换类型与元数据；挖空前的加粗/链接等未保存在 cloze fragment 中，无法恢复
+ *
+ * @returns unwrappedCount=0 表示内容中无该编号（幂等调用方仍可清属性）
+ */
+export function unwrapClozeNumberInContent(
+  content: ContentFragment[] | undefined,
+  clozeNumber: number,
+  pluginName: string
+): { content: ContentFragment[]; unwrappedCount: number } {
+  if (!content || content.length === 0) {
+    return { content: content ? [...content] : [], unwrappedCount: 0 }
+  }
+
+  let unwrappedCount = 0
+  const next: ContentFragment[] = []
+
+  for (const fragment of content) {
+    if (
+      isClozeFragment(fragment, pluginName) &&
+      fragment.clozeNumber === clozeNumber
+    ) {
+      const text =
+        typeof fragment.v === "string" ? fragment.v : String(fragment.v ?? "")
+      next.push({ t: "t", v: text })
+      unwrappedCount++
+    } else {
+      next.push(fragment)
+    }
+  }
+
+  return { content: next, unwrappedCount }
+}
+
+/**
+ * 将块内指定编号的全部 cloze fragment 解包并写回宿主。
+ * 写入成功后立即 `invalidateBlockCache`。
+ *
+ * @param content - 可选：调用方已从 backend 读到的 content；缺省时从 `orca.state.blocks` 读取
+ * @throws 块不存在、或 setBlocksContent 失败时抛错（错误可见，不静默成功）
+ */
+export async function unwrapClozeFragmentsByNumber(
+  blockId: number,
+  clozeNumber: number,
+  pluginName: string,
+  content?: ContentFragment[]
+): Promise<{ unwrappedCount: number; content: ContentFragment[] }> {
+  let source = content
+  if (!source) {
+    const block = orca.state.blocks?.[blockId] as Block | undefined
+    if (!block) {
+      throw new Error(
+        `解包填空 c${clozeNumber} 失败：块 #${blockId} 不存在于 state`
+      )
+    }
+    source = block.content ?? []
+  }
+
+  const { content: newContent, unwrappedCount } = unwrapClozeNumberInContent(
+    source,
+    clozeNumber,
+    pluginName
+  )
+
+  if (unwrappedCount === 0) {
+    return { unwrappedCount: 0, content: newContent }
+  }
+
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.setBlocksContent",
+      null,
+      [{ id: blockId, content: newContent }],
+      false
+    )
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `解包填空 c${clozeNumber} 的块内容失败（块 #${blockId}）：${msg}。SRS 属性尚未删除，可重试。`
+    )
+  }
+
+  invalidateBlockCache(blockId)
+  return { unwrappedCount, content: newContent }
+}
+
+/**
  * 在 ContentFragment 数组中找到指定位置并拆分/插入 cloze fragment
  * 
  * 根据 cursor 的 index 和 offset，找到对应的 fragment，将其拆分，

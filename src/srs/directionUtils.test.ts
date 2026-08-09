@@ -18,6 +18,7 @@ import {
   cycleDirection,
   extractDirectionInfo,
   getDirectionList,
+  removeOrDowngradeDirectionInContent,
   type DirectionType,
 } from "./directionUtils"
 
@@ -124,5 +125,58 @@ describe("cycleDirection", () => {
     expect(cycleDirection("bidirectional")).toBe("forward")
     // indexOf === -1 时 (idx+1)%3 === 0 → 自愈回 forward（既有行为锁定）
     expect(cycleDirection("junk" as DirectionType)).toBe("forward")
+  })
+})
+
+describe("removeOrDowngradeDirectionInContent", () => {
+  it("双向删 forward：降级为 backward，左右文字保留", () => {
+    const content = makeContent("bidirectional")
+    const result = removeOrDowngradeDirectionInContent(
+      content,
+      "forward",
+      PLUGIN_NAME
+    )
+    expect(result.action).toBe("downgraded")
+    expect(result.remainingDirection).toBe("backward")
+    const dir = result.content.find((f) => f.t === `${PLUGIN_NAME}.direction`) as
+      | { direction?: string; v?: string }
+      | undefined
+    expect(dir?.direction).toBe("backward")
+    expect(dir?.v).toBe("←")
+    expect(extractDirectionInfo(result.content, PLUGIN_NAME)?.leftText).toBe(
+      "苹果"
+    )
+    expect(extractDirectionInfo(result.content, PLUGIN_NAME)?.rightText).toBe(
+      "apple"
+    )
+  })
+
+  it("单向 forward 再删 forward：移除 fragment，左右文字原样保留", () => {
+    const content = makeContent("forward")
+    const result = removeOrDowngradeDirectionInContent(
+      content,
+      "forward",
+      PLUGIN_NAME
+    )
+    expect(result.action).toBe("removed")
+    expect(
+      result.content.some((f) => f.t === `${PLUGIN_NAME}.direction`)
+    ).toBe(false)
+    // 不合并相邻文本
+    expect(result.content).toEqual([
+      { t: "t", v: "苹果 " },
+      { t: "t", v: " apple" }
+    ])
+  })
+
+  it("删的方向不在列表中：noop", () => {
+    const content = makeContent("forward")
+    const result = removeOrDowngradeDirectionInContent(
+      content,
+      "backward",
+      PLUGIN_NAME
+    )
+    expect(result.action).toBe("noop")
+    expect(result.content).toEqual(content)
   })
 })

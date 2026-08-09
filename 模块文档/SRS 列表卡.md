@@ -163,6 +163,15 @@
 - 删除子块：对应条目不再存在；清理逻辑可删关联日志
 - 新增子块：新卡，按初始化规则进入解锁流程
 
+### 从 Flash Home 删除整张列表卡（2026-08-09）
+
+产品定义：删除 = 清进度 + 移除 `#card`，**保留**根块与子块的文字内容。
+
+- 入口：`deleteReviewCardBackendData`（`cardType === "list"`）→ `deleteListCardSrsData`
+- **子条目口径**：按删除时 backend 读到的**当前全部直接子块**（`children`）清理各自 `srs.*`，不依赖创建时 `initializedItemIds` 快照（建卡后增删子块产生的孤儿属性正是要清的目标）
+- 顺序：先子块后根块，再 `removeTag("card")`；任一步失败抛错且不发成功提示，消息含块 ID 与当前状态
+- 回归：`SrsFlashcardHome.delete.test.ts`（list 整卡）
+
 ---
 
 ## 相关文件

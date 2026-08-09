@@ -114,6 +114,7 @@ List 子块等未随标签查询返回的块使用 `prefetchBlocksByIds(ids, opt
 | `ensureCardSrsState` / `ensureCardSrsStateWithInitialDue` | 缺失则初始化 |
 | `resetCardSrsState(blockId)` | 重置为新卡并累加 `resets` |
 | `deleteCardSrsData(blockId)` | 删除 SRS 相关属性 |
+| `deleteListCardSrsData(rootBlockId, rootBlock?)` | 列表卡整卡：按当前 `children` 先清全部直接子块 `srs.*`，再清根块；失败消息含块 ID 与已成功/失败状态 |
 
 ### 公开 API — Cloze
 
@@ -122,7 +123,7 @@ List 子块等未随标签查询返回的块使用 `prefetchBlocksByIds(ids, opt
 | `loadClozeSrsState` / `saveClozeSrsState` | 按 `clozeNumber` 读写 |
 | `writeInitialClozeSrsState(blockId, clozeNumber, daysOffset?)` | 初始 due = 当天零点 + offset 天 |
 | `updateClozeSrsState(blockId, clozeNumber, grade, pluginName?)` | 评分更新 |
-| `ensureClozeSrsState` / `resetClozeSrsState` / `deleteClozeCardSrsData` | 确保 / 重置 / 删除 |
+| `ensureClozeSrsState` / `resetClozeSrsState` / `deleteClozeCardSrsData` | 确保 / 重置 / 删除（仅属性；结构解包见 `clozeUtils.unwrapClozeFragmentsByNumber`） |
 
 ### 公开 API — Direction
 

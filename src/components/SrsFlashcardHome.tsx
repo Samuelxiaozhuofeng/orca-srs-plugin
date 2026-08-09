@@ -70,13 +70,20 @@ export type CardDeleteOutcome =
 /**
  * 删除卡片的后端数据。
  *
+ * 产品定义：删除 = 结构恢复为普通文本 + 清除复习进度；暂停由独立「暂停」承接。
+ *
  * cloze/direction 变体：先读后端块内容判断同块是否还有其它存活变体——
- * - 仍有其它变体 → 只删该变体的 srs.cN.* / srs.<dir>.* 属性，保留 #card 标签
- *   （避免把同块其它变体静默踢出复习系统）；
+ * - **先改 content 结构**（解包 cloze / 降级或移除 direction），再清 SRS 属性，
+ *   避免结构残留导致下次收集复活；
+ * - 仍有其它变体 → 只删该变体的 srs.cN.* / srs.<dir>.* 属性，保留 #card 标签；
  * - 无剩余变体 → 清理全部 srs.* 属性并移除 #card（整卡删除）。
  *
+ * 列表卡整卡：根块 + **当前全部直接子块** 的 srs.* 一并清理。
+ * image-occlusion 走 masks 路径，**不**走文本 cloze 解包。
+ *
  * 读取块失败时抛错（错误保持可见），不得静默降级为整卡删除。
- * 每次属性写入后通过 invalidateBlockCache 失效块缓存。
+ * 中途任一步失败须抛错且不得假装已删除；消息含块 ID 与当前状态。
+ * 每次属性/内容写入后通过 invalidateBlockCache 失效块缓存。
  */
 export async function deleteReviewCardBackendData(
   card: Pick<ReviewCard, "id" | "clozeNumber" | "directionType" | "cardType">,
@@ -86,6 +93,7 @@ export async function deleteReviewCardBackendData(
     deleteCardSrsData,
     deleteClozeCardSrsData,
     deleteDirectionCardSrsData,
+    deleteListCardSrsData,
     invalidateBlockCache
   } = await import("../srs/storage")
 
@@ -204,40 +212,108 @@ export async function deleteReviewCardBackendData(
       invalidateBlockCache(card.id)
       return { kind: "full" }
     } else if (card.clozeNumber && card.cardType !== "image-occlusion") {
-      const { getAllClozeNumbers } = await import("../srs/clozeUtils")
+      const {
+        getAllClozeNumbers,
+        unwrapClozeFragmentsByNumber
+      } = await import("../srs/clozeUtils")
       const numbers = getAllClozeNumbers(block.content, pluginName)
       remainingVariants = numbers.filter((n) => n !== card.clozeNumber).length
-    } else if (card.directionType) {
-      const { extractDirectionInfo, getDirectionList } = await import(
-        "../srs/directionUtils"
+
+      // 先解包结构（全部同号 fragment），再清属性，防止收集器复活
+      await unwrapClozeFragmentsByNumber(
+        card.id,
+        card.clozeNumber,
+        pluginName,
+        block.content
       )
+
+      if (remainingVariants > 0) {
+        try {
+          await deleteClozeCardSrsData(card.id, card.clozeNumber)
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          throw new Error(
+            `块 #${card.id} 的填空 c${card.clozeNumber} 已恢复为普通文本，但清理 srs.c${card.clozeNumber}.* 失败：${msg}。请重试删除以清理残留属性。`
+          )
+        }
+        invalidateBlockCache(card.id)
+        return { kind: "variant-only", remainingVariants }
+      }
+      // 无剩余变体：结构已解包，落入下方整卡 srs + #card 清理
+    } else if (card.directionType) {
+      const {
+        extractDirectionInfo,
+        getDirectionList,
+        applyDirectionVariantRemoval
+      } = await import("../srs/directionUtils")
       const dirInfo = extractDirectionInfo(block.content, pluginName)
       remainingVariants = dirInfo
         ? getDirectionList(dirInfo.direction).filter(
             (dir) => dir !== card.directionType
           ).length
         : 0
-    }
 
-    if (remainingVariants > 0) {
-      if (card.clozeNumber && card.cardType !== "image-occlusion") {
-        await deleteClozeCardSrsData(card.id, card.clozeNumber)
-      } else if (card.directionType) {
-        await deleteDirectionCardSrsData(card.id, card.directionType)
+      // 先改 direction fragment（降级或移除），再清属性
+      await applyDirectionVariantRemoval(
+        card.id,
+        card.directionType,
+        pluginName,
+        block.content
+      )
+
+      if (remainingVariants > 0) {
+        try {
+          await deleteDirectionCardSrsData(card.id, card.directionType)
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          throw new Error(
+            `块 #${card.id} 的方向结构已更新（删除 ${card.directionType}），但清理 srs.${card.directionType}.* 失败：${msg}。请重试删除以清理残留属性。`
+          )
+        }
+        invalidateBlockCache(card.id)
+        return { kind: "variant-only", remainingVariants }
       }
-      invalidateBlockCache(card.id)
-      return { kind: "variant-only", remainingVariants }
+      // 无剩余变体：结构已移除 direction fragment，落入下方整卡清理
     }
   }
 
   // 整卡删除：清理全部 srs.* 属性并移除 #card
-  await deleteCardSrsData(card.id)
-  await orca.commands.invokeEditorCommand(
-    "core.editor.removeTag",
-    null,
-    card.id,
-    "card"
-  )
+  // 列表卡：调度状态在直接子块上，必须一并清理，否则重建会继承旧进度
+  if (card.cardType === "list") {
+    const block = (await orca.invokeBackend("get-block", card.id)) as
+      | Block
+      | null
+      | undefined
+    if (!block) {
+      throw new Error(
+        `列表卡整卡删除失败：读取根块 #${card.id} 失败，无法枚举直接子块`
+      )
+    }
+    await deleteListCardSrsData(card.id, block)
+  } else {
+    try {
+      await deleteCardSrsData(card.id)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `块 #${card.id} 清理 srs.* 属性失败：${msg}。#card 尚未移除，可重试。`
+      )
+    }
+  }
+
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.removeTag",
+      null,
+      card.id,
+      "card"
+    )
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `块 #${card.id} 的 srs.* 已清理，但移除 #card 标签失败：${msg}。请手动移除 #card 或重试。`
+    )
+  }
   invalidateBlockCache(card.id)
   return { kind: "full" }
 }

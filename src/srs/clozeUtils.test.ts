@@ -51,7 +51,8 @@ import {
   cloneBlockContent,
   createCloze,
   getAllClozeNumbers,
-  getMaxClozeNumberFromContent
+  getMaxClozeNumberFromContent,
+  unwrapClozeNumberInContent
 } from "./clozeUtils"
 import { ensureClozeSrsState, writeInitialClozeSrsState } from "./storage"
 
@@ -83,6 +84,53 @@ describe("getMaxClozeNumberFromContent", () => {
     ]
     expect(getMaxClozeNumberFromContent(content, "orca-srs")).toBe(0)
     expect(getAllClozeNumbers(content, "orca-srs")).toEqual([])
+  })
+})
+
+describe("unwrapClozeNumberInContent", () => {
+  it("同号多 fragment 全部解包，其它编号不受影响，不合并相邻文本", () => {
+    const content = [
+      { t: "t", v: "A " },
+      { t: "orca-srs.cloze", v: "x", clozeNumber: 2 },
+      { t: "t", v: " mid " },
+      { t: "orca-srs.cloze", v: "y", clozeNumber: 1 },
+      { t: "t", v: " and " },
+      { t: "orca-srs.cloze", v: "z", clozeNumber: 2 },
+      { t: "srs-plugin.cloze", v: "legacy2", clozeNumber: 2 }
+    ]
+    const { content: next, unwrappedCount } = unwrapClozeNumberInContent(
+      content,
+      2,
+      "orca-srs"
+    )
+    expect(unwrappedCount).toBe(3)
+    expect(next).toEqual([
+      { t: "t", v: "A " },
+      { t: "t", v: "x" },
+      { t: "t", v: " mid " },
+      { t: "orca-srs.cloze", v: "y", clozeNumber: 1 },
+      { t: "t", v: " and " },
+      { t: "t", v: "z" },
+      { t: "t", v: "legacy2" }
+    ])
+    // 相邻纯文本不合并（与 createCloze 路径惯例一致）
+    expect(next.filter((f) => f.t === "t").length).toBe(6)
+    expect(getAllClozeNumbers(next, "orca-srs")).toEqual([1])
+  })
+
+  it("无该编号时 unwrappedCount=0 且 content 等长拷贝", () => {
+    const content = [
+      { t: "t", v: "only " },
+      { t: "orca-srs.cloze", v: "a", clozeNumber: 1 }
+    ]
+    const { content: next, unwrappedCount } = unwrapClozeNumberInContent(
+      content,
+      9,
+      "orca-srs"
+    )
+    expect(unwrappedCount).toBe(0)
+    expect(next).toEqual(content)
+    expect(next).not.toBe(content)
   })
 })
 

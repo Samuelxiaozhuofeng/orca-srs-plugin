@@ -223,16 +223,23 @@ flowchart TD
 4. 批量暂停 / 激活 / 重置 / 改牌组（同块两变体只应改一次牌组）；确认 partial 失败可见
 5. TTS 批量语音与管理多选互不串扰
 
-### 删除的变体感知语义（`deleteReviewCardBackendData`，`SrsFlashcardHome.tsx` 导出）
+### 删除闭环（结构 + 进度，`deleteReviewCardBackendData`，`SrsFlashcardHome.tsx` 导出）
 
-cloze / direction 变体行的删除**不得**直接摘整块 `#card`（否则同块其它变体被静默踢出复习系统）：
+产品定义：**删除 = 恢复为普通文本 + 清除复习进度**（「暂停」由独立功能承接）。
+
+cloze / direction 变体行的删除**不得**直接摘整块 `#card`（否则同块其它变体被静默踢出复习系统），且**必须先改 content 结构**，否则下次收集会从 fragment 复活变体：
 
 - 先以后端 `get-block` 读块内容（**不走本地块缓存**；读取失败**抛错**，不静默降级为整卡删除），用 `getAllClozeNumbers` / `extractDirectionInfo + getDirectionList` 判断同块是否还有**其它存活变体**。
-- **仍有其它变体** → 仅删该变体前缀属性（`deleteClozeCardSrsData` 删 `srs.cN.*` / `deleteDirectionCardSrsData` 删 `srs.<dir>.*`），**保留 `#card`**；返回 `{ kind: "variant-only", remainingVariants }`，成功通知「已删除{填空 cN|正向卡|反向卡}，同块其它卡片保留 #card」。
-- **无剩余变体**（或普通卡） → `deleteCardSrsData` 清全部 `srs.*` 属性 + `core.editor.removeTag("card")`；返回 `{ kind: "full" }`。
-- 每次属性写入后 `invalidateBlockCache(card.id)`。
+- **Cloze（非 IO）**：**先** `unwrapClozeFragmentsByNumber`（同号全部 fragment 解包为 `{ t:"t", v }`，不合并相邻文本），**再**清 `srs.cN.*`。
+- **Direction**：**先** `applyDirectionVariantRemoval`（双向删一向 → 降级剩余单向；删最后一向 → 移除 direction fragment，左右文字原样保留），**再**清 `srs.<dir>.*`。
+- **仍有其它变体** → 仅删该变体前缀属性，**保留 `#card`**；返回 `{ kind: "variant-only", remainingVariants }`。
+- **无剩余变体**（或普通卡） → `deleteCardSrsData` 清全部 `srs.*` + `removeTag("card")`；返回 `{ kind: "full" }`。
+- **List 整卡** → `deleteListCardSrsData`：按当前 `children` **全部直接子块**清 `srs.*`，再清根块，再 `removeTag`（先子后根；中途失败不摘 `#card`）。
+- **image-occlusion**：仍走 masks / 编号迁移路径，**不**走文本 cloze 解包。
+- 中途任一步失败：抛错且消息含块 ID 与当前状态；UI **不**发「已删除」成功提示。
+- 每次内容/属性写入后 `invalidateBlockCache`。
 
-回归：`src/components/SrsFlashcardHome.delete.test.ts`（cloze/direction 变体保留、最后一个变体整卡删除、读块失败抛错）。
+回归：`src/components/SrsFlashcardHome.delete.test.ts`（同号多 fragment 解包、方向降级/移除、list 子块清理、写入失败可见、IO 不误入 setBlocksContent）。
 
 ### 视觉帧结构（Deck 下钻）
 
@@ -288,13 +295,17 @@ CardListView
 
 ## 危险操作确认
 
-`CardListItem` 删除 / 重置经 `orca.components.ConfirmBox` 二次确认后再生效。删除确认文案按变体三分（`deleteConfirmText`，导出便于测试）：
+`CardListItem` 删除 / 重置经 `orca.components.ConfirmBox` 二次确认后再生效。删除确认文案（`deleteConfirmText`，导出便于测试）统一强调「将恢复为普通文本并删除复习进度」：
 
 | 行类型 | 文案要点 |
 | ------ | -------- |
-| cloze 变体 | 「确定删除此填空（cN）？…同块其它填空/卡片不受影响，仅当它是本块最后一个卡片变体时才移除 #card」 |
-| direction 变体 | 「确定删除此方向（正向/反向）？…同块另一方向不受影响，仅当它是本块最后一个卡片变体时才移除 #card」 |
-| 普通卡 | 「确定删除此卡片？将移除 #card 与 SRS 数据，不可撤销。」 |
+| cloze 变体 | 恢复普通文本 + 删除进度；同块其它填空不受影响；**额外注明**原挖空文本的加粗/链接等格式未保存、无法恢复 |
+| direction 变体 | 恢复普通文本 + 删除进度；同块另一方向不受影响 |
+| list 整卡 | 恢复普通文本 + 删除进度（**含所有直接子条目**）+ 移除 `#card` |
+| 普通卡 | 恢复普通文本 + 删除进度 + 移除 `#card` |
+| IO 遮罩 | 仍描述移除遮罩区域与 SRS 数据（不混入文本解包措辞） |
+
+回归：`src/components/flashcard-home/deleteConfirmText.test.ts`。
 
 ## 扩展点
 

@@ -914,6 +914,72 @@ export const deleteCardSrsData = async (blockId: DbId): Promise<void> => {
 }
 
 /**
+ * 列表卡整卡删除：清理根块 + **当前全部直接子块** 上的 `srs.*` 属性。
+ *
+ * 口径：按删除时 backend 读到的 `children` 全量清理（含建卡后新增、可能带孤儿属性的子块），
+ * 不依赖创建时的 initializedItemIds 快照。
+ *
+ * 顺序：先子块后根块，便于中途失败时 #card 仍在、可重试。
+ * 任一步失败会抛错，并在消息中标明已成功/失败的块 ID 与当前状态。
+ *
+ * @param rootBlockId - 列表卡根块 ID
+ * @param rootBlock - 可选：调用方已读取的 backend 块（须含 children）；缺省再 get-block
+ */
+export const deleteListCardSrsData = async (
+  rootBlockId: DbId,
+  rootBlock?: Block | null
+): Promise<{ childIds: DbId[] }> => {
+  let block: Block | null = rootBlock ?? null
+  if (!block) {
+    const fetched = (await orca.invokeBackend("get-block", rootBlockId)) as
+      | Block
+      | null
+      | undefined
+    block = fetched ?? null
+  }
+  if (!block) {
+    throw new Error(
+      `列表卡整卡删除失败：读取根块 #${rootBlockId} 失败，无法枚举直接子块`
+    )
+  }
+
+  const childIds = (block.children ?? []) as DbId[]
+  const cleanedChildren: DbId[] = []
+  const failedChildren: string[] = []
+
+  for (const childId of childIds) {
+    try {
+      await deleteCardSrsData(childId)
+      cleanedChildren.push(childId)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      failedChildren.push(`#${childId}: ${msg}`)
+    }
+  }
+
+  if (failedChildren.length > 0) {
+    throw new Error(
+      `列表卡 #${rootBlockId} 部分直接子块 srs.* 清理失败（已成功: ${
+        cleanedChildren.length ? cleanedChildren.map((id) => `#${id}`).join(", ") : "无"
+      }；失败: ${failedChildren.join("; ")}）。根块与 #card 尚未清理，可重试。`
+    )
+  }
+
+  try {
+    await deleteCardSrsData(rootBlockId)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `列表卡 #${rootBlockId} 直接子块 srs.* 已清理（${
+        childIds.length ? childIds.map((id) => `#${id}`).join(", ") : "无子块"
+      }），但根块 srs.* 清理失败：${msg}。#card 尚未移除，可重试。`
+    )
+  }
+
+  return { childIds }
+}
+
+/**
  * 删除 Cloze 卡片某个填空的 SRS 属性
  *
  * @param blockId - 块 ID

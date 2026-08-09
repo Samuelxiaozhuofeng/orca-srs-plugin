@@ -95,7 +95,16 @@
 1. **读取层** `extractDirectionInfo`：`direction` 必须落在白名单 `VALID_DIRECTIONS`（forward/backward/bidirectional）；缺失（falsy）沿用既有回退 `"forward"` **不告警**；契约外脏值 `console.warn` 后回退 `"forward"`。
 2. **属性名门禁** `getDirectionList`：返回值会流入 `srs.<dir>.*` 属性名构建（`storage.ts buildDirectionPropertyName`），命名空间契约只允许 `srs.forward.*` / `srs.backward.*`——白名单外脏值 warn 后**返回 `[]`**，绝不进入属性写入（不生成 `srs.<garbage>.*` 契约外属性）。
 
-回归：`src/srs/directionUtils.test.ts`（7 用例）。
+### 删除变体（结构 + 进度，2026-08-09）
+
+| 函数 | 说明 |
+| ---- | ---- |
+| `removeOrDowngradeDirectionInContent` | 纯函数：双向删一向 → 降级为剩余单向（更新 `direction` + 符号 `v`）；删最后一向 → **移除** direction fragment，左右片段原样保留（不合并） |
+| `applyDirectionVariantRemoval` | 写库：`setBlocksContent` 后 `invalidateBlockCache`；失败抛错 |
+
+入口：`deleteReviewCardBackendData`。顺序：**先改 content，再清 `srs.<dir>.*`**。仍有另一方向时保留 `#card`；无剩余方向则整卡清 `srs.*` + removeTag。
+
+回归：`src/srs/directionUtils.test.ts`、`SrsFlashcardHome.delete.test.ts`。
 
 ---
 
