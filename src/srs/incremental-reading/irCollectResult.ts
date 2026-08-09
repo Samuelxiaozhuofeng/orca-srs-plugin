@@ -50,6 +50,22 @@ export function shouldShowLoadError(result: IRCollectResult): boolean {
   return result.status === "error"
 }
 
+/**
+ * 部分读取失败时的非阻断提示（队列仍可用）。
+ * 全量失败走 shouldShowLoadError，不进此分支。
+ */
+export function getCollectPartialNotice(
+  result: IRCollectResult | null | undefined
+): { failedCount: number; message: string } | null {
+  if (!result || result.status !== "partial") return null
+  const failedCount = Math.max(0, Math.floor(result.failedCount))
+  if (failedCount <= 0) return null
+  return {
+    failedCount,
+    message: `有 ${failedCount} 条内容读取失败，本次先继续可用内容`
+  }
+}
+
 export function collectStatusLabel(status: IRCollectStatus): string {
   switch (status) {
     case "empty":

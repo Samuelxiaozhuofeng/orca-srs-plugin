@@ -55,6 +55,7 @@ import { useIRSessionTimer } from "../../hooks/useIRSessionTimer"
 import { useIRMixedPendingDueQueue } from "../../hooks/useIRMixedPendingDueQueue"
 import { resetViewportScrollTop } from "../../hooks/viewportScrollReset"
 import { resolveIRSessionViewportResetKey } from "./irSessionViewportReset"
+import { resolveIRSessionInteractionGuards } from "./irPostCompleteHoldGuards"
 import IRMixedReviewPane from "./IRMixedReviewPane"
 import IRReadingPane from "./IRReadingPane"
 import IRSessionHeader from "./IRSessionHeader"
@@ -310,6 +311,35 @@ export default function IRSessionShell({
 
   const readingContext = useIRReadingContext(currentCard)
 
+  /** 完成后续 hold / 弹窗：断点、快捷键、排期入口统一门闩（纯函数可单测） */
+  const interactionGuards = useMemo(
+    () =>
+      resolveIRSessionInteractionGuards({
+        hasCurrentCard: Boolean(currentCard),
+        showSummary,
+        loadFailed,
+        isReviewEntry: Boolean(isReviewEntry),
+        endGateOpen,
+        completeChapterOpen,
+        archiveConfirmOpen,
+        chapterQuizConfirmOpen,
+        postCompleteQuizHold,
+        contextMode: readingContext.contextState.mode
+      }),
+    [
+      currentCard,
+      showSummary,
+      loadFailed,
+      isReviewEntry,
+      endGateOpen,
+      completeChapterOpen,
+      archiveConfirmOpen,
+      chapterQuizConfirmOpen,
+      postCompleteQuizHold,
+      readingContext.contextState.mode
+    ]
+  )
+
   const pendingDue = useIRMixedPendingDueQueue({
     pluginName,
     queue,
@@ -360,9 +390,10 @@ export default function IRSessionShell({
     previewBlockId: readingContext.breakpointPreviewId,
     initialBreakpoint: currentCard?.readingBreakpoint ?? null,
     initialResumeBlockId: currentCard?.resumeBlockId ?? null,
-    enabled: Boolean(currentCard) && !showSummary && !isReviewEntry,
-    // chapter_browse 为临时探索态：不生成新断点，flush 只排空既有队列
-    allowCapture: readingContext.contextState.mode !== "chapter_browse",
+    // hold 期间关闭：已归档 Topic 不得再写 ir.breakpoint / resume
+    enabled: interactionGuards.breakpointEnabled,
+    // chapter_browse 为临时探索态；hold 同样禁止新捕获，flush 只排空既有队列
+    allowCapture: interactionGuards.allowCapture,
     onSaveError: (err) => {
       setBreakpointError(err instanceof Error ? err.message : String(err))
       metricsRef.current.record("breakpoint.save_failure")
@@ -379,7 +410,8 @@ export default function IRSessionShell({
     cardId: currentCard?.id ?? null,
     containerRef: currentCardContainerRef,
     scrollContainerRef,
-    enabled: Boolean(currentCard) && !showSummary && !isReviewEntry
+    // hold 期间禁用文末门闩，避免确认后误走 performNext
+    enabled: interactionGuards.endZoneEnabled
   })
 
   useEffect(() => {
@@ -653,7 +685,13 @@ export default function IRSessionShell({
       } | undefined
       if (!detail?.action || showSummary || loadFailed) return
       if (detail.panelId !== panelId) return
-      if (detail.action === "next") requestNext()
+      // hold 期间仅允许「下一篇」推进 UI；其它会话动作会写 ir.* 或打开写库入口
+      const scheduleOk = interactionGuards.scheduleActionsEnabled
+      if (detail.action === "next") {
+        requestNext()
+        return
+      }
+      if (!scheduleOk) return
       if (detail.action === "postpone") {
         setPostponeOpen(true)
         setMoreOpen(false)
@@ -802,6 +840,11 @@ export default function IRSessionShell({
         deferUiAdvance: deferUi
       })
       if (ok && deferUi && topicId != null) {
+        // 进入 hold：收起一切会写 ir.* 的入口，再 offer 小测
+        setPostponeOpen(false)
+        setImportanceOpen(false)
+        setMoreOpen(false)
+        setEndGateOpen(false)
         setPostCompleteQuizHold(true)
         postCompleteQuizHoldRef.current = true
         offerChapterQuiz(topicId)
@@ -1024,6 +1067,7 @@ export default function IRSessionShell({
       releasePostCompleteHoldAndAdvance()
       return
     }
+    if (!interactionGuards.scheduleActionsEnabled) return
     if (!currentCard) {
       handleNext()
       return
@@ -1050,6 +1094,7 @@ export default function IRSessionShell({
   }
 
   const openImportanceMenu = () => {
+    if (!interactionGuards.scheduleActionsEnabled) return
     setImportanceOpen((v: boolean) => {
       const next = !v
       if (next) {
@@ -1061,12 +1106,15 @@ export default function IRSessionShell({
   }
 
   const openPostponeMenu = () => {
+    if (!interactionGuards.scheduleActionsEnabled) return
     setPostponeOpen(true)
     setMoreOpen(false)
     setImportanceOpen(false)
   }
 
   const toggleMorePanel = () => {
+    // hold 时不允许打开「更多」：内含推后/转化等写库入口
+    if (!interactionGuards.scheduleActionsEnabled) return
     setMoreOpen((v: boolean) => {
       const next = !v
       if (next) {
@@ -1122,13 +1170,8 @@ export default function IRSessionShell({
   }
 
   useIRShortcuts({
-    // 确认类对话框打开时停用会话快捷键：Enter 只应作用于对话框，不得穿透触发下一篇
-    enabled: !showSummary
-      && !loadFailed
-      && !isReviewEntry
-      && !endGateOpen
-      && !completeChapterOpen
-      && !archiveConfirmOpen,
+    // 确认类对话框 / 完成后续 hold：停用会话快捷键，避免 Enter 穿透写库
+    enabled: interactionGuards.shortcutsEnabled,
     panelId,
     sessionRootRef,
     handlers: {
@@ -1358,23 +1401,36 @@ export default function IRSessionShell({
         archiveConfirmOpen={archiveConfirmOpen}
         showReturn={readingContext.showReturn}
         onNext={requestNext}
-        onConvertToQA={handleConvertToQA}
-        onConvertToDirection={handleConvertToDirection}
-        onChapterQuiz={handleChapterQuizRequest}
+        onConvertToQA={
+          interactionGuards.scheduleActionsEnabled ? handleConvertToQA : undefined
+        }
+        onConvertToDirection={
+          interactionGuards.scheduleActionsEnabled ? handleConvertToDirection : undefined
+        }
+        onChapterQuiz={
+          interactionGuards.scheduleActionsEnabled ? handleChapterQuizRequest : undefined
+        }
         onComplete={() => {
-          // 已完成且停留做小测时，「完成」改为离开本章 → 下一篇
+          // 已完成且停留做小测时，「完成」改为离开本章 → 下一篇（只推进 UI）
           if (postCompleteQuizHoldRef.current) {
             releasePostCompleteHoldAndAdvance()
             return
           }
+          if (!interactionGuards.scheduleActionsEnabled) return
           handleCompleteRequest()
         }}
         onImportance={openImportanceMenu}
         onMore={toggleMorePanel}
         onReturn={readingContext.onReturnFromBrowse}
-        onPostponeChoose={handlePostpone}
+        onPostponeChoose={(choice) => {
+          if (!interactionGuards.scheduleActionsEnabled) return
+          handlePostpone(choice)
+        }}
         onPostponeClose={() => setPostponeOpen(false)}
-        onImportanceChoose={handleImportanceNudge}
+        onImportanceChoose={(direction) => {
+          if (!interactionGuards.scheduleActionsEnabled) return
+          handleImportanceNudge(direction)
+        }}
         onImportanceClose={() => setImportanceOpen(false)}
         onOpenPostpone={openPostponeMenu}
         onThemeChange={setTheme}
@@ -1382,14 +1438,19 @@ export default function IRSessionShell({
         onToggleViewMode={toggleViewMode}
         onBackToLibrary={handleBackToLibrary}
         onCompleteChapterClose={() => setCompleteChapterOpen(false)}
-        onCompleteChapterToday={() =>
+        onCompleteChapterToday={() => {
+          if (!interactionGuards.scheduleActionsEnabled) return
           void handleArchiveThenOfferQuiz({ nextChapterSchedule: "today" })
-        }
-        onCompleteChapterTomorrow={() =>
+        }}
+        onCompleteChapterTomorrow={() => {
+          if (!interactionGuards.scheduleActionsEnabled) return
           void handleArchiveThenOfferQuiz({ nextChapterSchedule: "tomorrow" })
-        }
+        }}
         onArchiveConfirmClose={() => setArchiveConfirmOpen(false)}
-        onArchiveConfirm={() => void handleArchiveThenOfferQuiz()}
+        onArchiveConfirm={() => {
+          if (!interactionGuards.scheduleActionsEnabled) return
+          void handleArchiveThenOfferQuiz()
+        }}
         chapterQuizConfirmOpen={chapterQuizConfirmOpen}
         chapterQuizMode={postCompleteQuizHold ? "post-complete" : "normal"}
         pluginName={pluginName}
@@ -1398,15 +1459,23 @@ export default function IRSessionShell({
       />
 
       <IREndOfContentDialog
-        open={endGateOpen}
+        open={endGateOpen && interactionGuards.scheduleActionsEnabled}
         isWorking={isWorking}
         isSequentialActive={isSequentialActive}
         onClose={closeEndGate}
         onLater={() => {
+          if (!interactionGuards.scheduleActionsEnabled) {
+            closeEndGate()
+            return
+          }
           closeEndGate()
           handleNext()
         }}
         onComplete={() => {
+          if (!interactionGuards.scheduleActionsEnabled) {
+            closeEndGate()
+            return
+          }
           closeEndGate()
           // 走现有完成主路径：顺序激活章仍进解锁对话框，其余进归档确认
           handleCompleteRequest()

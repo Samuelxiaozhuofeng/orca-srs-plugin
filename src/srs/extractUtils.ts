@@ -324,6 +324,55 @@ export async function createExtract(
   })
 }
 
+/**
+ * 删除本次摘录动作新建的半成品子块。
+ * 返回 cleaned=false 时调用方必须在通知中带上 blockId，禁止只说「创建失败」。
+ */
+export async function cleanupIncompleteExtractBlock(
+  pluginName: string,
+  extractBlockId: DbId
+): Promise<{ cleaned: true } | { cleaned: false; error: string }> {
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.deleteBlocks",
+      null,
+      [extractBlockId]
+    )
+    return { cleaned: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[${pluginName}] 摘录半成品清理失败 blockId=${extractBlockId}:`, error)
+    return { cleaned: false, error: message }
+  }
+}
+
+/**
+ * 后续步骤失败：先尝试清理新建子块，再发可见错误通知。
+ * 清理失败时文案必须包含残留 blockId。
+ */
+async function failExtractAfterInsert(args: {
+  pluginName: string
+  extractBlockId: DbId
+  stepLabel: string
+  error: unknown
+}): Promise<null> {
+  const { pluginName, extractBlockId, stepLabel, error } = args
+  const primary = error instanceof Error ? error.message : String(error)
+  console.error(`[${pluginName}] ${stepLabel}:`, error)
+
+  const cleanup = await cleanupIncompleteExtractBlock(pluginName, extractBlockId)
+  if (cleanup.cleaned) {
+    orca.notify("error", `${stepLabel}: ${primary}`, { title: "渐进阅读" })
+  } else {
+    orca.notify(
+      "error",
+      `${stepLabel}: ${primary}。半成品块未能自动删除（blockId=${extractBlockId}），请手动清理。清理错误：${cleanup.error}`,
+      { title: "渐进阅读" }
+    )
+  }
+  return null
+}
+
 async function createExtractFromText(args: {
   cursor: CursorData
   pluginName: string
@@ -342,7 +391,7 @@ async function createExtractFromText(args: {
     console.warn(`[${pluginName}] 高亮原文失败:`, error)
   }
 
-  // 1) 创建子块（摘录块）
+  // 1) 创建子块（摘录块）——仅跟踪本步新建的 extractBlockId，后续失败则反向清理
   let extractBlockId: DbId
   try {
     const insertResult = await orca.commands.invokeEditorCommand(
@@ -394,9 +443,12 @@ async function createExtractFromText(args: {
       }
     }
   } catch (error) {
-    console.error(`[${pluginName}] 创建 Extract 卡片失败（标签处理）:`, error)
-    orca.notify("error", `创建 Extract 卡片失败: ${error}`, { title: "渐进阅读" })
-    return null
+    return failExtractAfterInsert({
+      pluginName,
+      extractBlockId,
+      stepLabel: "创建 Extract 卡片失败（标签处理）",
+      error
+    })
   }
 
   // 3) 初始化渐进阅读状态（ir.*）：必须先写 sourceTopicId + invalidate，再 updatePriority
@@ -415,9 +467,12 @@ async function createExtractFromText(args: {
       console.warn(`[${pluginName}] 摘录写入 IR 索引失败:`, indexError)
     }
   } catch (error) {
-    console.error(`[${pluginName}] 初始化渐进阅读状态失败:`, error)
-    orca.notify("error", `初始化渐进阅读状态失败: ${error}`, { title: "渐进阅读" })
-    return null
+    return failExtractAfterInsert({
+      pluginName,
+      extractBlockId,
+      stepLabel: "初始化渐进阅读状态失败",
+      error
+    })
   }
 
   // 信任反馈：用真实 due 提示大约几天后回来（失败则保守文案，不吞主流程成功）
@@ -433,4 +488,18 @@ async function createExtractFromText(args: {
     orca.notify("success", "已创建摘录，将按阅读节奏安排再次出现", { title: "渐进阅读" })
   }
   return { blockId, extractBlockId }
+}
+
+/**
+ * 测试/诊断入口：在已解析选区文本后走与 createExtract 相同的创建管线。
+ * 生产路径仍经 createExtract 的光标校验。
+ */
+export async function createExtractFromSelectedText(args: {
+  cursor: CursorData
+  pluginName: string
+  block: Block
+  blockId: DbId
+  selectedText: string
+}): Promise<{ blockId: DbId; extractBlockId: DbId } | null> {
+  return createExtractFromText(args)
 }

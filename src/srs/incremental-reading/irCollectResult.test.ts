@@ -3,6 +3,7 @@ import {
   buildCollectError,
   buildCollectOk,
   collectStatusLabel,
+  getCollectPartialNotice,
   shouldShowEmptyQueue,
   shouldShowLoadError
 } from "./irCollectResult"
@@ -59,5 +60,22 @@ describe("irCollectResult", () => {
     expect(result.failedCount).toBe(3)
     expect(shouldShowLoadError(result)).toBe(true)
     expect(shouldShowEmptyQueue(result)).toBe(false)
+  })
+
+  it("partial notice is non-blocking copy with failedCount; error has no partial notice", () => {
+    const partial = buildCollectOk([fakeCard(1)], 2)
+    const notice = getCollectPartialNotice(partial)
+    expect(notice).toEqual({
+      failedCount: 2,
+      message: "有 2 条内容读取失败，本次先继续可用内容"
+    })
+    // 队列仍可用：partial 不是 load error / empty
+    expect(shouldShowLoadError(partial)).toBe(false)
+    expect(shouldShowEmptyQueue(partial)).toBe(false)
+    expect(partial.cards).toHaveLength(1)
+
+    const error = buildCollectError(new Error("all down"))
+    expect(getCollectPartialNotice(error)).toBeNull()
+    expect(shouldShowLoadError(error)).toBe(true)
   })
 })

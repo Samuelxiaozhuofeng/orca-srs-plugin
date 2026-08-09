@@ -4,6 +4,9 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-10（渐进阅读批次 A 可信性修复）**：
+> - [渐进阅读.md](渐进阅读.md)：完成 Topic 后 `postCompleteQuizHold` 零 `ir.*` 写回；Extract 创建失败清理半成品；collect `partial` 非阻断提示 + 重新加载
+>
 > **索引增补：2026-08-09（选择题身份统一 type=choice）**：
 > - [SRS_选择题卡.md](SRS_选择题卡.md) / [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md) / [SRS_工具函数模块.md](SRS_工具函数模块.md) / [SRS_数据存储.md](SRS_数据存储.md)：去掉独立 `#choice` 标签；`extractCardType` 只读 `#card type=choice`；创建/撤销不再写/摘 `#choice`
 >

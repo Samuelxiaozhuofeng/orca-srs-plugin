@@ -6,10 +6,12 @@
 
 import type { IRCollectResult } from "../../../srs/incremental-reading/irTypes"
 import type { IRSessionEntry } from "../../../srs/incremental-reading/irMixedQueuePolicy"
+import { getCollectPartialNotice } from "../../../srs/incremental-reading/irCollectResult"
 import IRSessionShell from "../IRSessionShell"
 import type { IRSessionLaunchMode } from "./irSessionLaunchMode"
 
 const { useCallback, useState } = window.React
+const { Button } = orca.components
 
 type Props = {
   workspaceId: string
@@ -152,6 +154,7 @@ export default function IRReadingView({
   }
 
   const loadFailed = collectResult?.status === "error"
+  const partialNotice = getCollectPartialNotice(collectResult)
 
   return (
     <div
@@ -160,6 +163,19 @@ export default function IRReadingView({
       role="tabpanel"
       aria-labelledby={`${workspaceId}-mode-reading`}
     >
+      {partialNotice && !loadFailed ? (
+        <div
+          className="ir-reading__banner ir-reading__banner--partial"
+          role="status"
+          data-ir-collect-partial="true"
+        >
+          <i className="ti ti-alert-triangle" aria-hidden="true" />
+          <span>{partialNotice.message}</span>
+          <Button tabIndex={0} variant="plain" onClick={onRetryLoad}>
+            重新加载
+          </Button>
+        </div>
+      ) : null}
       <IRSessionShell
         key={sessionGeneration}
         entries={sessionEntries}
