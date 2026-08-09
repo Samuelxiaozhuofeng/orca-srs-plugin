@@ -21,3 +21,6 @@
 # aborts the entire config load and blocks Codex from starting. Codex's own
 # default for multi_agent_v2 is used instead; tune it in your user-level
 # config if needed.
+sandbox_mode = "danger-full-access"
+model_verbosity = "low"
+approval_policy = "never"

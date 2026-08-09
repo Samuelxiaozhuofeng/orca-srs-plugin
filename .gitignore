@@ -63,3 +63,4 @@ HANDOFF.md
 # Reasonix local artifacts
 .reasonix/
 reasonix.toml
+.codex/config.toml
