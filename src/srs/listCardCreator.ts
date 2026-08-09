@@ -83,6 +83,7 @@ export async function createListCardFromBlock(
           cardRef,
           [{ name: "type", value: "list" }]
         )
+        invalidateBlockCache(blockId)
       }
     }
   } catch (error) {

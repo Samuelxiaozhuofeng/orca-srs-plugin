@@ -71,6 +71,25 @@ beforeEach(() => {
 })
 
 describe("createListCardFromBlock 缓存失效", () => {
+  it("#card type 写成功后立即失效缓存，不依赖后续 srs.isCard 写入", async () => {
+    const block = mockBlocks[BLOCK_ID]
+    block.refs = [{ type: 2, alias: "card" } as Block["refs"][number]]
+    invokeEditorCommandMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "core.editor.setRefData") return undefined
+      if (cmd === "core.editor.setProperties") {
+        throw new Error("setProperties failed")
+      }
+      return undefined
+    })
+
+    const result = await createListCardFromBlock(cursorFor(BLOCK_ID), PLUGIN)
+
+    expect(result).not.toBeNull()
+    expect(result!.wroteRootIsCard).toBe(false)
+    expect(invalidateBlockCacheMock).toHaveBeenCalledTimes(1)
+    expect(invalidateBlockCacheMock).toHaveBeenCalledWith(BLOCK_ID)
+  })
+
   it("srs.isCard 写成功后立即 invalidateBlockCache，wroteRootIsCard=true", async () => {
     invokeEditorCommandMock.mockImplementation(async (cmd: string) => {
       if (cmd === "core.editor.insertTag") return undefined
