@@ -1,7 +1,7 @@
 # SRS 选择题卡（Choice）
 
-> **文档同步日期**：2026-07-26  
-> **变更说明**：增加专用创建命令 `createChoiceCard` / `choiceCardCreator`；对称撤销支持 `addedChoiceTag`。
+> **文档同步日期**：2026-08-09  
+> **变更说明**：复习题面只显示题干（`BlockTextPreview`，不挂 `SafeBlockPreview`/`ChoiceCardBlockRenderer`，避免未作答泄答）；选项顺序按 `cardKey` 冻结洗牌（`resolveFrozenShuffledOptions`）。此前：专用创建命令与对称撤销 `addedChoiceTag`。
 
 ---
 
@@ -95,7 +95,8 @@
 | `extractChoiceOptions` | 仅直接 children；`#correct`/`#正确` 判对 |
 | `detectChoiceMode` | 按正确项数量 |
 | `shuffleOptions(options, isOrdered)` | Fisher-Yates 非锚定段 + 锚定追加；ordered 时原序 |
-| `calculateAutoGrade` | 自动评分建议 |
+| `resolveFrozenShuffledOptions({ cardKey, cache, rawOptions, ordered })` | 按 `cardKey`（`cardIdentity`）冻结展示顺序；换卡才重洗 |
+| `calculateAutoGrade` | 自动评分建议（按 **blockId** 集合，与展示下标无关） |
 
 ### 自动评分规则
 
@@ -123,9 +124,20 @@
 `SrsCardDemo`：
 
 1. `extractChoiceOptions` + 检测 `#ordered`
-2. `shuffleOptions` 得到展示顺序
-3. 挂 `createChoiceAnswerHandler` 到 `onAnswer`
+2. `resolveFrozenShuffledOptions`（内部 `shuffleOptions`）按 **`buildCardKey({ cardType:"choice", blockId })`** 冻结展示顺序；同一张卡重渲染不重洗
+3. 挂 `createChoiceAnswerHandler({ options: rawOptions })` 到 `onAnswer`（**用原始选项的 `isCorrect`/blockId**，不依赖展示下标）
 4. 渲染 `ChoiceCardReviewRenderer`
+
+### 复习题面 vs 编辑器块渲染（2026-08-09）
+
+| 场景 | 组件 | 题干 | 选项 / 正确标记 |
+| ---- | ---- | ---- | --------------- |
+| **复习未作答** | `ChoiceCardReviewRenderer` 题面 | `BlockTextPreview` 纯文本题干 | **不得**出现在题面 DOM；选项仅在下方 `ChoiceOptionRenderer` 列表，揭晓前无正确标记 |
+| **块编辑器** | `ChoiceCardBlockRenderer`（`srs.choice-card`） | 展示 front | 选项预览 + 绿色「正确」+ 统计指示（笔记视图，保持不变） |
+
+**禁止**在复习题面用 `SafeBlockPreview` 挂宿主 `Block`：会走到 `ChoiceCardBlockRenderer`，未作答即泄露答案。不得用 CSS 隐藏正确标记了事。
+
+回归：`ChoiceCardReviewRenderer.questionFace.test.ts`、`choiceUtils.shuffleFreeze.test.ts`。
 
 块编辑器：`ChoiceCardBlockRenderer`（`srs.choice-card`）展示题干、模式标签、子选项，并嵌入 `ChoiceStatisticsIndicator`。
 

@@ -31,7 +31,7 @@ import {
   type ChoiceSubmitGateState
 } from "../srs/choiceSubmitGate"
 import ChoiceOptionRenderer from "./ChoiceOptionRenderer"
-import SafeBlockPreview from "./SafeBlockPreview"
+import BlockTextPreview from "./BlockTextPreview"
 import CardInfoPanel from "./review-card/CardInfoPanel"
 import ReviewGradeButtons from "./review-card/ReviewGradeButtons"
 
@@ -408,9 +408,12 @@ export default function ChoiceCardReviewRenderer({
       {/* 可折叠的卡片信息面板（选择题卡历史上不显示间隔/稳定性/难度三行） */}
       {showCardInfo && <CardInfoPanel srsInfo={srsInfo} showSchedulingDetails={false} />}
 
-      {/* 题目区域 */}
-      <div className="srs-choice-question srs-review-face srs-review-face--question">
-        <SafeBlockPreview blockId={blockId} panelId={panelId || "choice-review"} />
+      {/* 题目区域：只渲染题干纯文本，绝不挂载 srs.choice-card 块渲染器（会泄露选项与正确标记） */}
+      <div
+        className="srs-choice-question srs-review-face srs-review-face--question"
+        data-srs-choice-question-face="true"
+      >
+        <BlockTextPreview blockId={blockId} />
       </div>
 
       {/* 选项列表 */}

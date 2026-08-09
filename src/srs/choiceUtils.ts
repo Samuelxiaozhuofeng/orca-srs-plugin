@@ -176,6 +176,33 @@ export function shuffleOptions(
 }
 
 /**
+ * 按卡片身份冻结洗牌结果。
+ *
+ * 同一 `cardKey` 命中缓存时原样返回上次顺序；换卡（key 变化）才重新 `shuffleOptions`。
+ * `#ordered` 时 `shuffleOptions` 保持原序，冻结语义同样适用。
+ *
+ * 注意：判定正确性必须用选项 `blockId` / `isCorrect`，不得依赖展示下标。
+ */
+export type FrozenChoiceOptionsCache = {
+  cardKey: string
+  options: ChoiceOption[]
+}
+
+export function resolveFrozenShuffledOptions(args: {
+  cardKey: string
+  cache: FrozenChoiceOptionsCache | null
+  rawOptions: ChoiceOption[]
+  ordered: boolean
+}): { options: ChoiceOption[]; cache: FrozenChoiceOptionsCache } {
+  if (args.cache != null && args.cache.cardKey === args.cardKey) {
+    return { options: args.cache.options, cache: args.cache }
+  }
+  const { options } = shuffleOptions(args.rawOptions, args.ordered)
+  const cache: FrozenChoiceOptionsCache = { cardKey: args.cardKey, options }
+  return { options, cache }
+}
+
+/**
  * 计算自动评分
  * 
  * 评分策略：

@@ -11,7 +11,11 @@ vi.mock("../srs/deckUtils", () => ({
 vi.mock("../srs/choiceUtils", () => ({
   detectChoiceMode: vi.fn(),
   extractChoiceOptions: vi.fn(() => []),
-  shuffleOptions: vi.fn(() => ({ options: [] }))
+  shuffleOptions: vi.fn(() => ({ options: [] })),
+  resolveFrozenShuffledOptions: vi.fn(() => ({
+    options: [],
+    cache: { cardKey: "choice:0", options: [] }
+  }))
 }))
 vi.mock("../srs/choiceAnswerStatistics", () => ({
   createChoiceAnswerHandler: vi.fn()
@@ -59,7 +63,10 @@ function textOf(value: unknown): string {
 
 beforeAll(async () => {
   ;(globalThis as any).window = {
-    React: { useMemo: (factory: () => unknown) => factory() },
+    React: {
+      useMemo: (factory: () => unknown) => factory(),
+      useRef: <T,>(initial: T) => ({ current: initial })
+    },
     Valtio: { useSnapshot: (value: unknown) => value }
   }
   ;(globalThis as any).orca = {

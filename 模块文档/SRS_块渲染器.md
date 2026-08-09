@@ -1,9 +1,10 @@
 # SRS 块渲染器模块
 
 > 文档同步日期：2026-08-09
-> 变更说明：`SrsCardBlockRenderer` 现在从实际 `block.content` 检测 Cloze / Direction fragment；结构化卡不渲染题目或答案的行内编辑入口，只提示回源块编辑，避免 `setBlocksContent` 将富结构压平成纯文本。检测异常时 fail-closed 并发送可见错误通知。
-> 2026-07-26：内联编辑保存链路——`setBlocksContent` 由宿主同步 content/text（不手写 store）、写后 `invalidateBlockCache`、`_repr.front/back` 为插件维护元数据整体重赋值（低危#12）；`ChoiceCardReviewRenderer` 死订阅 `useSnapshot(orca.state)` 与未用 `suggestedGrade` prop 已删（低危#11，属复习渲染器侧，此处一并记录）。
-> 2026-07-13：对齐 `registry/renderers.ts` 注册表；区分编辑器内块渲染（`SrsCardBlockRenderer` / `ChoiceCardBlockRenderer`）与复习会话内卡种渲染器；修正路径；SRS 详情已隐藏。
+> 变更说明：选择题**复习题面**不得挂 `SafeBlockPreview`→`ChoiceCardBlockRenderer`（未作答会泄选项与正确标记）；复习题干用 `BlockTextPreview`。编辑器内 `ChoiceCardBlockRenderer` 行为不变。
+> 同日：`SrsCardBlockRenderer` 结构化卡禁止破坏性行内编辑（Cloze / Direction fragment 检测）。
+> 2026-07-26：内联编辑保存链路与 Choice 复习侧清理（低危#11/#12）。
+> 2026-07-13：对齐 `registry/renderers.ts`；区分编辑器块渲染与复习 `*ReviewRenderer`。
 
 ## 概述
 

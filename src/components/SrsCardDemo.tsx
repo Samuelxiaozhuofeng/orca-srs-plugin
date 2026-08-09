@@ -7,7 +7,8 @@ import { extractCardType } from "../srs/deckUtils"
 import {
   detectChoiceMode,
   extractChoiceOptions,
-  shuffleOptions
+  resolveFrozenShuffledOptions,
+  type FrozenChoiceOptionsCache
 } from "../srs/choiceUtils"
 import { createChoiceAnswerHandler } from "../srs/choiceAnswerStatistics"
 import { isOrderedTag } from "../srs/tagUtils"
@@ -19,7 +20,7 @@ import ListCardReviewRenderer from "./ListCardReviewRenderer"
 import ImageOcclusionReviewRenderer from "./image-occlusion/ImageOcclusionReviewRenderer"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 
-const { useMemo } = window.React
+const { useMemo, useRef } = window.React
 const { useSnapshot } = window.Valtio
 
 export type SrsCardDemoProps = {
@@ -95,6 +96,8 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     readOnly = false
   } = props
   const snapshot = useSnapshot(orca.state)
+  /** 选择题选项顺序按 cardKey 冻结；换卡才重洗（见 resolveFrozenShuffledOptions） */
+  const choiceShuffleCacheRef = useRef<FrozenChoiceOptionsCache | null>(null)
 
   const { questionBlock, totalChildCount, inferredCardType } = useMemo(() => {
     const block = blockId ? snapshot?.blocks?.[blockId] : null
@@ -114,7 +117,6 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     directionType,
     listItemId
   })
-  void cardKey
 
   // 纯渲染器：块写入 state 由会话层 preflight（独立复习 useReviewCardAvailability /
   // mixed 的 IRMixedReviewPane）。此处仅在 state miss 时被动兜底 loading。
@@ -208,7 +210,14 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
     const ordered = questionBlock.refs?.some(
       (reference: any) => reference.type === 2 && isOrderedTag(reference.alias)
     ) ?? false
-    const { options } = shuffleOptions(rawOptions, ordered)
+    // 按 cardKey 冻结展示顺序；判定用 rawOptions 的 blockId/isCorrect（与展示下标无关）
+    const frozen = resolveFrozenShuffledOptions({
+      cardKey,
+      cache: choiceShuffleCacheRef.current,
+      rawOptions,
+      ordered
+    })
+    choiceShuffleCacheRef.current = frozen.cache
     const onAnswer = readOnly
       ? undefined
       : createChoiceAnswerHandler({ blockId, options: rawOptions })
@@ -218,7 +227,7 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
         <ChoiceCardReviewRenderer
           {...sharedRendererProps}
           blockId={blockId}
-          options={options}
+          options={frozen.options}
           mode={detectChoiceMode(rawOptions)}
           onAnswer={onAnswer}
         />
