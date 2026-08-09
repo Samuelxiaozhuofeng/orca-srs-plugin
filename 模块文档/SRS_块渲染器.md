@@ -1,7 +1,8 @@
 # SRS 块渲染器模块
 
-> 文档同步日期：2026-07-26  
-> 变更说明：内联编辑保存链路——`setBlocksContent` 由宿主同步 content/text（不手写 store）、写后 `invalidateBlockCache`、`_repr.front/back` 为插件维护元数据整体重赋值（低危#12）；`ChoiceCardReviewRenderer` 死订阅 `useSnapshot(orca.state)` 与未用 `suggestedGrade` prop 已删（低危#11，属复习渲染器侧，此处一并记录）。  
+> 文档同步日期：2026-08-09
+> 变更说明：`SrsCardBlockRenderer` 现在从实际 `block.content` 检测 Cloze / Direction fragment；结构化卡不渲染题目或答案的行内编辑入口，只提示回源块编辑，避免 `setBlocksContent` 将富结构压平成纯文本。检测异常时 fail-closed 并发送可见错误通知。
+> 2026-07-26：内联编辑保存链路——`setBlocksContent` 由宿主同步 content/text（不手写 store）、写后 `invalidateBlockCache`、`_repr.front/back` 为插件维护元数据整体重赋值（低危#12）；`ChoiceCardReviewRenderer` 死订阅 `useSnapshot(orca.state)` 与未用 `suggestedGrade` prop 已删（低危#11，属复习渲染器侧，此处一并记录）。
 > 2026-07-13：对齐 `registry/renderers.ts` 注册表；区分编辑器内块渲染（`SrsCardBlockRenderer` / `ChoiceCardBlockRenderer`）与复习会话内卡种渲染器；修正路径；SRS 详情已隐藏。
 
 ## 概述
@@ -69,7 +70,9 @@ Inline 渲染器（非块级）：
 #### 功能
 
 1. **答案揭示**：有子块时先「显示答案」再展示答案与评分；无子块时直接可评（摘录类场景）。
-2. **内联编辑**：题目/答案 textarea；保存走 `core.editor.setBlocksContent`；答案写第一个子块。
+2. **内联编辑**：仅普通卡渲染题目/答案编辑入口；保存走 `core.editor.setBlocksContent`；答案写第一个子块。
+   - 先用 `getAllClozeNumbers(block.content, pluginName)` 与 `extractDirectionInfo(block.content, pluginName)` 检测实际 fragment。命中任一结构时，题目与答案均不渲染编辑按钮，并显示「该卡含填空/方向结构，请在源块中编辑。」
+   - 检测抛错时不得当成普通卡放行：编辑入口保持关闭，块内显示失败提示，并经 `orca.notify("error", ...)` 报告。
    - **保存链路（2026-07-26，低危#12）**：块的 `content`/`text` 由宿主 `setBlocksContent` 自行同步到 `orca.state`——**不手写 store**（此前直接改 `.text` 的写法已删）；写成功后 `invalidateBlockCache(targetBlockId)`。
    - `_repr.front` / `_repr.back` 是**插件维护的展示元数据**（宿主不感知、不同步；remount 与复习端依赖），保存后按仓库惯例对 `_repr` **整体重赋值**（`liveBlock._repr = { ...liveBlock._repr, front: … }`，`BlockWithRepr` 类型）——这是有据保留的承重代码，非手写宿主状态。
 3. **快速评分**：Again / Hard / Good / Easy → `updateSrsState(blockId, grade, "orca-srs")`；成功后 `showNotification`（简化日期 `M-D` + 间隔天数）。
@@ -131,7 +134,7 @@ Inline 渲染器（非块级）：
 
 ## 扩展点
 
-1. Cloze/Direction 编辑器内块若需与 ReviewRenderer 一致的交互，可改为专用块渲染器（当前复用 Basic 壳）。
+1. Cloze/Direction 编辑器内块若需与 ReviewRenderer 一致的交互，可改为专用块渲染器（当前复用 Basic 壳，但行内编辑已受结构保护）。
 2. 键盘快捷键：编辑器块内未挂 `useReviewShortcuts`（会话内才有）。
 3. List 卡若有独立 `_repr.type`，需在 `registerRenderers` 单独注册（当前列表复习主要走会话队列 identity，而非本表编辑器块类型）。
 
@@ -149,3 +152,4 @@ Inline 渲染器（非块级）：
 | `src/srs/settings/reviewSettingsSchema.ts` | `showNotification` 等 |
 | `src/components/SrsCardDemo.tsx` | 会话内卡种路由 |
 | `src/components/*ReviewRenderer.tsx` | 各卡种复习 UI |
+| `src/components/SrsCardBlockRenderer.structuredGuard.test.ts` | Cloze / Direction 编辑保护、Basic 保存与检测失败回归 |

@@ -140,7 +140,7 @@
 
 11. **[SRS Flash Home 顶部统计卡片.md](SRS%20Flash%20Home%20顶部统计卡片.md)** ⭐ 2026-07-26 收窄 — 仅维护三 `StatCard`（新卡/今日到期/积压）的 `calculateHomeStats` 计算口径；三卡已降级为次级「卡库概览」区，主页布局/主按钮/数据流以 [SRS_卡片浏览器.md](SRS_卡片浏览器.md) 为权威
 12. **[SRS_困难卡片.md](SRS_困难卡片.md)** — 困难集合与 fixed repeat 专项复习（零引用门面 `getDifficultCardsForReview` 已于 2026-07-26 删除）
-13. **[SRS_块渲染器.md](SRS_块渲染器.md)** ⭐ 2026-07-26 更新 — 编辑器内 `srs.*` 块渲染 vs 会话内 `*ReviewRenderer`；内联编辑保存不手写 store、写后失效缓存、`_repr` 元数据整体重赋值
+13. **[SRS_块渲染器.md](SRS_块渲染器.md)** ⭐ 2026-08-09 更新 — 编辑器内 `srs.*` 块渲染 vs 会话内 `*ReviewRenderer`；Cloze / Direction 实际 fragment 检测并禁止破坏性行内编辑；Basic 保存行为不变
 14. **[SRS 搜索快捷键.md](SRS%20搜索快捷键.md)** ⭐ 2026-07-26 更新 — 卡组搜索 / 复习 / IR 快捷键与门控；IR 默认键一次性播种（`ir.defaultShortcutsSeeded`）
 15. **[SRS_错误边界.md](SRS_错误边界.md)** — `SrsErrorBoundary` 挂载点与行为
 16. **[SRS_卡组备注.md](SRS_卡组备注.md)** — **权威**；`SRS 卡组备注功能.md` 为历史摘要

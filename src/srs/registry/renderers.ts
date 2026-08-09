@@ -4,7 +4,9 @@
  * 负责注册自定义块渲染器和 inline 渲染器
  */
 
-import SrsCardBlockRenderer from "../../components/SrsCardBlockRenderer"
+import SrsCardBlockRenderer, {
+  type SrsCardBlockRendererProps
+} from "../../components/SrsCardBlockRenderer"
 import SrsReviewSessionRenderer from "../../components/SrsReviewSessionRenderer"
 import SrsFlashcardHomeRenderer from "../../components/SrsFlashcardHomeRenderer"
 import IncrementalReadingSessionRenderer from "../../components/IncrementalReadingSessionRenderer"
@@ -19,11 +21,15 @@ import { CHAPTER_QUIZ_PANEL_VIEW } from "../incremental-reading/chapterQuiz"
 import { bindChapterQuizPanelRegistration } from "../incremental-reading/chapterQuizLive"
 
 export function registerRenderers(pluginName: string): void {
+  const StructuredAwareSrsCardBlockRenderer = (
+    props: Omit<SrsCardBlockRendererProps, "pluginName">
+  ) => window.React.createElement(SrsCardBlockRenderer, { ...props, pluginName })
+
   // 基本卡块渲染器
   orca.renderers.registerBlock(
     "srs.card",
     false,
-    SrsCardBlockRenderer,
+    StructuredAwareSrsCardBlockRenderer,
     [],
     false
   )
@@ -32,7 +38,7 @@ export function registerRenderers(pluginName: string): void {
   orca.renderers.registerBlock(
     "srs.cloze-card",
     false,
-    SrsCardBlockRenderer,
+    StructuredAwareSrsCardBlockRenderer,
     [],
     false
   )
@@ -41,7 +47,7 @@ export function registerRenderers(pluginName: string): void {
   orca.renderers.registerBlock(
     "srs.direction-card",
     false,
-    SrsCardBlockRenderer,
+    StructuredAwareSrsCardBlockRenderer,
     [],
     false
   )

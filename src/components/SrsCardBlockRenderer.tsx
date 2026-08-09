@@ -13,10 +13,12 @@
  * - _repr.back: 答案文本
  */
 
-import type { Block, DbId } from "../orca.d.ts"
+import type { Block, ContentFragment, DbId } from "../orca.d.ts"
 import type { Grade } from "../srs/types"
 import type { BlockWithRepr } from "../srs/blockUtils"
 import { updateSrsState, invalidateBlockCache } from "../srs/storage"
+import { getAllClozeNumbers } from "../srs/clozeUtils"
+import { extractDirectionInfo } from "../srs/directionUtils"
 import SrsErrorBoundary from "./SrsErrorBoundary"
 import { showNotification } from "../srs/settings/reviewSettingsSchema"
 
@@ -26,7 +28,7 @@ const { useSnapshot } = window.Valtio
 const { BlockShell, BlockChildren, Button, BlockBreadcrumb } = orca.components
 
 // 组件 Props 类型定义
-type SrsCardBlockRendererProps = {
+export type SrsCardBlockRendererProps = {
   panelId: string
   blockId: DbId
   rndId: string
@@ -37,6 +39,17 @@ type SrsCardBlockRendererProps = {
   renderingMode?: "normal" | "simple" | "simple-children"
   front: string  // 题目（从 _repr 接收）
   back: string   // 答案（从 _repr 接收）
+  pluginName: string
+}
+
+export function detectStructuredCardKind(
+  content: ContentFragment[] | undefined,
+  pluginName: string
+): "cloze" | "direction" | null {
+  if (getAllClozeNumbers(content, pluginName).length > 0) {
+    return "cloze"
+  }
+  return extractDirectionInfo(content, pluginName) ? "direction" : null
 }
 
 export default function SrsCardBlockRenderer({
@@ -50,6 +63,7 @@ export default function SrsCardBlockRenderer({
   renderingMode,
   front,
   back,
+  pluginName,
 }: SrsCardBlockRendererProps) {
   // 订阅 orca.state，Valtio 会自动追踪实际访问的属性
   const snapshot = useSnapshot(orca.state)
@@ -59,6 +73,23 @@ export default function SrsCardBlockRenderer({
   const block = useMemo(() => {
     return snapshot?.blocks?.[targetBlockId]
   }, [snapshot?.blocks, targetBlockId])
+
+  const structureCheck = useMemo(() => {
+    try {
+      return {
+        kind: detectStructuredCardKind(block?.content, pluginName),
+        error: null as unknown
+      }
+    } catch (error) {
+      return { kind: null, error }
+    }
+  }, [block?.content, pluginName])
+  const inlineEditingBlocked = structureCheck.kind !== null || structureCheck.error !== null
+  const structuredGuardMessage = structureCheck.error
+    ? "无法确认卡片结构，已停止行内编辑，请在源块中编辑。"
+    : structureCheck.kind
+      ? "该卡含填空/方向结构，请在源块中编辑。"
+      : null
 
   // 移除未使用的 srsInfo 计算以提升性能
 
@@ -74,6 +105,20 @@ export default function SrsCardBlockRenderer({
   const [isSavingBack, setIsSavingBack] = useState(false)
 
   const toFragments = (textValue: string) => [{ t: "t", v: textValue ?? "" }]
+
+  useEffect(() => {
+    if (!structureCheck.error) return
+    console.error(`[${pluginName}] 检测卡片结构失败（blockId=${targetBlockId}）:`, structureCheck.error)
+    orca.notify("error", `检测卡片结构失败: ${structureCheck.error}`, {
+      title: "SRS 卡片"
+    })
+  }, [pluginName, structureCheck.error, targetBlockId])
+
+  useEffect(() => {
+    if (!inlineEditingBlocked) return
+    setIsEditingFront(false)
+    setIsEditingBack(false)
+  }, [inlineEditingBlocked])
 
   // 当 blockId 变化时重置所有状态（处理删除标签后重新添加的情况）
   useEffect(() => {
@@ -314,6 +359,12 @@ export default function SrsCardBlockRenderer({
       >
         {/* 面包屑导航 - 使用原生组件 */}
         <BlockBreadcrumb blockId={targetBlockId} />
+
+        {structuredGuardMessage && (
+          <div className="srs-card-structured-edit-guard">
+            {structuredGuardMessage}
+          </div>
+        )}
         
         <div
           style={{
@@ -325,7 +376,7 @@ export default function SrsCardBlockRenderer({
           }}
         >
           <span>题目：</span>
-          {!isEditingFront && (
+          {!inlineEditingBlocked && !isEditingFront && (
             <Button
               variant="soft"
               onClick={() => setIsEditingFront(true)}
@@ -335,7 +386,7 @@ export default function SrsCardBlockRenderer({
             </Button>
           )}
         </div>
-        {isEditingFront ? (
+        {!inlineEditingBlocked && isEditingFront ? (
           <>
             <textarea
               value={editedFront}
@@ -435,7 +486,7 @@ export default function SrsCardBlockRenderer({
                 }}
               >
                 <span>答案：</span>
-                {!isEditingBack && (
+                {!inlineEditingBlocked && !isEditingBack && (
                   <Button
                     variant="soft"
                     onClick={() => setIsEditingBack(true)}
@@ -445,7 +496,7 @@ export default function SrsCardBlockRenderer({
                   </Button>
                 )}
               </div>
-              {isEditingBack ? (
+              {!inlineEditingBlocked && isEditingBack ? (
                 <>
                   <textarea
                     value={editedBack}
@@ -685,6 +736,8 @@ export default function SrsCardBlockRenderer({
     backDisplay,
     isSavingFront,
     isSavingBack,
+    inlineEditingBlocked,
+    structuredGuardMessage,
     handleGrade,
     handleSaveFront,
     handleSaveBack,
