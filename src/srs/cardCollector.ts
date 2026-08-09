@@ -182,8 +182,15 @@ export async function collectSrsBlocks(pluginName: string = "srs-plugin"): Promi
       console.log(`[${pluginName}] collectSrsBlocks: 手动过滤找到 ${tagged.length} 个带 #card 标签的块`)
       
     } catch (error) {
+      // 标签查询与全库兜底均失败：必须可见失败，不得伪装成「没有卡要复习」
       console.error(`[${pluginName}] collectSrsBlocks 备用方案失败:`, error)
-      tagged = []
+      const message =
+        error instanceof Error
+          ? error.message
+          : `collectSrsBlocks 兜底失败: ${String(error)}`
+      throw new Error(
+        `读取 SRS 卡片失败：标签查询与全库兜底均失败（${message}）`
+      )
     }
   }
   

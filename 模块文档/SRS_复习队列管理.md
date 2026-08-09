@@ -49,6 +49,7 @@
 2. **仅当标签查询全部失败（抛错）时**才走备用：`get-all-blocks` + 手动过滤 `#card`（`isCardTag` 大小写不敏感）。查询**成功且为空**直接跳过兜底（零卡片仓库不再每轮触发无界全库读取，低危#1）
 3. 合并 `orca.state.blocks` 中 `_repr.type` 为 `srs.card` / `srs.cloze-card` / `srs.direction-card` 的块
 4. 按 id 去重返回
+5. **双失败（标签查询 throw 且 `get-all-blocks` 也 throw）**：**抛出**可读错误（`读取 SRS 卡片失败：标签查询与全库兜底均失败…`），**不得** `tagged = []` 冒充「没有卡」。`collectReviewCards` 随之 reject；Flash Home `applyLoaded` 已 catch 并展示「加载失败：…」，与「今天没有卡」区分。
 
 > **有意取舍**：只打非常规大小写标签（如 `#CARD`）的块此前靠「无结果就全库扫描」被兜底捕获；门控后**查询成功场景不再被兜底捕获**（`get-blocks-with-tags` 只查 `card`/`Card` 两个变体）。审计确认此行为变化为预期——代价是极端大小写变体，收益是消除零卡库的每轮全库读取。回归：`cardCollector.fallback.test.ts`。
 

@@ -140,4 +140,19 @@ describe("collectSrsBlocks 兜底门控（低危#1）", () => {
     expect(blocks.map(b => b.id)).toEqual([7])
     expect(invokedMethods()).not.toContain("get-all-blocks")
   })
+
+  it("标签查询与全库兜底均失败时抛错，不得返回空数组冒充成功", async () => {
+    mockOrca.invokeBackend.mockImplementation(async (method: string) => {
+      if (method === "get-blocks-with-tags") throw new Error("backend down")
+      if (method === "get-all-blocks") throw new Error("all-blocks down")
+      return undefined
+    })
+
+    await expect(collectSrsBlocks("orca-srs")).rejects.toThrow(
+      /读取 SRS 卡片失败.*全库兜底均失败/
+    )
+    // 与「确实没有卡」区分：不得静默得到 []
+    await expect(collectSrsBlocks("orca-srs")).rejects.not.toEqual([])
+    expect(invokedMethods().filter(m => m === "get-all-blocks").length).toBeGreaterThanOrEqual(1)
+  })
 })

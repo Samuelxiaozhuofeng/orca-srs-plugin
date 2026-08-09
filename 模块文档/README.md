@@ -4,6 +4,12 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-09（选择题复习泄答 + 洗牌冻结 / 方向卡 undo / 收集兜底失败可见）**：
+> - [SRS_选择题卡.md](SRS_选择题卡.md) / [SRS_块渲染器.md](SRS_块渲染器.md)：复习题面 `BlockTextPreview`；`resolveFrozenShuffledOptions` 按 cardKey 冻结
+> - [SRS_方向卡.md](SRS_方向卡.md) / [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)：`undoDirectionCardCreation` 对称撤销
+> - [SRS_复习队列管理.md](SRS_复习队列管理.md)：`collectSrsBlocks` 双失败 throw，不冒充空结果
+> - [问题经验.md](问题经验.md)：上述三条回归条目
+>
 > **索引增补：2026-08-09（删除卡片闭环：结构 + 进度）**：
 > - [SRS_卡片浏览器.md](SRS_卡片浏览器.md) / [SRS_填空卡.md](SRS_填空卡.md) / [SRS_方向卡.md](SRS_方向卡.md) / [SRS 列表卡.md](SRS%20列表卡.md) / [SRS_数据存储.md](SRS_数据存储.md)：删除 = 解包/降级 content + 清 `srs.*`；List 清全部直接子块；确认文案更新
 > - [问题经验.md](问题经验.md)：变体只清属性会复活；List 子块孤儿进度
