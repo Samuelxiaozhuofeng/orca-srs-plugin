@@ -12,6 +12,7 @@ const { Button } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
+import { buildCardKey } from "../srs/cardIdentity"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates } from "../srs/algorithm"
 import { removeHashTags } from "../srs/blockUtils"
@@ -68,7 +69,11 @@ export default function ListCardReviewRenderer({
   const [showCardInfo, setShowCardInfo] = useState(false)
 
   const prevCardKeyRef = useRef<string>("")
-  const currentCardKey = `${blockId}-${listItemId}`
+  const currentCardKey = buildCardKey({
+    blockId,
+    cardType: "list",
+    listItemId
+  })
 
   useEffect(() => {
     if (prevCardKeyRef.current !== currentCardKey) {

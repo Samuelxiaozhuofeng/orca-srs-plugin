@@ -16,6 +16,7 @@ const { Button } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState, ChoiceOption, ChoiceMode } from "../srs/types"
+import { buildCardKey } from "../srs/cardIdentity"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates } from "../srs/algorithm"
 import {
@@ -86,7 +87,10 @@ export default function ChoiceCardReviewRenderer({
   const [showCardInfo, setShowCardInfo] = useState(false)
   const [currentSuggestedGrade, setCurrentSuggestedGrade] = useState<Grade | null>(null)
 
-  const currentCardKey = `${blockId}`
+  const currentCardKey = buildCardKey({
+    blockId,
+    cardType: "choice"
+  })
 
   // 最新 props / 门闩 / timer — 避免 setTimeout 闭包读到过期 readOnly
   const readOnlyRef = useRef(readOnly)

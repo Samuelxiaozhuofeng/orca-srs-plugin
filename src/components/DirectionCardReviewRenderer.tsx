@@ -13,6 +13,7 @@ const { Button } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
+import { buildCardKey } from "../srs/cardIdentity"
 import { extractDirectionInfo } from "../srs/directionUtils"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates } from "../srs/algorithm"
@@ -63,7 +64,11 @@ export default function DirectionCardReviewRenderer({
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
   const prevCardKeyRef = useRef<string>("")
-  const currentCardKey = `${blockId}-${reviewDirection}`
+  const currentCardKey = buildCardKey({
+    blockId,
+    cardType: "direction",
+    directionType: reviewDirection
+  })
 
   // 当卡片变化时重置状态；只读回看默认展示答案
   useEffect(() => {

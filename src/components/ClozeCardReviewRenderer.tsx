@@ -13,6 +13,7 @@ const { Button, ModalOverlay } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
+import { buildCardKey } from "../srs/cardIdentity"
 import { useReviewShortcuts } from "../hooks/useReviewShortcuts"
 import { previewIntervals, previewDueDates } from "../srs/algorithm"
 import ClozeReviewBlockContent from "./ClozeReviewBlockContent"
@@ -34,7 +35,7 @@ type ClozeCardReviewRendererProps = {
   inSidePanel?: boolean
   panelId?: string
   pluginName: string
-  clozeNumber?: number  // 当前复习的填空编号（仅隐藏该编号的填空）
+  clozeNumber: number  // 当前复习的填空编号（仅隐藏该编号的填空）
   readOnly?: boolean
   readOnlyStatusText?: string
 }
@@ -63,7 +64,11 @@ export default function ClozeCardReviewRenderer({
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
   const prevCardKeyRef = useRef<string>("")
-  const currentCardKey = `${blockId}-${clozeNumber ?? 0}`
+  const currentCardKey = buildCardKey({
+    blockId,
+    cardType: "cloze",
+    clozeNumber
+  })
 
   // 当卡片变化时重置状态；只读回看默认展示答案
   useEffect(() => {
@@ -173,7 +178,7 @@ export default function ClozeCardReviewRenderer({
           )}
           <div className="srs-review-type-chip srs-review-type-chip--primary">
             <i className="ti ti-braces" />
-            c{clozeNumber || "?"}
+            c{clozeNumber}
           </div>
         </div>
 

@@ -151,6 +151,16 @@ export default function SrsCardDemo(props: SrsCardDemoProps) {
   }
 
   if (inferredCardType === "cloze" && blockId) {
+    if (clozeNumber == null) {
+      console.error(`[SrsCardDemo] Cloze 卡片缺少 clozeNumber（blockId=${blockId}）`)
+      return (
+        <div className="srs-review-state srs-review-state--error">
+          <div className="srs-review-state__error-text">
+            填空卡片数据错误：块 #{blockId} 缺少 clozeNumber，无法开始复习。
+          </div>
+        </div>
+      )
+    }
     return (
       <SrsErrorBoundary componentName="填空卡片" errorTitle="填空卡片加载出错">
         <ClozeCardReviewRenderer {...sharedRendererProps} blockId={blockId} clozeNumber={clozeNumber} />
