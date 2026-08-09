@@ -253,7 +253,7 @@ export default function IRLibraryChapterItem({
               title={canAdvanceLearn ? "提前到今天并开始阅读" : "阅读该章节"}
             >
               <i className="ti ti-book-read" aria-hidden="true" />
-              <span>{canAdvanceLearn ? "提前阅读" : "开始阅读"}</span>
+              <span>现在读</span>
             </button>
             {canAdvanceLearn ? (
               <button
