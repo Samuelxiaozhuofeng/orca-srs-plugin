@@ -466,9 +466,12 @@ export async function cleanupOldLogs(
     const parsed = parseStorageKey(storageKey)
     if (!parsed) continue
 
-    // 检查整个月份是否都在清理日期之前
-    const monthEndDate = new Date(parsed.year, parsed.month, 0) // 该月最后一天
-    if (monthEndDate.getTime() < beforeTime) {
+    // 整月删除判定：该月之后的第一刻（下月 1 日 00:00）<= beforeTime。
+    // parsed.month 是 1-based（1–12）；Date 月份参数是 0-based，故 new Date(y, parsed.month, 1)
+    // 正好是「该月之后的第一天」。勿用 monthEndDate=new Date(y,m,0)（仅为月末 00:00，
+    // 会在 beforeDate 落在月末午夜之后时误删整月含应保留记录）。
+    const nextMonthStart = new Date(parsed.year, parsed.month, 1)
+    if (nextMonthStart.getTime() <= beforeTime) {
       // 整个月份都需要清理，直接删除
       const logs = await loadMonthLogs(pluginName, storageKey)
       cleanedCount += logs.length

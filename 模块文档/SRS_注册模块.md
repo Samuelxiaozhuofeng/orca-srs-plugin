@@ -281,6 +281,8 @@ export function unregisterConverters(pluginName: string): void
 
 ## 模块 5：`contextMenuRegistry.tsx`
 
+React hooks 从 `window.React` 解构（`useState` / `useEffect`），**禁止** `import React from "react"` runtime 引入（与全仓 UI 约定一致）。
+
 ### 导出
 
 ```typescript

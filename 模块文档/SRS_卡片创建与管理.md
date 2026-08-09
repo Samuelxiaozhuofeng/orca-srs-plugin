@@ -1,7 +1,8 @@
 # SRS 卡片创建与管理模块
 
-> **文档同步日期**：2026-07-29
-> **变更说明**：`ensureCardTagProperties` 幂等创建 `#card` 标签块（alias 缺失时 insertBlock + createAlias + backend 确认）、属性写全成功才缓存、并发共享 Promise、失败可重试；load 后台预初始化。
+> **文档同步日期**：2026-08-09
+> **变更说明**：方向卡 `srs.isCard`、选择题 `setRefData type=choice`、`setCardTagRefData` 写成功后均 `invalidateBlockCache`；`setCardTagRefData` 块不存在 / 无 `#card` 改为 throw（`syncCardTagPriority` 仍 catch 后 `console.error`，不打断 `saveIRState`）。
+> 2026-07-29：`ensureCardTagProperties` 幂等创建 `#card` 标签块（alias 缺失时 insertBlock + createAlias + backend 确认）、属性写全成功才缓存、并发共享 Promise、失败可重试；load 后台预初始化。
 > 2026-07-28：制卡 undo 对称清理；选择题专用创建命令；`scanCardsFromTags` 兜底门控（仅查询 throw 才全库扫描）；列表卡根 `srs.isCard` 写后 `invalidateBlockCache`。
 > 2026-07-26：`createCloze` 返回 `originalContent` 深拷贝；`undoClozeCardCreation` **必须先还原正文**再删 srs/标签（编辑器原生命令栈不会自动去掉 `.cloze` fragment）。
 
@@ -34,7 +35,7 @@
 | `src/srs/topicCardCreator.ts` | Topic IR |
 | `src/srs/extractUtils.ts` | 摘录（Extract）创建 |
 | `src/srs/cardTagDataBuilder.ts` | 统一 `#card` 标签 data（type / 牌组 / status） |
-| `src/srs/cardTagRefData.ts` | `setRefData` / IR priority 同步 |
+| `src/srs/cardTagRefData.ts` | `setRefData` / IR priority 同步；写成功 `invalidateBlockCache`；缺块/缺 `#card` throw |
 | `src/srs/tagPropertyInit.ts` | `#card` 标签块属性定义初始化 |
 | `src/srs/tagUtils.ts` | card/choice/correct/ordered 匹配 |
 | `src/srs/tagCleanup.ts` | 新卡清理残留 `srs.*` |
@@ -99,19 +100,24 @@
 
 ### `createChoiceCardFromBlock(cursor, pluginName)`
 
-1. 无 `#card`：`insertTag` + `buildCardTagData(..., "choice")`；已有则 `setRefData type=choice`
+1. 无 `#card`：`insertTag` + `buildCardTagData(..., "choice")`；已有则 `setRefData type=choice`，**写成功后** `invalidateBlockCache`（再 `ensureCardSrsState`）
 2. 无 `#choice`：`insertTag "choice"`
 3. `_repr = { type: "srs.choice-card", ... }`
 4. 新卡 cleanup + 初始 SRS；已有卡 `ensureCardSrsState`
 5. 无 `#correct`/`#正确` 子选项时 `info` 提示（不阻断）
 6. undoArgs 另含 `addedChoiceTag`；撤销走 `undoBasicCardCreation`（可选摘 `#choice`）
 
+### `setCardTagRefData` / `syncCardTagPriority`（`cardTagRefData.ts`）
+
+- `setCardTagRefData`：块不存在或找不到 `#card` ref → **throw**（带 `blockId`）；`setRefData` 成功后 `invalidateBlockCache`。
+- `syncCardTagPriority`：包装上述写入；失败 **不向上抛**（`saveIRState` 旁路），`console.error` 说明 `ir.priority` 已写、`#card.priority` 未同步。正常 IR 路径在写 `ir.*` 前已确保 `#card` 存在，缺标签视为数据不一致。
+
 ### 其它创建
 
 | 函数 | 默认 type |
 | ---- | --------- |
 | `createCloze` | cloze + 分天 cloze SRS；undoArgs 含 `isFirstClozeCard` / `wroteInitialClozeSrs` |
-| `insertDirection` | direction + 方向 SRS（方向卡 undo 仍只还原 content） |
+| `insertDirection` | direction + 方向 SRS；`srs.isCard` **写成功后** `invalidateBlockCache`，再 `ensureDirectionSrsState`（方向卡 undo 仍只还原 content） |
 | `createListCardFromBlock` | list + 子块初始 due；根 `srs.isCard` **写成功后立即** `invalidateBlockCache`（写失败不 invalidate、`wroteRootIsCard=false`）；undoArgs 含 `initializedItemIds` / `wroteRootIsCard`。回归：`listCardCreator.test.ts` |
 | `createTopicCard` / `createTopicCardByBlockId` | topic + IR 状态；`createdFreshTopic` 控制完整 undo |
 | `createExtract` | extracts 摘录子块 + IR |

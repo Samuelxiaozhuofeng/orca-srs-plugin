@@ -1,7 +1,8 @@
 # SRS 数据存储模块
 
-> **文档同步日期：2026-07-26**  
-> 变更说明：`srs.state` 读取补枚举白名单（`parseFsrsState`，脏值回退 `State.New` + warn，缺失静默）；`cleanupSrsProperties`（`tagCleanup.ts`）与 `srs.choice.statistics` 写/删后已 `invalidateBlockCache`（低危#3/#4）；核心持久层直测见 `src/srs/storage.test.ts`。  
+> **文档同步日期：2026-08-09**  
+> 变更说明：`cleanupOldLogs` 整月删除判定改为「下月 1 日 00:00 <= beforeTime」（`parsed.month` 为 1-based），禁止用月末 00:00 误删同月应保留记录；回归见 `reviewLogStorage.test.ts`。  
+> 2026-07-26：`srs.state` 读取补枚举白名单（`parseFsrsState`，脏值回退 `State.New` + warn，缺失静默）；`cleanupSrsProperties`（`tagCleanup.ts`）与 `srs.choice.statistics` 写/删后已 `invalidateBlockCache`（低危#3/#4）；核心持久层直测见 `src/srs/storage.test.ts`。  
 > 2026-07-26：制卡对称撤销（`registry/cardCreationUndo.ts`）复用本层删除 API——全量 `cleanupSrsProperties`、按编号 `deleteClozeCardSrsData`、Topic 的 `deleteIRState`；**仅当本次创建新增**才调用，避免误删用户已有进度。  
 > 2026-07-13：以代码为准校正块属性表（含 Direction / `state` / `resets`）、相关文件路径；补充会话进度 `sessionStorage`（FC-09）、三态存在性与日志/选择题统计要点。
 
@@ -152,6 +153,14 @@ invalidateBlockCache(blockId)
 ## 2. 复习日志存储与卡片身份（v2）
 
 复习日志由 `reviewLogStorage.ts` 按月分片持久化（键：`reviewLogs_YYYY_MM`）。
+
+### `cleanupOldLogs`（按 `beforeDate` 清理）
+
+- 先 `flushReviewLogs`，再扫描所有 `reviewLogs_*` 分片。
+- **整月删除路径**：`parseStorageKey` 的 `month` 为 **1-based**；当 `new Date(year, month, 1).getTime() <= beforeTime`（即该月之后的第一刻已不晚于清理点）时对该分片 `removeData`。
+- **勿**用 `new Date(year, month, 0)`（月末本地 00:00）作整月边界：若 `beforeDate` 落在月末午夜之后，会误删同月 `timestamp >= beforeTime` 的应保留记录。
+- **部分清理路径**：否则逐条 `log.timestamp >= beforeTime` 保留（含 `=== beforeTime`）；无剩余则 `removeData`，否则 `setData` 写回。
+- 回归：`src/srs/reviewLogStorage.test.ts`（月末 partial、`=== beforeTime` 保留、整月 `removeData`）。
 
 ### 落盘确认与失败重试（FC-03）
 

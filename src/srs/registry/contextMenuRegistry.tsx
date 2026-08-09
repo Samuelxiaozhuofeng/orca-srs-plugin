@@ -5,7 +5,6 @@
  * 支持查询块和普通块的复习功能
  */
 
-import React from "react"
 import type { DbId, Block } from "../../orca.d.ts"
 import { BlockWithRepr } from "../blockUtils"
 import {
@@ -24,6 +23,9 @@ import { getChapterBlockIds, getChapterBlockIdsAsync } from "../bookIRCreator"
 import { showIRBookDialog } from "../../components/IRBookDialogMount"
 import { classifyTopicIRBlockMenu, advanceTopicDueToToday } from "../topicIRMenu"
 import { createTopicCardByBlockId } from "../topicCardCreator"
+
+// 从全局 window 对象获取 React（Orca 插件约定，禁止 runtime import "react"）
+const { useState, useEffect } = window.React
 
 /** 已注册的菜单项 ID 列表 */
 const registeredMenuIds: string[] = []
@@ -312,13 +314,13 @@ function QueryBlockMenuItem({
   pluginName: string
   close: () => void
 }) {
-  const [cardCount, setCardCount] = React.useState<number | null>(null)
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [hasError, setHasError] = React.useState(false)
-  const [queryResultsEmpty, setQueryResultsEmpty] = React.useState(false)
+  const [cardCount, setCardCount] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasError, setHasError] = useState(false)
+  const [queryResultsEmpty, setQueryResultsEmpty] = useState(false)
 
   // 异步获取卡片数量
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false
 
     async function fetchCount() {
@@ -457,12 +459,12 @@ function ChildrenBlockMenuItem({
   pluginName: string
   close: () => void
 }) {
-  const [cardCount, setCardCount] = React.useState<number | null>(null)
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [shouldShow, setShouldShow] = React.useState(false)
+  const [cardCount, setCardCount] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [shouldShow, setShouldShow] = useState(false)
 
   // 异步获取卡片数量
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false
 
     async function fetchCount() {
@@ -554,11 +556,11 @@ function BookIRMenuItem({
   pluginName: string
   close: () => void
 }) {
-  const [chapterCount, setChapterCount] = React.useState<number>(0)
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [source, setSource] = React.useState<"manifest" | "refs" | null>(null)
+  const [chapterCount, setChapterCount] = useState<number>(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [source, setSource] = useState<"manifest" | "refs" | null>(null)
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false
 
     async function fetchChapterCount() {
@@ -664,7 +666,7 @@ function JoinTopicIRMenuItem({
   pluginName: string
   close: () => void
 }) {
-  const [working, setWorking] = React.useState(false)
+  const [working, setWorking] = useState(false)
   const inflightKey = `join:${String(blockId)}`
 
   const handleClick = async () => {
@@ -706,7 +708,7 @@ function ReadTopicTodayMenuItem({
   pluginName: string
   close: () => void
 }) {
-  const [working, setWorking] = React.useState(false)
+  const [working, setWorking] = useState(false)
   const inflightKey = `today:${String(blockId)}`
 
   const handleClick = async () => {

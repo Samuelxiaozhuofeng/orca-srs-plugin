@@ -11,7 +11,7 @@
 
 import type { Block, CursorData } from "../orca.d.ts"
 import { BlockWithRepr, resolveFrontBack } from "./blockUtils"
-import { ensureCardSrsState, writeInitialSrsState } from "./storage"
+import { ensureCardSrsState, invalidateBlockCache, writeInitialSrsState } from "./storage"
 import { cleanupSrsProperties } from "./tagCleanup"
 import { isCardTag, isChoiceTag, isCorrectTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
@@ -91,6 +91,7 @@ export async function createChoiceCardFromBlock(
           cardRef,
           [{ name: "type", value: "choice" }]
         )
+        invalidateBlockCache(blockId)
       } catch (error) {
         console.error(`[${pluginName}] 更新 #card type=choice 失败:`, error)
         orca.notify("error", `更新卡片类型失败: ${error}`, { title: "选择题" })

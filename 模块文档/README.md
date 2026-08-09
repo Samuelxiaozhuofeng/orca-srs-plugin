@@ -77,18 +77,19 @@
    - 独立服务面板 **复习** 页：每日新卡/复习上限 + 目标保留率；权重/最大间隔无 UI；原生 schema 不含每日额度与 FSRS 五项；helper：`reviewServiceSettings.ts`
    - 关联：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/settings/reviewServiceSettings.ts`、`src/srs/reviewSessionBudget.ts`、`src/components/AIServiceSettingsDialog.tsx`、`src/srs/types.ts`
 
-2. **[SRS_数据存储.md](SRS_数据存储.md)** ⭐ 2026-07-26 更新
+2. **[SRS_数据存储.md](SRS_数据存储.md)** ⭐ 2026-08-09 更新
    - 卡片属性持久化；块 exists/missing/unknown；日志与会话进度等存储面
    - `srs.state` 读取枚举白名单（脏值回退 `State.New` + warn）；`cleanupSrsProperties` / 选择题统计写删后失效 blockCache
+   - `cleanupOldLogs` 整月删除边界：下月 1 日 00:00（1-based month），禁止月末 00:00 误删
    - 核心持久层已有直测：`src/srs/storage.test.ts`（三卡型 save→load 往返、属性名与 type code、缓存失效、reset、按前缀删除、解析回退、`ensureClozeSrsState` 守卫）
    - 关联：`src/srs/storage.ts`、`blockExistence.ts`、`deletedCardCleanup.ts`、`reviewLogStorage.ts`、`sessionProgressStorage.ts` 等
 
-3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-07-29 更新
+3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-08-09 更新
    - 全卡种创建、标签、`_repr`、身份与转换入口；制卡对称撤销（只删本次新增）；选择题专用创建
    - `scanCardsFromTags`：成功空结果不兜底；仅标签查询 throw 才 `get-all-blocks`；双失败可见 error
-   - 列表卡根 `srs.isCard` 写成功后 `invalidateBlockCache`
+   - 列表 / 方向 / 选择题写 `srs.isCard` 或 `setRefData` 成功后 `invalidateBlockCache`；`setCardTagRefData` 缺块/缺 `#card` throw
    - **`ensureCardTagProperties`**：缺失 `card` alias 时创建标签页并补齐 schema；全属性成功才缓存；并发共享 Promise；load + 制卡/Book IR 兜底
-   - 关联：`src/srs/cardCreator.ts`、`listCardCreator.ts`、`choiceCardCreator.ts`、`tagPropertyInit.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
+   - 关联：`src/srs/cardCreator.ts`、`listCardCreator.ts`、`choiceCardCreator.ts`、`directionUtils.ts`、`cardTagRefData.ts`、`tagPropertyInit.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
 
 4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-07-26 更新
    - 收集、卡组、块工具等横切模块（**无** `cardBrowser.ts`；浏览侧见 Flash Home；`panelUtils.ts` 已删除）
@@ -102,10 +103,10 @@
 
 5. **[SRS_填空卡.md](SRS_填空卡.md)** ⭐ 2026-08-02 更新 — Cloze fragment / 首次 due / 复习渲染；`srs.cN.suspended` 单编号暂停与恢复
 6. **[SRS_图片遮罩.md](SRS_图片遮罩.md)** ⭐ 2026-08-02 更新 — Image Occlusion：矩形/同号多区组交互 / `io:{id}:cN` / 每图复习模式 / compact+pending FSRS；`srs.cN.suspended` 单遮罩暂停随编号迁移
-7. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-08-02 更新 — Direction 左右向、入队条件、渲染；白名单门禁；`srs.forward|backward.suspended` 单方向暂停
+7. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-08-09 更新 — Direction 左右向、入队条件、渲染；白名单门禁；`srs.forward|backward.suspended` 单方向暂停；`srs.isCard` 写后 `invalidateBlockCache`
 8. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
-9. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-07-26 更新
-   - Choice 标签约定、乱序、提交门闩、选项统计；斜杠「创建选择题」`createChoiceCardFromBlock`
+9. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-08-09 更新
+   - Choice 标签约定、乱序、提交门闩、选项统计；斜杠「创建选择题」`createChoiceCardFromBlock`；`setRefData type=choice` 写后 `invalidateBlockCache`
    - 关联：`choiceCardCreator.ts`、`choiceUtils.ts`、`choiceSubmitGate.ts`、`choiceAnswerStatistics.ts`、`choiceStatisticsStorage.ts`、`Choice*Renderer.tsx`
 
 ### 用户界面
@@ -148,8 +149,9 @@
     - load 后台 `ensureCardTagProperties`（失败 notify 不阻断）；unload flush 两段：复习日志 → 断点在途写入（`breakpointFlushOk`）；`cleanupDeletedCards` 定时器卸载时取消
     - 关联：`src/main.ts`、`pluginUnloadSequence.ts`、`registry/*`、settings schemas
 
-19. **[SRS_注册模块.md](SRS_注册模块.md)** ⭐ 2026-07-26 重写过时部分
+19. **[SRS_注册模块.md](SRS_注册模块.md)** ⭐ 2026-08-09 更新
     - 命令 / UI / 渲染器 / 转换器 / 右键菜单 / panel 工具
+    - `contextMenuRegistry`：hooks 从 `window.React` 解构，无 runtime `import "react"`
     - Headbar：单一可见入口 `todayLearningButton` + 7 个对话框 mount + LEGACY 清理组（`headbarButtons.ts`）；命令/斜杠表对齐现行 label
     - `unregisterUIComponents` 已 async（3s 有界等待 AI 后台任务取消）
     - 关联：`src/srs/registry/*`（含 `headbarButtons.ts`）
@@ -171,7 +173,7 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-01 更新 — due-only 分散 Phase 0+1 短记；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-09 更新 — due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
 24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-03 更新 — Topic 章末小测；**P0 UX**：5/10/15 题选择、生成三阶段+重试计数、稳定打乱、完成后续轻量 offer；**P1 学习闭环**：首轮分类/修复轮/动作小结/整理薄弱点/定向反馈；Custom Panel + 共享生成 / live 同步；制卡落点=sourceBlockId 子块；键盘与 aria-live；panel nav A→B
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段

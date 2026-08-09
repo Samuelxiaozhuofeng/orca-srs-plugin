@@ -5,11 +5,11 @@
  * 使用 fast-check 进行属性测试
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 // @ts-nocheck
-import * as fc from 'fast-check'
+import * as fc from 'fast-check'
 // @ts-nocheck
-import type { ReviewLogEntry, CardState, Grade } from './types'
+import type { ReviewLogEntry, CardState, Grade } from './types'
 // @ts-nocheck
 
 // 模拟存储
@@ -45,7 +45,7 @@ const mockOrca = {
 globalThis.orca = mockOrca
 
 // 导入被测模块（必须在 mock 之后）
-import {
+import {
 // @ts-nocheck
   saveReviewLog,
   getReviewLogs,
@@ -377,6 +377,154 @@ describe('reviewLogStorage', () => {
       
       expect(cleanedCount).toBe(1)
       
+      const remaining = await getAllReviewLogs(PLUGIN_NAME)
+      expect(remaining.length).toBe(0)
+    })
+
+    /**
+     * 回归：整月删除不得用「月末 00:00」作边界。
+     * beforeDate 落在月末午夜之后时，须走逐条过滤，保留 timestamp >= beforeTime 的同月记录。
+     */
+    it('should not whole-month-delete when beforeDate is after month-end midnight (partial filter keeps later log)', async () => {
+      await clearMockStorage()
+
+      // 本地 2024-01 月末：1 月 31 日 10:00 应删、23:30 应留
+      const logBeforeCutoff: ReviewLogEntry = {
+        id: 'jan-before',
+        cardId: 1,
+        deckName: 'test',
+        timestamp: new Date(2024, 0, 31, 10, 0, 0).getTime(), // 月末 10:00
+        grade: 'good',
+        duration: 1000,
+        previousInterval: 0,
+        newInterval: 1,
+        previousState: 'new',
+        newState: 'learning'
+      }
+      const logAfterCutoff: ReviewLogEntry = {
+        id: 'jan-after',
+        cardId: 2,
+        deckName: 'test',
+        timestamp: new Date(2024, 0, 31, 23, 30, 0).getTime(), // 月末 23:30
+        grade: 'good',
+        duration: 1000,
+        previousInterval: 0,
+        newInterval: 1,
+        previousState: 'learning',
+        newState: 'review'
+      }
+
+      await saveReviewLog(PLUGIN_NAME, logBeforeCutoff)
+      await saveReviewLog(PLUGIN_NAME, logAfterCutoff)
+      await flushReviewLogs(PLUGIN_NAME)
+
+      // beforeDate = 月末 23:00：旧实现会因 monthEndDate(00:00) < beforeTime 误删整月
+      const beforeDate = new Date(2024, 0, 31, 23, 0, 0)
+      const cleanedCount = await cleanupOldLogs(PLUGIN_NAME, beforeDate)
+
+      expect(cleanedCount).toBe(1)
+
+      const remaining = await getAllReviewLogs(PLUGIN_NAME)
+      expect(remaining.length).toBe(1)
+      expect(remaining[0].id).toBe('jan-after')
+      // 未走 removeData 整月删除：分片键仍在（只是内容被 setData 过滤）
+      expect(mockDataKeys).toContain('reviewLogs_2024_01')
+      expect(mockOrca.plugins.removeData).not.toHaveBeenCalledWith(
+        PLUGIN_NAME,
+        'reviewLogs_2024_01'
+      )
+    })
+
+    it('should keep log whose timestamp is exactly equal to beforeTime', async () => {
+      await clearMockStorage()
+
+      const beforeDate = new Date(2024, 5, 15, 12, 0, 0) // 2024-06-15 12:00
+      const exactLog: ReviewLogEntry = {
+        id: 'exact',
+        cardId: 1,
+        deckName: 'test',
+        timestamp: beforeDate.getTime(),
+        grade: 'good',
+        duration: 1000,
+        previousInterval: 0,
+        newInterval: 1,
+        previousState: 'new',
+        newState: 'learning'
+      }
+      const olderLog: ReviewLogEntry = {
+        id: 'older',
+        cardId: 2,
+        deckName: 'test',
+        timestamp: beforeDate.getTime() - 1,
+        grade: 'again',
+        duration: 500,
+        previousInterval: 0,
+        newInterval: 0,
+        previousState: 'new',
+        newState: 'learning'
+      }
+
+      await saveReviewLog(PLUGIN_NAME, exactLog)
+      await saveReviewLog(PLUGIN_NAME, olderLog)
+      await flushReviewLogs(PLUGIN_NAME)
+
+      const cleanedCount = await cleanupOldLogs(PLUGIN_NAME, beforeDate)
+      expect(cleanedCount).toBe(1)
+
+      const remaining = await getAllReviewLogs(PLUGIN_NAME)
+      expect(remaining.length).toBe(1)
+      expect(remaining[0].id).toBe('exact')
+      expect(remaining[0].timestamp).toBe(beforeDate.getTime())
+    })
+
+    it('should still removeData whole month when all logs are before next month start', async () => {
+      await clearMockStorage()
+
+      // 两笔均在 2024-03，beforeDate 落在 2024-04-01 → 整月可删
+      const logs: ReviewLogEntry[] = [
+        {
+          id: 'mar-1',
+          cardId: 1,
+          deckName: 'test',
+          timestamp: new Date(2024, 2, 5, 10, 0, 0).getTime(),
+          grade: 'good',
+          duration: 1000,
+          previousInterval: 0,
+          newInterval: 1,
+          previousState: 'new',
+          newState: 'learning'
+        },
+        {
+          id: 'mar-2',
+          cardId: 2,
+          deckName: 'test',
+          timestamp: new Date(2024, 2, 28, 18, 0, 0).getTime(),
+          grade: 'hard',
+          duration: 2000,
+          previousInterval: 1,
+          newInterval: 1,
+          previousState: 'learning',
+          newState: 'learning'
+        }
+      ]
+
+      for (const log of logs) {
+        await saveReviewLog(PLUGIN_NAME, log)
+      }
+      await flushReviewLogs(PLUGIN_NAME)
+
+      expect(mockDataKeys).toContain('reviewLogs_2024_03')
+
+      const beforeDate = new Date(2024, 3, 1, 0, 0, 0) // 下月 1 日
+      const cleanedCount = await cleanupOldLogs(PLUGIN_NAME, beforeDate)
+
+      expect(cleanedCount).toBe(2)
+      expect(mockOrca.plugins.removeData).toHaveBeenCalledWith(
+        PLUGIN_NAME,
+        'reviewLogs_2024_03'
+      )
+      expect(mockDataKeys).not.toContain('reviewLogs_2024_03')
+
       const remaining = await getAllReviewLogs(PLUGIN_NAME)
       expect(remaining.length).toBe(0)
     })

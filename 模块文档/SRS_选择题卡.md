@@ -27,10 +27,10 @@
 - 命令：`${pluginName}.createChoiceCard`（`src/srs/choiceCardCreator.ts` → `createChoiceCardFromBlock`）
 - 斜杠：`choiceCard`，group `SRS`，icon `ti ti-list-check`
 - 行为：
-  1. 无 `#card` → `insertTag` + `buildCardTagData(..., "choice")` + `ensureCardTagProperties`；已有则 `setRefData type=choice`
+  1. 无 `#card` → `insertTag` + `buildCardTagData(..., "choice")` + `ensureCardTagProperties`；已有则 `setRefData type=choice`，**写成功后** `invalidateBlockCache`
   2. 无 `#choice` → `insertTag "choice"`
   3. `_repr = { type: "srs.choice-card", front, back, cardType: "choice" }`
-  4. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有 `#card`：`ensureCardSrsState`
+  4. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有 `#card`：`ensureCardSrsState`（依赖上一步缓存失效）
   5. 直接子块均无 `#correct`/`#正确` 时 `info` 提示（**不阻断**）
 - undoArgs：`blockId, originalRepr, originalText, pluginName, addedCardTag, addedChoiceTag, wroteInitialSrs`
 - 撤销：`undoBasicCardCreation`（按标志 cleanup / removeTag `card` / `choice` / 还原 `_repr`）

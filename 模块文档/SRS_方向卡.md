@@ -77,7 +77,7 @@
 3. 左侧 trim 后非空；右侧允许空
 4. `setBlocksContent` 写入：左文本 + direction fragment + 右文本
 5. 标签：`buildCardTagData(..., "direction")` 或更新 `type`
-6. `srs.isCard` + 初始化方向 SRS
+6. `srs.isCard` **写成功后** `invalidateBlockCache`，再初始化方向 SRS（`ensureDirectionSrsState` 走 `getBlockCached`，写后必须失效）
 7. 尝试把光标移到标记右侧，便于输入答案
 
 ### `cycleDirection` / `updateBlockDirection`

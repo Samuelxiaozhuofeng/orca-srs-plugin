@@ -17,7 +17,7 @@ import {
 } from "./initialDuePolicy"
 import { getIrItemCreateOptionsForBlock } from "./irItemCreateContext"
 import { getIrItemInitialDueMode } from "./settings/reviewSettingsSchema"
-import { ensureDirectionSrsState } from "./storage"
+import { ensureDirectionSrsState, invalidateBlockCache } from "./storage"
 import { isCardTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
@@ -177,6 +177,7 @@ export async function insertDirection(
       [blockId],
       [{ name: "srs.isCard", value: true, type: 4 }]
     )
+    invalidateBlockCache(blockId)
 
     // 初始化 SRS 状态（legacy 分天；IR Item 走 initialDuePolicy）
     const createdAt = new Date()
