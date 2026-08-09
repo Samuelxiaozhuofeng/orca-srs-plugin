@@ -100,9 +100,9 @@ SRS 状态读写走 `storage.ts`；读取时用后端 `get-block`/预取，避�
 
 > 仅判定类型；**收集/扫描入口仍依赖 `#card`**（见 `SRS_选择题卡.md`）。
 
-1. 存在 `#choice` → `"choice"`
-2. 否则读 `#card` 的 `type`：`topic` / `extracts` / `cloze` / `direction` / `list` / `excerpt` / `choice`（大小写不敏感）
-3. 默认 `"basic"`
+1. 读 `#card` 的 `type`：`topic` / `extracts` / `cloze` / `direction` / `list` / `excerpt` / `choice`（大小写不敏感）
+2. 默认 `"basic"`
+3. 选择题与 cloze/direction 同一路径：仅 `type=choice`，**不**识别独立 `#choice` 标签
 
 ### `extractDeckName` 逻辑
 

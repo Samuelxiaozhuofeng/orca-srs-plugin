@@ -16,18 +16,6 @@ export function isCardTag(alias: string | undefined): boolean {
 }
 
 /**
- * 判断引用别名是否为 choice 标签（大小写不敏感）
- * 
- * 支持匹配 #choice、#Choice、#CHOICE 等各种大小写变体
- * 
- * @param alias - 引用的别名（标签名称）
- * @returns 是否为 choice 标签
- */
-export function isChoiceTag(alias: string | undefined): boolean {
-  return alias?.toLowerCase() === "choice"
-}
-
-/**
  * 判断引用别名是否为 correct 标签（大小写不敏感）
  * 
  * 支持匹配 #correct、#Correct、#CORRECT、#正确 等各种变体

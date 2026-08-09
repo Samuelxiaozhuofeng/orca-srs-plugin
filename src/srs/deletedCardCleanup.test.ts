@@ -78,16 +78,6 @@ function cardRef(type: string) {
   }
 }
 
-function choiceRef() {
-  return {
-    type: 2 as const,
-    id: 2 as DbId,
-    blockId: 2 as DbId,
-    alias: "choice",
-    data: []
-  }
-}
-
 function baseLog(overrides: Partial<ReviewLogEntry> = {}): ReviewLogEntry {
   return {
     id: "log-1",
@@ -419,7 +409,7 @@ describe("FC-04 Basic/Choice/Cloze/Direction 规则", () => {
   it("Choice 类型匹配则保留", async () => {
     mockBlocks[200] = makeBlock({
       id: 200,
-      refs: [choiceRef()] as any,
+      refs: [cardRef("choice")] as any,
       text: "choice card"
     })
     putShard([

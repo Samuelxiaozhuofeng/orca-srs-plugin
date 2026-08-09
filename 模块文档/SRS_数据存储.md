@@ -286,7 +286,7 @@ invalidateBlockCache(blockId)
 | pure legacy | `legacy === true`，或**完全没有任何**结构化痕迹 | 仅按 `cardId` 存在性 |
 | 结构化（完整或部分） | 存在任一结构化痕迹 | 先做完整性/一致性校验；不完整且父 exists/unknown → 保留；仅父 `blockId` 明确 missing 才可删 |
 
-- **清理 vs 发现**：`isStillSrsCard` 会把带 `#choice` 的块仍视为 SRS 卡（避免清理时误删）；**队列/扫描发现仍要求 `#card`**，见 `SRS_选择题卡.md`。
+- **清理 vs 发现**：清理路径用 `isSrsCardBlock`（有 `#card`）判断父块是否仍是 SRS 卡；与收集入口一致。选择题身份为 `#card type=choice`，见 `SRS_选择题卡.md`。
 - 部分结构化 List 日志若 `cardId=listItemId` 且子条目 missing，**不得**因误判 legacy 而删除。
 
 #### legacy 清理

@@ -87,28 +87,29 @@ describe("undoBasicCardCreation", () => {
     )
   })
 
-  it("addedChoiceTag 为真时额外 removeTag choice", async () => {
+  it("选择题撤销与 basic 相同：只按 addedCardTag/wroteInitialSrs 摘 #card 与 cleanup", async () => {
     await undoBasicCardCreation({
       blockId: 1,
       pluginName: "orca-srs",
       addedCardTag: true,
       wroteInitialSrs: true,
-      addedChoiceTag: true,
       originalRepr: { type: "text" }
     })
 
-    expect(invokeEditorCommand).toHaveBeenCalledWith(
-      "core.editor.removeTag",
-      null,
-      1,
-      "choice"
-    )
+    expect(cleanupSrsProperties).toHaveBeenCalledWith(1, "orca-srs")
     expect(invokeEditorCommand).toHaveBeenCalledWith(
       "core.editor.removeTag",
       null,
       1,
       "card"
     )
+    expect(invokeEditorCommand).not.toHaveBeenCalledWith(
+      "core.editor.removeTag",
+      null,
+      1,
+      "choice"
+    )
+    expect(mockBlocks[1]._repr).toEqual({ type: "text" })
   })
 })
 

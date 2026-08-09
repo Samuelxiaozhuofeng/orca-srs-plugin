@@ -90,7 +90,7 @@ export function registerCommands(
     }
   )
 
-  // 选择题：#card type=choice + #choice
+  // 选择题：#card type=choice
   orca.commands.registerEditorCommand(
     `${pluginName}.createChoiceCard`,
     async (editor, ...args) => {

@@ -16,7 +16,6 @@ import { extractCardType } from "./deckUtils"
 import { extractDirectionInfo, getDirectionList } from "./directionUtils"
 import { isSrsCardBlock, type BlockWithRepr } from "./blockUtils"
 import { clearLogCache } from "./reviewLogStorage"
-import { isChoiceTag } from "./tagUtils"
 import type { CardType, ReviewLogEntry, ReviewLogStorage } from "./types"
 import {
   BlockExistenceCache,
@@ -33,15 +32,6 @@ export {
   resolveBlockExistence
 }
 export type { BlockExistenceStatus }
-
-/**
- * 是否仍可视为 SRS 卡片块。
- * Choice 卡可能只有 #choice 标签而无 #card，需单独识别。
- */
-function isStillSrsCard(block: BlockWithRepr): boolean {
-  if (isSrsCardBlock(block)) return true
-  return block.refs?.some(ref => ref.type === 2 && isChoiceTag(ref.alias)) ?? false
-}
 
 /** 单条日志清理判定 */
 export type LogRetentionDecision = "keep" | "delete" | "unknown"
@@ -229,7 +219,7 @@ export async function evaluateReviewLogRetention(
 
   const parentBlock = parent.block as BlockWithRepr
   const currentType = extractCardType(parentBlock)
-  const stillSrs = isStillSrsCard(parentBlock)
+  const stillSrs = isSrsCardBlock(parentBlock)
   const logType = log.cardType as CardType
 
   // List 卡：父列表 + 子条目双重要求

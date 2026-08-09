@@ -24,8 +24,6 @@ export type BasicCardCreationUndoArgs = {
   addedCardTag?: boolean
   /** 本次是否走 cleanup + writeInitialSrsState（新卡路径） */
   wroteInitialSrs?: boolean
-  /** 选择题：本次是否新插入了 #choice */
-  addedChoiceTag?: boolean
 }
 
 export type ClozeCardCreationUndoArgs = {
@@ -115,15 +113,6 @@ export async function undoBasicCardCreation(
   try {
     if (undoArgs.wroteInitialSrs) {
       await cleanupSrsProperties(blockId, pluginName)
-    }
-
-    if (undoArgs.addedChoiceTag) {
-      await orca.commands.invokeEditorCommand(
-        "core.editor.removeTag",
-        null,
-        blockId,
-        "choice"
-      )
     }
 
     if (undoArgs.addedCardTag) {

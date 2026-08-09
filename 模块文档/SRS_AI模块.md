@@ -239,7 +239,7 @@ makeAICard / interactiveAICard（别名）
 | **干扰项允许模型合成** | 干扰项生成正是 LLM 相对人工最省时间的部分；强求逐字摘录只会让整批卡失败。接地要求落在 `sourceQuote` 上 |
 | 去重按题干 | 同一考点换一组干扰项不算新卡 |
 
-写入结构与手工的 `createChoiceCardFromBlock` **完全一致**（题干块 `#card type=choice` + `#choice` + `_repr = srs.choice-card`，选项为直接子块、正确项打 `#correct`），否则复习渲染器与 `extractChoiceOptions` 认不出来。
+写入结构应与手工的 `createChoiceCardFromBlock` 一致（题干块 `#card type=choice` + `_repr = srs.choice-card`，选项为直接子块、正确项打 `#correct`），否则复习渲染器与 `extractChoiceOptions` 认不出来。身份只由 `#card` 的 `type=choice` 决定（不再依赖独立 `#choice` 标签）。
 
 ### 队列承接（`srs.batchId` + `pending`）
 

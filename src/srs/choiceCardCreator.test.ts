@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * 选择题创建：标签 / type / _repr / 初始 SRS / undo 标志
+ * 选择题创建：#card type=choice / _repr / 初始 SRS / undo 标志
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -65,7 +65,7 @@ describe("createChoiceCardFromBlock", () => {
     Object.keys(mockBlocks).forEach(k => delete mockBlocks[k as any])
   })
 
-  it("新卡：插入 #card/#choice、设 _repr、写初始 SRS 并返回 undo 标志", async () => {
+  it("新卡：插入 #card type=choice、设 _repr、写初始 SRS 并返回 undo 标志", async () => {
     mockBlocks[1] = makeBlock({ id: 1, text: "题干" })
     const cursor = {
       panelId: "p",
@@ -80,7 +80,6 @@ describe("createChoiceCardFromBlock", () => {
       blockId: 1,
       pluginName: "orca-srs",
       addedCardTag: true,
-      addedChoiceTag: true,
       wroteInitialSrs: true
     })
     expect(invokeEditorCommand).toHaveBeenCalledWith(
@@ -90,12 +89,11 @@ describe("createChoiceCardFromBlock", () => {
       "card",
       expect.any(Array)
     )
-    expect(invokeEditorCommand).toHaveBeenCalledWith(
-      "core.editor.insertTag",
-      cursor,
-      1,
-      "choice"
+    const insertTagCalls = invokeEditorCommand.mock.calls.filter(
+      c => c[0] === "core.editor.insertTag"
     )
+    expect(insertTagCalls).toHaveLength(1)
+    expect(insertTagCalls[0][3]).toBe("card")
     expect(ensureCardTagProperties).toHaveBeenCalledWith("orca-srs")
     expect(cleanupSrsProperties).toHaveBeenCalledWith(1, "orca-srs")
     expect(writeInitialSrsState).toHaveBeenCalledWith(1)
@@ -110,7 +108,7 @@ describe("createChoiceCardFromBlock", () => {
     )
   })
 
-  it("已有 #card 时不重新 insertTag card，只 ensure SRS 并可能加 #choice", async () => {
+  it("已有 #card 时不重新 insertTag，只 setRefData type=choice 并 ensure SRS", async () => {
     const cardRef = {
       type: 2,
       alias: "card",
@@ -144,7 +142,6 @@ describe("createChoiceCardFromBlock", () => {
     expect(result).toMatchObject({
       blockId: 2,
       addedCardTag: false,
-      addedChoiceTag: true,
       wroteInitialSrs: false
     })
     expect(invokeEditorCommand).toHaveBeenCalledWith(
@@ -153,6 +150,10 @@ describe("createChoiceCardFromBlock", () => {
       cardRef,
       [{ name: "type", value: "choice" }]
     )
+    const insertTagCalls = invokeEditorCommand.mock.calls.filter(
+      c => c[0] === "core.editor.insertTag"
+    )
+    expect(insertTagCalls).toHaveLength(0)
     expect(writeInitialSrsState).not.toHaveBeenCalled()
     expect(ensureCardSrsState).toHaveBeenCalledWith(2)
     // 有 #correct 子块时不提示缺正确项
@@ -163,12 +164,11 @@ describe("createChoiceCardFromBlock", () => {
     )
   })
 
-  it("已有 #card 与 #choice 时不再 insert 标签", async () => {
+  it("已有 #card 且 type=choice 时不再 insert 标签", async () => {
     mockBlocks[3] = makeBlock({
       id: 3,
       refs: [
-        { type: 2, alias: "card", data: [{ name: "type", value: "choice" }] },
-        { type: 2, alias: "choice" }
+        { type: 2, alias: "card", data: [{ name: "type", value: "choice" }] }
       ]
     })
 
@@ -184,13 +184,19 @@ describe("createChoiceCardFromBlock", () => {
 
     expect(result).toMatchObject({
       addedCardTag: false,
-      addedChoiceTag: false,
       wroteInitialSrs: false
     })
     const insertTagCalls = invokeEditorCommand.mock.calls.filter(
       c => c[0] === "core.editor.insertTag"
     )
     expect(insertTagCalls).toHaveLength(0)
+    // 仍会 setRefData 将 type 写为 choice（幂等）
+    expect(invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.setRefData",
+      null,
+      expect.objectContaining({ alias: "card" }),
+      [{ name: "type", value: "choice" }]
+    )
   })
 
   it("无光标返回 null", async () => {

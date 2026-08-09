@@ -1,7 +1,7 @@
 # SRS 选择题卡（Choice）
 
 > **文档同步日期**：2026-08-09  
-> **变更说明**：选项区未揭晓时隐藏整个 `.orca-tags`（真实 DOM 为 `data-name`，旧 `data-tag-name` 选择器从未匹配）；题面继续用 `BlockTextPreview` 纯文本（**已知取舍**：题干富文本/图片暂不显示，详见下方「题面富文本待办」）。选项顺序按 `cardKey` 冻结仍有效。
+> **变更说明**：选择题身份统一为 `#card` 的 `type=choice`（**不再**写入或识别独立 `#choice` 标签）；`extractCardType` 与 cloze/direction 同一路径。选项区未揭晓时隐藏整个 `.orca-tags`（真实 DOM 为 `data-name`）；题面继续用 `BlockTextPreview` 纯文本（**已知取舍**：题干富文本/图片暂不显示）。选项顺序按 `cardKey` 冻结仍有效。
 
 ---
 
@@ -9,16 +9,16 @@
 
 选择题以**父块为题干**、**直接子块为选项**。正确选项通过标签标记；复习时支持乱序、单选即时确认、多选提交、自动评分建议，以及选项维度的答题统计。
 
-### 发现前提（易错）
+### 发现与类型（单真相源）
 
 | 阶段 | 实际要求 |
 | ---- | -------- |
 | **进入扫描 / 复习队列 / Flash Home** | 父块必须有 **`#card`**。`collectSrsBlocks` 与 `scanCardsFromTags` 只查询/过滤 `#card`；`orca.state.blocks` 合并也只认 `srs.card` / `srs.cloze-card` / `srs.direction-card`，**不含**单独的 `srs.choice-card`。 |
-| **类型判定**（块已被发现后） | `extractCardType`：**优先**看是否有 `#choice`；否则读 `#card` 的 `type=choice`。 |
-| **删除清理**（`deletedCardCleanup`） | `isStillSrsCard` 会把仅有 `#choice` 的块仍视为 SRS 卡，避免误删统计；**这不等于**仅有 `#choice` 就能被收集进队列。 |
+| **类型判定**（块已被发现后） | `extractCardType` **只**读 `#card` ref data 的 `type` 字段；`type=choice` → `"choice"`（与 cloze/direction 同一路径）。 |
+| **删除清理**（`deletedCardCleanup`） | 是否仍为 SRS 卡 = `isSrsCardBlock`（即有 `#card`）；与其它卡种一致。 |
 
-> **错误做法**：只打 `#choice`、不打 `#card` → 通常**不会**出现在 Flash Home 或普通复习队列。  
-> **正确做法**：父块同时具备 `#card`，并用 `#choice` 或 `type=choice` 标明选择题。
+> **正确做法**：父块打 `#card`，并将其 `type` 设为 `choice`（斜杠「创建选择题」会自动写入）。  
+> 不要再依赖独立的 `#choice` 标签：插件创建路径不再写入它，类型判定也不再读取它。
 
 ### 创建方式
 
@@ -28,24 +28,22 @@
 - 斜杠：`choiceCard`，group `SRS`，icon `ti ti-list-check`
 - 行为：
   1. 无 `#card` → `insertTag` + `buildCardTagData(..., "choice")` + `ensureCardTagProperties`；已有则 `setRefData type=choice`，**写成功后** `invalidateBlockCache`
-  2. 无 `#choice` → `insertTag "choice"`
-  3. `_repr = { type: "srs.choice-card", front, back, cardType: "choice" }`
-  4. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有 `#card`：`ensureCardSrsState`（依赖上一步缓存失效）
-  5. 直接子块均无 `#correct`/`#正确` 时 `info` 提示（**不阻断**）
-- undoArgs：`blockId, originalRepr, originalText, pluginName, addedCardTag, addedChoiceTag, wroteInitialSrs`
-- 撤销：`undoBasicCardCreation`（按标志 cleanup / removeTag `card` / `choice` / 还原 `_repr`）
+  2. `_repr = { type: "srs.choice-card", front, back, cardType: "choice" }`
+  3. 新卡：`cleanupSrsProperties` + `writeInitialSrsState`；已有 `#card`：`ensureCardSrsState`（依赖上一步缓存失效）
+  4. 直接子块均无 `#correct`/`#正确` 时 `info` 提示（**不阻断**）
+- undoArgs：`blockId, originalRepr, originalText, pluginName, addedCardTag, wroteInitialSrs`
+- 撤销：`undoBasicCardCreation`（按标志 cleanup / removeTag `card` / 还原 `_repr`）
 
 #### 类型识别（在已有 `#card` 的前提下）
 
-1. **优先**：块上存在 `#choice` 标签（`isChoiceTag`，大小写不敏感）
-2. 或 `#card` 的 `type` 属性为 `choice`
+`#card` 的 `type` 属性为 `choice`（大小写不敏感）。
 
 #### 手动标签工作流（仍有效）
 
 1. 写好题干（父块）
 2. 在下方添加若干子块作为选项
 3. 在正确选项上打 `#correct` 或 `#正确`
-4. 父块打 **`#card`**，并打 **`#choice`**（或设置 `#card` 的 `type=choice`）
+4. 父块打 **`#card`**，并设置 **`type=choice`**
 5. 可选：父块打 `#ordered` 禁用选项乱序
 6. 扫描或复习收集时写入/确保 `srs.*`；`scanCardsFromTags` / `makeCardFromBlock` 也会将 `_repr.type` 设为 `srs.choice-card`
 
@@ -64,9 +62,9 @@
 
 ### 标签约定（`tagUtils.ts`）
 
-| 标签 | 作用 |
+| 标签 / 属性 | 作用 |
 | ---- | ---- |
-| `#choice` | **类型覆盖**：识别为选择题（优先于 `type` 字符串）；**不能替代**发现所需的 `#card` |
+| `#card` + `type=choice` | **身份**：发现依赖 `#card`；类型由 ref data 的 `type` 决定 |
 | `#correct` / `#正确` | 选项为正确项 |
 | `#ordered` | 禁用乱序 |
 
@@ -230,7 +228,7 @@
 | `src/srs/choiceStatisticsStorage.ts` | 持久化 |
 | `src/srs/choiceStatisticsStorage.test.ts` | 存储测试 |
 | `src/srs/types.ts` | Choice 类型 |
-| `src/srs/tagUtils.ts` | choice/correct/ordered 标签 |
+| `src/srs/tagUtils.ts` | correct/ordered 标签（类型不再走独立 choice 标签） |
 | `src/srs/cardCollector.ts` | 入队 |
 | `src/srs/cardCreator.ts` | 扫描/转换 `_repr` |
 | `src/srs/cardIdentity.ts` | `choice:{id}` |

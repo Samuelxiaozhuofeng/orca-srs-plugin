@@ -4,6 +4,9 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-09（选择题身份统一 type=choice）**：
+> - [SRS_选择题卡.md](SRS_选择题卡.md) / [SRS_卡片创建与管理.md](SRS_卡片创建与管理.md) / [SRS_工具函数模块.md](SRS_工具函数模块.md) / [SRS_数据存储.md](SRS_数据存储.md)：去掉独立 `#choice` 标签；`extractCardType` 只读 `#card type=choice`；创建/撤销不再写/摘 `#choice`
+>
 > **索引增补：2026-08-09（选择题泄题 CSS 真因 + 题面富文本恢复）**：
 > - [SRS_选择题卡.md](SRS_选择题卡.md) / [SRS_块渲染器.md](SRS_块渲染器.md)：选项未揭晓隐藏 `.orca-tags`（真机 `data-name`）；题面暂留 `BlockTextPreview` 纯文本，富文本待单独立项
 > - [问题经验.md](问题经验.md)：真机 DOM `data-name` / 误用 `BlockTextPreview` 记录
@@ -103,14 +106,15 @@
    - 关联：`src/srs/storage.ts`、`blockExistence.ts`、`deletedCardCleanup.ts`、`reviewLogStorage.ts`、`sessionProgressStorage.ts` 等
 
 3. **[SRS_卡片创建与管理.md](SRS_卡片创建与管理.md)** ⭐ 2026-08-09 更新
-   - 全卡种创建、标签、`_repr`、身份与转换入口；制卡对称撤销（只删本次新增）；选择题专用创建
+   - 全卡种创建、标签、`_repr`、身份与转换入口；制卡对称撤销（只删本次新增）；选择题专用创建（身份仅 `#card type=choice`）
    - `scanCardsFromTags`：成功空结果不兜底；仅标签查询 throw 才 `get-all-blocks`；双失败可见 error
    - 列表 / 方向 / 选择题写 `srs.isCard` 或 `setRefData` 成功后 `invalidateBlockCache`；`setCardTagRefData` 缺块/缺 `#card` throw
    - **`ensureCardTagProperties`**：缺失 `card` alias 时创建标签页并补齐 schema；全属性成功才缓存；并发共享 Promise；load + 制卡/Book IR 兜底
    - 关联：`src/srs/cardCreator.ts`、`listCardCreator.ts`、`choiceCardCreator.ts`、`directionUtils.ts`、`cardTagRefData.ts`、`tagPropertyInit.ts`、`registry/cardCreationUndo.ts`、`cardTagDataBuilder.ts`、`cardIdentity.ts`、`topicCardCreator.ts`
 
-4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-07-26 更新
+4. **[SRS_工具函数模块.md](SRS_工具函数模块.md)** ⭐ 2026-08-09 更新
    - 收集、卡组、块工具等横切模块（**无** `cardBrowser.ts`；浏览侧见 Flash Home；`panelUtils.ts` 已删除）
+   - `extractCardType` 只读 `#card.type`（含 choice，无 `#choice` 优先分支）
    - 关联：`blockUtils.ts`、`cardCollector.ts`、`deckUtils.ts`、`flashcardHomeManager.ts` 等
 
 4b. **[SRS_TTS语音.md](SRS_TTS语音.md)** ⭐ 2026-08-02 新增
@@ -124,7 +128,7 @@
 7. **[SRS_方向卡.md](SRS_方向卡.md)** ⭐ 2026-08-09 更新 — Direction 左右向、入队条件、渲染；白名单门禁；`srs.forward|backward.suspended` 单方向暂停；`srs.isCard` 写后 `invalidateBlockCache`
 8. **[SRS 列表卡.md](SRS%20列表卡.md)** — List 创建、解锁评分、progression
 9. **[SRS_选择题卡.md](SRS_选择题卡.md)** ⭐ 2026-08-09 更新
-   - Choice 标签约定、乱序、提交门闩、选项统计；斜杠「创建选择题」`createChoiceCardFromBlock`；`setRefData type=choice` 写后 `invalidateBlockCache`
+   - 身份：`#card type=choice`（不再写/认独立 `#choice`）；乱序、提交门闩、选项统计；斜杠「创建选择题」`createChoiceCardFromBlock`；`setRefData type=choice` 写后 `invalidateBlockCache`
    - 关联：`choiceCardCreator.ts`、`choiceUtils.ts`、`choiceSubmitGate.ts`、`choiceAnswerStatistics.ts`、`choiceStatisticsStorage.ts`、`Choice*Renderer.tsx`
 
 ### 用户界面

@@ -1,9 +1,9 @@
 /**
  * 选择题卡片创建模块
  *
- * 将当前块转换为选择题（#card type=choice + #choice），与 makeCardFromBlock 对称：
+ * 将当前块转换为选择题（#card type=choice），与 makeCardFromBlock 对称：
  * - 无 #card → insertTag + buildCardTagData(..., "choice") + ensureCardTagProperties
- * - 无 #choice → insertTag "choice"（双保险；extractCardType 优先 isChoiceTag）
+ * - 已有 #card → setRefData type=choice
  * - 设置 _repr = srs.choice-card
  * - 新卡 cleanup + writeInitialSrsState；已有卡 ensureCardSrsState
  * - 若无 #correct/#正确 子选项，info 提示（不阻断）
@@ -13,7 +13,7 @@ import type { Block, CursorData } from "../orca.d.ts"
 import { BlockWithRepr, resolveFrontBack } from "./blockUtils"
 import { ensureCardSrsState, invalidateBlockCache, writeInitialSrsState } from "./storage"
 import { cleanupSrsProperties } from "./tagCleanup"
-import { isCardTag, isChoiceTag, isCorrectTag } from "./tagUtils"
+import { isCardTag, isCorrectTag } from "./tagUtils"
 import { ensureCardTagProperties } from "./tagPropertyInit"
 import { buildCardTagData } from "./cardTagDataBuilder"
 
@@ -23,7 +23,6 @@ export type ChoiceCardCreationResult = {
   originalText: string
   pluginName: string
   addedCardTag: boolean
-  addedChoiceTag: boolean
   wroteInitialSrs: boolean
 }
 
@@ -54,13 +53,8 @@ export async function createChoiceCardFromBlock(
     block.refs?.some(
       ref => ref.type === 2 && isCardTag(ref.alias)
     ) ?? false
-  const hasChoiceTag =
-    block.refs?.some(
-      ref => ref.type === 2 && isChoiceTag(ref.alias)
-    ) ?? false
 
   let addedCardTag = false
-  let addedChoiceTag = false
 
   if (!hasCardTag) {
     try {
@@ -97,22 +91,6 @@ export async function createChoiceCardFromBlock(
         orca.notify("error", `更新卡片类型失败: ${error}`, { title: "选择题" })
         return null
       }
-    }
-  }
-
-  if (!hasChoiceTag) {
-    try {
-      await orca.commands.invokeEditorCommand(
-        "core.editor.insertTag",
-        cursor,
-        blockId,
-        "choice"
-      )
-      addedChoiceTag = true
-    } catch (error) {
-      console.error(`[${pluginName}] 添加 #choice 标签失败:`, error)
-      orca.notify("error", `添加 #choice 失败: ${error}`, { title: "选择题" })
-      return null
     }
   }
 
@@ -165,7 +143,6 @@ export async function createChoiceCardFromBlock(
     originalText,
     pluginName,
     addedCardTag,
-    addedChoiceTag,
     wroteInitialSrs
   }
 }

@@ -194,7 +194,7 @@ async function insertBasicCard(
  *
  * 结构与 `createChoiceCardFromBlock` 手工创建的完全一致，否则复习渲染器
  * 与 `extractChoiceOptions` 认不出来：
- *   题干块（#card type=choice + #choice，_repr = srs.choice-card）
+ *   题干块（#card type=choice，_repr = srs.choice-card）
  *     └── 每个选项一个直接子块，正确项打 #correct
  */
 async function insertChoiceCard(
@@ -253,13 +253,6 @@ async function insertChoiceCard(
     questionBlockId,
     "card",
     await buildCardTagData(pluginName, questionBlockId, "choice", stamp.status)
-  )
-
-  await orca.commands.invokeEditorCommand(
-    "core.editor.insertTag",
-    null,
-    questionBlockId,
-    "choice"
   )
 
   // _repr 决定复习界面用哪个渲染器；缺了它这张卡会退化成普通问答卡
