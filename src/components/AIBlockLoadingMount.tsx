@@ -9,6 +9,7 @@ import {
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
   keepSelectedBackgroundQuickJob,
+  shouldMountChildSelectionActions,
   toggleBackgroundQuickJobBlockSelection,
   type QuickBackgroundJob
 } from "../srs/ai/aiQuickInteractJobs"
@@ -354,9 +355,10 @@ export function AIBlockLoadingMount() {
 
       rootEl.classList.add(RESULT_BLOCK_CLASS)
       rootEl.setAttribute("data-srs-ai-result", "true")
+      const childSelectionEnabled = shouldMountChildSelectionActions(job)
       rootEl.toggleAttribute(
         "data-srs-ai-has-selection",
-        job.selectedResultBlockIds.length > 0
+        childSelectionEnabled && job.selectedResultBlockIds.length > 0
       )
 
       // 确保定位上下文在块自身（避免挂到 repr-main 后参与文档流错位）
@@ -389,7 +391,11 @@ export function AIBlockLoadingMount() {
       }
 
       actionBar.replaceChildren()
-      const selectedCount = job.selectedResultBlockIds.length
+      const selectedCount = childSelectionEnabled
+        ? job.selectedResultBlockIds.length
+        : 0
+      const terminalActionPending = job.terminalActionPending === true
+      actionBar.toggleAttribute("aria-busy", terminalActionPending)
       if (selectedCount > 0) {
         const count = document.createElement("span")
         count.className = "srs-ai-preview-actions__count"
@@ -402,6 +408,7 @@ export function AIBlockLoadingMount() {
           "srs-ai-action-btn srs-ai-action-btn--keep-selected"
         keepSelectedBtn.title = "保留已选择的内容，丢弃其余预览"
         keepSelectedBtn.innerHTML = '<i class="ti ti-checks"></i>保留所选'
+        keepSelectedBtn.disabled = terminalActionPending
         keepSelectedBtn.onclick = (e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -415,6 +422,7 @@ export function AIBlockLoadingMount() {
       keepAllBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep"
       keepAllBtn.title = "保留完整 AI 结果"
       keepAllBtn.innerHTML = '<i class="ti ti-check"></i>保留全部'
+      keepAllBtn.disabled = terminalActionPending
       keepAllBtn.onclick = (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -426,6 +434,7 @@ export function AIBlockLoadingMount() {
       cancelBtn.className = "srs-ai-action-btn srs-ai-action-btn--cancel"
       cancelBtn.title = "取消并删除此 AI 预览块"
       cancelBtn.innerHTML = '<i class="ti ti-x"></i>取消'
+      cancelBtn.disabled = terminalActionPending
       cancelBtn.onclick = (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -445,20 +454,27 @@ export function AIBlockLoadingMount() {
         shell.classList.add("srs-ai-result-shell")
       }
 
-      // 子块候选选择：不含根；选择父块即包含整棵子树
-      mountChildSelectionActions(
-        rootEl,
-        job.id,
-        rootId,
-        job.selectedResultBlockIds
-      )
+      if (childSelectionEnabled) {
+        // 文本预览支持选择子树；快捷卡片只能整张保留或丢弃。
+        mountChildSelectionActions(
+          rootEl,
+          job.id,
+          rootId,
+          job.selectedResultBlockIds
+        )
+      } else {
+        clearChildKeepChrome(rootEl)
+      }
     }
   }, [jobs])
 
   // 预览树子块可能晚于根块进入 DOM（宿主异步渲染）：监听 ready 根节点变更并补挂按钮
   useEffect(() => {
     const readyJobs = jobs.filter(
-      (j) => j.status === "ready" && j.resultRootBlockId != null
+      (j) =>
+        j.status === "ready" &&
+        j.resultRootBlockId != null &&
+        shouldMountChildSelectionActions(j)
     )
     if (readyJobs.length === 0) return
 
