@@ -6,23 +6,68 @@
  * 下面所有 `.orca-*` 作用域选择器都是宿主兼容契约，必须原样保留，不得放宽成裸选择器。
  */
 
-/* 目标块尾部旋转 Sparkles 加载图标：紧贴文本行末，低透明度，不抢视线 */
+/* 目标块尾部生成取消控件：紧贴文本行末，保留旋转状态提示 */
 .srs-ai-target-block-loading {
+  appearance: none;
+  background: color-mix(in srgb, var(--srs-surface-base) 88%, transparent);
+  border: 1px solid var(--srs-hairline);
+  border-radius: var(--srs-radius-xs);
+  box-sizing: border-box;
+  color: var(--orca-color-text-2);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
+  gap: var(--srs-space-1);
+  font-family: var(--srs-font-family);
   margin-left: var(--srs-space-2);
-  color: var(--orca-color-primary-5);
-  font-size: 0.8em;
+  min-height: 1.5rem;
+  padding: 1px var(--srs-space-2);
+  font-size: var(--srs-text-micro);
+  font-weight: var(--srs-weight-medium);
+  letter-spacing: 0;
   line-height: 1;
   vertical-align: middle;
-  pointer-events: none;
-  opacity: 0.55;
-  transition: opacity var(--srs-duration-slow) var(--srs-ease);
+  white-space: nowrap;
+  transition:
+    background-color var(--srs-duration-base) var(--srs-ease),
+    border-color var(--srs-duration-base) var(--srs-ease),
+    color var(--srs-duration-base) var(--srs-ease),
+    transform var(--srs-duration-fast) var(--srs-ease);
+}
+
+.srs-ai-target-block-loading:hover {
+  background: color-mix(
+    in srgb,
+    var(--orca-color-danger-5) 8%,
+    var(--srs-surface-base)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--orca-color-danger-5) 45%,
+    var(--srs-hairline)
+  );
+  color: var(--orca-color-danger-5);
+}
+
+.srs-ai-target-block-loading:active {
+  transform: translateY(0.5px);
+}
+
+.srs-ai-target-block-loading:focus-visible {
+  outline: 2px solid var(--orca-color-primary-5);
+  outline-offset: 2px;
+}
+
+.srs-ai-target-block-loading__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .srs-ai-target-block-loading .srs-ai-spin {
   animation: srs-ai-spin-anim 1.8s linear infinite;
+  color: var(--orca-color-primary-5);
   display: inline-block;
+  flex: 0 0 auto;
 }
 
 @keyframes srs-ai-spin-anim {

@@ -9,7 +9,6 @@ import {
   insertQuickResultAsChild,
   keepQuickResult,
   keepSelectedQuickResultBlocks,
-  promoteQuickResultToChild,
   runToolbarAIPrompt,
   toggleQuickResultBlockSelection
 } from "./aiQuickInteract"
@@ -226,7 +225,7 @@ export function hasActiveQuickBackgroundJobs(): boolean {
  * 启动后台任务：静默请求 AI，成功后插入到目标块下方作为子块（成功路径不 toast）。
  * - preview：`srs.ai.status=preview`，保留 job 供预览操作栏确认
  * - direct：`srs.ai.status=kept`，落盘后立即结束 job（无预览 UI）
- * 失败路径必须 `orca.notify("error", …)`，因 Jobs 面板目前为空挂、用户否则看不到错误。
+ * 失败路径必须 `orca.notify("error", …)`，任务面板已移除，toast 是用户可见的错误通道。
  */
 export async function startBackgroundQuickInsertJob(
   opts: StartBackgroundQuickInsertOptions
@@ -406,6 +405,34 @@ export function cancelBackgroundQuickJob(
   }
 }
 
+/** 取消同一源块上全部仍在生成的任务；ready/error 任务不受影响。 */
+export function cancelGeneratingQuickJobsForSourceBlock(
+  sourceBlockId: number
+): number {
+  const matchingJobIds = (aiQuickJobsState.jobs as QuickBackgroundJob[])
+    .filter(
+      (job) =>
+        job.sourceBlockId === sourceBlockId && job.status === "generating"
+    )
+    .map((job) => job.id)
+
+  for (const jobId of matchingJobIds) {
+    cancelBackgroundQuickJob(jobId, { silent: true })
+  }
+
+  if (matchingJobIds.length === 1) {
+    orca.notify("info", "已取消此项 AI 生成", { title: "AI 快捷交互" })
+  } else if (matchingJobIds.length > 1) {
+    orca.notify(
+      "info",
+      `已取消此块的全部 ${matchingJobIds.length} 项 AI 生成`,
+      { title: "AI 快捷交互" }
+    )
+  }
+
+  return matchingJobIds.length
+}
+
 /**
  * 保留预览结果：更新结果块属性为 kept（沉淀为笔记），并结束预览态（卸罩层/按钮）。
  *
@@ -515,29 +542,6 @@ export async function keepSelectedBackgroundQuickJob(jobId: string): Promise<voi
       title: "AI 快捷交互"
     })
   })
-}
-
-/**
- * 将块下方结果提升为查询块的子块，并移除任务卡片。
- */
-export async function promoteBackgroundQuickJob(jobId: string): Promise<void> {
-  const job = findJob(jobId)
-  if (!job) return
-  if (job.status !== "ready" || job.resultRootBlockId == null) {
-    orca.notify("warn", "当前任务没有可提升的结果块", { title: "AI 快捷交互" })
-    return
-  }
-
-  const result = await promoteQuickResultToChild(
-    job.sourceBlockId,
-    job.resultRootBlockId
-  )
-  if (!result.success) {
-    orca.notify("error", result.error, { title: "AI 快捷交互" })
-    return
-  }
-  removeJob(jobId)
-  orca.notify("success", "已插入为查询块的子块", { title: "AI 快捷交互" })
 }
 
 /**

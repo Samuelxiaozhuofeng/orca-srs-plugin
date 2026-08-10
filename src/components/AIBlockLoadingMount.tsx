@@ -5,6 +5,7 @@
 
 import {
   aiQuickJobsState,
+  cancelGeneratingQuickJobsForSourceBlock,
   dismissBackgroundQuickJob,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
@@ -270,7 +271,7 @@ export function AIBlockLoadingMount() {
       }
     }
 
-    // 3. 给正在生成的 target block DOM 插入/更新行尾微轻加载图标
+    // 3. 给正在生成的 target block DOM 插入/更新行尾取消控件
     for (const [sourceBlockId, count] of activeBlockCounts.entries()) {
       const blockEl = document.querySelector<HTMLElement>(
         `.orca-block[data-id="${sourceBlockId}"]`
@@ -278,29 +279,59 @@ export function AIBlockLoadingMount() {
       if (!blockEl) continue
 
       const host = findRootTextHost(blockEl)
-      let iconEl = blockEl.querySelector<HTMLElement>(
+      let cancelButton = blockEl.querySelector<HTMLButtonElement>(
         `.${LOADING_CLASS}[data-target-block="${sourceBlockId}"]`
       )
-      // 若图标挂在了错误宿主，重挂到行尾正文
-      if (iconEl && iconEl.parentElement !== host) {
-        iconEl.remove()
-        iconEl = null
+      // 若旧节点不是按钮或挂在错误宿主，重挂到行尾正文
+      if (
+        cancelButton &&
+        (cancelButton.tagName !== "BUTTON" || cancelButton.parentElement !== host)
+      ) {
+        cancelButton.remove()
+        cancelButton = null
       }
-      if (!iconEl) {
-        iconEl = document.createElement("span")
-        iconEl.className = LOADING_CLASS
-        iconEl.setAttribute("data-target-block", String(sourceBlockId))
+      if (!cancelButton) {
+        cancelButton = document.createElement("button")
+        cancelButton.type = "button"
+        cancelButton.contentEditable = "false"
+        cancelButton.tabIndex = 0
+        cancelButton.className = LOADING_CLASS
+        cancelButton.setAttribute("data-target-block", String(sourceBlockId))
 
         const i = document.createElement("i")
         i.className = "ti ti-sparkles srs-ai-spin"
         i.setAttribute("aria-hidden", "true")
-        iconEl.appendChild(i)
+        cancelButton.appendChild(i)
 
-        host.appendChild(iconEl)
+        const label = document.createElement("span")
+        label.className = "srs-ai-target-block-loading__label"
+        cancelButton.appendChild(label)
+
+        cancelButton.onmousedown = (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        cancelButton.onclick = (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          cancelGeneratingQuickJobsForSourceBlock(sourceBlockId)
+        }
+
+        host.appendChild(cancelButton)
       }
 
-      iconEl.title =
-        count > 1 ? `AI 处理中 (${count} 项)…` : "AI 处理中…"
+      const actionLabel =
+        count > 1
+          ? `取消此块的全部 ${count} 项 AI 生成`
+          : "取消此项 AI 生成"
+      cancelButton.title = actionLabel
+      cancelButton.setAttribute("aria-label", actionLabel)
+      const visibleLabel = cancelButton.querySelector<HTMLElement>(
+        ".srs-ai-target-block-loading__label"
+      )
+      if (visibleLabel) {
+        visibleLabel.textContent = count > 1 ? `取消全部 ${count} 项` : "取消"
+      }
     }
 
     // 4. 为已生成的 AI 结果根块挂载“罩层”样式与“预览/保留/取消”操作栏
