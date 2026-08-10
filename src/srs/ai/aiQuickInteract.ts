@@ -144,7 +144,7 @@ export async function startAIQuickInteractFlow(
     const { startBackgroundQuickInsertJob } = await import(
       "./aiQuickInteractJobs"
     )
-    await startBackgroundQuickInsertJob({
+    void startBackgroundQuickInsertJob({
       pluginName,
       sourceBlockId: extract.blockId,
       selectedText: extract.selectedText,
@@ -156,6 +156,8 @@ export async function startAIQuickInteractFlow(
       commitMode: prompt.directWriteBelow ? "direct" : "preview",
       tags: prompt.resultTags,
       reuseSameResultBlock: prompt.reuseSameResultBlock
+    }).catch((error) => {
+      console.error("[AI 快捷交互] 后台任务失败:", error)
     })
     return
   }
