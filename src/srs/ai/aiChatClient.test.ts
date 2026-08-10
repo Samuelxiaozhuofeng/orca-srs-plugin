@@ -151,7 +151,9 @@ describe("callChatCompletions", () => {
   })
 
   it("returns EMPTY_RESPONSE when content is missing", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ choices: [] }))
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ choices: [{ message: {} }] })
+    )
     const result = await callChatCompletions({
       pluginName: PLUGIN,
       messages: [{ role: "user", content: "hi" }],
@@ -163,9 +165,31 @@ describe("callChatCompletions", () => {
     expect(result.error.code).toBe("EMPTY_RESPONSE")
   })
 
-  it("allowEmptyContent lets a connection probe succeed without content", async () => {
+  it.each([{}, { choices: [] }])(
+    "rejects an invalid response envelope even when empty content is allowed: %j",
+    async (payload) => {
+      const fetchImpl = vi.fn(async () => jsonResponse(payload))
+      const result = await callChatCompletions({
+        pluginName: PLUGIN,
+        messages: [{ role: "user", content: "Hi" }],
+        allowEmptyContent: true,
+        fetchImpl: fetchImpl as unknown as typeof fetch
+      })
+
+      expect(result.success).toBe(false)
+      if (result.success) return
+      expect(result.error.code).toBe("INVALID_RESPONSE_ENVELOPE")
+    }
+  )
+
+  it("allows empty content only when a connection probe has a valid choice message", async () => {
+    // 兼容取舍：小 max_tokens/部分兼容网关可能返回空正文，但非空 choices + message
+    // 已证明响应来自 Chat Completions；缺失该信封的 2xx 仍必须失败。
     const fetchImpl = vi.fn(async () =>
-      jsonResponse({ model: "gateway-model", choices: [] })
+      jsonResponse({
+        model: "gateway-model",
+        choices: [{ message: { content: "" } }]
+      })
     )
     const result = await callChatCompletions({
       pluginName: PLUGIN,

@@ -290,7 +290,8 @@ makeAICard / interactiveAICard（别名）
     - UI 仅一个勾选 `enableNativeWebSearch`；**无**形态下拉
     - 开启后按 **model leaf**（最后一段 `/` 后）自动：`grok-4.5`（`(?!\d)` 防 `grok-4.50`）→ 扁平 `{ type: "web_search" }`；含 `gemini` 且 `flash` 为独立 token（如 `-flash`/`-flash-high`）→ `{ type: "google_search", google_search: {} }`；其它 model 不写 tools
     - 历史 `webSearchToolType` 读写保留但**不参与解析**（面板保存固定 `auto`）
-  - 连接测试：`allowWebSearch: false`（不触发搜索计费/延迟），仍会带上用户设定的 `reasoning_effort`
+  - 连接测试：`allowWebSearch: false`（不触发搜索计费/延迟），仍会带上用户设定的 `reasoning_effort`；2xx 成功体必须含非空 `choices` 且首项有 `message`，`{}` / `choices: []` 均为可见失败。为兼容小 `max_tokens` 与部分兼容网关，合法信封内的空 `message.content` 仍可判定连通
+  - 设置面板测连绑定 `apiUrl` / `apiKey` / `model` 配置指纹与独立 `AbortController`；编辑这三项或关闭面板会取消并使旧请求失效，迟到结果还须同时通过 controller 与指纹门禁才可写入。关闭/重新打开不保留上次测连成功或失败文案
   - 不支持该 tool 或 `reasoning_effort` 的上游会返回可见 HTTP 错误，不静默降级
   - 制卡仍做源文本接地校验：开启联网后若答案依赖源外内容，校验可能失败
 
@@ -338,7 +339,7 @@ makeAICard / interactiveAICard（别名）
 | 能力 | 规则 |
 | --- | --- |
 | **重试** | 仅 `HTTP_429` / `500` / `502` / `503` / `504` / `NETWORK_ERROR`；默认额外 2 次，指数退避 800ms→1.6s→3.2s（上限 8s）。尊重 `Retry-After`（整数秒或 HTTP 日期）。退避期间可被用户取消打断 |
-| **不重试** | `CANCELLED`（用户意图）、`TIMEOUT`（deadline 就是 deadline，重试等于让用户等两倍）、其余 4xx（鉴权/参数错，重试必然同样失败）、`RESPONSE_PARSE_ERROR`、`RESPONSE_TOO_LARGE` |
+| **不重试** | `CANCELLED`（用户意图）、`TIMEOUT`（deadline 就是 deadline，重试等于让用户等两倍）、其余 4xx（鉴权/参数错，重试必然同样失败）、`RESPONSE_PARSE_ERROR`、`RESPONSE_TOO_LARGE`、`INVALID_RESPONSE_ENVELOPE` |
 | **并发闸门** | 全局信号量默认 3，FIFO 唤醒（避免后台任务饿死交互请求）。**排队期间不计入超时**，deadline 从真正发请求起算。连接测试 `bypassConcurrencyGate: true` + `maxRetries: 0` |
 | **超时分级** | 制卡 60s / 块解释 40s / 快捷交互 30s / 网页总结 90s / 测连 15s（此前一律 40s） |
 | **输出预算** | 统一取设置项 `maxOutputTokens`（默认 16384），不再按用途写死 1600/900/2000。推理模型把 reasoning token 计入 `completion_tokens`，任何写死的小值都可能被思考吃光 |
@@ -350,7 +351,7 @@ makeAICard / interactiveAICard（别名）
 ### HTTP
 
 - 生成：`temperature: 0.2`，约 40s 超时，可取消
-- 连接测试：约 15s 超时；保留截断后的纯文本错误正文
+- 连接测试：约 15s 超时；保留截断后的纯文本错误正文；只接受至少一个 `choices[0].message` 的 Chat Completions 信封（允许该 message 的 content 为空）
 - 源文本在 prompt 中标为 untrusted data
 - 可选扩展字段（设置面板）：`tools`（`web_search` 或嵌套 `google_search`）、`reasoning_effort`
 - 请求体始终 `stream: false`（避免部分网关按模型默认开流）

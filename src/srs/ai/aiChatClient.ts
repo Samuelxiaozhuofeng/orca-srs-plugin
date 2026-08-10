@@ -10,7 +10,8 @@
  *
  * 行为契约与拆分前保持一致：
  * - 错误码：NO_API_KEY / CANCELLED / TIMEOUT / HTTP_<status> /
- *   RESPONSE_TOO_LARGE / EMPTY_RESPONSE / NETWORK_ERROR / RESPONSE_PARSE_ERROR
+ *   RESPONSE_TOO_LARGE / INVALID_RESPONSE_ENVELOPE / EMPTY_RESPONSE /
+ *   NETWORK_ERROR / RESPONSE_PARSE_ERROR
  * - 所有对外 message 均经 sanitizePublicError 脱敏
  * - 错误可见：不静默降级、不返回空内容冒充成功
  */
@@ -86,7 +87,7 @@ export type CallChatCompletionsOptions = {
    * 传入值会经 normalizeAISettings 归一。
    */
   settingsOverride?: Partial<AISettings>
-  /** 测连只关心 HTTP 可达，不要求 content 非空。 */
+  /** 测连允许 message content 为空，但仍要求合法的 Chat Completions 信封。 */
   allowEmptyContent?: boolean
   signal?: AbortSignal
   /** 便于测试注入；默认全局 fetch。 */
@@ -96,7 +97,7 @@ export type CallChatCompletionsOptions = {
 export type CallChatCompletionsResult =
   | {
       success: true
-      /** allowEmptyContent 为 true 且上游无 content 时可能是空串。 */
+      /** allowEmptyContent 为 true 且首项 message 无 content 时可能是空串。 */
       content: string
       /** 上游回报的实际 model（网关可能改写）。 */
       model?: string
@@ -272,7 +273,27 @@ async function attemptChatCompletions(
       throw error
     }
 
-    const choice = data.choices?.[0]
+    const choices = data?.choices
+    const choice = Array.isArray(choices) ? choices[0] : undefined
+    const hasValidEnvelope =
+      Array.isArray(choices) &&
+      choices.length > 0 &&
+      choice != null &&
+      typeof choice === "object" &&
+      choice.message != null &&
+      typeof choice.message === "object"
+
+    if (!hasValidEnvelope) {
+      return {
+        success: false,
+        status: response.status,
+        error: {
+          code: "INVALID_RESPONSE_ENVELOPE",
+          message: "AI 返回格式无效：缺少非空 choices 数组或首项 message"
+        }
+      }
+    }
+
     const rawContent = choice?.message?.content
     const hasContent = typeof rawContent === "string" && rawContent.length > 0
     const usage = normalizeChatUsage(data.usage)

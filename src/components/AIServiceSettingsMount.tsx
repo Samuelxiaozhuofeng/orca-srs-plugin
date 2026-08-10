@@ -45,7 +45,12 @@ import { playTtsAudio } from "../srs/tts/ttsPlayback"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
 import { fetchCompatibleModels } from "../srs/ai/aiModelsFetch"
 import { setCompatibleModelsCache } from "../srs/ai/aiModelsCache"
-import { testAIConfigWithDetails } from "../srs/ai/aiConfigValidator"
+import {
+  createAIConnectionConfigFingerprint,
+  isCurrentAIConnectionTestResult,
+  testAIConfigWithDetails,
+  type AIConnectionConfigSnapshot
+} from "../srs/ai/aiConfigValidator"
 import {
   AIServiceSettingsDialog,
   type ServiceSettingsDraft
@@ -53,7 +58,7 @@ import {
 
 const { Valtio } = window
 const { useSnapshot } = Valtio
-const { useState, useRef } = window.React
+const { useEffect, useState, useRef } = window.React
 
 interface AIServiceSettingsMountProps {
   pluginName: string
@@ -70,7 +75,30 @@ export function AIServiceSettingsMount({
   const [isTestingAI, setIsTestingAI] = useState(false)
   const [isTestingTts, setIsTestingTts] = useState(false)
   const modelsAbortRef = useRef<AbortController | null>(null)
+  const aiTestAbortRef = useRef<AbortController | null>(null)
+  const aiTestFingerprintRef = useRef<string | null>(null)
+  const aiTestResultVisibleRef = useRef(false)
   const ttsTestAbortRef = useRef<AbortController | null>(null)
+
+  const resetAIConnectionTest = () => {
+    aiTestAbortRef.current?.abort()
+    aiTestAbortRef.current = null
+    aiTestFingerprintRef.current = null
+    setIsTestingAI(false)
+    setStatusMessage(null)
+    if (aiTestResultVisibleRef.current) {
+      aiTestResultVisibleRef.current = false
+      setServiceSettingsError(null)
+    }
+  }
+
+  useEffect(() => {
+    // 挂载组件不会随弹窗关闭而卸载；每次开关都清理上一次的瞬态结果。
+    resetAIConnectionTest()
+    return () => {
+      aiTestAbortRef.current?.abort()
+    }
+  }, [snap.isOpen])
 
   if (!snap.isOpen) return null
 
@@ -163,6 +191,7 @@ export function AIServiceSettingsMount({
           title: "服务设置"
         })
       }
+      resetAIConnectionTest()
       closeAIServiceSettings()
     } catch (error) {
       console.error("[AI ServiceSettings] 保存失败:", error)
@@ -217,11 +246,32 @@ export function AIServiceSettingsMount({
   }
 
   const handleTestAI = async (draft: ServiceSettingsDraft) => {
+    aiTestAbortRef.current?.abort()
+    const controller = new AbortController()
+    const fingerprint = createAIConnectionConfigFingerprint(draft.ai)
+    aiTestAbortRef.current = controller
+    aiTestFingerprintRef.current = fingerprint
+    aiTestResultVisibleRef.current = false
     setIsTestingAI(true)
     setStatusMessage(null)
     setServiceSettingsError(null)
     try {
-      const result = await testAIConfigWithDetails(activePlugin, draft.ai)
+      const result = await testAIConfigWithDetails(
+        activePlugin,
+        draft.ai,
+        controller.signal
+      )
+      if (
+        !isCurrentAIConnectionTestResult(
+          controller,
+          fingerprint,
+          aiTestAbortRef.current,
+          aiTestFingerprintRef.current
+        )
+      ) {
+        return
+      }
+      aiTestResultVisibleRef.current = true
       if (result.success) {
         setStatusMessage(result.message)
         orca.notify("success", result.message, { title: "AI 连接测试" })
@@ -230,13 +280,42 @@ export function AIServiceSettingsMount({
         orca.notify("error", result.message, { title: "AI 连接测试失败" })
       }
     } catch (error) {
+      if (
+        !isCurrentAIConnectionTestResult(
+          controller,
+          fingerprint,
+          aiTestAbortRef.current,
+          aiTestFingerprintRef.current
+        )
+      ) {
+        return
+      }
       console.error("[AI ServiceSettings] 测试失败:", error)
       const message =
         error instanceof Error ? error.message : "测试失败"
+      aiTestResultVisibleRef.current = true
       setServiceSettingsError(message)
       orca.notify("error", message, { title: "AI 连接测试" })
     } finally {
-      setIsTestingAI(false)
+      if (aiTestAbortRef.current === controller) {
+        aiTestAbortRef.current = null
+        setIsTestingAI(false)
+      }
+    }
+  }
+
+  const handleAIConnectionChange = (settings: AIConnectionConfigSnapshot) => {
+    const fingerprint = createAIConnectionConfigFingerprint(settings)
+    if (aiTestFingerprintRef.current === fingerprint) return
+
+    aiTestFingerprintRef.current = fingerprint
+    aiTestAbortRef.current?.abort()
+    aiTestAbortRef.current = null
+    setIsTestingAI(false)
+    if (aiTestResultVisibleRef.current) {
+      aiTestResultVisibleRef.current = false
+      setStatusMessage(null)
+      setServiceSettingsError(null)
     }
   }
 
@@ -323,6 +402,7 @@ export function AIServiceSettingsMount({
       modelsError={modelsError}
       statusMessage={statusMessage}
       onClose={() => {
+        resetAIConnectionTest()
         modelsAbortRef.current?.abort()
         ttsTestAbortRef.current?.abort()
         closeAIServiceSettings()
@@ -330,6 +410,7 @@ export function AIServiceSettingsMount({
       onSave={(draft) => {
         void handleSave(draft)
       }}
+      onAIConnectionChange={handleAIConnectionChange}
       onTestAI={(draft) => {
         void handleTestAI(draft)
       }}

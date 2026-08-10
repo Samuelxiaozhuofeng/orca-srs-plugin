@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  createAIConnectionConfigFingerprint,
+  isCurrentAIConnectionTestResult,
   testAIConfigWithDetails,
   validateAIConfig
 } from "./aiConfigValidator"
@@ -78,6 +80,42 @@ describe("testAIConfigWithDetails", () => {
     expect(result.message).toMatch(/upstream gateway exploded/)
   })
 
+  it.each([{}, { choices: [] }])(
+    "rejects a 2xx response without a valid choices envelope: %j",
+    async (payload) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }))
+      )
+
+      const result = await testAIConfigWithDetails(PLUGIN)
+      expect(result.success).toBe(false)
+      expect(result.details?.code).toBe("INVALID_RESPONSE_ENVELOPE")
+    }
+  )
+
+  it("forwards an external abort signal to the connection request", async () => {
+    const controller = new AbortController()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: { signal?: AbortSignal }) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"))
+            })
+          })
+      )
+    )
+
+    const promise = testAIConfigWithDetails(PLUGIN, undefined, controller.signal)
+    controller.abort()
+    const result = await promise
+
+    expect(result.success).toBe(false)
+    expect(result.details?.code).toBe("CANCELLED")
+  })
+
   it("times out when fetch never resolves", async () => {
     vi.stubGlobal(
       "fetch",
@@ -98,5 +136,60 @@ describe("testAIConfigWithDetails", () => {
     const result = await promise
     expect(result.success).toBe(false)
     expect(result.message).toMatch(/超时|TIMEOUT/i)
+  })
+})
+
+describe("createAIConnectionConfigFingerprint", () => {
+  const base = {
+    apiKey: "key-a",
+    apiUrl: "https://a.test/v1/chat/completions",
+    model: "model-a"
+  }
+
+  it.each([
+    { apiKey: "key-b" },
+    { apiUrl: "https://b.test/v1/chat/completions" },
+    { model: "model-b" }
+  ])("changes when a connection field changes: %j", (change) => {
+    expect(createAIConnectionConfigFingerprint({ ...base, ...change })).not.toBe(
+      createAIConnectionConfigFingerprint(base)
+    )
+  })
+
+  it("rejects A after B becomes the current connection test", () => {
+    const controllerA = new AbortController()
+    const controllerB = new AbortController()
+    const fingerprintA = createAIConnectionConfigFingerprint(base)
+    const fingerprintB = createAIConnectionConfigFingerprint({
+      ...base,
+      model: "model-b"
+    })
+
+    expect(
+      isCurrentAIConnectionTestResult(
+        controllerA,
+        fingerprintA,
+        controllerB,
+        fingerprintB
+      )
+    ).toBe(false)
+    expect(
+      isCurrentAIConnectionTestResult(
+        controllerB,
+        fingerprintB,
+        controllerB,
+        fingerprintB
+      )
+    ).toBe(true)
+
+    controllerB.abort()
+    expect(
+      isCurrentAIConnectionTestResult(
+        controllerB,
+        fingerprintB,
+        controllerB,
+        fingerprintB
+      )
+    ).toBe(false)
   })
 })

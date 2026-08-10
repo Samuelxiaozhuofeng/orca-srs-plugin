@@ -91,6 +91,9 @@ export interface AIServiceSettingsDialogProps {
   statusMessage: string | null
   onClose: () => void
   onSave: (draft: ServiceSettingsDraft) => void
+  onAIConnectionChange: (
+    settings: Pick<AISettings, "apiKey" | "apiUrl" | "model">
+  ) => void
   onTestAI: (draft: ServiceSettingsDraft) => void
   onTestTts: (draft: ServiceSettingsDraft) => void
   onFetchModels: (draft: ServiceSettingsDraft) => void
@@ -184,6 +187,9 @@ function ServiceSettingsForm(props: {
   modelsError: string | null
   statusMessage: string | null
   onSave: (draft: ServiceSettingsDraft) => void
+  onAIConnectionChange: (
+    settings: Pick<AISettings, "apiKey" | "apiUrl" | "model">
+  ) => void
   onTestAI: (draft: ServiceSettingsDraft) => void
   onTestTts: (draft: ServiceSettingsDraft) => void
   onFetchModels: (draft: ServiceSettingsDraft) => void
@@ -326,6 +332,16 @@ function ServiceSettingsForm(props: {
     setStbFormatGroups({ ...defaults.formatGroups })
   }
 
+  const updateAIConnection = (
+    next: Partial<Pick<AISettings, "apiKey" | "apiUrl" | "model">>
+  ) => {
+    props.onAIConnectionChange({
+      apiKey: next.apiKey ?? apiKey,
+      apiUrl: next.apiUrl ?? apiUrl,
+      model: next.model ?? model
+    })
+  }
+
   const setStbAction = (id: IRToolbarActionId, value: boolean) => {
     setStbActions((prev: typeof stbActions) => ({ ...prev, [id]: value }))
   }
@@ -398,7 +414,11 @@ function ServiceSettingsForm(props: {
                 type="password"
                 className="ai-service-settings__input"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setApiKey(value)
+                  updateAIConnection({ apiKey: value })
+                }}
                 onKeyDown={stopKeys}
                 onKeyUp={stopKeys}
                 onMouseDown={stopBubble}
@@ -414,7 +434,11 @@ function ServiceSettingsForm(props: {
                 type="url"
                 className="ai-service-settings__input"
                 value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setApiUrl(value)
+                  updateAIConnection({ apiUrl: value })
+                }}
                 onKeyDown={stopKeys}
                 onKeyUp={stopKeys}
                 onMouseDown={stopBubble}
@@ -432,7 +456,11 @@ function ServiceSettingsForm(props: {
                   className="ai-service-settings__input"
                   list="ai-service-models-list"
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setModel(value)
+                    updateAIConnection({ model: value })
+                  }}
                   onKeyDown={stopKeys}
                   onKeyUp={stopKeys}
                   onMouseDown={stopBubble}
@@ -467,7 +495,10 @@ function ServiceSettingsForm(props: {
                         className={`ai-service-settings__chip${
                           id === model ? " is-active" : ""
                         }`}
-                        onClick={() => setModel(id)}
+                        onClick={() => {
+                          setModel(id)
+                          updateAIConnection({ model: id })
+                        }}
                         disabled={busy}
                         title={id}
                       >
@@ -1301,6 +1332,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     statusMessage,
     onClose,
     onSave,
+    onAIConnectionChange,
     onTestAI,
     onTestTts,
     onFetchModels
@@ -1386,6 +1418,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             modelsError={modelsError}
             statusMessage={statusMessage}
             onSave={onSave}
+            onAIConnectionChange={onAIConnectionChange}
             onTestAI={onTestAI}
             onTestTts={onTestTts}
             onFetchModels={onFetchModels}
