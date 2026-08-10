@@ -512,8 +512,9 @@ export function registerCommands(
          * 撞在一起（第二个顶层组等不到提交），表现为 AI 已返回但任务
          * 永远停在 generating。
          *
-         * 仓库既有的后台任务也都不在 editor command 里写块：
-         * 文本类快捷交互从 React 工具栏发起，制卡写入发生在弹窗组件里。
+         * 文本类快捷交互同样由 React 工具栏经 invokeEditorCommand 发起，
+         * 其块写入后台任务也必须在 editor command 返回后继续；AI 生成闪卡的
+         * 制卡写入发生在弹窗组件里。
          */
         const { startQuickCardJob } = await import("../ai/aiQuickCardFlow")
         void startQuickCardJob({
