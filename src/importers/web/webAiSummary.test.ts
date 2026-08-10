@@ -17,12 +17,21 @@ import {
   clearAISettingsCache,
   saveAISettings
 } from "../../srs/ai/aiSettingsSchema"
+import type { DbId } from "../../orca.d.ts"
 
 beforeAll(() => {
   ensureTestDom()
 })
 
 installWebImportOrcaMock()
+
+vi.mock("../../srs/topicCardCreator", () => ({
+  createTopicCardByBlockId: vi.fn(async (blockId: DbId) => ({ blockId }))
+}))
+
+vi.mock("../../srs/incrementalReadingStorage", () => ({
+  advanceDueToToday: vi.fn(async () => ({ due: new Date() }))
+}))
 
 import {
   articleHtmlToPlainText,
@@ -34,6 +43,8 @@ import {
   WEB_AI_SUMMARY_HEADING
 } from "./webAiSummary"
 import { importScrapedArticle } from "./webImport"
+import { createTopicCardByBlockId } from "../../srs/topicCardCreator"
+import { advanceDueToToday } from "../../srs/incrementalReadingStorage"
 
 beforeEach(async () => {
   resetBlocks()
@@ -108,6 +119,15 @@ describe("summary markdown helpers", () => {
     expect(p).toMatch(/- /)
     expect(p).toMatch(/不要代码围栏/)
     expect(p).toMatch(/Markdown/)
+  })
+
+  it("treats delimited article content as untrusted data, not instructions", () => {
+    const prompt = buildWebSummarySystemPrompt()
+
+    expect(prompt).toContain("BEGIN ARTICLE")
+    expect(prompt).toContain("END ARTICLE")
+    expect(prompt).toMatch(/之间.{0,12}只是.{0,12}不可信数据/)
+    expect(prompt).toMatch(/其中.{0,12}指令.{0,12}不得执行/)
   })
 })
 
@@ -266,6 +286,50 @@ describe("insertWebArticleSummary", () => {
       installDefaultEditorMocks()
     }
   })
+
+  it("reports the insert error and residual summary block id when cleanup also fails", async () => {
+    const rootId = allocBlockId()
+    mockBlocks[rootId] = makeBlock(rootId, { text: "Page", children: [] })
+    let summaryBlockId: number | null = null
+
+    mockOrca.commands.invokeEditorCommand.mockImplementation(
+      async (command: string, _cursor: unknown, ...args: unknown[]) => {
+        if (command === "core.editor.insertBlock") {
+          const parent = args[0] as { id?: number } | null
+          const id = allocBlockId()
+          summaryBlockId = id
+          mockBlocks[id] = makeBlock(id, {
+            text: WEB_AI_SUMMARY_HEADING,
+            children: [],
+            parent: parent?.id
+          })
+          if (parent?.id != null && mockBlocks[parent.id]) {
+            mockBlocks[parent.id].children = [id as DbId]
+          }
+          return id
+        }
+        if (command === "core.editor.batchInsertText") {
+          throw new Error("batch insert exploded")
+        }
+        if (command === "core.editor.deleteBlocks") {
+          throw new Error("cleanup exploded")
+        }
+        return undefined
+      }
+    )
+
+    const result = await insertWebArticleSummary(
+      rootId,
+      "AI 总结\n\n总括段落在这里写满一点字足够校验。\n\n- 点一内容\n- 点二内容\n- 点三内容"
+    )
+
+    expect(result.ok).toBe(false)
+    expect(summaryBlockId).not.toBeNull()
+    if (!result.ok && summaryBlockId != null) {
+      expect(result.error).toContain("batch insert exploded")
+      expect(result.error).toContain(`残留总结块 #${summaryBlockId}`)
+    }
+  })
 })
 
 describe("importScrapedArticle with AI summary", () => {
@@ -360,5 +424,59 @@ describe("importScrapedArticle with AI summary", () => {
         WEB_AI_SUMMARY_HEADING
       )
     }
+  })
+
+  it("marks cancelled AI as skipped while body and IR import continue", async () => {
+    const controller = new AbortController()
+    let notifyFetchStarted: (() => void) | undefined
+    const fetchStarted = new Promise<void>((resolve) => {
+      notifyFetchStarted = resolve
+    })
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        notifyFetchStarted?.()
+        return await new Promise<Response>((_resolve, reject) => {
+          const rejectAbort = () =>
+            reject(new DOMException("AI request aborted", "AbortError"))
+          if (init?.signal?.aborted) {
+            rejectAbort()
+            return
+          }
+          init?.signal?.addEventListener("abort", rejectAbort, { once: true })
+        })
+      }
+    )
+
+    const importPromise = importScrapedArticle({
+      article: sampleArticle,
+      pluginName: "orca-srs",
+      joinIncrementalReading: true,
+      scheduleToday: true,
+      enableAiSummary: true,
+      signal: controller.signal,
+      aiFetchImpl: fetchImpl as unknown as typeof fetch
+    })
+
+    await fetchStarted
+    controller.abort()
+    const result = await importPromise
+
+    expect(result.kind).toBe("created")
+    if (result.kind !== "created") return
+    expect(result.aiSummary.status).toBe("skipped")
+    expect(result.joinedIR).toBe(true)
+    expect(result.scheduledToday).toBe(true)
+    expect(mockOrca.commands.invokeEditorCommand).toHaveBeenCalledWith(
+      "core.editor.batchInsertHTML",
+      null,
+      expect.objectContaining({ id: result.pageBlockId }),
+      "lastChild",
+      sampleArticle.html
+    )
+    expect(createTopicCardByBlockId).toHaveBeenCalledWith(
+      result.pageBlockId,
+      "orca-srs"
+    )
+    expect(advanceDueToToday).toHaveBeenCalledWith(result.pageBlockId)
   })
 })
