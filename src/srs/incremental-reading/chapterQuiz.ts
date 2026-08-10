@@ -5,6 +5,12 @@
 
 import type { Block } from "../../orca.d.ts"
 import { callChatCompletions } from "../ai/aiChatClient"
+import {
+  AbortedWhileQueuedError,
+  backoffDelayMs,
+  delayWithAbort,
+  isRetryableErrorCode
+} from "../ai/aiChatPolicy"
 import type { ChatCompletionsMessage } from "../ai/aiChatRequest"
 import { extractJsonText } from "../ai/aiDraftParseValidate"
 import {
@@ -1943,7 +1949,8 @@ export async function generateChapterQuizQuestions(options: {
 
 /**
  * 生成失败时最多重试 genMaxRetries 次（总尝试 = 1 + retries）。
- * 每次失败若可解析为格式问题则仍重试；用户 abort 立即停止。
+ * 格式错误允许有限修复重试；传输错误复用 aiChatPolicy 的可恢复判定与退避；
+ * 确定性客户端错误和超时立即失败，用户 abort 立即停止。
  * `onRetryAttempt` 在即将开始下一次尝试前回调（参数为 1-based 下一次尝试序号），
  * 供 UI 展示「第 N/4 次尝试」。
  */
@@ -1972,10 +1979,23 @@ export async function generateChapterQuizWithRetries(options: {
     }
     last = await generateChapterQuizQuestions(options)
     if (last.success) return last
-    if (last.error.code === "CANCELLED" || last.error.code === "NO_API_KEY") {
+    const isParseRepair = last.error.code === "PARSE_ERROR"
+    const isTransportRetry = isRetryableErrorCode(last.error.code)
+    if (!isParseRepair && !isTransportRetry) {
       return last
     }
     if (attempt < maxRetries) {
+      if (isTransportRetry) {
+        try {
+          await delayWithAbort(backoffDelayMs(attempt), options.signal)
+        } catch (error) {
+          if (!(error instanceof AbortedWhileQueuedError)) throw error
+          return {
+            success: false,
+            error: { code: "CANCELLED", message: CHAPTER_QUIZ_COPY.cancelled }
+          }
+        }
+      }
       options.onRetryAttempt?.(attempt + 2)
     }
   }
