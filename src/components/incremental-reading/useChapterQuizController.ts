@@ -55,6 +55,94 @@ export type ClozePreview = {
   questionId: string
 }
 
+export type QuestionBoundRequest = {
+  questionId: string
+  seq: number
+  controller: AbortController
+}
+
+export type QuestionBoundRequestTracker = {
+  start: (questionId: string) => QuestionBoundRequest
+  commit: (
+    request: QuestionBoundRequest,
+    activeQuestionId: string | null,
+    apply: () => void
+  ) => boolean
+  finish: (
+    request: QuestionBoundRequest,
+    activeQuestionId: string | null,
+    apply: () => void
+  ) => boolean
+  cancel: () => void
+}
+
+export function createQuestionBoundRequestTracker(): QuestionBoundRequestTracker {
+  let seq = 0
+  let current: QuestionBoundRequest | null = null
+
+  const isCurrent = (
+    request: QuestionBoundRequest,
+    activeQuestionId: string | null
+  ) =>
+    current === request &&
+    request.seq === seq &&
+    !request.controller.signal.aborted &&
+    activeQuestionId === request.questionId
+
+  return {
+    start(questionId) {
+      current?.controller.abort()
+      const request = {
+        questionId,
+        seq: ++seq,
+        controller: new AbortController()
+      }
+      current = request
+      return request
+    },
+    commit(request, activeQuestionId, apply) {
+      if (!isCurrent(request, activeQuestionId)) return false
+      apply()
+      return true
+    },
+    finish(request, activeQuestionId, apply) {
+      if (!isCurrent(request, activeQuestionId)) return false
+      current = null
+      apply()
+      return true
+    },
+    cancel() {
+      seq += 1
+      current?.controller.abort()
+      current = null
+    }
+  }
+}
+
+function resolveActiveQuestionId(repr: ChapterQuizRepr): string | null {
+  const questions = repr.questions ?? []
+  if (repr.repairActive) {
+    const repairQueue = repr.repairQueue ?? []
+    const repairIndex = Math.min(
+      Math.max(0, repr.repairIndex ?? 0),
+      Math.max(0, repairQueue.length - 1)
+    )
+    const repairQuestionId = repairQueue[repairIndex]
+    return questions.some((item) => item.id === repairQuestionId)
+      ? repairQuestionId
+      : null
+  }
+  const index = Math.min(
+    Math.max(0, repr.currentIndex ?? 0),
+    Math.max(0, questions.length - 1)
+  )
+  return questions[index]?.id ?? null
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError"
+}
+
 export type UseChapterQuizControllerOptions = {
   blockId: number
   /** Seed for first paint before property hydration */
@@ -114,7 +202,13 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
   const genStartedRef = useRef(false)
   const reprRef = useRef(repr)
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const followUpRequestRef = useRef(createQuestionBoundRequestTracker())
+  const clozeRequestRef = useRef(createQuestionBoundRequestTracker())
+  const activeQuestionId = resolveActiveQuestionId(repr)
+  const activeQuestionIdRef = useRef<string | null>(activeQuestionId)
+  const previousActiveQuestionIdRef = useRef<string | null>(activeQuestionId)
   reprRef.current = repr
+  activeQuestionIdRef.current = activeQuestionId
   /** 在途的「重试进度」写入（null = 无在途）：终态落盘前先排空，避免被迟到写入回滚 */
   const retryPersistRef = useRef<Promise<boolean> | null>(null)
 
@@ -123,6 +217,43 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     reprRef.current = next
   }, [])
 
+  const clearEphemeralForQuestion = useCallback(() => {
+    followUpRequestRef.current.cancel()
+    clozeRequestRef.current.cancel()
+    setFollowUps([])
+    setFollowUpDraft("")
+    setFollowUpError(null)
+    setFollowUpBusy(false)
+    setClozePreview(null)
+    setClozeBusy(false)
+    setLocalError(null)
+  }, [])
+
+  const clearForQuestionTransition = useCallback(
+    (next: ChapterQuizRepr) => {
+      const nextQuestionId = resolveActiveQuestionId(next)
+      if (activeQuestionIdRef.current === nextQuestionId) return
+      activeQuestionIdRef.current = nextQuestionId
+      previousActiveQuestionIdRef.current = nextQuestionId
+      clearEphemeralForQuestion()
+    },
+    [clearEphemeralForQuestion]
+  )
+
+  useEffect(() => {
+    if (previousActiveQuestionIdRef.current === activeQuestionId) return
+    previousActiveQuestionIdRef.current = activeQuestionId
+    clearEphemeralForQuestion()
+  }, [activeQuestionId, clearEphemeralForQuestion])
+
+  useEffect(
+    () => () => {
+      followUpRequestRef.current.cancel()
+      clozeRequestRef.current.cancel()
+    },
+    []
+  )
+
   // Live UI sync: other controllers' persist → this instance
   useEffect(() => {
     const unsub = subscribeQuizLive(
@@ -130,6 +261,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       blockId,
       instanceId,
       (next) => {
+        clearForQuestionTransition(next)
         applyLocalRepr(next)
         setBusy(
           next.phase === "generating" &&
@@ -138,18 +270,19 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       }
     )
     return unsub
-  }, [applyLocalRepr, blockId, instanceId])
+  }, [applyLocalRepr, blockId, clearForQuestionTransition, instanceId])
 
   useEffect(() => {
     let cancelled = false
     setHydrated(false)
     genStartedRef.current = false
     setLocalError(null)
-    clearEphemeralLocal()
+    clearEphemeralForQuestion()
     void (async () => {
       try {
         const loaded = await loadChapterQuizState(blockId, initial)
         if (cancelled) return
+        clearForQuestionTransition(loaded)
         applyLocalRepr(loaded)
       } catch (error) {
         console.error("[章末小测] 加载状态失败，使用初值:", error)
@@ -165,22 +298,18 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
       // 卸载不取消共享生成：另一实例可能仍在显示/等待
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockId, initial, applyLocalRepr])
-
-  function clearEphemeralLocal() {
-    setFollowUps([])
-    setFollowUpDraft("")
-    setFollowUpError(null)
-    setClozePreview(null)
-  }
-
-  const clearEphemeralForQuestion = useCallback(() => {
-    clearEphemeralLocal()
-  }, [])
+  }, [
+    blockId,
+    initial,
+    applyLocalRepr,
+    clearEphemeralForQuestion,
+    clearForQuestionTransition
+  ])
 
   const persist = useCallback(
     async (next: ChapterQuizRepr): Promise<boolean> => {
       const previous = reprRef.current
+      clearForQuestionTransition(next)
       applyLocalRepr(next)
       // broadcast before/after write so peer UIs stay live; no extra backend write
       publishQuizLive(defaultLiveSyncRegistry, blockId, next, instanceId)
@@ -197,6 +326,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
         console.error("[章末小测] 保存状态失败:", error)
         // 仅当仍停留在本次乐观值时回滚，避免覆盖更新的 live 状态
         if (reprRef.current === next) {
+          clearForQuestionTransition(previous)
           applyLocalRepr(previous)
           publishQuizLive(
             defaultLiveSyncRegistry,
@@ -212,7 +342,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
         return false
       }
     },
-    [applyLocalRepr, blockId, instanceId]
+    [applyLocalRepr, blockId, clearForQuestionTransition, instanceId]
   )
 
   /**
@@ -241,6 +371,7 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
         if (reprRef.current.phase === "generating") {
           try {
             const loaded = await loadChapterQuizState(blockId, reprRef.current)
+            clearForQuestionTransition(loaded)
             applyLocalRepr(loaded)
           } catch (error) {
             console.error("[章末小测] 等待共享生成后刷新失败:", error)
@@ -400,7 +531,14 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     } finally {
       setBusy(false)
     }
-  }, [applyLocalRepr, blockId, clearEphemeralForQuestion, flushRetryProgress, persist])
+  }, [
+    applyLocalRepr,
+    blockId,
+    clearEphemeralForQuestion,
+    clearForQuestionTransition,
+    flushRetryProgress,
+    persist
+  ])
 
   useEffect(() => {
     if (!autoGenerate) return
@@ -880,31 +1018,52 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
     async (target: ChapterQuizQuestion) => {
       const existing = reprRef.current.cardAdds?.[target.id]
       if (existing?.clozeBlockId) return
-      setClozeBusy(true)
-      setLocalError(null)
-      setClozePreview(null)
+      const tracker = clozeRequestRef.current
+      const request = tracker.start(target.id)
+      if (
+        !tracker.commit(request, activeQuestionIdRef.current, () => {
+          setClozeBusy(true)
+          setLocalError(null)
+          setClozePreview(null)
+        })
+      ) {
+        tracker.cancel()
+        return
+      }
       try {
         const result = await rewriteQuestionAsCloze({
           pluginName: reprRef.current.pluginName,
-          question: target
+          question: target,
+          signal: request.controller.signal
         })
+        if (request.controller.signal.aborted) return
         if (!result.success) {
-          setLocalError(result.error.message)
-          orca.notify("error", result.error.message, { title: "章末小测" })
+          if (result.error.code === "CANCELLED") return
+          tracker.commit(request, activeQuestionIdRef.current, () => {
+            setLocalError(result.error.message)
+            orca.notify("error", result.error.message, { title: "章末小测" })
+          })
           return
         }
-        setClozePreview({
-          text: result.text,
-          clozeText: result.clozeText,
-          questionId: target.id
+        tracker.commit(request, activeQuestionIdRef.current, () => {
+          setClozePreview({
+            text: result.text,
+            clozeText: result.clozeText,
+            questionId: target.id
+          })
         })
       } catch (error) {
+        if (request.controller.signal.aborted || isAbortError(error)) return
         const message = error instanceof Error ? error.message : String(error)
-        console.error("[章末小测] 填空改写失败:", error)
-        setLocalError(message)
-        orca.notify("error", message, { title: "章末小测" })
+        tracker.commit(request, activeQuestionIdRef.current, () => {
+          console.error("[章末小测] 填空改写失败:", error)
+          setLocalError(message)
+          orca.notify("error", message, { title: "章末小测" })
+        })
       } finally {
-        setClozeBusy(false)
+        tracker.finish(request, activeQuestionIdRef.current, () => {
+          setClozeBusy(false)
+        })
       }
     },
     []
@@ -984,6 +1143,8 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
   const handleFollowUpFor = useCallback(
     async (target: ChapterQuizQuestion, selectedIndex?: number) => {
       if (!followUpDraft.trim() || followUpBusy) return
+      const tracker = followUpRequestRef.current
+      const request = tracker.start(target.id)
       const userText = followUpDraft.trim()
       const sel =
         typeof selectedIndex === "number"
@@ -991,33 +1152,54 @@ export function useChapterQuizController(options: UseChapterQuizControllerOption
           : typeof repr.answers?.[target.id] === "number"
             ? repr.answers![target.id]
             : undefined
-      setFollowUpBusy(true)
-      setFollowUpError(null)
-      setFollowUpDraft("")
       const history = [...followUps]
-      setFollowUps([...history, { role: "user", content: userText }])
+      const userTurn = { role: "user" as const, content: userText }
+      if (
+        !tracker.commit(request, activeQuestionIdRef.current, () => {
+          setFollowUpBusy(true)
+          setFollowUpError(null)
+          setFollowUpDraft("")
+          setFollowUps([...history, userTurn])
+        })
+      ) {
+        tracker.cancel()
+        return
+      }
       try {
         const result = await generateChapterQuizFollowUp({
           pluginName: repr.pluginName,
           question: target,
           selectedIndex: sel,
           userQuestion: userText,
-          history
+          history,
+          signal: request.controller.signal
         })
+        if (request.controller.signal.aborted) return
         if (!result.success) {
-          setFollowUpError(result.error.message)
+          if (result.error.code === "CANCELLED") return
+          tracker.commit(request, activeQuestionIdRef.current, () => {
+            setFollowUpError(result.error.message)
+          })
           return
         }
-        setFollowUps((prev: FollowUpTurn[]) => [
-          ...prev,
-          { role: "assistant", content: result.answer }
-        ])
+        tracker.commit(request, activeQuestionIdRef.current, () => {
+          setFollowUps([
+            ...history,
+            userTurn,
+            { role: "assistant", content: result.answer }
+          ])
+        })
       } catch (error) {
+        if (request.controller.signal.aborted || isAbortError(error)) return
         const message = error instanceof Error ? error.message : String(error)
-        console.error("[章末小测] 追问失败:", error)
-        setFollowUpError(message)
+        tracker.commit(request, activeQuestionIdRef.current, () => {
+          console.error("[章末小测] 追问失败:", error)
+          setFollowUpError(message)
+        })
       } finally {
-        setFollowUpBusy(false)
+        tracker.finish(request, activeQuestionIdRef.current, () => {
+          setFollowUpBusy(false)
+        })
       }
     },
     [followUpBusy, followUpDraft, followUps, repr.answers, repr.pluginName]
