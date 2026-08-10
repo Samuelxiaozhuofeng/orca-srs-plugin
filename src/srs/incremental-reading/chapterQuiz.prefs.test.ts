@@ -239,6 +239,7 @@ describe("generateChapterQuizWithRetries reports retry attempts", () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     clearChapterQuizPrefsCache()
     clearAISettingsCache()
     delete (globalThis as any).orca
@@ -291,6 +292,26 @@ describe("generateChapterQuizWithRetries reports retry attempts", () => {
     expect(callChatCompletionsMock).toHaveBeenCalledTimes(3)
   })
 
+  it("retries parse errors only through the configured budget", async () => {
+    callChatCompletionsMock.mockResolvedValue({
+      success: true,
+      content: "not json",
+      status: 200,
+      attempts: 1
+    })
+
+    const result = await generateChapterQuizWithRetries({
+      pluginName: "orca-srs",
+      sourceText: "[block:1]\n正文",
+      maxRetries: 3
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error("expected failure")
+    expect(result.error.code).toBe("PARSE_ERROR")
+    expect(callChatCompletionsMock).toHaveBeenCalledTimes(4)
+  })
+
   it("does not fire onRetryAttempt when the first attempt succeeds", async () => {
     callChatCompletionsMock.mockResolvedValue({
       success: true,
@@ -319,6 +340,93 @@ describe("generateChapterQuizWithRetries reports retry attempts", () => {
 
     expect(result.success).toBe(true)
     expect(attempts).toEqual([])
+  })
+
+  it.each(["HTTP_401", "HTTP_400", "TIMEOUT"])(
+    "does not retry deterministic error %s",
+    async (code) => {
+      callChatCompletionsMock.mockResolvedValue({
+        success: false,
+        error: { code, message: `failed: ${code}` },
+        attempts: 1
+      })
+      const attempts: number[] = []
+
+      const result = await generateChapterQuizWithRetries({
+        pluginName: "orca-srs",
+        sourceText: "[block:1]\n正文",
+        maxRetries: 3,
+        onRetryAttempt: (nextAttempt) => {
+          attempts.push(nextAttempt)
+        }
+      })
+
+      expect(result.success).toBe(false)
+      if (result.success) throw new Error("expected failure")
+      expect(result.error.code).toBe(code)
+      expect(callChatCompletionsMock).toHaveBeenCalledTimes(1)
+      expect(attempts).toEqual([])
+    }
+  )
+
+  it.each(["HTTP_429", "HTTP_500"])(
+    "backs off before retrying recoverable error %s",
+    async (code) => {
+      vi.useFakeTimers()
+      callChatCompletionsMock
+        .mockResolvedValueOnce({
+          success: false,
+          error: { code, message: `failed: ${code}` },
+          attempts: 1
+        })
+        .mockResolvedValueOnce({
+          success: false,
+          error: { code: "HTTP_400", message: "stop" },
+          attempts: 1
+        })
+
+      const resultPromise = generateChapterQuizWithRetries({
+        pluginName: "orca-srs",
+        sourceText: "[block:1]\n正文",
+        maxRetries: 3
+      })
+      await vi.advanceTimersByTimeAsync(799)
+      expect(callChatCompletionsMock).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+
+      const result = await resultPromise
+      expect(result.success).toBe(false)
+      if (result.success) throw new Error("expected failure")
+      expect(result.error.code).toBe("HTTP_400")
+      expect(callChatCompletionsMock).toHaveBeenCalledTimes(2)
+      vi.useRealTimers()
+    }
+  )
+
+  it("cancels during recoverable-error backoff without another request", async () => {
+    vi.useFakeTimers()
+    callChatCompletionsMock.mockResolvedValue({
+      success: false,
+      error: { code: "HTTP_503", message: "busy" },
+      attempts: 1
+    })
+    const controller = new AbortController()
+
+    const resultPromise = generateChapterQuizWithRetries({
+      pluginName: "orca-srs",
+      sourceText: "[block:1]\n正文",
+      maxRetries: 3,
+      signal: controller.signal
+    })
+    await vi.advanceTimersByTimeAsync(400)
+    controller.abort()
+
+    const result = await resultPromise
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error("expected failure")
+    expect(result.error.code).toBe("CANCELLED")
+    expect(callChatCompletionsMock).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
   })
 
   it("stops retrying on abort without further callbacks", async () => {
