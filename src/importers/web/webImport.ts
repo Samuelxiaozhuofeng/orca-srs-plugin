@@ -371,7 +371,11 @@ export async function importScrapedArticle(
     // AI summary is optional and fail-soft: never roll back a successful page write.
     let aiSummary: WebImportAiSummaryStatus = { status: "skipped" }
     if (summaryPromise) {
-      aiSummary = await applyAiSummaryToPage(rootBlockId, summaryPromise)
+      aiSummary = await applyAiSummaryToPage(
+        rootBlockId,
+        summaryPromise,
+        request.signal
+      )
     }
 
     if (joinIR) {
@@ -430,11 +434,18 @@ export async function importScrapedArticle(
  */
 async function applyAiSummaryToPage(
   rootBlockId: DbId,
-  summaryPromise: ReturnType<typeof generateWebArticleSummary>
+  summaryPromise: ReturnType<typeof generateWebArticleSummary>,
+  cancelSignal?: AbortSignal
 ): Promise<WebImportAiSummaryStatus> {
   try {
     const generated = await summaryPromise
+    if (cancelSignal?.aborted) {
+      return { status: "skipped" }
+    }
     if (!generated.ok) {
+      if (generated.code === "CANCELLED") {
+        return { status: "skipped" }
+      }
       console.error(
         "[web-import] AI 总结生成失败:",
         generated.code,

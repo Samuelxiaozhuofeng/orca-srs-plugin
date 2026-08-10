@@ -94,6 +94,7 @@ export default function WebImportDialog({
   const [scheduleToday, setScheduleToday] = useState(false)
   /** Optional AI summary via default model in AI / Firecrawl 服务设置 */
   const [enableAiSummary, setEnableAiSummary] = useState(false)
+  const [aiSummarySkipped, setAiSummarySkipped] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -162,6 +163,7 @@ export default function WebImportDialog({
   const handleImport = useCallback(async () => {
     if (isWorking || !article) return
     setError(null)
+    setAiSummarySkipped(false)
     setIsWorking(true)
     importCancelledRef.current = false
     const token = tokenGuardRef.current.next()
@@ -201,7 +203,9 @@ export default function WebImportDialog({
             ? "，已写入 AI 总结"
             : result.aiSummary.status === "failed"
               ? `（AI 总结失败：${result.aiSummary.error}）`
-              : ""
+              : enableAiSummary
+                ? "，已跳过 AI 总结"
+                : ""
         if (result.aiSummary.status === "failed") {
           orca.notify(
             "warn",
@@ -241,6 +245,14 @@ export default function WebImportDialog({
     isWorking,
     finishAndClose
   ])
+
+  const handleSkipAiSummary = useCallback(() => {
+    if (!isWorking || !enableAiSummary || aiSummarySkipped) return
+    const controller = abortRef.current
+    if (!controller || controller.signal.aborted) return
+    setAiSummarySkipped(true)
+    controller.abort()
+  }, [isWorking, enableAiSummary, aiSummarySkipped])
 
   return (
     <div className="srs-import-dialog">
@@ -413,6 +425,15 @@ export default function WebImportDialog({
             >
               上一步
             </Button>
+            {isWorking && enableAiSummary && !aiSummarySkipped ? (
+              <Button
+                variant="outline"
+                onClick={handleSkipAiSummary}
+                aria-label="跳过 AI 总结并继续导入"
+              >
+                跳过 AI 总结并继续导入
+              </Button>
+            ) : null}
             <Button
               variant="solid"
               onClick={() => {
@@ -425,7 +446,9 @@ export default function WebImportDialog({
             >
               {isWorking
                 ? enableAiSummary
-                  ? "分析并导入中…"
+                  ? aiSummarySkipped
+                    ? "继续导入中…"
+                    : "分析并导入中…"
                   : "导入中…"
                 : "导入"}
             </Button>
