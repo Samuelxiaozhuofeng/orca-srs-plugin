@@ -4,6 +4,9 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-10（AI 快捷制卡保留失败可重试）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：移动失败保留 preview job / 包装块 / pending 卡片并 error 提示；保留 / 保留所选 / 取消按 job 互斥，执行中禁用终态按钮
+>
 > **索引增补：2026-08-10（摘录阅读 AI 快捷制卡源文）**：
 > - [SRS_AI模块.md](SRS_AI模块.md)：`isExcludedAiSourceBlock` 允许 IR Topic/Extract/hybrid 作源文；纯 SRS `#card` 与 AI 预览根仍排除
 > - [问题经验.md](问题经验.md)：摘录界面误报「请选中文本…」根因与回归

@@ -46,6 +46,8 @@ export interface QuickBackgroundJob {
   resultRootBlockId: number | null
   /** 尚未落库的候选子树根；只有「保留所选」才提交 */
   selectedResultBlockIds: number[]
+  /** 保留/保留所选/取消互斥；true 时预览终态按钮禁用 */
+  terminalActionPending?: boolean
   createdAt: number
   /**
    * 启动时的面板 id + 视图指纹。
@@ -141,6 +143,7 @@ export const aiQuickJobsState = getValtioProxy({
 
 const abortByJobId = new Map<string, AbortController>()
 const selectionUpdateByJobId = new Map<string, Promise<void>>()
+const terminalActionJobIds = new Set<string>()
 
 let jobSeq = 0
 
@@ -159,9 +162,28 @@ function removeJob(jobId: string): void {
   abortByJobId.get(jobId)?.abort()
   abortByJobId.delete(jobId)
   selectionUpdateByJobId.delete(jobId)
+  terminalActionJobIds.delete(jobId)
   aiQuickJobsState.jobs = (aiQuickJobsState.jobs as QuickBackgroundJob[]).filter(
     (j: QuickBackgroundJob) => j.id !== jobId
   )
+}
+
+async function runTerminalJobAction(
+  jobId: string,
+  action: (job: QuickBackgroundJob) => Promise<void>
+): Promise<void> {
+  const job = findJob(jobId)
+  if (!job || terminalActionJobIds.has(jobId)) return
+
+  terminalActionJobIds.add(jobId)
+  job.terminalActionPending = true
+  try {
+    await action(job)
+  } finally {
+    terminalActionJobIds.delete(jobId)
+    const current = findJob(jobId)
+    if (current) current.terminalActionPending = false
+  }
 }
 
 /**
@@ -178,6 +200,7 @@ export function detachJobsForResultRoot(resultRootBlockId: number): void {
     abortByJobId.get(job.id)?.abort()
     abortByJobId.delete(job.id)
     selectionUpdateByJobId.delete(job.id)
+    terminalActionJobIds.delete(job.id)
   }
   const detachIds = new Set(toDetach.map((j) => j.id))
   aiQuickJobsState.jobs = snapshot.filter((j) => !detachIds.has(j.id))
@@ -375,27 +398,33 @@ export function cancelBackgroundQuickJob(
  * 内容已在笔记中：即使状态属性写入失败，也卸掉预览 UI，避免「点了保留没反应」。
  */
 export async function keepBackgroundQuickJob(jobId: string): Promise<void> {
-  const job = findJob(jobId)
-  if (!job) return
-
-  if (job.kind === "card") {
-    const { keepQuickCardJob } = await import("./aiQuickCardJob")
-    await keepQuickCardJob(job)
-    removeJob(jobId)
-    return
-  }
-
-  if (job.resultRootBlockId != null) {
-    const result = await keepQuickResult(job.resultRootBlockId)
-    if (!result.success) {
-      console.error("[AI QuickInteract] 保留结果块失败:", result.error)
-      orca.notify("warn", `内容已保留，状态标记失败：${result.error}`, {
-        title: "AI 快捷交互"
-      })
+  await runTerminalJobAction(jobId, async (job) => {
+    if (job.kind === "card") {
+      const { keepQuickCardJob } = await import("./aiQuickCardJob")
+      const result = await keepQuickCardJob(job)
+      if (!result.success) {
+        console.error("[AI 快捷制卡] 保留失败:", result.error)
+        orca.notify("error", `${result.error}。预览已保留，可再次点击保留重试。`, {
+          title: "AI 快捷制卡"
+        })
+        return
+      }
+      removeJob(jobId)
+      return
     }
-  }
-  // 无论属性是否写成功，都结束预览任务（块内容保留）
-  removeJob(jobId)
+
+    if (job.resultRootBlockId != null) {
+      const result = await keepQuickResult(job.resultRootBlockId)
+      if (!result.success) {
+        console.error("[AI QuickInteract] 保留结果块失败:", result.error)
+        orca.notify("warn", `内容已保留，状态标记失败：${result.error}`, {
+          title: "AI 快捷交互"
+        })
+      }
+    }
+    // 无论属性是否写成功，都结束预览任务（块内容保留）
+    removeJob(jobId)
+  })
 }
 
 /** 切换候选子树；只更新任务内临时状态，不移动或删除 Orca 块。 */
@@ -442,29 +471,29 @@ export async function toggleBackgroundQuickJobBlockSelection(
 
 /** 用户确认后批量保留所选子树；失败时保留预览与选择以便重试。 */
 export async function keepSelectedBackgroundQuickJob(jobId: string): Promise<void> {
-  const job = findJob(jobId)
-  if (!job) return
-  if (job.status !== "ready" || job.resultRootBlockId == null) {
-    orca.notify("warn", "当前任务没有可保留的预览内容", { title: "AI 快捷交互" })
-    return
-  }
-  if (job.selectedResultBlockIds.length === 0) {
-    orca.notify("info", "请先选择要保留的内容", { title: "AI 快捷交互" })
-    return
-  }
+  await runTerminalJobAction(jobId, async (job) => {
+    if (job.status !== "ready" || job.resultRootBlockId == null) {
+      orca.notify("warn", "当前任务没有可保留的预览内容", { title: "AI 快捷交互" })
+      return
+    }
+    if (job.selectedResultBlockIds.length === 0) {
+      orca.notify("info", "请先选择要保留的内容", { title: "AI 快捷交互" })
+      return
+    }
 
-  const result = await keepSelectedQuickResultBlocks(
-    job.resultRootBlockId,
-    job.selectedResultBlockIds
-  )
-  if (!result.success) {
-    console.error("[AI QuickInteract] 保留所选内容失败:", result.error)
-    orca.notify("error", result.error, { title: "AI 快捷交互" })
-    return
-  }
-  removeJob(jobId)
-  orca.notify("success", `已保留 ${result.keptCount} 项`, {
-    title: "AI 快捷交互"
+    const result = await keepSelectedQuickResultBlocks(
+      job.resultRootBlockId,
+      job.selectedResultBlockIds
+    )
+    if (!result.success) {
+      console.error("[AI QuickInteract] 保留所选内容失败:", result.error)
+      orca.notify("error", result.error, { title: "AI 快捷交互" })
+      return
+    }
+    removeJob(jobId)
+    orca.notify("success", `已保留 ${result.keptCount} 项`, {
+      title: "AI 快捷交互"
+    })
   })
 }
 
@@ -496,34 +525,33 @@ export async function promoteBackgroundQuickJob(jobId: string): Promise<void> {
  * 若尚未插入（error 且无块），仅移除卡片。
  */
 export async function dismissBackgroundQuickJob(jobId: string): Promise<void> {
-  const job = findJob(jobId)
-  if (!job) return
-
-  if (job.status === "generating") {
-    cancelBackgroundQuickJob(jobId)
-    return
-  }
-
-  if (job.kind === "card") {
-    const { dismissQuickCardJob } = await import("./aiQuickCardJob")
-    const result = await dismissQuickCardJob(job)
-    if (!result.success) {
-      orca.notify("error", result.error, { title: "AI 快捷制卡" })
+  await runTerminalJobAction(jobId, async (job) => {
+    if (job.status === "generating") {
+      cancelBackgroundQuickJob(jobId)
       return
     }
+
+    if (job.kind === "card") {
+      const { dismissQuickCardJob } = await import("./aiQuickCardJob")
+      const result = await dismissQuickCardJob(job)
+      if (!result.success) {
+        orca.notify("error", result.error, { title: "AI 快捷制卡" })
+        return
+      }
+      removeJob(jobId)
+      return
+    }
+
+    if (job.resultRootBlockId != null) {
+      const result = await dismissQuickResult(job.resultRootBlockId)
+      if (!result.success) {
+        orca.notify("error", result.error, { title: "AI 快捷交互" })
+        return
+      }
+    }
+
     removeJob(jobId)
-    return
-  }
-
-  if (job.resultRootBlockId != null) {
-    const result = await dismissQuickResult(job.resultRootBlockId)
-    if (!result.success) {
-      orca.notify("error", result.error, { title: "AI 快捷交互" })
-      return
-    }
-  }
-
-  removeJob(jobId)
+  })
 }
 
 /** 错误卡片：仅移除，不删块（通常尚未插入） */
@@ -571,6 +599,7 @@ export async function cancelAllBackgroundQuickJobs(): Promise<void> {
     ...(aiQuickJobsState.jobs as QuickBackgroundJob[])
   ]
   selectionUpdateByJobId.clear()
+  terminalActionJobIds.clear()
   aiQuickJobsState.jobs = []
   for (const job of snapshot) {
     if (job.status === "ready" && job.resultRootBlockId != null) {

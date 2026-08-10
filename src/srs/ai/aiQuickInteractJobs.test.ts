@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   aiQuickJobsState,
   cancelAllBackgroundQuickJobs,
+  dismissBackgroundQuickJob,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
   keepSelectedBackgroundQuickJob,
   startBackgroundQuickInsertJob,
-  toggleBackgroundQuickJobBlockSelection
+  toggleBackgroundQuickJobBlockSelection,
+  type QuickBackgroundJob
 } from "./aiQuickInteractJobs"
 
 vi.mock("./aiQuickInteract", () => {
@@ -39,6 +41,11 @@ vi.mock("./aiQuickInteract", () => {
   }
 })
 
+vi.mock("./aiQuickCardJob", () => ({
+  keepQuickCardJob: vi.fn(async () => ({ success: true as const })),
+  dismissQuickCardJob: vi.fn(async () => ({ success: true as const }))
+}))
+
 function installOrcaPanel(viewKey: {
   view: string
   blockId?: number | null
@@ -62,6 +69,32 @@ function installOrcaPanel(viewKey: {
       }))
     }
   }
+}
+
+function installReadyCardJob(id = "quick-card-job"): QuickBackgroundJob {
+  const job: QuickBackgroundJob = {
+    id,
+    kind: "card",
+    cardBlockIds: [1001, 1002],
+    pluginName: "orca-srs",
+    sourceBlockId: 10,
+    selectedText: "工作记忆",
+    blockText: "工作记忆",
+    promptLabel: "问答卡",
+    promptText: "",
+    includeBlockContext: false,
+    model: "",
+    status: "ready",
+    resultText: "2 张问答卡",
+    errorMessage: null,
+    resultRootBlockId: 999,
+    selectedResultBlockIds: [],
+    createdAt: Date.now(),
+    panelId: "panel-1",
+    panelViewKey: null
+  }
+  aiQuickJobsState.jobs = [job]
+  return job
 }
 
 describe("startBackgroundQuickInsertJob", () => {
@@ -319,6 +352,94 @@ describe("startBackgroundQuickInsertJob", () => {
       expect.stringContaining("setProperties failed"),
       expect.objectContaining({ title: "AI 快捷交互" })
     )
+  })
+
+  it("keeps a failed quick-card job and preview available for retry", async () => {
+    const { keepQuickCardJob } = await import("./aiQuickCardJob")
+    vi.mocked(keepQuickCardJob)
+      .mockResolvedValueOnce({ success: false, error: "移出卡片失败：moveBlocks failed" })
+      .mockResolvedValueOnce({ success: true })
+    const job = installReadyCardJob()
+
+    await keepBackgroundQuickJob(job.id)
+
+    expect(keepQuickCardJob).toHaveBeenCalledTimes(1)
+    expect(aiQuickJobsState.jobs).toHaveLength(1)
+    expect(aiQuickJobsState.jobs[0]).toMatchObject({
+      id: job.id,
+      status: "ready",
+      resultRootBlockId: 999,
+      cardBlockIds: [1001, 1002],
+      terminalActionPending: false
+    })
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "error",
+      expect.stringContaining("可再次点击保留重试"),
+      expect.objectContaining({ title: "AI 快捷制卡" })
+    )
+
+    await keepBackgroundQuickJob(job.id)
+
+    expect(keepQuickCardJob).toHaveBeenCalledTimes(2)
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("runs only the first of two concurrent quick-card keep actions", async () => {
+    const { keepQuickCardJob } = await import("./aiQuickCardJob")
+    let resolveKeep!: (value: { success: true }) => void
+    const pendingKeep = new Promise<{ success: true }>((resolve) => {
+      resolveKeep = resolve
+    })
+    vi.mocked(keepQuickCardJob).mockReturnValueOnce(pendingKeep)
+    const job = installReadyCardJob()
+
+    const first = keepBackgroundQuickJob(job.id)
+    const second = keepBackgroundQuickJob(job.id)
+
+    expect(aiQuickJobsState.jobs[0]?.terminalActionPending).toBe(true)
+    await vi.waitFor(() => {
+      expect(keepQuickCardJob).toHaveBeenCalledTimes(1)
+    })
+    resolveKeep({ success: true })
+    await Promise.all([first, second])
+
+    expect(keepQuickCardJob).toHaveBeenCalledTimes(1)
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("makes dismiss a no-op while quick-card keep is running", async () => {
+    const { dismissQuickCardJob, keepQuickCardJob } = await import(
+      "./aiQuickCardJob"
+    )
+    let resolveKeep!: (value: { success: true }) => void
+    const pendingKeep = new Promise<{ success: true }>((resolve) => {
+      resolveKeep = resolve
+    })
+    vi.mocked(keepQuickCardJob).mockReturnValueOnce(pendingKeep)
+    const job = installReadyCardJob()
+
+    const keep = keepBackgroundQuickJob(job.id)
+    const dismiss = dismissBackgroundQuickJob(job.id)
+
+    await vi.waitFor(() => {
+      expect(keepQuickCardJob).toHaveBeenCalledTimes(1)
+    })
+    expect(dismissQuickCardJob).not.toHaveBeenCalled()
+    resolveKeep({ success: true })
+    await Promise.all([keep, dismiss])
+
+    expect(dismissQuickCardJob).not.toHaveBeenCalled()
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("removes a quick-card job after keep succeeds", async () => {
+    const { keepQuickCardJob } = await import("./aiQuickCardJob")
+    const job = installReadyCardJob()
+
+    await keepBackgroundQuickJob(job.id)
+
+    expect(keepQuickCardJob).toHaveBeenCalledTimes(1)
+    expect(aiQuickJobsState.jobs).toEqual([])
   })
 
   it("serializes rapid candidate clicks without ending or writing the preview job", async () => {

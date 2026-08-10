@@ -390,6 +390,8 @@ export function AIBlockLoadingMount() {
 
       actionBar.replaceChildren()
       const selectedCount = job.selectedResultBlockIds.length
+      const terminalActionPending = job.terminalActionPending === true
+      actionBar.toggleAttribute("aria-busy", terminalActionPending)
       if (selectedCount > 0) {
         const count = document.createElement("span")
         count.className = "srs-ai-preview-actions__count"
@@ -402,6 +404,7 @@ export function AIBlockLoadingMount() {
           "srs-ai-action-btn srs-ai-action-btn--keep-selected"
         keepSelectedBtn.title = "保留已选择的内容，丢弃其余预览"
         keepSelectedBtn.innerHTML = '<i class="ti ti-checks"></i>保留所选'
+        keepSelectedBtn.disabled = terminalActionPending
         keepSelectedBtn.onclick = (e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -415,6 +418,7 @@ export function AIBlockLoadingMount() {
       keepAllBtn.className = "srs-ai-action-btn srs-ai-action-btn--keep"
       keepAllBtn.title = "保留完整 AI 结果"
       keepAllBtn.innerHTML = '<i class="ti ti-check"></i>保留全部'
+      keepAllBtn.disabled = terminalActionPending
       keepAllBtn.onclick = (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -426,6 +430,7 @@ export function AIBlockLoadingMount() {
       cancelBtn.className = "srs-ai-action-btn srs-ai-action-btn--cancel"
       cancelBtn.title = "取消并删除此 AI 预览块"
       cancelBtn.innerHTML = '<i class="ti ti-x"></i>取消'
+      cancelBtn.disabled = terminalActionPending
       cancelBtn.onclick = (e) => {
         e.preventDefault()
         e.stopPropagation()
