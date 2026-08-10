@@ -354,7 +354,19 @@ describe("generateFlashcardDrafts source cap", () => {
       messages: Array<{ role: string; content: string }>
     }
     const userMsg = body.messages.find((m) => m.role === "user")!.content
+    const sourceStart = "-----BEGIN SOURCE-----\n"
+    const sourceEnd = "\n-----END SOURCE-----"
+    const startIndex = userMsg.indexOf(sourceStart)
+    const endIndex = userMsg.indexOf(sourceEnd, startIndex + sourceStart.length)
+    const requestSource = userMsg.slice(startIndex + sourceStart.length, endIndex)
+    const clipped = clipCardSource(long)
+
     expect(userMsg).toContain("was truncated")
+    expect(startIndex).toBeGreaterThanOrEqual(0)
+    expect(endIndex).toBeGreaterThan(startIndex)
+    expect(clipped.truncated).toBe(true)
+    expect(requestSource).toBe(clipped.text)
+    expect(requestSource).toHaveLength(AI_CARD_SOURCE_MAX)
     // 整块 21000 字符不应原样进请求体
     expect(userMsg.length).toBeLessThan(long.length)
   })

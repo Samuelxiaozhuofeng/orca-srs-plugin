@@ -19,6 +19,7 @@ import {
   type AIDetailLevel
 } from "../srs/ai/aiDraftTypes"
 import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
+import { clipCardSource } from "../srs/ai/aiService"
 import { AICardDraftCard } from "./AICardDraftCard"
 
 const { useMemo } = window.React
@@ -103,18 +104,19 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     () => drafts.filter(d => selectedIds.includes(d.id)).length,
     [drafts, selectedIds]
   )
+  const clippedSource = useMemo(() => clipCardSource(sourceText), [sourceText])
 
   const draftErrors = useMemo(() => {
     const map: Record<string, string | null> = {}
     for (const d of drafts) {
       if (selectedIds.includes(d.id)) {
-        map[d.id] = validateEditableDraft(d, sourceText)
+        map[d.id] = validateEditableDraft(d, clippedSource.text)
       } else {
         map[d.id] = null
       }
     }
     return map
-  }, [drafts, selectedIds, sourceText])
+  }, [drafts, selectedIds, clippedSource.text])
 
   const hasInvalidSelected = useMemo(
     () =>
@@ -142,8 +144,12 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
         </header>
 
         <section className="ai-card-dialog__source">
-          <div className="ai-card-dialog__section-label">源文本</div>
-          <div className="ai-card-dialog__source-body">{sourceText}</div>
+          <div className="ai-card-dialog__section-label">
+            将发送的源文本{clippedSource.truncated ? "（已截断）" : ""}
+          </div>
+          <div className="ai-card-dialog__source-body">
+            {clippedSource.text}
+          </div>
         </section>
 
         {errorMessage && (

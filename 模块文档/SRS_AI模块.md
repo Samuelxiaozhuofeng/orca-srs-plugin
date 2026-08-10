@@ -2,13 +2,14 @@
 
 > 文档同步日期：2026-08-10
 > 近期变更：
-> 1. **后台生成行尾可取消（2026-08-10）**：源块行尾由展示型 loading 改为原生取消按钮；单任务为「取消此项 AI 生成」，同源块多任务为「取消此块的全部 N 项 AI 生成」。取消会 abort 请求并移除 job；请求迟到返回时由 job/signal 双重守卫阻止写块。不扩建任务中心：`AIQuickJobsPanel` 仅保留鉴权失败（HTTP 401/403）错误卡。
-> 2. **快捷制卡预览只允许整张处理（2026-08-10）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
-> 3. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
-> 4. **AI 配置错误直达（2026-08-10）**：生成闪卡、快捷交互、快捷制卡在未配置 API Key 时直接打开服务设置「连接」页；生成 UI 内的 HTTP 401/403 保留原错误并显示「打开连接设置」，由用户显式切换；其它错误不引导设置。
-> 5. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
-> 6. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
-> 7. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
+> 1. **正式制卡选区优先（2026-08-10）**：`startAIFlashcardFlow` 对单 fragment、同块跨样式与跨块非空选区统一只发送选中文字；折叠光标仍读取锚点块全文 + 有界子树。弹窗与请求共用 `clipCardSource` 的 6000 字正文，超限可见标记「已截断」。
+> 2. **后台生成行尾可取消（2026-08-10）**：源块行尾由展示型 loading 改为原生取消按钮；单任务为「取消此项 AI 生成」，同源块多任务为「取消此块的全部 N 项 AI 生成」。取消会 abort 请求并移除 job；请求迟到返回时由 job/signal 双重守卫阻止写块。不扩建任务中心：`AIQuickJobsPanel` 仅保留鉴权失败（HTTP 401/403）错误卡。
+> 3. **快捷制卡预览只允许整张处理（2026-08-10）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
+> 4. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
+> 5. **AI 配置错误直达（2026-08-10）**：生成闪卡、快捷交互、快捷制卡在未配置 API Key 时直接打开服务设置「连接」页；生成 UI 内的 HTTP 401/403 保留原错误并显示「打开连接设置」，由用户显式切换；其它错误不引导设置。
+> 6. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
+> 7. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
+> 8. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
 >
 > **能力边界**：跨块按 anchor↔focus 在同一棵树内的 **DFS 前序连续区间** 解析（兄弟链 / 父子链 / 跨分支），不读取「跳选」块 ID 集合；行内端点切片不含端点子树；不同根 / 孤立块 / 块缺失 → 可见报错；真机选区表现仍以宿主为准。
 >
@@ -20,7 +21,7 @@ AI 模块提供基于 **OpenAI 兼容 Chat Completions** 的能力。产品路�
 
 | 路径 | 入口 | 行为 |
 | --- | --- | --- |
-| **AI 生成闪卡** | `${pluginName}.makeAICard`（别名 `interactiveAICard`） | 跨块选区用拼接文本，否则读当前光标块全文 → 弹窗配置 → AI 请求 → 校验/预览/编辑/勾选 → 确认后分组写入（锚点为末块或当前块；祖先↔后代跨块挂祖先 P） |
+| **AI 生成闪卡** | `${pluginName}.makeAICard`（别名 `interactiveAICard`） | 非空选区优先（单 fragment / 同块跨样式 / 跨块）；折叠光标才读当前块全文 + 有界子树 → 弹窗展示实际发送正文 → AI 请求 → 校验/预览/编辑/勾选 → 确认后分组写入（锚点为选区解析结果或当前块；祖先↔后代跨块挂祖先 P） |
 | **块解释** | 渐进阅读会话：移到块右侧隐形热区出「?」或 `Alt+E` | 读目标块 → 白话/名词内联；可选举例/反驳/追问；用户点「+」才写入普通子块 |
 | **AI 快捷交互** | 编辑器工具栏 sparkles 按钮 | 选中文本（同 fragment / 同块跨样式 / 同树任意跨块，含父子链）→ 选提示词；结果挂在**选区末块**下（祖先↔后代跨块挂祖先 P）；见下「快捷交互」 |
 | **AI 快捷制卡** | `quickBasicCard` / `quickClozeCard` / `quickChoiceCard`（斜杠「快捷问答卡 / 快捷填空卡 / 快捷选择题」） | 选中文本（或整块；支持跨块，含父子链）→ 直接生成 → 以**待激活卡片**插到**末块**下方预览（祖先↔后代跨块挂祖先 P）→ 保留 / 丢弃 |
@@ -96,7 +97,7 @@ src/components/
 
 ### 选区源文本（`aiQuickPrompt.resolveSelectedTextFromCursor`）
 
-所有依赖「当前选区」的 AI 入口共用同一解析层（快捷交互 / 快捷制卡 / 生成闪卡的跨块分支）：
+所有依赖「当前选区」的 AI 入口共用同一解析层（快捷交互 / 快捷制卡 / 生成闪卡）：
 
 | 形态 | 行为 |
 | --- | --- |
@@ -112,7 +113,7 @@ src/components/
 
 - 快捷交互：无有效选区仍报错（不退回整块）
 - 快捷制卡：无选区时退回**锚点块**全文（光标停在块上即可）
-- AI 生成闪卡：仅**跨块**时用拼接选区；单块（含部分选区）仍用该块全文
+- AI 生成闪卡：任何非空有效选区都优先，只发送选中文字；折叠光标才退回锚点块全文 + 有界子树
 
 ### 快捷交互（工具栏）
 
@@ -225,14 +226,18 @@ card job 不挂子块候选选择，操作栏固定只有「保留全部 / 取�
 ```text
 makeAICard / interactiveAICard（别名）
   → startAIFlashcardFlow（若弹窗已开则拒绝并提示）
-      → readBlockText
+      → resolveSelectedTextFromCursor（非空选区优先）
+      → 无选区时 readBlockText + collectBoundedSubtreePlainText
       → openAIDialog
   → AIDialogMount
       → generateFlashcardDrafts（request token + AbortController）
+          → clipCardSource（≤6000 字）
       → parseAndValidateDrafts
       → 用户预览/编辑/选择
       → writeAICardDrafts
 ```
+
+`AICardGenerationDialog` 与 `generateFlashcardDrafts` 共用 `clipCardSource`。弹窗的「将发送的源文本」展示裁剪后的纯正文，服务端 SOURCE delimiters 内使用同一正文；超过 6000 字时标题显示「已截断」，截断标记本身不混入源文。
 
 ### 制卡配置（弹窗 v2）
 
