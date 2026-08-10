@@ -59,6 +59,7 @@ export const CHAPTER_QUIZ_SOURCE_MAX_CHARS = 12_000
 export const CHAPTER_QUIZ_SOURCE_MAX_BLOCKS = 150
 export const CHAPTER_QUIZ_SOURCE_MAX_DEPTH = 12
 export const CHAPTER_QUIZ_GET_BLOCKS_BATCH = 50
+const CHAPTER_QUIZ_MISSING_ID_DEBUG_LIMIT = 10
 
 /**
  * 启动时可选的数量预设（每轮选择冻结进 repr，不自动改偏好）。
@@ -429,6 +430,7 @@ async function getBlocksBatched(ids: number[]): Promise<Map<number, Block>> {
 
   for (let i = 0; i < ids.length; i += CHAPTER_QUIZ_GET_BLOCKS_BATCH) {
     const batch = ids.slice(i, i + CHAPTER_QUIZ_GET_BLOCKS_BATCH)
+    let fallbackIds = batch
     try {
       const result = (await orca.invokeBackend("get-blocks", batch)) as
         | Block[]
@@ -440,16 +442,32 @@ async function getBlocksBatched(ids: number[]): Promise<Map<number, Block>> {
       for (const b of result) {
         if (b && typeof b.id === "number") map.set(b.id, b)
       }
+      fallbackIds = batch.filter((id) => !map.has(id))
     } catch (error) {
       console.error(
         `[chapterQuiz] get-blocks 失败（count=${batch.length}）:`,
         error
       )
-      // fallback per-id so one batch failure is visible but not total wipe
-      for (const id of batch) {
-        const one = await resolveBlockBackendFirst(id)
-        if (one) map.set(id, one)
-      }
+    }
+
+    // 整批失败或成功少返时都逐块补读，避免用残缺正文继续生成。
+    for (const id of fallbackIds) {
+      const one = await resolveBlockBackendFirst(id)
+      if (one) map.set(id, one)
+    }
+
+    const missingIds = batch.filter((id) => !map.has(id))
+    if (missingIds.length > 0) {
+      const visibleIds = missingIds
+        .slice(0, CHAPTER_QUIZ_MISSING_ID_DEBUG_LIMIT)
+        .map((id) => `#${id}`)
+        .join(", ")
+      const omittedCount =
+        missingIds.length - CHAPTER_QUIZ_MISSING_ID_DEBUG_LIMIT
+      const omittedSuffix = omittedCount > 0 ? `，另有 ${omittedCount} 个` : ""
+      throw new Error(
+        `本章上下文不完整：有 ${missingIds.length} 个正文块无法加载（${visibleIds}${omittedSuffix}）。请重试。`
+      )
     }
   }
   return map
