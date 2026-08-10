@@ -4,9 +4,10 @@
 > 近期变更：
 > 1. **快捷制卡预览只允许整张处理（2026-08-10）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
 > 2. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
-> 3. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
-> 4. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
-> 5. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
+> 3. **AI 配置错误直达（2026-08-10）**：生成闪卡、快捷交互、快捷制卡在未配置 API Key 时直接打开服务设置「连接」页；生成 UI 内的 HTTP 401/403 保留原错误并显示「打开连接设置」，由用户显式切换；其它错误不引导设置。
+> 4. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
+> 5. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
+> 6. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
 >
 > **能力边界**：跨块按 anchor↔focus 在同一棵树内的 **DFS 前序连续区间** 解析（兄弟链 / 父子链 / 跨分支），不读取「跳选」块 ID 集合；行内端点切片不含端点子树；不同根 / 孤立块 / 块缺失 → 可见报错；真机选区表现仍以宿主为准。
 >
@@ -32,6 +33,13 @@ AI 模块提供基于 **OpenAI 兼容 Chat Completions** 的能力。产品路�
 - 写入前可编辑/取消勾选；关闭不写库
 - 成功写入：`invokeGroup({ undoable: true, topGroup: true })`
 - 失败：尽力回滚（非 undoable 删除 + 子节点差分 + 校验残留 ID），**不承诺无条件删除**
+
+### 配置错误导航
+
+- **前置未配置**：`startAIFlashcardFlow`、`startAIQuickInteractFlow`、`startQuickCardJob` 检测到 API Key 为空时，直接调用 `openAIServiceSettings`；设置面板每次挂载默认显示「连接」Tab，不再只发 toast 后结束。
+- **请求后鉴权失败**：仅 `HTTP_401` / `HTTP_403` 标记 `canOpenConnectionSettings`。闪卡弹窗、快捷交互弹窗和后台快捷任务错误卡继续显示上游脱敏后的原错误，同时提供「打开连接设置」。
+- **显式切换与互斥**：模态内点击动作时先同步关闭当前 AI 模态，再打开服务设置；不会自动抢占生成/预览弹窗，也不会形成两个 `ModalOverlay` 叠加。后台任务错误卡本身非模态，可直接打开设置。
+- **其它错误**：400/404/429/5xx、超时、解析、写入等错误不显示配置动作，沿用原错误展示与重试路径。
 
 ## 技术实现
 
@@ -141,7 +149,7 @@ src/components/
   2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
   3. **直接写入**（`commitMode: "direct"`）或 **合并复用成功**（`insert.reused`）：写入后**立即结束 job**（无预览罩层）
   4. **预览写入**（`commitMode: "preview"` 且新建根）：以 `lastChild` 写入预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
-  5. **失败**：生成失败（非 `CANCELLED`）或插入/打标失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。Jobs 面板当前空挂（`AIQuickJobsPanel` return null），故 toast 为用户可见主通道；未预期异常路径同
+  5. **失败**：生成失败（非 `CANCELLED`）或插入/打标失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。普通错误仍以 toast 为主且 Jobs 面板空挂；仅 HTTP 401/403 额外渲染错误卡，保留原错误并提供「打开连接设置」；未预期异常路径同
   6. 预览 UI（仅 preview 且新建根）：结果根 `.orca-block` 加罩层 class；根操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）。无选择时显示「保留全部 / 取消」；有选择时增加「已选 N 项 / 保留所选」
   7. 用户操作（仅 preview）：
      - **选择候选** `toggleBackgroundQuickJobBlockSelection`：预览树每个**子孙块**悬停显示「选择」（`AIBlockLoadingMount` + `MutationObserver` 补挂）。选择只更新 job 的 `selectedResultBlockIds`，**不调用移动/删除命令**；选中后按钮与浅绿色状态常显，可再次点击取消。父块选择代表整棵子树：已选后代自动合并；祖先已选时后代显示「随上级选择」且不重复计数。每个 job 的异步选择更新串行化，避免快速连续点击丢选择

@@ -97,7 +97,17 @@ export async function startAIQuickInteractFlow(
   }
 
   if (!isAIConfigured(pluginName)) {
-    orca.notify("warn", "请先在插件设置中配置 API Key", { title })
+    try {
+      const { openAIServiceSettings } = await import(
+        "./aiServiceSettingsState"
+      )
+      await openAIServiceSettings(pluginName)
+    } catch (error) {
+      console.error("[AI 快捷交互] 打开连接设置失败:", error)
+      orca.notify("error", "打开连接设置失败，请从插件设置中重试", {
+        title
+      })
+    }
     return
   }
 

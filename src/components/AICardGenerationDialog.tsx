@@ -35,11 +35,13 @@ export interface AICardGenerationDialogProps {
   drafts: AICardDraft[]
   selectedIds: string[]
   errorMessage: string | null
+  canOpenConnectionSettings: boolean
   infoMessage: string | null
   isGenerating: boolean
   isGeneratingMore: boolean
   isSaving: boolean
   onClose: () => void
+  onOpenConnectionSettings: () => void
   onToggleCardType: (type: AICardType) => void
   onDetailLevelChange: (level: AIDetailLevel) => void
   onCardLanguageChange: (language: AICardLanguage) => void
@@ -73,11 +75,13 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     drafts,
     selectedIds,
     errorMessage,
+    canOpenConnectionSettings,
     infoMessage,
     isGenerating,
     isGeneratingMore,
     isSaving,
     onClose,
+    onOpenConnectionSettings,
     onToggleCardType,
     onDetailLevelChange,
     onCardLanguageChange,
@@ -93,7 +97,7 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
     onSave
   } = props
 
-  const { ModalOverlay } = orca.components
+  const { Button, ModalOverlay } = orca.components
   const busy = isGenerating || isGeneratingMore || isSaving
   const selectedCount = useMemo(
     () => drafts.filter(d => selectedIds.includes(d.id)).length,
@@ -147,7 +151,12 @@ export function AICardGenerationDialog(props: AICardGenerationDialogProps) {
             className="ai-card-dialog__banner ai-card-dialog__banner--error"
             role="alert"
           >
-            {errorMessage}
+            <div>{errorMessage}</div>
+            {canOpenConnectionSettings ? (
+              <Button variant="outline" onClick={onOpenConnectionSettings}>
+                打开连接设置
+              </Button>
+            ) : null}
           </div>
         )}
         {infoMessage && !errorMessage && (

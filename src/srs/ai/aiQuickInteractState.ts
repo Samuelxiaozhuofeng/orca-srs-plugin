@@ -29,6 +29,8 @@ export interface AIQuickInteractState {
   phase: AIQuickInteractPhase
   resultText: string
   errorMessage: string | null
+  /** 当前错误是否允许显式切换到连接设置。 */
+  canOpenConnectionSettings: boolean
   isGenerating: boolean
   /** custom 模式允许编辑提示词；preset 也可再生成前微调 */
   promptEditable: boolean
@@ -49,6 +51,7 @@ export const aiQuickInteractState = proxy({
   phase: "edit-prompt" as AIQuickInteractPhase,
   resultText: "",
   errorMessage: null as string | null,
+  canOpenConnectionSettings: false,
   isGenerating: false,
   promptEditable: true
 }) as AIQuickInteractState
@@ -90,6 +93,7 @@ export function openAIQuickInteract(opts: OpenAIQuickInteractOptions): void {
   aiQuickInteractState.promptEditable = true
   aiQuickInteractState.resultText = ""
   aiQuickInteractState.errorMessage = null
+  aiQuickInteractState.canOpenConnectionSettings = false
   aiQuickInteractState.isGenerating = false
   aiQuickInteractState.phase =
     opts.mode === "custom" ? "edit-prompt" : "loading"
@@ -114,6 +118,7 @@ export function closeAIQuickInteract(): void {
     aiQuickInteractState.phase = "edit-prompt"
     aiQuickInteractState.resultText = ""
     aiQuickInteractState.errorMessage = null
+    aiQuickInteractState.canOpenConnectionSettings = false
     aiQuickInteractState.promptEditable = true
   }, 300)
 }
@@ -131,6 +136,7 @@ export function setQuickGenerating(value: boolean): void {
   if (value) {
     aiQuickInteractState.phase = "loading"
     aiQuickInteractState.errorMessage = null
+    aiQuickInteractState.canOpenConnectionSettings = false
   }
 }
 
@@ -138,15 +144,21 @@ export function setQuickResult(text: string): void {
   aiQuickInteractState.resultText = text
   aiQuickInteractState.phase = "result"
   aiQuickInteractState.errorMessage = null
+  aiQuickInteractState.canOpenConnectionSettings = false
   aiQuickInteractState.isGenerating = false
 }
 
-export function setQuickError(message: string): void {
+export function setQuickError(
+  message: string,
+  canOpenConnectionSettings = false
+): void {
   aiQuickInteractState.errorMessage = message
+  aiQuickInteractState.canOpenConnectionSettings = canOpenConnectionSettings
   aiQuickInteractState.phase = "error"
   aiQuickInteractState.isGenerating = false
 }
 
 export function clearQuickError(): void {
   aiQuickInteractState.errorMessage = null
+  aiQuickInteractState.canOpenConnectionSettings = false
 }

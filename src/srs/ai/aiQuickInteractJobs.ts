@@ -42,6 +42,8 @@ export interface QuickBackgroundJob {
   status: QuickBackgroundJobStatus
   resultText: string
   errorMessage: string | null
+  /** 当前错误是否允许显式切换到连接设置。 */
+  canOpenConnectionSettings?: boolean
   /** 已插入到块下方的结果标题块 ID */
   resultRootBlockId: number | null
   /** 尚未落库的候选子树根；只有「保留所选」才提交 */
@@ -265,6 +267,7 @@ export async function startBackgroundQuickInsertJob(
     status: "generating",
     resultText: "",
     errorMessage: null,
+    canOpenConnectionSettings: false,
     resultRootBlockId: null,
     selectedResultBlockIds: [],
     createdAt: Date.now(),
@@ -306,6 +309,8 @@ export async function startBackgroundQuickInsertJob(
       const safe = sanitizePublicError(result.error.message)
       current.status = "error"
       current.errorMessage = safe
+      current.canOpenConnectionSettings =
+        result.error.code === "HTTP_401" || result.error.code === "HTTP_403"
       current.resultText = ""
       orca.notify("error", safe, { title })
       return id
@@ -333,6 +338,7 @@ export async function startBackgroundQuickInsertJob(
       const safe = sanitizePublicError(insert.error)
       afterInsert.status = "error"
       afterInsert.errorMessage = safe
+      afterInsert.canOpenConnectionSettings = false
       afterInsert.resultText = result.text
       orca.notify("error", safe, { title })
       return id
@@ -375,6 +381,7 @@ export async function startBackgroundQuickInsertJob(
     )
     current.status = "error"
     current.errorMessage = message
+    current.canOpenConnectionSettings = false
     console.error("[AI QuickInteract] 后台任务失败:", error)
     orca.notify("error", message, { title })
     return id

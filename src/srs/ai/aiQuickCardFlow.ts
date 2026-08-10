@@ -176,9 +176,17 @@ export async function startQuickCardJob(
   const { pluginName, cursor, cardType } = options
 
   if (!isAIConfigured(pluginName)) {
-    orca.notify("warn", "请先在「AI / Firecrawl 服务设置」中配置 API Key", {
-      title: TITLE
-    })
+    try {
+      const { openAIServiceSettings } = await import(
+        "./aiServiceSettingsState"
+      )
+      await openAIServiceSettings(pluginName)
+    } catch (error) {
+      console.error("[AI 快捷制卡] 打开连接设置失败:", error)
+      orca.notify("error", "打开连接设置失败，请从插件设置中重试", {
+        title: TITLE
+      })
+    }
     return null
   }
 
@@ -225,6 +233,7 @@ export async function startQuickCardJob(
     status: "generating",
     resultText: "",
     errorMessage: null,
+    canOpenConnectionSettings: false,
     resultRootBlockId: null,
     cardBlockIds: [],
     selectedResultBlockIds: [],
@@ -248,7 +257,13 @@ export async function startQuickCardJob(
 
     if (!generated.success) {
       const message = sanitizePublicError(generated.error.message)
-      patchJob(jobId, { status: "error", errorMessage: message })
+      patchJob(jobId, {
+        status: "error",
+        errorMessage: message,
+        canOpenConnectionSettings:
+          generated.error.code === "HTTP_401" ||
+          generated.error.code === "HTTP_403"
+      })
       orca.notify("error", message, { title: TITLE })
       return jobId
     }

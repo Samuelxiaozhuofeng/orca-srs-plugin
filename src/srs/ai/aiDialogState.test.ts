@@ -9,7 +9,9 @@ const {
   appendGenerationSuccess,
   applyGenerationSuccess,
   draftExclusionSummary,
-  openAIDialog
+  openAIDialog,
+  setDialogError,
+  setGenerating
 } = await import("./aiDialogState")
 
 function basic(id: string, question: string) {
@@ -39,6 +41,29 @@ describe("draftExclusionSummary", () => {
     })
     expect(summary).toContain("让某人做某事")
     expect(summary).toContain("使役形")
+  })
+})
+
+describe("connection settings error action", () => {
+  beforeEach(() => {
+    openAIDialog("源文本", 1)
+  })
+
+  it("keeps the original error while marking an auth failure", () => {
+    setDialogError("Invalid API key", true)
+
+    expect(aiDialogState.errorMessage).toBe("Invalid API key")
+    expect(aiDialogState.canOpenConnectionSettings).toBe(true)
+  })
+
+  it("clears the auth action for a later ordinary error or retry", () => {
+    setDialogError("Invalid API key", true)
+    setDialogError("请求超时")
+    expect(aiDialogState.canOpenConnectionSettings).toBe(false)
+
+    setDialogError("Invalid API key", true)
+    setGenerating(true)
+    expect(aiDialogState.canOpenConnectionSettings).toBe(false)
   })
 })
 

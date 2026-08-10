@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   buildQuickCardRootText,
-  resolveQuickCardSource
+  resolveQuickCardSource,
+  startQuickCardJob
 } from "./aiQuickCardFlow"
 import type { CursorData } from "../../orca.d.ts"
+import { clearAISettingsCache } from "./aiSettingsSchema"
 
 function installBlocks(blocks: Record<number, unknown>) {
   ;(globalThis as any).orca = { state: { blocks } }
@@ -275,5 +277,36 @@ describe("buildQuickCardRootText", () => {
       "AI 快捷制卡 · 问答卡（2 张，待确认）"
     )
     expect(buildQuickCardRootText("choice", 1)).toContain("选择题")
+  })
+})
+
+describe("startQuickCardJob missing configuration", () => {
+  afterEach(() => {
+    clearAISettingsCache()
+    vi.doUnmock("./aiServiceSettingsState")
+    delete (globalThis as any).orca
+  })
+
+  it("opens connection settings without creating a background job", async () => {
+    const openAIServiceSettings = vi.fn(async () => undefined)
+    vi.doMock("./aiServiceSettingsState", () => ({ openAIServiceSettings }))
+    ;(globalThis as any).orca = {
+      notify: vi.fn(),
+      state: {
+        blocks: {},
+        plugins: { "orca-srs": { settings: { "ai.apiKey": "" } } }
+      }
+    }
+    clearAISettingsCache()
+
+    const result = await startQuickCardJob({
+      pluginName: "orca-srs",
+      cursor: cursor(7),
+      cardType: "basic"
+    })
+
+    expect(result).toBeNull()
+    expect(openAIServiceSettings).toHaveBeenCalledWith("orca-srs")
+    expect((globalThis as any).orca.notify).not.toHaveBeenCalled()
   })
 })

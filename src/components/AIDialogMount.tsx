@@ -35,6 +35,10 @@ import {
 } from "../srs/ai/aiDraftTypes"
 import { validateEditableDraft } from "../srs/ai/aiDraftParseValidate"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
+import {
+  isAIConnectionAuthError,
+  openAIServiceSettings
+} from "../srs/ai/aiServiceSettingsState"
 
 const { Valtio } = window
 const { useSnapshot } = Valtio
@@ -106,7 +110,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
           return
         }
         const safe = sanitizePublicError(result.error.message)
-        setDialogError(safe)
+        setDialogError(safe, isAIConnectionAuthError(result.error.code))
         orca.notify("error", safe, { title: "AI 生成闪卡" })
         return
       }
@@ -155,6 +159,18 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
     setDialogInfo("已取消生成")
     setGenerating(false)
     setGeneratingMore(false)
+  }
+
+  const handleOpenConnectionSettings = async () => {
+    closeAIDialog()
+    try {
+      await openAIServiceSettings(pluginName)
+    } catch (error) {
+      console.error("[AI 生成闪卡] 打开连接设置失败:", error)
+      orca.notify("error", "打开连接设置失败，请从插件设置中重试", {
+        title: "AI 生成闪卡"
+      })
+    }
   }
 
   const handleSave = async () => {
@@ -238,6 +254,7 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
       drafts={snap.drafts as AICardDraft[]}
       selectedIds={snap.selectedIds as string[]}
       errorMessage={snap.errorMessage}
+      canOpenConnectionSettings={snap.canOpenConnectionSettings}
       infoMessage={snap.infoMessage}
       isGenerating={snap.isGenerating}
       isGeneratingMore={snap.isGeneratingMore}
@@ -249,6 +266,9 @@ export function AIDialogMount({ pluginName }: AIDialogMountProps) {
         if (!snap.isSaving) {
           closeAIDialog()
         }
+      }}
+      onOpenConnectionSettings={() => {
+        void handleOpenConnectionSettings()
       }}
       onToggleCardType={(type: AICardType) => {
         if (!aiDialogState.isGenerating) {
