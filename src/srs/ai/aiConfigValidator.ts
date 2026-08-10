@@ -18,6 +18,31 @@ export interface AIConfigValidation {
   suggestions: string[]
 }
 
+export type AIConnectionConfigSnapshot = Pick<
+  AISettings,
+  "apiKey" | "apiUrl" | "model"
+>
+
+/** 精确绑定一次连接测试所使用的连接配置，避免分隔符碰撞。 */
+export function createAIConnectionConfigFingerprint(
+  settings: AIConnectionConfigSnapshot
+): string {
+  return JSON.stringify([settings.apiUrl, settings.apiKey, settings.model])
+}
+
+export function isCurrentAIConnectionTestResult(
+  controller: AbortController,
+  fingerprint: string,
+  currentController: AbortController | null,
+  currentFingerprint: string | null
+): boolean {
+  return (
+    !controller.signal.aborted &&
+    currentController === controller &&
+    currentFingerprint === fingerprint
+  )
+}
+
 /**
  * Validate AI connection settings.
  * Generation only supports OpenAI-compatible chat/completions response shape
@@ -215,10 +240,12 @@ function isAbortError(error: unknown): boolean {
  * Uses a finite timeout and preserves truncated plain-text HTTP bodies.
  *
  * @param settingsOverride 若提供则用草稿测连，不依赖已保存配置
+ * @param signal 设置面板用于取消已过期或已关闭的测连请求
  */
 export async function testAIConfigWithDetails(
   pluginName: string,
-  settingsOverride?: Partial<AISettings>
+  settingsOverride?: Partial<AISettings>,
+  signal?: AbortSignal
 ): Promise<{
   success: boolean
   message: string
@@ -264,8 +291,10 @@ export async function testAIConfigWithDetails(
     allowWebSearch: false,
     timeoutMs: CONNECTION_TEST_TIMEOUT_MS,
     timeoutLabel: "连接超时",
-    // 只关心链路可达：个别网关对 max_tokens=5 会返回空 content
-    allowEmptyContent: true
+    // 个别兼容网关对 max_tokens=5 会给出合法 choice 但 content 为空
+    allowEmptyContent: true,
+    signal,
+    cancelledMessage: "已取消连接测试"
   })
 
   if (chat.success) {
@@ -290,7 +319,11 @@ export async function testAIConfigWithDetails(
     return {
       success: false,
       message: detailedError,
-      details: { status: chat.status, error: chat.error.message }
+      details: {
+        status: chat.status,
+        error: chat.error.message,
+        code: chat.error.code
+      }
     }
   }
   if (chat.error.code === "TIMEOUT") {
