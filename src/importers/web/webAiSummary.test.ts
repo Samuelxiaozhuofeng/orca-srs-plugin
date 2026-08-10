@@ -40,7 +40,9 @@ import {
   insertWebArticleSummary,
   normalizeSummaryMarkdown,
   splitSummaryLeadAndRest,
-  WEB_AI_SUMMARY_HEADING
+  truncateForSummaryPrompt,
+  WEB_AI_SUMMARY_HEADING,
+  WEB_AI_SUMMARY_MAX_INPUT_CHARS
 } from "./webAiSummary"
 import { importScrapedArticle } from "./webImport"
 import { createTopicCardByBlockId } from "../../srs/topicCardCreator"
@@ -113,12 +115,49 @@ describe("summary markdown helpers", () => {
     expect(plain).toBe("Hello world")
   })
 
+  it("returns short article text without changing any character", () => {
+    const text = "  short article\r\nwith surrounding whitespace  \n"
+
+    expect(truncateForSummaryPrompt(text, 100)).toBe(text)
+  })
+
+  it("deterministically samples the head, middle, and tail within budget", () => {
+    const text = [
+      "HEAD_ANCHOR",
+      "H".repeat(7_000),
+      "M".repeat(3_500),
+      "MIDDLE_ANCHOR",
+      "M".repeat(3_500),
+      "T".repeat(7_000),
+      "TAIL_ANCHOR"
+    ].join("")
+
+    const first = truncateForSummaryPrompt(
+      text,
+      WEB_AI_SUMMARY_MAX_INPUT_CHARS
+    )
+    const second = truncateForSummaryPrompt(
+      text,
+      WEB_AI_SUMMARY_MAX_INPUT_CHARS
+    )
+
+    expect(first).toBe(second)
+    expect(first.length).toBeLessThanOrEqual(WEB_AI_SUMMARY_MAX_INPUT_CHARS)
+    expect(first).toContain("HEAD_ANCHOR")
+    expect(first).toContain("MIDDLE_ANCHOR")
+    expect(first).toContain("TAIL_ANCHOR")
+    expect(first).toMatch(/正文已省略/)
+    expect(first).toMatch(/不连续/)
+  })
+
   it("system prompt requires Orca markdown shape", () => {
     const p = buildWebSummarySystemPrompt()
     expect(p).toMatch(/AI 总结/)
     expect(p).toMatch(/- /)
     expect(p).toMatch(/不要代码围栏/)
     expect(p).toMatch(/Markdown/)
+    expect(p).toMatch(/开头、中段、结尾.{0,12}不连续/)
+    expect(p).toMatch(/正文已省略/)
   })
 
   it("treats delimited article content as untrusted data, not instructions", () => {
@@ -197,6 +236,63 @@ describe("generateWebArticleSummary", () => {
     expect(body.model).toBe("gpt-test")
     expect(body.stream).toBe(false)
     expect(body.tools).toBeUndefined()
+  })
+
+  it("sends deterministic head, middle, and tail samples in one request", async () => {
+    const plainText = [
+      "HEAD_REQUEST_ANCHOR",
+      "H".repeat(7_000),
+      "M".repeat(3_500),
+      "MIDDLE_REQUEST_ANCHOR",
+      "M".repeat(3_500),
+      "T".repeat(7_000),
+      "TAIL_REQUEST_ANCHOR"
+    ].join("")
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  "AI 总结\n\n这是一段覆盖全文采样的有效总结。\n\n- 要点 A\n- 要点 B\n- 要点 C"
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    })
+
+    const result = await generateWebArticleSummary({
+      pluginName: "orca-srs",
+      title: "Long article",
+      plainText,
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })
+
+    expect(result.ok).toBe(true)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    const callArgs = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit | undefined
+    ]
+    const body = JSON.parse(String(callArgs[1]?.body ?? "{}")) as {
+      messages?: Array<{ role?: string; content?: string }>
+    }
+    const userPrompt =
+      body.messages?.find((message) => message.role === "user")?.content ?? ""
+    const articleContent = userPrompt
+      .split("-----BEGIN ARTICLE-----\n")[1]
+      ?.split("\n-----END ARTICLE-----")[0]
+
+    expect(articleContent).toBeDefined()
+    expect(articleContent?.length).toBeLessThanOrEqual(
+      WEB_AI_SUMMARY_MAX_INPUT_CHARS
+    )
+    expect(articleContent).toContain("HEAD_REQUEST_ANCHOR")
+    expect(articleContent).toContain("MIDDLE_REQUEST_ANCHOR")
+    expect(articleContent).toContain("TAIL_REQUEST_ANCHOR")
   })
 })
 
