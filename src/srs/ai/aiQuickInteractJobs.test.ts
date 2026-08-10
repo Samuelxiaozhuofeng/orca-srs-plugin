@@ -505,15 +505,45 @@ describe("startBackgroundQuickInsertJob", () => {
         id: string
         status: string
         errorMessage: string | null
+        canOpenConnectionSettings?: boolean
       }>
     ).find((j) => j.id === jobId)
     expect(job?.status).toBe("error")
     expect(job?.errorMessage).toBe("Invalid API key")
+    expect(job?.canOpenConnectionSettings).toBe(true)
     expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
       "error",
       "Invalid API key",
       expect.objectContaining({ title: "AI 快捷交互" })
     )
+  })
+
+  it("does not offer connection settings for other AI errors", async () => {
+    const { runToolbarAIPrompt } = await import("./aiQuickInteract")
+    vi.mocked(runToolbarAIPrompt).mockResolvedValueOnce({
+      success: false,
+      error: { code: "HTTP_500", message: "Upstream unavailable" }
+    })
+
+    const jobId = await startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    const job = (
+      aiQuickJobsState.jobs as Array<{
+        id: string
+        errorMessage: string | null
+        canOpenConnectionSettings?: boolean
+      }>
+    ).find((candidate) => candidate.id === jobId)
+    expect(job?.errorMessage).toBe("Upstream unavailable")
+    expect(job?.canOpenConnectionSettings).toBe(false)
   })
 
   it("notifies error when insert fails after successful generation", async () => {

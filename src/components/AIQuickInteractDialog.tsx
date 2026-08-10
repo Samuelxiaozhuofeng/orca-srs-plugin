@@ -17,9 +17,11 @@ export interface AIQuickInteractDialogProps {
   includeBlockContext: boolean
   resultText: string
   errorMessage: string | null
+  canOpenConnectionSettings: boolean
   isGenerating: boolean
   promptEditable: boolean
   onClose: () => void
+  onOpenConnectionSettings: () => void
   onPromptTextChange: (text: string) => void
   onIncludeBlockContextChange: (value: boolean) => void
   onGenerate: () => void
@@ -38,9 +40,11 @@ export function AIQuickInteractDialog(props: AIQuickInteractDialogProps) {
     includeBlockContext,
     resultText,
     errorMessage,
+    canOpenConnectionSettings,
     isGenerating,
     promptEditable,
     onClose,
+    onOpenConnectionSettings,
     onPromptTextChange,
     onIncludeBlockContextChange,
     onGenerate,
@@ -122,7 +126,16 @@ export function AIQuickInteractDialog(props: AIQuickInteractDialogProps) {
             className="ai-quick-dialog__banner ai-quick-dialog__banner--error"
             role="alert"
           >
-            {errorMessage}
+            <div>{errorMessage}</div>
+            {canOpenConnectionSettings ? (
+              <button
+                type="button"
+                className="ai-quick-dialog__btn ai-quick-dialog__btn--secondary"
+                onClick={onOpenConnectionSettings}
+              >
+                打开连接设置
+              </button>
+            ) : null}
           </div>
         )}
 

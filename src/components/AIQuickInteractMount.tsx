@@ -23,6 +23,10 @@ import { sanitizePublicError } from "../srs/http/redactSecrets"
 import { AIQuickInteractDialog } from "./AIQuickInteractDialog"
 import { AIQuickJobsPanel } from "./AIQuickJobsPanel"
 import { AIBlockLoadingMount } from "./AIBlockLoadingMount"
+import {
+  isAIConnectionAuthError,
+  openAIServiceSettings
+} from "../srs/ai/aiServiceSettingsState"
 
 const { Valtio } = window
 const { useSnapshot } = Valtio
@@ -114,7 +118,7 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
           return
         }
         const safe = sanitizePublicError(result.error.message)
-        setQuickError(safe)
+        setQuickError(safe, isAIConnectionAuthError(result.error.code))
         orca.notify("error", safe, { title: "AI 快捷交互" })
         return
       }
@@ -158,6 +162,18 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
       aiQuickInteractState.errorMessage = "已取消生成"
     } else {
       setQuickError("已取消生成")
+    }
+  }
+
+  const handleOpenConnectionSettings = async () => {
+    closeAIQuickInteract()
+    try {
+      await openAIServiceSettings(pluginName)
+    } catch (error) {
+      console.error("[AI 快捷交互] 打开连接设置失败:", error)
+      orca.notify("error", "打开连接设置失败，请从插件设置中重试", {
+        title: "AI 快捷交互"
+      })
     }
   }
 
@@ -243,6 +259,7 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
           includeBlockContext={snap.includeBlockContext}
           resultText={snap.resultText}
           errorMessage={snap.errorMessage}
+          canOpenConnectionSettings={snap.canOpenConnectionSettings}
           isGenerating={snap.isGenerating}
           promptEditable={snap.promptEditable}
           onClose={() => {
@@ -250,6 +267,9 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
               handleCancelGenerate()
             }
             closeAIQuickInteract()
+          }}
+          onOpenConnectionSettings={() => {
+            void handleOpenConnectionSettings()
           }}
           onPromptTextChange={setQuickPromptText}
           onIncludeBlockContextChange={setQuickIncludeBlockContext}

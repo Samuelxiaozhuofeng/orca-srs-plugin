@@ -143,6 +143,11 @@ export function isAIServiceSettingsOpen(): boolean {
   return aiServiceSettingsState.isOpen
 }
 
+/** 只有鉴权失败才引导用户检查连接配置。 */
+export function isAIConnectionAuthError(errorCode: string): boolean {
+  return errorCode === "HTTP_401" || errorCode === "HTTP_403"
+}
+
 export async function openAIServiceSettings(pluginName: string): Promise<void> {
   if (isAIDialogBusyOrInReview()) {
     orca.notify("warn", "请先关闭 AI 生成闪卡窗口", { title: "服务设置" })

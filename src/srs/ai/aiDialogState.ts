@@ -32,6 +32,8 @@ export interface AIDialogState {
   rejected: RejectedDraftItem[]
   truncatedCount: number
   errorMessage: string | null
+  /** 当前错误是否允许显式切换到连接设置。 */
+  canOpenConnectionSettings: boolean
   infoMessage: string | null
   isGenerating: boolean
   isSaving: boolean
@@ -54,6 +56,7 @@ export const aiDialogState = proxy({
   rejected: [] as RejectedDraftItem[],
   truncatedCount: 0,
   errorMessage: null as string | null,
+  canOpenConnectionSettings: false,
   infoMessage: null as string | null,
   isGenerating: false,
   isSaving: false,
@@ -84,6 +87,7 @@ export function openAIDialog(sourceText: string, sourceBlockId: number): void {
   aiDialogState.rejected = []
   aiDialogState.truncatedCount = 0
   aiDialogState.errorMessage = null
+  aiDialogState.canOpenConnectionSettings = false
   aiDialogState.infoMessage = null
   aiDialogState.isGenerating = false
   aiDialogState.isGeneratingMore = false
@@ -109,12 +113,18 @@ export function closeAIDialog(): void {
     aiDialogState.rejected = []
     aiDialogState.truncatedCount = 0
     aiDialogState.errorMessage = null
+    aiDialogState.canOpenConnectionSettings = false
     aiDialogState.infoMessage = null
   }, 300)
 }
 
-export function setDialogError(message: string | null): void {
+export function setDialogError(
+  message: string | null,
+  canOpenConnectionSettings = false
+): void {
   aiDialogState.errorMessage = message
+  aiDialogState.canOpenConnectionSettings =
+    message != null && canOpenConnectionSettings
 }
 
 export function setDialogInfo(message: string | null): void {
@@ -123,6 +133,7 @@ export function setDialogInfo(message: string | null): void {
 
 export function setGenerating(value: boolean): void {
   aiDialogState.isGenerating = value
+  if (value) aiDialogState.canOpenConnectionSettings = false
 }
 
 export function setGeneratingMore(value: boolean): void {
@@ -144,6 +155,7 @@ export function applyGenerationSuccess(
   aiDialogState.truncatedCount = truncatedCount
   aiDialogState.phase = "review"
   aiDialogState.errorMessage = null
+  aiDialogState.canOpenConnectionSettings = false
 
   if (rejected.length > 0 || truncatedCount > 0) {
     const parts: string[] = []
@@ -186,6 +198,7 @@ export function setDraftSelected(id: string, selected: boolean): void {
 export function backToConfig(): void {
   aiDialogState.phase = "config"
   aiDialogState.errorMessage = null
+  aiDialogState.canOpenConnectionSettings = false
 }
 
 /**
@@ -249,6 +262,7 @@ export function appendGenerationSuccess(
   aiDialogState.rejected = [...aiDialogState.rejected, ...rejected]
   aiDialogState.truncatedCount += truncatedCount
   aiDialogState.errorMessage = null
+  aiDialogState.canOpenConnectionSettings = false
 
   const parts: string[] = []
   parts.push(added.length > 0 ? `新增 ${added.length} 张` : "没有新增卡片")
