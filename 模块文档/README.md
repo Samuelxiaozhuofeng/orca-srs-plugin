@@ -17,8 +17,8 @@
 > **索引增补：2026-08-10（块解释请求状态与选区边界）**：
 > - [渐进阅读.md](渐进阅读.md)：举例/反驳独立 controller；跨块选区可见提示并停止解释
 >
-> **索引增补：2026-08-10（网页 AI 总结可跳过）**：
-> - [网页导入.md](网页导入.md)：AI 生成阶段可跳过并继续正文 / IR；清理失败回传残留总结块 ID；源文提示词按不可信数据处理
+> **索引增补：2026-08-10（网页 AI 总结可跳过 + 长文首中尾采样）**：
+> - [网页导入.md](网页导入.md)：AI 生成阶段可跳过并继续正文 / IR；清理失败回传残留总结块 ID；源文提示词按不可信数据处理；12k 预算内确定性采样长文开头、中段、结尾
 >
 > **索引增补：2026-08-10（渐进阅读批次 A 可信性修复）**：
 > - [渐进阅读.md](渐进阅读.md)：完成 Topic 后 `postCompleteQuizHold` 零 `ir.*` 写回；Extract 创建失败清理半成品；collect `partial` 非阻断提示 + 重新加载
@@ -246,7 +246,7 @@
     - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：向导 47 处内联样式迁移到 `ai-card-dialog.css` 尾部的 `.srs-import-dialog*` / `.srs-chapter-selector*` / `.srs-import-progress*` / `.srs-import-result*` 类，仅保留进度条宽度 1 处运行时几何量
     - 关联：`src/importers/epub/*`、`src/components/epub-import/*`
 
-27. **[网页导入.md](网页导入.md)** ⭐ 2026-08-10 更新（AI 总结可跳过）
+27. **[网页导入.md](网页导入.md)** ⭐ 2026-08-10 更新（AI 总结可跳过；长文首中尾采样）
     - Firecrawl 抓取、本地主文提取（Readability）、标题/链接/代码清洗、预览摘要与告警、去重原子写入、可选 Topic / 今天阅读
     - **视觉层已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)**（2026-07-27）：对话框 23 处内联样式迁移到 `.srs-import-dialog*` / `.srs-web-preview*` 类
     - 关联：`src/importers/web/*`、`src/components/web-import/*`、`webImportSettingsSchema.ts`
