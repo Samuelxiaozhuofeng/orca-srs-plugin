@@ -8,6 +8,9 @@
 > - [SRS_AI模块.md](SRS_AI模块.md)：`isExcludedAiSourceBlock` 允许 IR Topic/Extract/hybrid 作源文；纯 SRS `#card` 与 AI 预览根仍排除
 > - [问题经验.md](问题经验.md)：摘录界面误报「请选中文本…」根因与回归
 >
+> **索引增补：2026-08-10（块解释请求状态与选区边界）**：
+> - [渐进阅读.md](渐进阅读.md)：举例/反驳独立 controller；跨块选区可见提示并停止解释
+>
 > **索引增补：2026-08-10（渐进阅读批次 A 可信性修复）**：
 > - [渐进阅读.md](渐进阅读.md)：完成 Topic 后 `postCompleteQuizHold` 零 `ir.*` 写回；Extract 创建失败清理半成品；collect `partial` 非阻断提示 + 重新加载
 >
@@ -202,7 +205,7 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-09 更新 — **可配置紧凑原生选区工具栏**（服务设置「渐进阅读」Tab；摘录/挖空/一键解释在工具栏；主栏 下篇→重要→完成→⋯）；due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-10 更新 — **块解释并发状态隔离与单块选区边界**（举例/反驳互不取消；跨块选区可见提示）；可配置紧凑原生选区工具栏（服务设置「渐进阅读」Tab；摘录/挖空/一键解释在工具栏；主栏 下篇→重要→完成→⋯）；due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
 24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-03 更新 — Topic 章末小测；**P0 UX**：5/10/15 题选择、生成三阶段+重试计数、稳定打乱、完成后续轻量 offer；**P1 学习闭环**：首轮分类/修复轮/动作小结/整理薄弱点/定向反馈；Custom Panel + 共享生成 / live 同步；制卡落点=sourceBlockId 子块；键盘与 aria-live；panel nav A→B
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段
