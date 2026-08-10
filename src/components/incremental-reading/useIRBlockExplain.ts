@@ -97,17 +97,34 @@ function parseBlockId(raw: string | null): number | null {
   return n
 }
 
-function selectionWithin(blockEl: HTMLElement): string | null {
+type BlockSelection =
+  | { kind: "none" }
+  | { kind: "within"; text: string }
+  | { kind: "cross-block" }
+
+function selectionBlock(node: Node | null): HTMLElement | null {
+  const element =
+    node instanceof Element ? node : node?.parentElement ?? null
+  return element?.closest<HTMLElement>(".orca-block[data-id]") ?? null
+}
+
+function selectionWithin(blockEl: HTMLElement): BlockSelection {
   const sel = window.getSelection?.()
-  if (!sel || sel.isCollapsed) return null
+  if (!sel || sel.isCollapsed) return { kind: "none" }
   const text = sel.toString().replace(/\s+/g, " ").trim()
-  if (!text) return null
-  const anchor =
-    sel.anchorNode?.nodeType === Node.ELEMENT_NODE
-      ? (sel.anchorNode as Element)
-      : sel.anchorNode?.parentElement
-  if (!anchor || !blockEl.contains(anchor)) return null
-  return text.length > 400 ? `${text.slice(0, 400)}…` : text
+  if (!text) return { kind: "none" }
+
+  const anchorBlock = selectionBlock(sel.anchorNode)
+  const focusBlock = selectionBlock(sel.focusNode)
+  if (anchorBlock !== focusBlock) {
+    return { kind: "cross-block" }
+  }
+  if (anchorBlock !== blockEl) return { kind: "none" }
+
+  return {
+    kind: "within",
+    text: text.length > 400 ? `${text.slice(0, 400)}…` : text
+  }
 }
 
 function focusPreview(text: string | null): string | null {
@@ -152,7 +169,8 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
   const { enabled, pluginName, cardId, bodyRef, Panel } = options
   const [open, setOpen] = useState<OpenState | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const sideAbortRef = useRef<AbortController | null>(null)
+  const exampleAbortRef = useRef<AbortController | null>(null)
+  const rebuttalAbortRef = useRef<AbortController | null>(null)
   const followAbortRef = useRef<AbortController | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const rootRef = useRef<{ render: (n: unknown) => void; unmount: () => void } | null>(
@@ -181,8 +199,10 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
   const close = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
-    sideAbortRef.current?.abort()
-    sideAbortRef.current = null
+    exampleAbortRef.current?.abort()
+    exampleAbortRef.current = null
+    rebuttalAbortRef.current?.abort()
+    rebuttalAbortRef.current = null
     followAbortRef.current?.abort()
     followAbortRef.current = null
     teardownHost()
@@ -204,7 +224,10 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
       }
 
       abortRef.current?.abort()
-      sideAbortRef.current?.abort()
+      exampleAbortRef.current?.abort()
+      exampleAbortRef.current = null
+      rebuttalAbortRef.current?.abort()
+      rebuttalAbortRef.current = null
       followAbortRef.current?.abort()
       const controller = new AbortController()
       abortRef.current = controller
@@ -324,63 +347,69 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
         return
       }
 
+      const sideAbortRef =
+        mode === "example" ? exampleAbortRef : rebuttalAbortRef
       sideAbortRef.current?.abort()
       const controller = new AbortController()
       sideAbortRef.current = controller
 
-      const patchLoading: Partial<OpenState> =
-        mode === "example"
-          ? {
-              example: {
-                status: "loading",
-                text: null,
-                errorMessage: null
-              }
-            }
-          : {
-              rebuttal: {
-                status: "loading",
-                text: null,
-                errorMessage: null
-              }
-            }
-      setOpen({ ...cur, ...patchLoading })
-
-      const result = await generateBlockSideContent({
-        pluginName,
-        blockText: cur.blockText,
-        explanation: cur.explanation,
-        mode,
-        signal: controller.signal
+      const setSideState = (state: SideSectionState) => {
+        setOpen((latest: OpenState | null) => {
+          if (!latest || latest.blockId !== cur.blockId) return latest
+          return {
+            ...latest,
+            ...(mode === "example" ? { example: state } : { rebuttal: state })
+          }
+        })
+      }
+      setSideState({
+        status: "loading",
+        text: null,
+        errorMessage: null
       })
 
-      if (controller.signal.aborted) return
-      const latest = openRef.current
-      if (!latest || latest.blockId !== cur.blockId) return
+      try {
+        const result = await generateBlockSideContent({
+          pluginName,
+          blockText: cur.blockText,
+          explanation: cur.explanation,
+          mode,
+          signal: controller.signal
+        })
 
-      if (!result.success) {
-        if (result.error.code === "CANCELLED") return
+        if (controller.signal.aborted || sideAbortRef.current !== controller) return
+        sideAbortRef.current = null
+
+        if (!result.success) {
+          const errState: SideSectionState =
+            result.error.code === "CANCELLED"
+              ? idleSide()
+              : {
+                  status: "error",
+                  text: null,
+                  errorMessage: result.error.message
+                }
+          setSideState(errState)
+          return
+        }
+
+        const okState: SideSectionState = {
+          status: "ready",
+          text: result.text,
+          errorMessage: null
+        }
+        setSideState(okState)
+      } catch (error) {
+        if (controller.signal.aborted || sideAbortRef.current !== controller) return
+        sideAbortRef.current = null
+        console.error(`[IR BlockExplain] ${mode} 生成失败:`, error)
         const errState: SideSectionState = {
           status: "error",
           text: null,
-          errorMessage: result.error.message
+          errorMessage: error instanceof Error ? error.message : "生成失败"
         }
-        setOpen({
-          ...latest,
-          ...(mode === "example" ? { example: errState } : { rebuttal: errState })
-        })
-        return
+        setSideState(errState)
       }
-
-      const okState: SideSectionState = {
-        status: "ready",
-        text: result.text,
-        errorMessage: null
-      }
-      setOpen({
-        ...latest,
-        ...(mode === "example" ? { example: okState } : { rebuttal: okState })
-      })
     },
     [pluginName]
   )
@@ -460,8 +489,17 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
         orca.notify("warn", "无法识别该块 ID", { title: "块解释" })
         return
       }
-      const focus = selectionWithin(blockEl)
-      void runExplain(blockId, focus)
+      const selection = selectionWithin(blockEl)
+      if (selection.kind === "cross-block") {
+        orca.notify("warn", "块解释只支持单块内选区，请重新选择", {
+          title: "块解释"
+        })
+        return
+      }
+      void runExplain(
+        blockId,
+        selection.kind === "within" ? selection.text : null
+      )
     },
     [runExplain]
   )
@@ -710,8 +748,10 @@ export function useIRBlockExplain(options: UseIRBlockExplainOptions): void {
     return () => {
       abortRef.current?.abort()
       abortRef.current = null
-      sideAbortRef.current?.abort()
-      sideAbortRef.current = null
+      exampleAbortRef.current?.abort()
+      exampleAbortRef.current = null
+      rebuttalAbortRef.current?.abort()
+      rebuttalAbortRef.current = null
       followAbortRef.current?.abort()
       followAbortRef.current = null
       teardownHost()
