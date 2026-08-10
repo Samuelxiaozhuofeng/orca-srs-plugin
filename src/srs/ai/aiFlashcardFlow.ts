@@ -112,11 +112,10 @@ export async function startAIFlashcardFlow(
 
   const title = "AI 生成闪卡"
 
-  // 跨块有效选区 → 拼接文本 + 末块锚点；单块（含部分选区）仍用当前块全文
+  // 有效选区优先：单 fragment、同块跨样式与跨块都只发送选中内容。
   const selection = resolveSelectedTextFromCursor(cursor)
   if (
     selection.ok &&
-    selection.extract.multiBlock &&
     selection.extract.selectedText.trim()
   ) {
     if (selection.extract.truncated) {
@@ -136,7 +135,7 @@ export async function startAIFlashcardFlow(
   }
 
   const blockId = Number(cursor.anchor.blockId)
-  // 单块：全文 + 有界子树（与跨块整段范围一致）；部分文字选区已在上方 multiBlock 分支处理
+  // 折叠光标 / 无选区：保持整块全文 + 有界子树。
   // 先确认块仍存在（backend-first），再从 state 展开子树
   const { block } = await readBlockText(blockId)
   if (!block) {

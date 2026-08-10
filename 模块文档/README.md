@@ -4,6 +4,9 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-10（AI 正式制卡选区源文）**：
+> - [AI智能制卡使用指南.md](AI智能制卡使用指南.md) / [SRS_AI模块.md](SRS_AI模块.md)：非空选区优先（单 fragment / 同块跨样式 / 跨块）；折叠光标保持整块 + 有界子树；弹窗与请求共用 6000 字源文并显示「已截断」
+>
 > **索引增补：2026-08-10（后台 AI 行尾取消）**：
 > - [SRS_AI模块.md](SRS_AI模块.md)：源块行尾可取消生成；同源块多任务明确「取消全部 N 项」；abort + job 守卫阻止迟到写块；删除空挂 `AIQuickJobsPanel`
 >
@@ -258,7 +261,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-10 更新 — **IR 摘录/主题可作 AI 源文**（`isExcludedAiSourceBlock` 仅排除纯 SRS 闪卡与预览根）；服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-10 更新 — **正式制卡非空选区优先**（单 fragment / 同块跨样式 / 跨块；折叠光标保持整块 + 有界子树；弹窗与请求共用 6000 字实际源文并显示截断）；**IR 摘录/主题可作 AI 源文**（`isExcludedAiSourceBlock` 仅排除纯 SRS 闪卡与预览根）；服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
     - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
