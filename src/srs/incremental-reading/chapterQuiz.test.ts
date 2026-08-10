@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import * as aiChatClient from "../ai/aiChatClient"
 import {
   applyBatchCardAddOutcome,
   buildBasicCardFromQuestion,
@@ -12,6 +13,7 @@ import {
   CHAPTER_QUIZ_LOCATE_EVENT,
   CHAPTER_QUIZ_PANEL_VIEW,
   classifyFirstRoundAnswer,
+  collectTopicPlainText,
   countAnsweredQuestions,
   countConfidentCorrect,
   countCorrectAnswers,
@@ -26,6 +28,7 @@ import {
   formatQuizGenProgressLabel,
   formatSelectedWrongChoiceLabel,
   freezeWeakItemsIfNeeded,
+  generateChapterQuizQuestions,
   isAnswerCorrect,
   isQuestionWeak,
   jumpToQuizSourceBlock,
@@ -70,6 +73,132 @@ const sampleQuestions: ChapterQuizQuestion[] = [
     explanation: "一次性检查，默认不入队。"
   }
 ]
+
+describe("collectTopicPlainText source completeness", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete (globalThis as unknown as { orca?: unknown }).orca
+  })
+
+  it("rejects a short batch that remains missing and never reaches AI", async () => {
+    const root = {
+      id: 1,
+      text: "Chapter",
+      children: [2],
+      properties: []
+    }
+    const invokeBackend = vi.fn(async (message: string, args: unknown) => {
+      if (message === "get-block") {
+        return args === 1 ? root : null
+      }
+      if (message === "get-blocks") {
+        const ids = args as number[]
+        return ids.includes(1) ? [root] : []
+      }
+      throw new Error(`unexpected backend call: ${message}`)
+    })
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      invokeBackend,
+      state: { blocks: {} }
+    }
+    const aiSpy = vi.spyOn(aiChatClient, "callChatCompletions")
+
+    const runGenerationPipeline = async () => {
+      const collected = await collectTopicPlainText(1)
+      return generateChapterQuizQuestions({
+        pluginName: "orca-srs",
+        sourceText: collected.text,
+        allowedBlockIds: collected.blockIds
+      })
+    }
+
+    await expect(runGenerationPipeline()).rejects.toThrow(
+      /本章上下文不完整：有 1 个正文块无法加载.*#2.*请重试/
+    )
+    expect(aiSpy).not.toHaveBeenCalled()
+    expect(invokeBackend).toHaveBeenCalledWith("get-block", 2)
+  })
+
+  it("fills a short batch with the existing per-block fallback", async () => {
+    const root = {
+      id: 1,
+      text: "Chapter",
+      children: [2],
+      properties: []
+    }
+    const child = {
+      id: 2,
+      text: "Complete paragraph",
+      children: [],
+      properties: []
+    }
+    const invokeBackend = vi.fn(async (message: string, args: unknown) => {
+      if (message === "get-block") {
+        if (args === 1) return root
+        if (args === 2) return child
+        return null
+      }
+      if (message === "get-blocks") {
+        const ids = args as number[]
+        return ids.includes(1) ? [root] : []
+      }
+      throw new Error(`unexpected backend call: ${message}`)
+    })
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      invokeBackend,
+      state: { blocks: {} }
+    }
+
+    const result = await collectTopicPlainText(1)
+
+    expect(result.text).toContain("[block:1]\nChapter")
+    expect(result.text).toContain("[block:2]\nComplete paragraph")
+    expect(result.blockIds).toEqual([1, 2])
+    expect(result.blockCount).toBe(2)
+    expect(invokeBackend).toHaveBeenCalledWith("get-block", 2)
+  })
+
+  it("keeps complete batch reads unchanged without extra per-block reads", async () => {
+    const root = {
+      id: 1,
+      text: "Chapter",
+      children: [2],
+      properties: []
+    }
+    const child = {
+      id: 2,
+      text: "Complete paragraph",
+      children: [],
+      properties: []
+    }
+    const blocks = new Map([
+      [1, root],
+      [2, child]
+    ])
+    const invokeBackend = vi.fn(async (message: string, args: unknown) => {
+      if (message === "get-block") {
+        return blocks.get(args as number) ?? null
+      }
+      if (message === "get-blocks") {
+        return (args as number[]).map((id) => blocks.get(id))
+      }
+      throw new Error(`unexpected backend call: ${message}`)
+    })
+    ;(globalThis as unknown as { orca: unknown }).orca = {
+      invokeBackend,
+      state: { blocks: {} }
+    }
+
+    const result = await collectTopicPlainText(1)
+    const getBlockCalls = invokeBackend.mock.calls.filter(
+      ([message]) => message === "get-block"
+    )
+
+    expect(result.blockIds).toEqual([1, 2])
+    expect(result.blockCount).toBe(2)
+    expect(getBlockCalls).toEqual([["get-block", 1]])
+  })
+})
 
 describe("parseChapterQuizQuestions", () => {
   it("parses valid JSON payload", () => {
