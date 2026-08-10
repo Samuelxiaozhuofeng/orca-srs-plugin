@@ -1,9 +1,10 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-08-05
+> 文档同步日期：2026-08-10
 > 近期变更：
-> 1. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除 #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
-> 2. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
+> 1. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
+> 2. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
+> 3. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
 >
 > **能力边界**：跨块按 anchor↔focus 在同一棵树内的 **DFS 前序连续区间** 解析（兄弟链 / 父子链 / 跨分支），不读取「跳选」块 ID 集合；行内端点切片不含端点子树；不同根 / 孤立块 / 块缺失 → 可见报错；真机选区表现仍以宿主为准。
 >
@@ -93,7 +94,7 @@ src/components/
 | 同块跨 fragment（跨粗体/链接等样式） | 拼接各 fragment 切片；`blockId` = 该块 |
 | 同树任意跨块（行内拖选） | **DFS 前序连续区间**（`resolvePreOrderChain`：兄弟链 / 父子链 P+子块 / 跨分支统一）；首/末块按 offset 切片（**不含**端点子树）；中间块全文 + **有界子树**；块间 `\n`；`blockId` = **阅读方向末块**（祖先↔后代跨度挂祖先 P）；**关闭**块上下文 |
 | 块级 / 整段范围 | `isInline===false` 或两端块首 `(0,0)`：前序区间内各块 **全文 + 有界子树**（2 空格缩进表示层级）；祖先块先展开子树，子块经共享 `visited` 去重不重复 |
-| 子树规则 | `collectBoundedSubtreePlainText` + **共享** `SubtreeCollectBudget`：深度 ≤8、**展开子树合计** ≤80 块；行内跨块的首/末切片不计入该 80（最多 +2 端点片段）；跳过 `#card` / `srs.ai.quickResult`；子 id 不在 state → 结构截断；只读 `state.blocks` |
+| 子树规则 | `collectBoundedSubtreePlainText` + **共享** `SubtreeCollectBudget`：深度 ≤8、**展开子树合计** ≤80 块；行内跨块的首/末切片不计入该 80（最多 +2 端点片段）；跳过**纯 SRS** `#card`（`resolveIRCardType == null`）与 `srs.ai.quickResult`；**不跳过** IR Topic/Extract/hybrid（`ir.due`）；子 id 不在 state → 结构截断；只读 `state.blocks` |
 | TTS | `expandSubtree: false`，不展开子孙，避免朗读大纲树 |
 | 单块无选区（制卡）/ 生成闪卡单块 | 锚点块全文 + 同上有界子树 |
 | 超限 | `QUICK_SELECTION_MAX = 12000` 或子树触顶 → `truncated` + toast；正文不写 marker |

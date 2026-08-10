@@ -14,6 +14,7 @@ import {
   resolvePreOrderChain,
   type ExtractSelectionPlan
 } from "../incremental-reading/irRichExtract"
+import { resolveIRCardType } from "../incremental-reading/irHybridExtract"
 import { isCardTag } from "../tagUtils"
 import { callChatCompletions } from "./aiChatClient"
 import {
@@ -130,10 +131,23 @@ function readBlockPropertyValue(block: Block, name: string): unknown {
   return props[name]
 }
 
-/** 已有闪卡 / AI 快捷结果预览根：不作为制卡源文（整棵子树跳过）。 */
+/**
+ * 不作为 AI 制卡/快捷交互源文的块（整棵子树跳过）。
+ *
+ * 排除：
+ * - AI 快捷结果预览根（`srs.ai.quickResult`）
+ * - 纯 SRS 闪卡（#card 且无 IR 阅读身份）
+ *
+ * **不排除** IR 阅读材料：`type=topic` / `type=extracts`，以及 keep_extract 后仍带
+ * `ir.due` 的 hybrid。摘录本身就是 #card，若一律跳过，则在摘录阅读界面光标停在
+ * 摘录正文上时快捷制卡会误报「请选中文本…」。
+ */
 export function isExcludedAiSourceBlock(block: Block): boolean {
+  const quick = readBlockPropertyValue(block, "srs.ai.quickResult")
+  if (quick === true || quick === 1 || quick === "true") return true
+
   const refs = block.refs
-  if (
+  const hasCardTag =
     Array.isArray(refs) &&
     refs.some(
       (ref) =>
@@ -141,11 +155,12 @@ export function isExcludedAiSourceBlock(block: Block): boolean {
         (ref as { type?: number }).type === 2 &&
         isCardTag((ref as { alias?: string }).alias)
     )
-  ) {
-    return true
-  }
-  const quick = readBlockPropertyValue(block, "srs.ai.quickResult")
-  return quick === true || quick === 1 || quick === "true"
+  if (!hasCardTag) return false
+
+  // Topic / Extract / hybrid(live IR) 是渐进阅读正文，允许作源文
+  if (resolveIRCardType(block) != null) return false
+
+  return true
 }
 
 export type BoundedSubtreePlainText = {

@@ -515,7 +515,7 @@ describe("extractSelectedTextFromCursor", () => {
     expect(leafBCount).toBeLessThan(50)
   })
 
-  it("rejects partial selection on a #card block", () => {
+  it("rejects partial selection on a pure SRS #card block", () => {
     ;(globalThis as any).orca.state.blocks[1] = {
       id: 1,
       parent: 10,
@@ -529,6 +529,56 @@ describe("extractSelectedTextFromCursor", () => {
       focusOffset: 4
     })
     expect(extractSelectedTextFromCursor(cursor)).toBeNull()
+  })
+
+  it("allows partial selection on IR extract #card body", () => {
+    ;(globalThis as any).orca.state.blocks[1] = {
+      id: 1,
+      parent: 10,
+      text: "card body here",
+      content: [{ t: "t", v: "card body here" }],
+      refs: [
+        {
+          type: 2,
+          alias: "card",
+          data: [{ name: "type", value: "extracts" }]
+        }
+      ]
+    }
+    const cursor = makeCursor({
+      blockId: 1,
+      anchorOffset: 0,
+      focusOffset: 4
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("card")
+    expect(got!.blockId).toBe(1)
+  })
+
+  it("allows selection on hybrid extract with live IR after keep_extract cloze", () => {
+    ;(globalThis as any).orca.state.blocks[1] = {
+      id: 1,
+      parent: 10,
+      text: "hybrid extract body text",
+      content: [{ t: "t", v: "hybrid extract body text" }],
+      refs: [
+        {
+          type: 2,
+          alias: "card",
+          data: [{ name: "type", value: "cloze" }]
+        }
+      ],
+      properties: [{ name: "ir.due", value: 1700000000 }]
+    }
+    const cursor = makeCursor({
+      blockId: 1,
+      anchorOffset: 0,
+      focusOffset: 6
+    })
+    const got = extractSelectedTextFromCursor(cursor)
+    expect(got).not.toBeNull()
+    expect(got!.selectedText).toBe("hybrid")
   })
 })
 

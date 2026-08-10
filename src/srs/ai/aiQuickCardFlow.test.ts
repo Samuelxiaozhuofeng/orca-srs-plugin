@@ -86,6 +86,56 @@ describe("resolveQuickCardSource", () => {
     expect(resolveQuickCardSource(cursor(99))).toBeNull()
   })
 
+  it("uses IR extract #card body as source when cursor has no selection", () => {
+    // 摘录阅读正文根就是 #card type=extracts；不能当纯闪卡整棵跳过
+    installBlocks({
+      7: {
+        id: 7,
+        parent: 1,
+        children: [],
+        text: "摘录正文：使役形表示让某人做某事",
+        content: [{ t: "t", v: "摘录正文：使役形表示让某人做某事" }],
+        refs: [
+          {
+            type: 2,
+            alias: "card",
+            data: [{ name: "type", value: "extracts" }]
+          }
+        ]
+      }
+    })
+    const source = resolveQuickCardSource(cursor(7))
+    expect(source).toEqual({
+      blockId: 7,
+      text: "摘录正文：使役形表示让某人做某事",
+      fromSelection: false,
+      multiBlock: false,
+      truncated: false,
+      charTruncated: false,
+      structureTruncated: false
+    })
+  })
+
+  it("still skips pure SRS #card when cursor has no selection", () => {
+    installBlocks({
+      7: {
+        id: 7,
+        parent: 1,
+        children: [],
+        text: "已有问答卡题面",
+        content: [{ t: "t", v: "已有问答卡题面" }],
+        refs: [
+          {
+            type: 2,
+            alias: "card",
+            data: [{ name: "type", value: "basic" }]
+          }
+        ]
+      }
+    })
+    expect(resolveQuickCardSource(cursor(7))).toBeNull()
+  })
+
   it("uses joined cross-block selection and anchors on the end block", () => {
     installBlocks({
       1: { id: 1, parent: null, children: [7, 8], text: "p", content: [] },

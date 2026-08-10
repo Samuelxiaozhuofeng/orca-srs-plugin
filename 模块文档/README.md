@@ -4,6 +4,10 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-10（摘录阅读 AI 快捷制卡源文）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：`isExcludedAiSourceBlock` 允许 IR Topic/Extract/hybrid 作源文；纯 SRS `#card` 与 AI 预览根仍排除
+> - [问题经验.md](问题经验.md)：摘录界面误报「请选中文本…」根因与回归
+>
 > **索引增补：2026-08-10（渐进阅读批次 A 可信性修复）**：
 > - [渐进阅读.md](渐进阅读.md)：完成 Topic 后 `postCompleteQuizHold` 零 `ir.*` 写回；Extract 创建失败清理半成品；collect `partial` 非阻断提示 + 重新加载
 >
@@ -239,7 +243,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-09 更新 — 服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-10 更新 — **IR 摘录/主题可作 AI 源文**（`isExcludedAiSourceBlock` 仅排除纯 SRS 闪卡与预览根）；服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
     - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类
@@ -273,6 +277,7 @@
 
 ## 更新记录
 
+- **2026-08-10（摘录阅读 AI 快捷制卡）**：修复摘录正文上快捷制卡误报「请选中文本…」——源文排除规则改为允许 IR Topic/Extract/hybrid，仍跳过纯 SRS 闪卡与 AI 预览根。见 [SRS_AI模块.md](SRS_AI模块.md)、[问题经验.md](问题经验.md)
 - **2026-08-01（AI 服务设置分段 Tab）**：`AIServiceSettingsDialog` 改为 连接 / 行为 / 快捷制卡 / 网页导入 / 诊断 五段；默认落地连接；模型列表折叠；长 hint「了解更多」。见 [SRS_AI模块.md](SRS_AI模块.md)
 - **2026-08-01（联网 tool 一键自动路由）**：设置面板去掉「联网 tool 形态」下拉，只保留「模型原生联网」勾选；开启后 `resolveWebSearchRoute` 按 model 自动：Grok 4.5 → 扁平 `web_search`，Gemini Flash → nested `google_search`；历史 `webSearchToolType` 忽略。见 [SRS_AI模块.md](SRS_AI模块.md)
 - **2026-08-01（Gemini google_search 联网形态）**：`materializeWebSearchTool` 将 Gemini 路线序列化为 `{ type: "google_search", google_search: {} }`（ROUTER9 实测仅扁平 `type` 不触发检索）；Grok 仍扁平 `web_search`。见 [SRS_AI模块.md](SRS_AI模块.md)
