@@ -1,6 +1,9 @@
 # AI 功能优化方案
 
-> 状态：planned（仅扫描与规划，尚未实施）
+> 状态：**landed（14/14 全部实施并合入 main，2026-08-10）**
+> 执行方式：codex CLI（gpt-5.6-sol）并发 5 路，每项独立 worktree/分支，逐项人工验收后 `--no-ff` 合入。
+> main 收尾验证：`npm test` 2577 passed / `npx tsc --noEmit` 干净 / `npm run build` 成功。
+> 待人工在 Orca 真机验证的清单见 §7「Orca 真机冒烟」。
 > 扫描日期：2026-08-10
 > 复核日期：2026-08-10（逐条对代码核实；AI-004 由 runtime-gate 升级为 confirmed，AI-002/003/006/008/010 范围已收窄，详见各条「复核」段）
 > 目标：优先修复会让 AI 结果串位、卡住、误保留或难以恢复的问题，再用少量增量能力提升制卡、阅读与网页总结体验。
@@ -182,7 +185,7 @@
 
 ### AI-012 正式制卡尊重局部选区并展示实际发送范围
 
-- **类型**：enhancement，且**需要产品决策后才可实施**。当前“单块局部选区仍读整块+子树”是已文档化行为，不按 bug 处理；改成“选区优先”会改变既有用户习惯，必须先由需求方确认，不得由实施方自行决定。
+- **类型**：enhancement。**产品决策已完成（2026-08-10）：采用「选区优先」**——单块内有非空选区时只发送选区内容；折叠光标维持整块 + 有界子树不变。
 - **依据**：选区解析层已支持单 fragment/跨 fragment（`src/srs/ai/aiQuickPrompt.ts:378-417`、`:586-604`），正式入口却只接受 `multiBlock` 后回退整块（`src/srs/ai/aiFlashcardFlow.ts:105-137`）。弹窗展示“下方源文本将发送”，但服务端仍可能按 `AI_CARD_SOURCE_MAX` 裁到 6000 字（`src/components/AICardGenerationDialog.tsx:135-142`、`src/srs/ai/aiService.ts:239`）。
 - **实施意图**：有非空选区时优先使用选区；折叠光标保持整块+有界子树。发送前完成裁剪并让弹窗展示实际发送文本与“已截断”状态。
 - **涉及文件**：`src/srs/ai/aiFlashcardFlow.ts`、`src/srs/ai/aiService.ts`、`src/components/AICardGenerationDialog.tsx`、选区与服务测试。
