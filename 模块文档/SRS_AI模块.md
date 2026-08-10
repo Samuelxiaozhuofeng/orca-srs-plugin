@@ -2,11 +2,12 @@
 
 > 文档同步日期：2026-08-10
 > 近期变更：
-> 1. **快捷制卡预览只允许整张处理（2026-08-10）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
-> 2. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
-> 3. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
-> 4. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
-> 5. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
+> 1. **后台生成行尾可取消（2026-08-10）**：源块行尾由展示型 loading 改为原生取消按钮；单任务为「取消此项 AI 生成」，同源块多任务为「取消此块的全部 N 项 AI 生成」。取消会 abort 请求并移除 job；请求迟到返回时由 job/signal 双重守卫阻止写块。已删除 `AIQuickJobsPanel` 空壳与死样式，不扩建任务中心。
+> 2. **快捷制卡预览只允许整张处理（2026-08-10）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
+> 3. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
+> 4. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
+> 5. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
+> 6. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
 >
 > **能力边界**：跨块按 anchor↔focus 在同一棵树内的 **DFS 前序连续区间** 解析（兄弟链 / 父子链 / 跨分支），不读取「跳选」块 ID 集合；行内端点切片不含端点子树；不同根 / 孤立块 / 块缺失 → 可见报错；真机选区表现仍以宿主为准。
 >
@@ -74,10 +75,9 @@ src/components/
 ├── AIDialogMount.tsx
 ├── AICardGenerationDialog.tsx
 ├── AICardDraftCard.tsx
-├── AIQuickInteractMount.tsx # 弹窗 + 后台任务面板挂载
+├── AIQuickInteractMount.tsx # 弹窗 + 行尾/预览 UI 挂载
 ├── AIQuickInteractDialog.tsx
-├── AIQuickJobsPanel.tsx     # 非模态面板（当前可空挂；主操作已内联到结果块）
-├── AIBlockLoadingMount.tsx  # 源块行尾 loading + 结果根块罩层/保留取消
+├── AIBlockLoadingMount.tsx  # 源块行尾取消 + 结果根块罩层/保留取消
 ├── AIPromptManagerMount.tsx
 ├── AIPromptManagerDialog.tsx
 └── incremental-reading/
@@ -138,10 +138,10 @@ src/components/
 - **标签写入**：`core.editor.insertTag(null, rootId, alias)`；已有同名 tag ref（type=2）则跳过；失败抛错、插入失败可见（不静默）
 - **后台路径**（`directWriteBelow` 或 `insertBelowOnComplete`；`startBackgroundQuickInsertJob({ commitMode, tags, reuseSameResultBlock })`）：
   1. 选中文本 → 点菜单项 → 立即 `runToolbarAIPrompt`（不弹窗）；成功路径不 toast
-  2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂 `srs-ai-target-block-loading` sparkles
+  2. 生成中：`AIBlockLoadingMount` 在源块 `.orca-repr-main-content` 行尾挂原生 `button.srs-ai-target-block-loading`。单任务显示「取消」，`title` / `aria-label` 为「取消此项 AI 生成」；同源块多任务显示「取消全部 N 项」，完整语义为「取消此块的全部 N 项 AI 生成」。点击调用 `cancelGeneratingQuickJobsForSourceBlock`，只取消该源块仍为 generating 的任务
   3. **直接写入**（`commitMode: "direct"`）或 **合并复用成功**（`insert.reused`）：写入后**立即结束 job**（无预览罩层）
   4. **预览写入**（`commitMode: "preview"` 且新建根）：以 `lastChild` 写入预览树（`srs.ai.status=preview`；属性经 `core.editor.setProperties` 的 `BlockProperty[]`：`name/value/type`）
-  5. **失败**：生成失败（非 `CANCELLED`）或插入/打标失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。Jobs 面板当前空挂（`AIQuickJobsPanel` return null），故 toast 为用户可见主通道；未预期异常路径同
+  5. **失败**：生成失败（非 `CANCELLED`）或插入/打标失败 → job `status=error` + `errorMessage`（脱敏）+ `orca.notify("error", …, { title: "AI 快捷交互" })`。后台任务面板已删除，toast 是用户可见主通道；未预期异常路径同
   6. 预览 UI（仅 preview 且新建根）：结果根 `.orca-block` 加罩层 class；根操作栏挂在根块直接子级，CSS `position:absolute; top/right` 贴首行右侧末端（不塞进 contenteditable / `.orca-repr-main` 文档流，避免错位）。无选择时显示「保留全部 / 取消」；有选择时增加「已选 N 项 / 保留所选」
   7. 用户操作（仅 preview）：
      - **选择候选** `toggleBackgroundQuickJobBlockSelection`：预览树每个**子孙块**悬停显示「选择」（`AIBlockLoadingMount` + `MutationObserver` 补挂）。选择只更新 job 的 `selectedResultBlockIds`，**不调用移动/删除命令**；选中后按钮与浅绿色状态常显，可再次点击取消。父块选择代表整棵子树：已选后代自动合并；祖先已选时后代显示「随上级选择」且不重复计数。每个 job 的异步选择更新串行化，避免快速连续点击丢选择
@@ -156,6 +156,7 @@ src/components/
   - 勿先做步骤 2：否则 `[[3]](url)` 会变成不可点的 `〔3〕(url)`
 - **弹窗路径**（两项后台开关均关，或「自定义提示词」）：仍走 `aiQuickInteractState` + `AIQuickInteractDialog`，结果可「插入为子块」
 - **卸载**：`cancelAllBackgroundQuickJobs` 中止进行中请求；对仍为 `ready` 的未保留预览**默认删除**（与「离开不保存」一致），再清空队列
+- **行尾取消与迟到响应**：按源块取消先 abort 每个匹配 controller 并移除 job，Valtio 更新后行尾按钮随即清掉；即使底层请求忽略 abort 并迟到返回，`startBackgroundQuickInsertJob` 在插块前也会因 job 已不存在而停止，不调用 `insertQuickResultAsChild`
 - **样式**：`src/styles/ai-quick-interact.css`；结果根块不用 padding/margin 改布局（以免挤歪句柄/子块缩进），仅用背景 + inset box-shadow 做左侧 accent
 
 ### 快捷制卡（`aiQuickCardFlow.ts` + `aiQuickCardJob.ts` + `aiQuickCardPrefs.ts`）
@@ -374,14 +375,14 @@ AI 对话框与导入向导的视觉层统一遵循 [SRS_UI设计规范.md](SRS_
 
 | 样式表 | 覆盖面 |
 | --- | --- |
-| `src/styles/ai-card-dialog.css` | AI 制卡对话框、快捷交互弹窗、提示词库、服务设置、后台任务托盘，**以及导入向导**（EPUB / 网页 / 渐进阅读书籍设置）。导入向导没有独立样式表——`src/main.ts` 的样式导入清单不在本模块职责内，故其类（`.srs-import-dialog*`、`.srs-chapter-selector*`、`.srs-import-progress*`、`.srs-web-preview*`）合并在本表尾部。 |
-| `src/styles/ai-quick-interact.css` | 行尾加载图标、AI 结果块罩层、预览/子块操作栏 |
+| `src/styles/ai-card-dialog.css` | AI 制卡对话框、快捷交互弹窗、提示词库、服务设置，**以及导入向导**（EPUB / 网页 / 渐进阅读书籍设置）。导入向导没有独立样式表——`src/main.ts` 的样式导入清单不在本模块职责内，故其类（`.srs-import-dialog*`、`.srs-chapter-selector*`、`.srs-import-progress*`、`.srs-web-preview*`）合并在本表尾部。 |
+| `src/styles/ai-quick-interact.css` | 行尾生成取消按钮、AI 结果块罩层、预览/子块操作栏 |
 
 落地约定（改动这两张表或相关组件时必须保持）：
 
 - **禁止裸数值与裸十六进制色**：圆角 / 间距 / 阴影 / 动效时长 / 字号字重一律用 `--srs-*`；颜色只能来自 `--orca-color-*` 或 `--srs-*` 派生。历史上这两张表大量引用了并不存在的变量（`--orca-bg-primary`、`--orca-border`、`--orca-text-primary`、`--orca-color-primary`、`--orca-color-dangerous`、`--orca-accent-color`…），实际永远落到硬编码 fallback，靠 `@media (prefers-color-scheme: dark)` 二次覆盖——当 Orca 主题与系统主题不一致时会出现浅底深字。现已全部换成真实 Orca 令牌并删除所有 `prefers-color-scheme` / `.theme-dark` 分支。
 - **浮层容器基线**：`--srs-surface-base` + hairline + `--srs-radius-lg` + `--srs-shadow-overlay` + `--srs-font-family`。
-- **草稿卡 / 提示词卡 / 后台任务卡**：`bg-1` + hairline + `--srs-radius-lg` + `--srs-shadow-1`，hover 升 `--srs-shadow-2` + `--srs-hairline-strong`；状态用左侧 4px 语义色条（`.is-selected` → `--srs-accent-new`，`.has-error` → `--orca-color-danger-5`，任务卡 generating/ready/error 同理）。
+- **草稿卡 / 提示词卡**：`bg-1` + hairline + `--srs-radius-lg` + `--srs-shadow-1`，hover 升 `--srs-shadow-2` + `--srs-hairline-strong`；状态用左侧 4px 语义色条（`.is-selected` → `--srs-accent-new`，`.has-error` → `--orca-color-danger-5`）。
 - **按钮体系**：`__btn--primary` 走主 CTA（`--srs-radius-lg`、15px/600）；`__btn` 基线走次级按钮（`--srs-radius-md`、`7px 14px`、13px/500）；`__btn--ghost` 与各面板 `__close` 走安静按钮。四态齐全，焦点环统一 `2px solid var(--orca-color-primary-5)` + `outline-offset: 2px`。
 - **表单控件**：`--srs-radius-sm`（对话框内）/ `--srs-radius-md`（导入向导）+ hairline，聚焦态为 `primary-5` 边框 + 半透明 primary 光环，不使用浏览器默认蓝框。
 - **内联样式**：组件里只允许保留**运行时动态几何量**。目前唯一一处是 `EpubImportProgress` 的进度条填充宽度；轨道与填充的视觉（`--srs-radius-pill` + `--orca-color-primary-5`）在 CSS 里。
@@ -390,4 +391,4 @@ AI 对话框与导入向导的视觉层统一遵循 [SRS_UI设计规范.md](SRS_
 
 ## 相关测试
 
-`aiChatClient.test.ts`（并发闸门 / 重试判定 / 日志 / 脱敏）、`aiChatPolicy.test.ts`（Semaphore FIFO 与 abort-release 竞态 / Retry-After 解析 / 可中断退避）、`aiDialogState.test.ts`（再来一批的 id 重分配与跨批去重）、`cardBatch.test.ts`、`reviewQueueBatchCluster.test.ts`（聚簇不丢不重 / pending 不进队列不占额度）、`cardStatusPending.test.ts`、`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow`/`resultTags`/`reuseSameResultBlock` + `insertQuickResult` 打标/合并写入 + 候选选择归一化）、`aiQuickInteractJobs.test.ts`（后台 preview/direct/tags/reuse 跳过预览 / 多选与离开面板取消）
+`aiChatClient.test.ts`（并发闸门 / 重试判定 / 日志 / 脱敏）、`aiChatPolicy.test.ts`（Semaphore FIFO 与 abort-release 竞态 / Retry-After 解析 / 可中断退避）、`aiDialogState.test.ts`（再来一批的 id 重分配与跨批去重）、`cardBatch.test.ts`、`reviewQueueBatchCluster.test.ts`（聚簇不丢不重 / pending 不进队列不占额度）、`cardStatusPending.test.ts`、`aiService.test.ts`、`aiChatRequest.test.ts`、`aiSettingsStore.test.ts`、`aiBlockExplain.test.ts`、`aiBlockExplainWrite.test.ts`、`aiDraftParseValidate.test.ts`、`aiCardWriter.test.ts`、`aiRequestToken.test.ts`、`aiConfigValidator.test.ts`、`aiQuickInteract.test.ts`（提示词库字段含 `directWriteBelow`/`resultTags`/`reuseSameResultBlock` + `insertQuickResult` 打标/合并写入 + 候选选择归一化）、`aiQuickInteractJobs.test.ts`（后台 preview/direct/tags/reuse 跳过预览 / 多选与离开面板取消 / 行尾取消 abort / 同源块批量取消 / 迟到响应不写块）

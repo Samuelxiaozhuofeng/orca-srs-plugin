@@ -637,8 +637,7 @@
 
 .ai-quick-dialog__btn,
 .ai-prompt-manager__btn,
-.ai-service-settings__btn,
-.ai-quick-jobs__btn {
+.ai-service-settings__btn {
   align-items: center;
   background: var(--srs-surface-base);
   border: 1px solid var(--srs-hairline);
@@ -664,8 +663,7 @@
 
 .ai-quick-dialog__btn:hover:not(:disabled),
 .ai-prompt-manager__btn:hover:not(:disabled),
-.ai-service-settings__btn:hover:not(:disabled),
-.ai-quick-jobs__btn:hover:not(:disabled) {
+.ai-service-settings__btn:hover:not(:disabled) {
   background: var(--srs-surface-sunken);
   border-color: var(--srs-hairline-strong);
   color: var(--orca-color-text-1);
@@ -673,23 +671,20 @@
 
 .ai-quick-dialog__btn:active:not(:disabled),
 .ai-prompt-manager__btn:active:not(:disabled),
-.ai-service-settings__btn:active:not(:disabled),
-.ai-quick-jobs__btn:active:not(:disabled) {
+.ai-service-settings__btn:active:not(:disabled) {
   transform: translateY(0.5px);
 }
 
 .ai-quick-dialog__btn:focus-visible,
 .ai-prompt-manager__btn:focus-visible,
-.ai-service-settings__btn:focus-visible,
-.ai-quick-jobs__btn:focus-visible {
+.ai-service-settings__btn:focus-visible {
   outline: 2px solid var(--orca-color-primary-5);
   outline-offset: 2px;
 }
 
 .ai-quick-dialog__btn:disabled,
 .ai-prompt-manager__btn:disabled,
-.ai-service-settings__btn:disabled,
-.ai-quick-jobs__btn:disabled {
+.ai-service-settings__btn:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -697,8 +692,7 @@
 /* 主行动 CTA */
 .ai-quick-dialog__btn--primary,
 .ai-prompt-manager__btn--primary,
-.ai-service-settings__btn--primary,
-.ai-quick-jobs__btn--primary {
+.ai-service-settings__btn--primary {
   background: var(--orca-color-primary-5);
   border-color: var(--orca-color-primary-5);
   border-radius: var(--srs-radius-lg);
@@ -711,8 +705,7 @@
 
 .ai-quick-dialog__btn--primary:hover:not(:disabled),
 .ai-prompt-manager__btn--primary:hover:not(:disabled),
-.ai-service-settings__btn--primary:hover:not(:disabled),
-.ai-quick-jobs__btn--primary:hover:not(:disabled) {
+.ai-service-settings__btn--primary:hover:not(:disabled) {
   background: var(--orca-color-primary-6, var(--orca-color-primary-5));
   border-color: var(--orca-color-primary-6, var(--orca-color-primary-5));
   color: var(--orca-color-white, white);
@@ -721,8 +714,7 @@
 /* 次级按钮：托盘底色，弱化于主 CTA */
 .ai-quick-dialog__btn--secondary,
 .ai-prompt-manager__btn--secondary,
-.ai-service-settings__btn--secondary,
-.ai-quick-jobs__btn--secondary {
+.ai-service-settings__btn--secondary {
   background: var(--srs-surface-sunken);
   color: var(--orca-color-text-1);
 }
@@ -1088,144 +1080,6 @@
   background: var(--orca-color-danger-1, var(--srs-surface-sunken));
   border-color: var(--orca-color-danger-5);
   color: var(--orca-color-danger-6);
-}
-
-/* ========== AI 快捷交互后台任务面板 ========== */
-
-.ai-quick-jobs {
-  bottom: var(--srs-space-4);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  font-family: var(--srs-font-family);
-  gap: var(--srs-space-3);
-  max-height: min(60vh, 480px);
-  max-width: min(360px, calc(100vw - 24px));
-  overflow-y: auto;
-  pointer-events: none;
-  position: fixed;
-  right: var(--srs-space-4);
-  z-index: 10050;
-}
-
-/* 任务卡：左侧 4px 语义色条区分生成中 / 就绪 / 失败 */
-.ai-quick-jobs__card {
-  background: var(--srs-surface-base);
-  background-clip: padding-box;
-  border: 1px solid var(--srs-hairline);
-  border-left: 4px solid var(--srs-accent-future);
-  border-radius: var(--srs-radius-lg);
-  box-shadow: var(--srs-shadow-overlay);
-  box-sizing: border-box;
-  color: var(--orca-color-text-1);
-  display: flex;
-  flex-direction: column;
-  gap: var(--srs-space-2);
-  /* 卡片内边距：规范固定值 14px 16px（≈space-4，无精确令牌） */
-  padding: 14px 16px;
-  pointer-events: auto;
-  width: 100%;
-}
-
-.ai-quick-jobs__card--generating {
-  border-left-color: var(--srs-accent-new);
-}
-
-.ai-quick-jobs__card--ready {
-  border-left-color: var(--srs-accent-backlog);
-}
-
-.ai-quick-jobs__card--error {
-  border-left-color: var(--orca-color-danger-5);
-}
-
-.ai-quick-jobs__card-header {
-  align-items: flex-start;
-  display: flex;
-  gap: var(--srs-space-2);
-  justify-content: space-between;
-}
-
-.ai-quick-jobs__card-title {
-  align-items: center;
-  color: var(--orca-color-text-1);
-  display: flex;
-  flex: 1;
-  font-size: var(--srs-text-body);
-  font-weight: var(--srs-weight-semibold);
-  gap: var(--srs-space-2);
-  min-width: 0;
-}
-
-.ai-quick-jobs__card-status {
-  background: var(--srs-surface-sunken);
-  border-radius: var(--srs-radius-pill);
-  color: var(--orca-color-text-2);
-  flex-shrink: 0;
-  font-size: var(--srs-text-micro);
-  font-weight: var(--srs-weight-medium);
-  line-height: 1.4;
-  padding: 2px var(--srs-space-2);
-  white-space: nowrap;
-}
-
-.ai-quick-jobs__selection {
-  color: var(--orca-color-text-3);
-  font-size: var(--srs-text-caption);
-  line-height: 1.4;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-quick-jobs__status-line {
-  align-items: center;
-  color: var(--orca-color-text-3);
-  display: flex;
-  font-size: var(--srs-text-caption);
-  gap: var(--srs-space-2);
-}
-
-.ai-quick-jobs__spin {
-  animation: ai-quick-dialog-spin 0.8s linear infinite;
-}
-
-.ai-quick-jobs__error {
-  background: var(--orca-color-danger-1, var(--srs-surface-sunken));
-  border-radius: var(--srs-radius-md);
-  color: var(--orca-color-danger-5);
-  font-size: var(--srs-text-caption);
-  line-height: 1.4;
-  max-width: var(--srs-measure-prose);
-  padding: var(--srs-space-2) var(--srs-space-3);
-}
-
-.ai-quick-jobs__hint {
-  color: var(--orca-color-text-3);
-  font-size: var(--srs-text-caption);
-  line-height: 1.4;
-  margin: 0;
-  max-width: var(--srs-measure-prose);
-}
-
-.ai-quick-jobs__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--srs-space-2);
-  justify-content: flex-end;
-}
-
-/* 托盘卡内按钮整体收窄一档 */
-.ai-quick-jobs__btn {
-  font-size: var(--srs-text-caption);
-  padding: 5px var(--srs-space-3);
-}
-
-.ai-quick-jobs__btn--primary {
-  border-radius: var(--srs-radius-md);
-  font-size: var(--srs-text-secondary);
-  padding: 6px 14px;
 }
 
 /* ========== AI / Firecrawl 服务设置面板 ========== */

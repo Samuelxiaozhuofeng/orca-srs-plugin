@@ -21,7 +21,6 @@ import {
 import { createRequestTokenGuard } from "../srs/ai/aiRequestToken"
 import { sanitizePublicError } from "../srs/http/redactSecrets"
 import { AIQuickInteractDialog } from "./AIQuickInteractDialog"
-import { AIQuickJobsPanel } from "./AIQuickJobsPanel"
 import { AIBlockLoadingMount } from "./AIBlockLoadingMount"
 
 const { Valtio } = window
@@ -231,7 +230,6 @@ export function AIQuickInteractMount({ pluginName }: AIQuickInteractMountProps) 
 
   return (
     <>
-      <AIQuickJobsPanel />
       <AIBlockLoadingMount />
       {snap.isOpen ? (
         <AIQuickInteractDialog

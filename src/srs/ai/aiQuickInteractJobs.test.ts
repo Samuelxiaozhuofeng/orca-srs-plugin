@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   aiQuickJobsState,
   cancelAllBackgroundQuickJobs,
+  cancelGeneratingQuickJobsForSourceBlock,
   dismissBackgroundQuickJob,
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
@@ -37,8 +38,7 @@ vi.mock("./aiQuickInteract", () => {
       _rootId: number,
       selectedIds: number[]
     ) => ({ success: true, keptCount: selectedIds.length })),
-    dismissQuickResult: vi.fn(async () => ({ success: true })),
-    promoteQuickResultToChild: vi.fn(async () => ({ success: true }))
+    dismissQuickResult: vi.fn(async () => ({ success: true }))
   }
 })
 
@@ -109,6 +109,103 @@ describe("startBackgroundQuickInsertJob", () => {
     await cancelAllBackgroundQuickJobs()
     vi.restoreAllMocks()
     delete (globalThis as any).orca
+  })
+
+  it("aborts an inline-cancelled request and ignores a late successful response", async () => {
+    const { runToolbarAIPrompt, insertQuickResultAsChild } = await import(
+      "./aiQuickInteract"
+    )
+    let capturedSignal: AbortSignal | undefined
+    let resolveRequest!: (value: { success: true; text: string }) => void
+    vi.mocked(runToolbarAIPrompt).mockImplementationOnce(
+      async ({ signal }) =>
+        new Promise((resolve) => {
+          capturedSignal = signal
+          resolveRequest = resolve
+        })
+    )
+
+    const pendingJob = startBackgroundQuickInsertJob({
+      pluginName: "orca-srs",
+      sourceBlockId: 10,
+      selectedText: "工作记忆",
+      blockText: "整块正文",
+      promptLabel: "举例说明",
+      promptText: "请举例说明",
+      includeBlockContext: true
+    })
+
+    await vi.waitFor(() => {
+      expect(aiQuickJobsState.jobs).toHaveLength(1)
+      expect(capturedSignal).toBeDefined()
+    })
+
+    expect(cancelGeneratingQuickJobsForSourceBlock(10)).toBe(1)
+    expect(capturedSignal?.aborted).toBe(true)
+    expect(aiQuickJobsState.jobs).toEqual([])
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "info",
+      "已取消此项 AI 生成",
+      { title: "AI 快捷交互" }
+    )
+
+    resolveRequest({ success: true, text: "迟到的 AI 结果" })
+    await pendingJob
+
+    expect(insertQuickResultAsChild).not.toHaveBeenCalled()
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("cancels all generating jobs for one source block and keeps other sources", async () => {
+    const { runToolbarAIPrompt } = await import("./aiQuickInteract")
+    const signals: AbortSignal[] = []
+    const resolvers: Array<(value: { success: true; text: string }) => void> = []
+    for (let index = 0; index < 3; index += 1) {
+      vi.mocked(runToolbarAIPrompt).mockImplementationOnce(
+        async ({ signal }) =>
+          new Promise((resolve) => {
+            signals.push(signal as AbortSignal)
+            resolvers.push(resolve)
+          })
+      )
+    }
+    const makeJob = (sourceBlockId: number, selectedText: string) =>
+      startBackgroundQuickInsertJob({
+        pluginName: "orca-srs",
+        sourceBlockId,
+        selectedText,
+        blockText: "整块正文",
+        promptLabel: "举例说明",
+        promptText: "请举例说明",
+        includeBlockContext: true
+      })
+
+    const pendingJobs = [
+      makeJob(10, "任务一"),
+      makeJob(10, "任务二"),
+      makeJob(20, "其它源块任务")
+    ]
+    await vi.waitFor(() => {
+      expect(aiQuickJobsState.jobs).toHaveLength(3)
+      expect(signals).toHaveLength(3)
+    })
+
+    expect(cancelGeneratingQuickJobsForSourceBlock(10)).toBe(2)
+    expect(signals[0]?.aborted).toBe(true)
+    expect(signals[1]?.aborted).toBe(true)
+    expect(signals[2]?.aborted).toBe(false)
+    expect(aiQuickJobsState.jobs).toHaveLength(1)
+    expect(aiQuickJobsState.jobs[0]?.sourceBlockId).toBe(20)
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "info",
+      "已取消此块的全部 2 项 AI 生成",
+      { title: "AI 快捷交互" }
+    )
+
+    for (const resolve of resolvers) {
+      resolve({ success: true, text: "完成" })
+    }
+    await Promise.all(pendingJobs)
   })
 
   it("runs job silently without info/success toast notifications and inserts as child preview", async () => {
