@@ -57,6 +57,13 @@ export interface QuickBackgroundJob {
   panelViewKey: string | null
 }
 
+/** 卡片预览只能整张保留或丢弃；缺省 kind 仍按文本预览处理。 */
+export function shouldMountChildSelectionActions(
+  job: Pick<QuickBackgroundJob, "kind">
+): boolean {
+  return job.kind !== "card"
+}
+
 /** 读取面板当前视图指纹（view + 稳定 viewArgs） */
 export function computePanelViewKey(panelId: string): string | null {
   try {
@@ -472,6 +479,12 @@ export async function toggleBackgroundQuickJobBlockSelection(
 /** 用户确认后批量保留所选子树；失败时保留预览与选择以便重试。 */
 export async function keepSelectedBackgroundQuickJob(jobId: string): Promise<void> {
   await runTerminalJobAction(jobId, async (job) => {
+    if (job.kind === "card") {
+      orca.notify("warn", "快捷制卡只能整张保留或整张取消", {
+        title: "AI 快捷制卡"
+      })
+      return
+    }
     if (job.status !== "ready" || job.resultRootBlockId == null) {
       orca.notify("warn", "当前任务没有可保留的预览内容", { title: "AI 快捷交互" })
       return

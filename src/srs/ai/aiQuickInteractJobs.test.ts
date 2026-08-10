@@ -6,6 +6,7 @@ import {
   dismissJobsLeftBehindOnPanelLeave,
   keepBackgroundQuickJob,
   keepSelectedBackgroundQuickJob,
+  shouldMountChildSelectionActions,
   startBackgroundQuickInsertJob,
   toggleBackgroundQuickJobBlockSelection,
   type QuickBackgroundJob
@@ -440,6 +441,42 @@ describe("startBackgroundQuickInsertJob", () => {
 
     expect(keepQuickCardJob).toHaveBeenCalledTimes(1)
     expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it.each(["问答卡", "填空卡", "选择题"])(
+    "%s card preview does not mount child selection",
+    (promptLabel) => {
+      const job = installReadyCardJob(`quick-card-${promptLabel}`)
+      job.promptLabel = promptLabel
+
+      expect(shouldMountChildSelectionActions(job)).toBe(false)
+    }
+  )
+
+  it("keeps child selection enabled for text quick-interaction previews", () => {
+    expect(shouldMountChildSelectionActions({ kind: "quick" })).toBe(true)
+    expect(shouldMountChildSelectionActions({})).toBe(true)
+  })
+
+  it("rejects keep-selected for card jobs without moving or removing cards", async () => {
+    const { keepSelectedQuickResultBlocks } = await import("./aiQuickInteract")
+    const job = installReadyCardJob()
+    job.selectedResultBlockIds = [1001]
+
+    await keepSelectedBackgroundQuickJob(job.id)
+
+    expect(keepSelectedQuickResultBlocks).not.toHaveBeenCalled()
+    expect(aiQuickJobsState.jobs).toHaveLength(1)
+    expect(aiQuickJobsState.jobs[0]).toMatchObject({
+      id: job.id,
+      selectedResultBlockIds: [1001],
+      terminalActionPending: false
+    })
+    expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
+      "warn",
+      "快捷制卡只能整张保留或整张取消",
+      { title: "AI 快捷制卡" }
+    )
   })
 
   it("serializes rapid candidate clicks without ending or writing the preview job", async () => {
