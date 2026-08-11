@@ -1,6 +1,6 @@
 /**
  * F2-08：FSRS 设置纯校验与默认 patch；
- * 原生 schema 不含每日额度两项与 FSRS 三项 UI。
+ * 原生 schema 必须覆盖 REVIEW_SETTINGS_KEYS 全部 key（未注册的 key 无法持久化）。
  * 独立面板 form helper 见 reviewServiceSettings.test.ts
  */
 
@@ -10,7 +10,9 @@ import {
   DEFAULT_FSRS_WEIGHTS,
   DEFAULT_FSRS_WEIGHTS_ARRAY,
   DEFAULT_MAXIMUM_INTERVAL,
+  DEFAULT_NEW_CARDS_PER_DAY,
   DEFAULT_REQUEST_RETENTION,
+  DEFAULT_REVIEW_CARDS_PER_DAY,
   FSRS_WEIGHTS_COUNT,
   formatFsrsIssuesMessage,
   formatFsrsWeights,
@@ -233,14 +235,45 @@ describe("validateFsrsConfig 逐项回退与 issues", () => {
 
 })
 
-describe("原生 reviewSettingsSchema 不含每日额度与 FSRS UI 字段", () => {
-  it("每日额度两项与 FSRS 三项 key 均不在 schema 对象中", () => {
+describe("原生 reviewSettingsSchema 覆盖全部 REVIEW_SETTINGS_KEYS", () => {
+  // orca.plugins.setSettings 只持久化已注册进 schema 的 key：
+  // 少注册一个 key = 该设置改完关窗即丢。这里逐项锁死注册与默认值。
+  it("每日额度两项与 FSRS 三项均已注册，且 defaultValue 取既有默认常量", () => {
+    const schema = reviewSettingsSchema as Record<
+      string,
+      { type: string; defaultValue: unknown }
+    >
+    const expected = [
+      [REVIEW_SETTINGS_KEYS.newCardsPerDay, "number", DEFAULT_NEW_CARDS_PER_DAY],
+      [
+        REVIEW_SETTINGS_KEYS.reviewCardsPerDay,
+        "number",
+        DEFAULT_REVIEW_CARDS_PER_DAY
+      ],
+      [REVIEW_SETTINGS_KEYS.fsrsWeights, "string", DEFAULT_FSRS_WEIGHTS],
+      [
+        REVIEW_SETTINGS_KEYS.fsrsRequestRetention,
+        "number",
+        DEFAULT_REQUEST_RETENTION
+      ],
+      [
+        REVIEW_SETTINGS_KEYS.fsrsMaximumInterval,
+        "number",
+        DEFAULT_MAXIMUM_INTERVAL
+      ]
+    ] as const
+    for (const [key, type, defaultValue] of expected) {
+      expect(Object.keys(schema)).toContain(key)
+      expect(schema[key].type).toBe(type)
+      expect(schema[key].defaultValue).toBe(defaultValue)
+    }
+  })
+
+  it("REVIEW_SETTINGS_KEYS 的每个 key 都在 schema 中（防止再漏注册）", () => {
     const keys = Object.keys(reviewSettingsSchema)
-    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.newCardsPerDay)
-    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.reviewCardsPerDay)
-    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.fsrsWeights)
-    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.fsrsRequestRetention)
-    expect(keys).not.toContain(REVIEW_SETTINGS_KEYS.fsrsMaximumInterval)
+    for (const key of Object.values(REVIEW_SETTINGS_KEYS)) {
+      expect(keys).toContain(key)
+    }
   })
 
   it("仍保留其它复习项与全部 key 常量 / defaults 读取路径", () => {

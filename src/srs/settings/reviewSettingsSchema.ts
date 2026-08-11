@@ -5,12 +5,12 @@
  * F2-08：权重恰好 21 个有限数字；retention 0.7..0.99；maximum interval 1..36500。
  * 非法字段逐项回退明确默认值，并返回可诊断 issues（不得静默成功）。
  *
- * 以下 key 仍存 plugin settings，但**不**注册到原生 `reviewSettingsSchema` UI：
- * - 每日额度 `review.newCardsPerDay` / `review.reviewCardsPerDay`
- * - FSRS `review.fsrsWeights` / `review.fsrsRequestRetention` / `review.fsrsMaximumInterval`
+ * `REVIEW_SETTINGS_KEYS` 的**全部** key 都必须出现在 `reviewSettingsSchema` 中：
+ * `orca.plugins.setSettings` 只持久化已注册进 schema 的 key，未注册的写入会被丢弃
+ * （曾导致每日额度 / FSRS 五项改完关窗即丢，见 `模块文档/问题经验.md`）。
  *
- * 独立面板「复习」页（可见三项：日新卡 / 日复习 / 保留率）见 `reviewServiceSettings.ts`。
- * 权重与最大间隔无独立面板编辑 UI，算法 runtime 与「恢复 FSRS 默认」命令仍读写。
+ * 独立面板「复习」页（可见三项：日新卡 / 日复习 / 保留率）见 `reviewServiceSettings.ts`；
+ * 注册进 schema 后这些项同时出现在 Orca 原生插件设置页，两条编辑路径写同一批 key。
  */
 
 /**
@@ -156,8 +156,43 @@ export const reviewSettingsSchema = {
     defaultValue: false,
     description: "开启后不显示任何 SRS 相关的通知提醒（评分、创建卡片等）"
   },
-  // 每日额度 + FSRS 五项不在此 schema：日额度/保留率 UI 在独立服务面板「复习」页；
-  // 权重与最大间隔无面板编辑 UI；存储 key 与 getReviewSettings / 算法读取仍保留。
+  // 每日额度 + FSRS 五项必须注册：未注册的 key 无法被 orca.plugins.setSettings 持久化。
+  [REVIEW_SETTINGS_KEYS.newCardsPerDay]: {
+    label: "每日新卡上限",
+    type: "number" as const,
+    defaultValue: DEFAULT_NEW_CARDS_PER_DAY,
+    description: "每天最多引入的新卡数量。也可在独立服务面板「复习」页修改。"
+  },
+  [REVIEW_SETTINGS_KEYS.reviewCardsPerDay]: {
+    label: "每日复习上限",
+    type: "number" as const,
+    defaultValue: DEFAULT_REVIEW_CARDS_PER_DAY,
+    description: "每天最多推送的到期复习卡数量。也可在独立服务面板「复习」页修改。"
+  },
+  [REVIEW_SETTINGS_KEYS.fsrsWeights]: {
+    label: "FSRS 权重（21 个）",
+    type: "string" as const,
+    defaultValue: DEFAULT_FSRS_WEIGHTS,
+    description:
+      "FSRS v6 权重参数，逗号分隔的 21 个数字。"
+      + "填写非法值时运行时回退默认权重并给出诊断；"
+      + "可用「恢复 FSRS 默认」命令还原。"
+  },
+  [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: {
+    label: "目标记忆保留率",
+    type: "number" as const,
+    defaultValue: DEFAULT_REQUEST_RETENTION,
+    description:
+      `FSRS 目标保留率，有效范围 ${FSRS_REQUEST_RETENTION_MIN}–${FSRS_REQUEST_RETENTION_MAX}。`
+      + "越高复习越频繁。也可在独立服务面板「复习」页修改。"
+  },
+  [REVIEW_SETTINGS_KEYS.fsrsMaximumInterval]: {
+    label: "最大间隔（天）",
+    type: "number" as const,
+    defaultValue: DEFAULT_MAXIMUM_INTERVAL,
+    description:
+      `单张卡的最长复习间隔，有效范围 ${FSRS_MAXIMUM_INTERVAL_MIN}–${FSRS_MAXIMUM_INTERVAL_MAX} 天。`
+  },
   [REVIEW_SETTINGS_KEYS.irItemInitialDueMode]: {
     label: "IR 源记忆卡首次学习时间",
     type: "string" as const,

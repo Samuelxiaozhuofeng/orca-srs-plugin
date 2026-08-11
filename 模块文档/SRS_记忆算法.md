@@ -153,7 +153,7 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 | 层面 | 行为 |
 | --- | --- |
 | **存储** | 仍为 Orca plugin settings 原 key：`review.newCardsPerDay` / `review.reviewCardsPerDay` / `review.fsrsWeights` / `review.fsrsRequestRetention` / `review.fsrsMaximumInterval`。**不**迁到 plugin data。 |
-| **原生设置页** | `reviewSettingsSchema` **不再**注册每日额度两项与 FSRS 三项（避免出现在 Orca 原生插件设置 UI）。 |
+| **原生设置页** | `reviewSettingsSchema` **必须**注册 `REVIEW_SETTINGS_KEYS` 的全部 key（含每日额度两项与 FSRS 三项）。`orca.plugins.setSettings` 只持久化已注册进 schema 的 key，漏注册 = 改完关窗即丢（2026-08-11 修复）。副作用：这五项同时出现在 Orca 原生插件设置 UI，与独立面板并存，写同一批 key。 |
 | **独立面板「复习」页** | 数值三项：每日新卡上限、每日复习上限、目标记忆保留率；界面两项（默认关）：仅失败/通过按钮、`Show next review time over buttons`；+「恢复默认值」（草稿 30/200/0.9 + 两开关关）。**不**显示权重与最大间隔。 |
 | **权重 / 最大间隔** | 无面板编辑 UI；仍由算法 runtime 读取与严格校验；命令 `resetFsrsSettingsToDefaults` 可写回默认。普通面板保存**不得**写回或规范化这两项（保护个人优化权重）。 |
 | **算法 / 额度读取** | 不变：`getFsrsInstance` / `readAndValidateFsrsSettings` 读 FSRS 三项；`resolveDailyQueueLimits` / `getReviewSettings` 读每日额度。 |
@@ -183,11 +183,11 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 | 键 | 默认 | UI 入口 | 说明 |
 |----|------|---------|------|
 | `review.disableNotifications` | false | 原生插件设置 | 关闭 SRS 通知 |
-| `review.newCardsPerDay` | 30 | 服务面板 **复习** 页 | 每日新卡上限（budget：`isValidDailyCardLimit`） |
-| `review.reviewCardsPerDay` | 200 | 服务面板 **复习** 页 | 每日复习上限 |
-| `review.fsrsRequestRetention` | 0.9 | 服务面板 **复习** 页 | 目标保留率 0.7..0.99 |
-| `review.fsrsWeights` | FSRS v6 默认 21 个 | **无 UI** | 算法 runtime + 恢复默认命令 |
-| `review.fsrsMaximumInterval` | 36500 | **无 UI** | 算法 runtime + 恢复默认命令 |
+| `review.newCardsPerDay` | 30 | 服务面板 **复习** 页 + 原生插件设置 | 每日新卡上限（budget：`isValidDailyCardLimit`） |
+| `review.reviewCardsPerDay` | 200 | 服务面板 **复习** 页 + 原生插件设置 | 每日复习上限 |
+| `review.fsrsRequestRetention` | 0.9 | 服务面板 **复习** 页 + 原生插件设置 | 目标保留率 0.7..0.99 |
+| `review.fsrsWeights` | FSRS v6 默认 21 个 | 原生插件设置（无独立面板 UI） | 算法 runtime + 恢复默认命令 |
+| `review.fsrsMaximumInterval` | 36500 | 原生插件设置（无独立面板 UI） | 算法 runtime + 恢复默认命令 |
 | `review.irItemInitialDueMode` 等 | … | 原生插件设置 | 其它复习相关项 |
 
 `getReviewSettings(pluginName)` 返回**原始读取**（含每日额度与 FSRS 字段，供兼容读取）；正式评分/预览必须走 algorithm 的 validated 路径，勿把原始 FSRS 字段直接喂给 `generatorParameters`。
