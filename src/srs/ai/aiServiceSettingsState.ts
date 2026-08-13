@@ -3,6 +3,7 @@
  */
 
 import {
+  DEFAULT_QUICK_CARD_MAX,
   getQuickCardPrefs,
   hydrateQuickCardPrefs,
   type QuickCardPrefs
@@ -88,7 +89,8 @@ const emptyAI: AISettings = {
 const emptyQuickCard: QuickCardPrefs = {
   cardLanguage: "auto",
   customInstruction: "",
-  model: ""
+  model: "",
+  maxCards: DEFAULT_QUICK_CARD_MAX
 }
 
 const emptyFirecrawl: WebImportSettings = {

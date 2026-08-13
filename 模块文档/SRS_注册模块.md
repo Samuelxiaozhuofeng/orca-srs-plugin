@@ -207,7 +207,7 @@ export function listUnregisterHeadbarButtonIds(pluginName): string[]  // mount �
 
 注销时额外 try/catch 清理旧构建可能注册过的 `${pluginName}.interactiveAI` 斜杠 id（失败仅 warn）。
 
-> Orca 当前版本不支持在本模块注册自定义快捷键；工具栏保留「填空卡 + AI 快捷交互」入口，其余走斜杠或命令面板。
+> 本模块经 `orca.shortcuts.assign` 注册**默认可重绑定**快捷键（一次性播种，见 `irShortcutsRegistry.ts` 与 `aiQuickCardShortcuts.ts`）；工具栏保留「填空卡 + AI 快捷交互」入口，其余走斜杠或命令面板。
 
 ---
 

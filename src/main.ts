@@ -159,6 +159,15 @@ export async function load(_name: string) {
     console.warn(`[${pluginName}] 注册渐进阅读默认快捷键失败:`, error)
   }
 
+  try {
+    const { registerQuickCardDefaultShortcuts } = await import(
+      "./srs/ai/aiQuickCardShortcuts"
+    )
+    await registerQuickCardDefaultShortcuts(pluginName)
+  } catch (error) {
+    console.warn(`[${pluginName}] 注册快捷制卡默认快捷键失败:`, error)
+  }
+
   // 后台准备 #card 标签 schema：全新安装即可直接 Book IR / 制卡，无需先手动建卡。
   // 失败不得阻断插件加载；ensureCardTagProperties 自身仍 reject，制卡/Book IR 路径会再试。
   try {

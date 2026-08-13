@@ -1,15 +1,18 @@
 # SRS AI 模块
 
-> 文档同步日期：2026-08-10
+> 文档同步日期：2026-08-13
 > 近期变更：
-> 1. **正式制卡选区优先（2026-08-10）**：`startAIFlashcardFlow` 对单 fragment、同块跨样式与跨块非空选区统一只发送选中文字；折叠光标仍读取锚点块全文 + 有界子树。弹窗与请求共用 `clipCardSource` 的 6000 字正文，超限可见标记「已截断」。
-> 2. **后台生成行尾可取消（2026-08-10）**：源块行尾由展示型 loading 改为原生取消按钮；单任务为「取消此项 AI 生成」，同源块多任务为「取消此块的全部 N 项 AI 生成」。取消会 abort 请求并移除 job；请求迟到返回时由 job/signal 双重守卫阻止写块。不扩建任务中心：`AIQuickJobsPanel` 仅保留鉴权失败（HTTP 401/403）错误卡。
-> 3. **快捷制卡预览只允许整张处理（2026-08-10）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
-> 4. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
-> 5. **AI 配置错误直达（2026-08-10）**：生成闪卡、快捷交互、快捷制卡在未配置 API Key 时直接打开服务设置「连接」页；生成 UI 内的 HTTP 401/403 保留原错误并显示「打开连接设置」，由用户显式切换；其它错误不引导设置。
-> 6. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
-> 7. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
-> 8. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
+> 1. **快捷制卡默认快捷键（2026-08-13）**：新增 `aiQuickCardShortcuts.ts`，`quickAutoCard` 默认绑 `Alt+C`（一次性播种 `ai.quickCardShortcutsSeeded`，与 `irShortcutsRegistry` 同策略）；问答/填空/选择题命令留待用户在原生快捷键设置绑定。
+> 2. **快捷制卡单次上限可配 + 逐张保留（2026-08-13）**：`ai.quickCard.maxCards`（0 = 由 AI 根据 block 内容自主决定数量；1–20 = 硬上限；缺省 2）；服务与算法设置「快捷制卡」页新增「单次生成卡片上限」输入；`generateFlashcardDrafts` 新增 `cardCap` 覆盖（0 = 提示词不写数字，校验阶段仍用 `AUTO_CARD_CAP_FALLBACK=20` 兜底截断，避免预览块下挂几十张卡）。card job 开放逐张勾选：UI 只对 `cardBlockIds` 挂选择按钮，`keepSelectedQuickCardJob` 按预览原顺序移出并激活所选卡片、未选随壳删除。
+> 3. **快捷制卡去重 + 自动卡型（2026-08-13）**：`startQuickCardJob` 生成前经 `collectExistingCardExclusionSummaries`（只读、有界：200 块 / 深度 4 / 30 条摘要）扫描源块子树已有 basic/cloze/choice 卡片，把题干/挖空目标作为 `excludeSummaries` 喂给模型，只出覆盖新内容的卡。新增第 4 个命令 `${pluginName}.quickAutoCard`「快捷制卡（自动）」，`cardTypes: ["basic","cloze","choice"]` 让模型按内容自行分配卡型；`startQuickCardJob` 的 `cardType` 改为 `cardTypes: AICardType[]`。
+> 4. **正式制卡选区优先（2026-08-10）**：`startAIFlashcardFlow` 对单 fragment、同块跨样式与跨块非空选区统一只发送选中文字；折叠光标仍读取锚点块全文 + 有界子树。弹窗与请求共用 `clipCardSource` 的 6000 字正文，超限可见标记「已截断」。
+> 5. **后台生成行尾可取消（2026-08-10）**：源块行尾由展示型 loading 改为原生取消按钮；单任务为「取消此项 AI 生成」，同源块多任务为「取消此块的全部 N 项 AI 生成」。取消会 abort 请求并移除 job；请求迟到返回时由 job/signal 双重守卫阻止写块。不扩建任务中心：`AIQuickJobsPanel` 仅保留鉴权失败（HTTP 401/403）错误卡。
+> 6. **快捷制卡预览只允许整张处理（2026-08-10，已被 2026-08-13 逐张保留取代）**：Basic / Cloze / Choice 预览均不挂子块选择，不显示「已选 N 项 / 保留所选」；只允许「保留全部」或「取消」。后台 `keepSelectedBackgroundQuickJob` 同步拒绝 card job，防止其它入口绕过 UI。
+> 7. **快捷制卡保留失败可见且可重试（2026-08-10）**：移动卡片失败时保留 preview job、包装块与 pending 卡片，显示 error toast；保留 / 保留所选 / 取消按 job 互斥，动作中三个按钮禁用，结束后恢复。
+> 8. **AI 配置错误直达（2026-08-10）**：生成闪卡、快捷交互、快捷制卡在未配置 API Key 时直接打开服务设置「连接」页；生成 UI 内的 HTTP 401/403 保留原错误并显示「打开连接设置」，由用户显式切换；其它错误不引导设置。
+> 9. **IR 摘录/主题可作 AI 源文（2026-08-10）**：`isExcludedAiSourceBlock` 不再一律排除所有 `#card`；仅排除纯 SRS 闪卡与 `srs.ai.quickResult` 预览根。`type=topic` / `type=extracts` 及 keep_extract 后仍带 `ir.due` 的 hybrid **允许**作为快捷制卡 / 选区源文（摘录阅读界面光标停在摘录正文即可制卡）。
+> 10. **多块 / 跨样式 / 子树源文**：同块跨 fragment、同父连续兄弟跨块、父子跨块（P+子块）与跨分支——统一按 **DFS 前序连续区间** 解析；整段范围展开有界子树（深度 8 / 80 块、缩进、排除**纯** #card 与 AI 结果预览）；结果锚点为阅读方向末块（祖先↔后代跨度挂祖先 P）；`QUICK_SELECTION_MAX=12000`。
+> 11. （历史）传输层统一、制卡弹窗 v2、选择题卡、队列 `batchId` + `pending` 等见既有实现。
 >
 > **能力边界**：跨块按 anchor↔focus 在同一棵树内的 **DFS 前序连续区间** 解析（兄弟链 / 父子链 / 跨分支），不读取「跳选」块 ID 集合；行内端点切片不含端点子树；不同根 / 孤立块 / 块缺失 → 可见报错；真机选区表现仍以宿主为准。
 >
@@ -24,7 +27,7 @@ AI 模块提供基于 **OpenAI 兼容 Chat Completions** 的能力。产品路�
 | **AI 生成闪卡** | `${pluginName}.makeAICard`（别名 `interactiveAICard`） | 非空选区优先（单 fragment / 同块跨样式 / 跨块）；折叠光标才读当前块全文 + 有界子树 → 弹窗展示实际发送正文 → AI 请求 → 校验/预览/编辑/勾选 → 确认后分组写入（锚点为选区解析结果或当前块；祖先↔后代跨块挂祖先 P） |
 | **块解释** | 渐进阅读会话：移到块右侧隐形热区出「?」或 `Alt+E` | 读目标块 → 白话/名词内联；可选举例/反驳/追问；用户点「+」才写入普通子块 |
 | **AI 快捷交互** | 编辑器工具栏 sparkles 按钮 | 选中文本（同 fragment / 同块跨样式 / 同树任意跨块，含父子链）→ 选提示词；结果挂在**选区末块**下（祖先↔后代跨块挂祖先 P）；见下「快捷交互」 |
-| **AI 快捷制卡** | `quickBasicCard` / `quickClozeCard` / `quickChoiceCard`（斜杠「快捷问答卡 / 快捷填空卡 / 快捷选择题」） | 选中文本（或整块；支持跨块，含父子链）→ 直接生成 → 以**待激活卡片**插到**末块**下方预览（祖先↔后代跨块挂祖先 P）→ 保留 / 丢弃 |
+| **AI 快捷制卡** | `quickBasicCard` / `quickClozeCard` / `quickChoiceCard` / `quickAutoCard`（斜杠「快捷问答卡 / 快捷填空卡 / 快捷选择题 / 快捷制卡（自动）」；`quickAutoCard` 默认键 `Alt+C`，可在宿主快捷键设置改绑） | 选中文本（或整块；支持跨块，含父子链）→ 直接生成 → 以**待激活卡片**插到**末块**下方预览（祖先↔后代跨块挂祖先 P）→ 保留 / 丢弃；`quickAutoCard` 让模型按内容自行分配卡型 |
 
 可见斜杠命令仅 **`${pluginName}.aiCard`（AI 生成闪卡）**。块解释无独立斜杠命令。
 
@@ -168,23 +171,35 @@ src/components/
 - **行尾取消与迟到响应**：按源块取消先 abort 每个匹配 controller 并移除 job，Valtio 更新后行尾按钮随即清掉；即使底层请求忽略 abort 并迟到返回，`startBackgroundQuickInsertJob` 在插块前也会因 job 已不存在而停止，不调用 `insertQuickResultAsChild`
 - **样式**：`src/styles/ai-quick-interact.css`；结果根块不用 padding/margin 改布局（以免挤歪句柄/子块缩进），仅用背景 + inset box-shadow 做左侧 accent
 
-### 快捷制卡（`aiQuickCardFlow.ts` + `aiQuickCardJob.ts` + `aiQuickCardPrefs.ts`）
+### 快捷制卡（`aiQuickCardFlow.ts` + `aiQuickCardJob.ts` + `aiQuickCardPrefs.ts` + `aiQuickCardDedupe.ts`）
 
 与「AI 生成闪卡」弹窗的分工，按「每次都会变」vs「稳定偏好」切：
 
 | 维度 | 归属 | 理由 |
 | --- | --- | --- |
-| 卡型 | **命令名**（三个命令） | 每次都随内容变：这句适合挖空、那段适合问答。藏进设置就意味着按下去之前不知道会得到什么 |
+| 卡型 | **命令名**（四个命令，含「自动」） | 每次都随内容变：这句适合挖空、那段适合问答。藏进设置就意味着按下去之前不知道会得到什么；`quickAutoCard` 传三种卡型，由模型按内容自行分配 |
 | 语言 / 自定义指令 / 专用 model | **持久化偏好**（`ai.quickCard`） | 设一次用很久。制卡弹窗的配置是弹窗临时状态（`openAIDialog` 每次重置），存不住，因此单开一个 data 键 |
-| 详细程度 | **固定概要档**，不可配 | 块下面挂十几张预览卡没法看也没法选。快捷路径的价值是「一眼看完、一秒决定」；要成批就该走弹窗 |
+| 单次上限 | **持久化偏好**（`ai.quickCard.maxCards`） | 0 = 由 AI 根据 block 内容自主决定数量（提示词不写数字，校验仍以 `AUTO_CARD_CAP_FALLBACK=20` 兜底截断）；1–20 = 硬上限；缺省 2（与历史概要档一致）。深度档随之切：>0 概要档、=0 重要观点档（避免「只取一两点」与「不限数量」冲突） |
+
+**默认快捷键（`aiQuickCardShortcuts.ts`）**：`quickAutoCard` 默认绑 `Alt+C`，一次性播种
+（plugin data 标记 `ai.quickCardShortcutsSeeded`）——只在首次加载 assign，之后用户解绑/改绑
+永不被覆盖；键被占用则跳过且仍视为已播种。问答/填空/选择题三个命令留给用户在原生快捷键
+设置自行绑定。unload 不回收（避免抹掉用户自定义绑定）。
+
+**去重（`aiQuickCardDedupe.ts`）**：生成前经 `collectExistingCardExclusionSummaries` 只读扫描
+源块子树里**已有的** basic / cloze / choice 卡片（有界：200 块 / 深度 4 / 30 条摘要），
+抽出题干（basic/choice）或「挖空目标 + 上下文首段」（cloze）作为 `excludeSummaries` 传给
+`generateFlashcardDrafts`，让模型只出覆盖新内容的卡。刻意**不**复用 `convertBlockToReviewCards`
+（它会写 SRS 状态）也不走 backend get-block——纯只读 `orca.state.blocks`，无副作用。
 
 **预览机制复用**：结果结构与文本类快捷交互一致（源块下一个结果根 + 子块内容），
 因此罩层、操作栏、离开面板默认取消、卸载清理全部复用现成实现。
-`QuickBackgroundJob` 新增 `kind?: "quick" | "card"`（缺省 `quick`，旧任务与既有测试不变），
-card job 不挂子块候选选择，操作栏固定只有「保留全部 / 取消」；即使其它入口直接调用
-`keepSelectedBackgroundQuickJob` 也会显示 warn 并拒绝，不移动、激活或删除任何卡片。
-文本类 quick job 的候选勾选与「保留所选」保持不变。本版不提供逐张卡选择协议。
-所有 preview job 通过 `terminalActionPending` + job ID 锁保证
+`QuickBackgroundJob` 新增 `kind?: "quick" | "card"`（缺省 `quick`，旧任务与既有测试不变）。
+card job 也支持逐张勾选：`shouldMountChildSelectionActions` 对 card 返回 true，但 UI
+（`AIBlockLoadingMount.mountChildSelectionActions`）只对 `cardBlockIds` 里的**顶层卡块**挂
+「选择」按钮，不会误挂到答案/选项子块；`toggleBackgroundQuickJobBlockSelection` 对 card job
+在 `cardBlockIds` 范围内做简单 toggle（不走文本类的子树归一化）。文本类 quick job 的子树勾选
+保持不变。所有 preview job 通过 `terminalActionPending` + job ID 锁保证
 「保留 / 保留所选 / 取消」三个终态动作互斥；动作期间三个按钮同时禁用，动作结束后
 仍存在的 job 恢复可点，避免双击保留或保留与取消并发移动/删除同一批块。
 
@@ -195,7 +210,8 @@ card job 不挂子块候选选择，操作栏固定只有「保留全部 / 取�
 
 | 动作 | 行为 |
 | --- | --- |
-| 保留全部 | 把卡片从包装块提出来变成源块直接子块 → 清 pending 激活 → 删空包装块。移动失败时 `keepQuickCardJob` 返回失败，调用层显示 error toast，**不移除 job、不卸预览、不删除包装块**；锁释放后可再次点击保留重试。激活失败只 warn 并指路激活命令（回滚只会把用户刚看到的卡又搬走）；删壳失败只剩空块，warn 即可 |
+| 保留全部 | 把全部卡片从包装块提出来变成源块直接子块 → 清 pending 激活 → 删空包装块。移动失败时 `keepQuickCardJob` 返回失败，调用层显示 error toast，**不移除 job、不卸预览、不删除包装块**；锁释放后可再次点击保留重试。激活失败只 warn 并指路激活命令（回滚只会把用户刚看到的卡又搬走）；删壳失败只剩空块，warn 即可 |
+| 保留所选 | `keepSelectedQuickCardJob`：只把勾选的 `cardBlockIds` 按预览原顺序（从上到下，而非勾选先后）移出包装块 → 激活 → 删包装块（未选卡片随壳删除）。失败原则与「保留全部」一致；无勾选时提示「请先选择要保留的卡片」 |
 | 取消 | 连包装块带卡片一起删 |
 
 源文本取法：优先选区（含同块跨样式 / 同树任意跨块——兄弟链、父子链 P+子块、跨分支，块间换行拼接），无选区则用锚点块正文（「光标停在块里直接按快捷键」是最顺手的用法，不该报错）；跨块时结果挂在**末块**下（祖先↔后代跨度挂祖先 P）；无法连通为前序区间（不同根 / 孤立块 / 祖先缺失）可见报错而非静默退回。

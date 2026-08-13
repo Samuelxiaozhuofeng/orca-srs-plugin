@@ -14,6 +14,7 @@ import {
   AI_CARD_SOURCE_MAX,
   AI_CUSTOM_INSTRUCTION_MAX,
   AI_DETAIL_LEVEL_CARD_CAP,
+  AUTO_CARD_CAP_FALLBACK,
   CHOICE_OPTION_MAX,
   CHOICE_OPTION_MIN,
   CARD_GENERATION_TIMEOUT_MS,
@@ -152,7 +153,9 @@ function buildUserPrompt(options: {
     `Card types allowed: ${options.cardTypes.join(", ")}`,
     DETAIL_LEVEL_PROMPT[options.detailLevel],
     // 上限与产量目标分开说：旧 prompt 只写 "Maximum cards: 3"，模型会当成配额去凑。
-    `Hard ceiling: at most ${options.cardCap} cards. This is a limit, not a target — returning fewer, or none, is expected when the material is thin.`
+    options.cardCap > 0
+      ? `Hard ceiling: at most ${options.cardCap} cards. This is a limit, not a target — returning fewer, or none, is expected when the material is thin.`
+      : "The number of cards is up to you: decide based on how much the material warrants. Prefer quality over quantity — a thin passage may yield just one card, or none."
   ]
 
   const custom = clipCustomInstruction(options.customInstruction)
@@ -234,7 +237,8 @@ export async function generateFlashcardDrafts(
     Array.isArray(cardTypes) && cardTypes.length > 0 ? cardTypes : ["basic" as AICardType]
   const detailLevel = options.detailLevel ?? DEFAULT_AI_DETAIL_LEVEL
   const cardLanguage = options.cardLanguage ?? DEFAULT_AI_CARD_LANGUAGE
-  const cardCap = AI_DETAIL_LEVEL_CARD_CAP[detailLevel]
+  // cardCap 显式覆盖时用它（0 = 提示词不写数字）；否则沿用 detailLevel 档位。
+  const cardCap = options.cardCap ?? AI_DETAIL_LEVEL_CARD_CAP[detailLevel]
 
   const { text: source, truncated } = clipCardSource(sourceText)
 
@@ -267,5 +271,12 @@ export async function generateFlashcardDrafts(
   if (!chat.success) return { success: false, error: chat.error }
 
   // 接地校验必须对着模型实际看到的文本，因此传裁剪后的 source。
-  return parseAndValidateDrafts(chat.content, source, allowedTypes, cardCap)
+  // 提示词继续用 cardCap（0 →「数量由你决定」）；校验必须另有兜底，
+  // 否则模型一次返回几十张卡会全部落到预览块下。
+  return parseAndValidateDrafts(
+    chat.content,
+    source,
+    allowedTypes,
+    cardCap > 0 ? cardCap : AUTO_CARD_CAP_FALLBACK
+  )
 }

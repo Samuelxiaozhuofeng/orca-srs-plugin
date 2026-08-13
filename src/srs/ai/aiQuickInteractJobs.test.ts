@@ -44,6 +44,7 @@ vi.mock("./aiQuickInteract", () => {
 
 vi.mock("./aiQuickCardJob", () => ({
   keepQuickCardJob: vi.fn(async () => ({ success: true as const })),
+  keepSelectedQuickCardJob: vi.fn(async () => ({ success: true as const, keptCount: 1 })),
   dismissQuickCardJob: vi.fn(async () => ({ success: true as const }))
 }))
 
@@ -541,12 +542,12 @@ describe("startBackgroundQuickInsertJob", () => {
   })
 
   it.each(["问答卡", "填空卡", "选择题"])(
-    "%s card preview does not mount child selection",
+    "%s card preview mounts child selection for per-card keep",
     (promptLabel) => {
       const job = installReadyCardJob(`quick-card-${promptLabel}`)
       job.promptLabel = promptLabel
 
-      expect(shouldMountChildSelectionActions(job)).toBe(false)
+      expect(shouldMountChildSelectionActions(job)).toBe(true)
     }
   )
 
@@ -555,7 +556,8 @@ describe("startBackgroundQuickInsertJob", () => {
     expect(shouldMountChildSelectionActions({})).toBe(true)
   })
 
-  it("rejects keep-selected for card jobs without moving or removing cards", async () => {
+  it("keeps selected cards for card jobs via keepSelectedQuickCardJob", async () => {
+    const { keepSelectedQuickCardJob } = await import("./aiQuickCardJob")
     const { keepSelectedQuickResultBlocks } = await import("./aiQuickInteract")
     const job = installReadyCardJob()
     job.selectedResultBlockIds = [1001]
@@ -563,6 +565,24 @@ describe("startBackgroundQuickInsertJob", () => {
     await keepSelectedBackgroundQuickJob(job.id)
 
     expect(keepSelectedQuickResultBlocks).not.toHaveBeenCalled()
+    expect(keepSelectedQuickCardJob).toHaveBeenCalledTimes(1)
+    expect(keepSelectedQuickCardJob).toHaveBeenCalledWith(
+      expect.objectContaining({ id: job.id, selectedResultBlockIds: [1001] })
+    )
+    expect(aiQuickJobsState.jobs).toEqual([])
+  })
+
+  it("keeps the card job when keep-selected fails, without moving or removing cards", async () => {
+    const { keepSelectedQuickCardJob } = await import("./aiQuickCardJob")
+    vi.mocked(keepSelectedQuickCardJob).mockResolvedValueOnce({
+      success: false,
+      error: "移出所选卡片失败"
+    })
+    const job = installReadyCardJob()
+    job.selectedResultBlockIds = [1001]
+
+    await keepSelectedBackgroundQuickJob(job.id)
+
     expect(aiQuickJobsState.jobs).toHaveLength(1)
     expect(aiQuickJobsState.jobs[0]).toMatchObject({
       id: job.id,
@@ -570,8 +590,8 @@ describe("startBackgroundQuickInsertJob", () => {
       terminalActionPending: false
     })
     expect((globalThis as any).orca.notify).toHaveBeenCalledWith(
-      "warn",
-      "快捷制卡只能整张保留或整张取消",
+      "error",
+      "移出所选卡片失败。预览已保留，可重试。",
       { title: "AI 快捷制卡" }
     )
   })

@@ -51,6 +51,12 @@ export const AI_DETAIL_LEVEL_CARD_CAP: Record<AIDetailLevel, number> = {
 }
 
 /**
+ * `cardCap = 0`（数量由模型自主决定）时仍然生效的兜底硬上限。
+ * 防止预览块下挂几十张卡；不写进提示词，只在校验阶段截断。
+ */
+export const AUTO_CARD_CAP_FALLBACK = 20
+
+/**
  * 卡片语言。
  *
  * 注意：只影响**题干措辞**。答案 / sourceQuote / cloze 正文必须是源文本的
@@ -154,6 +160,12 @@ export interface GenerateDraftsOptions {
   cardTypes: AICardType[]
   /** 详细程度；决定深度与硬上限。 */
   detailLevel?: AIDetailLevel
+  /**
+   * 显式覆盖单次生成的卡片硬上限。缺省（undefined）用 detailLevel 档位；
+   * 传 0 = 提示词不写数字（由模型根据内容自主决定数量），校验阶段仍用
+   * AUTO_CARD_CAP_FALLBACK 兜底截断。
+   */
+  cardCap?: number
   /** 用户自定义追加指令（在 SOURCE 分隔符之外，仍属受信指令）。 */
   customInstruction?: string
   /** 题干语言；答案与摘录始终保持源文本原文。 */

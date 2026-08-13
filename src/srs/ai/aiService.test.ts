@@ -6,7 +6,8 @@ import {
 } from "./aiService"
 import {
   AI_CARD_SOURCE_MAX,
-  AI_CUSTOM_INSTRUCTION_MAX
+  AI_CUSTOM_INSTRUCTION_MAX,
+  AUTO_CARD_CAP_FALLBACK
 } from "./aiDraftTypes"
 import { DEFAULT_AI_MAX_OUTPUT_TOKENS } from "./aiSettingsSchema"
 
@@ -287,6 +288,38 @@ describe("generateFlashcardDrafts", () => {
       }
     })
   })
+
+  it("still truncates validated drafts when cardCap is 0 (auto count)", async () => {
+    // cardCap=0 只让提示词不写数字；校验仍须兜底，否则预览块会挂几十张卡。
+    const overCap = AUTO_CARD_CAP_FALLBACK + 1
+    const cards = Array.from({ length: overCap }, (_, i) => ({
+      id: `b${i + 1}`,
+      type: "basic",
+      question: `问题 ${i + 1}：使役形表示什么？`,
+      answer: "让某人做某事",
+      sourceQuote: SOURCE
+    }))
+    const fetchMock = mockOkFetch(JSON.stringify({ cards }))
+
+    const result = await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      detailLevel: "summary",
+      cardCap: 0
+    })
+
+    const user = parseRequestBody(fetchMock).messages.find(
+      (m) => m.role === "user"
+    )!.content
+    expect(user).not.toContain("Hard ceiling")
+    expect(user).toContain("The number of cards is up to you")
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.cards).toHaveLength(AUTO_CARD_CAP_FALLBACK)
+    expect(result.truncatedCount).toBe(overCap - AUTO_CARD_CAP_FALLBACK)
+  })
 })
 
 describe("clipCardSource", () => {
@@ -428,6 +461,37 @@ describe("制卡弹窗 v2 prompt 选项", () => {
       expect(user).toContain(`Hard ceiling: at most ${cap} cards`)
       vi.unstubAllGlobals()
     }
+  })
+
+  it("honors an explicit cardCap, and 0 means the model decides the count", async () => {
+    // 显式覆盖 detailLevel 档位
+    let fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      detailLevel: "summary",
+      cardCap: 7
+    })
+    let user = captureBody(fetchMock).messages.find(
+      (m) => m.role === "user"
+    )!.content
+    expect(user).toContain("Hard ceiling: at most 7 cards")
+    vi.unstubAllGlobals()
+
+    // 0 = 不设硬上限，数量由模型根据内容决定
+    fetchMock = mockEmptyCards()
+    await generateFlashcardDrafts({
+      pluginName: PLUGIN,
+      sourceText: SOURCE,
+      cardTypes: ["basic"],
+      detailLevel: "summary",
+      cardCap: 0
+    })
+    user = captureBody(fetchMock).messages.find((m) => m.role === "user")!.content
+    expect(user).not.toContain("Hard ceiling")
+    expect(user).toContain("The number of cards is up to you")
+    vi.unstubAllGlobals()
   })
 
   it("frames the ceiling as a limit rather than a production target", async () => {

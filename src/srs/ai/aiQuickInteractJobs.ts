@@ -58,11 +58,16 @@ export interface QuickBackgroundJob {
   panelViewKey: string | null
 }
 
-/** 卡片预览只能整张保留或丢弃；缺省 kind 仍按文本预览处理。 */
+/**
+ * 是否挂子块候选选择。文本类与卡片类都支持逐项选择：
+ * - 文本类：预览树任意子孙块可勾选（子树归一化）
+ * - 卡片类：只对 `cardBlockIds` 里的顶层卡块挂按钮（每张卡是原子单位）
+ * 缺省 kind 按文本预览处理。
+ */
 export function shouldMountChildSelectionActions(
   job: Pick<QuickBackgroundJob, "kind">
 ): boolean {
-  return job.kind !== "card"
+  return true
 }
 
 /** 读取面板当前视图指纹（view + 稳定 viewArgs） */
@@ -484,6 +489,25 @@ export async function toggleBackgroundQuickJobBlockSelection(
       return
     }
 
+    // 卡片类：每张卡是原子单位，只在 cardBlockIds 范围内 toggle，不走子树归一化
+    if (job.kind === "card") {
+      const cardIds = new Set(
+        (job.cardBlockIds ?? []).filter(
+          (id): id is number => typeof id === "number"
+        )
+      )
+      if (!cardIds.has(blockId)) {
+        orca.notify("warn", "只能选择预览中的卡片", { title: "AI 快捷制卡" })
+        return
+      }
+      const selected = new Set(job.selectedResultBlockIds)
+      if (selected.has(blockId)) selected.delete(blockId)
+      else selected.add(blockId)
+      const current = findJob(jobId)
+      if (current) current.selectedResultBlockIds = Array.from(selected)
+      return
+    }
+
     const rootId = job.resultRootBlockId
     const result = await toggleQuickResultBlockSelection(
       rootId,
@@ -514,9 +538,24 @@ export async function toggleBackgroundQuickJobBlockSelection(
 export async function keepSelectedBackgroundQuickJob(jobId: string): Promise<void> {
   await runTerminalJobAction(jobId, async (job) => {
     if (job.kind === "card") {
-      orca.notify("warn", "快捷制卡只能整张保留或整张取消", {
-        title: "AI 快捷制卡"
-      })
+      if (job.status !== "ready" || job.resultRootBlockId == null) {
+        orca.notify("warn", "当前任务没有可保留的预览内容", { title: "AI 快捷制卡" })
+        return
+      }
+      if (job.selectedResultBlockIds.length === 0) {
+        orca.notify("info", "请先选择要保留的卡片", { title: "AI 快捷制卡" })
+        return
+      }
+      const { keepSelectedQuickCardJob } = await import("./aiQuickCardJob")
+      const result = await keepSelectedQuickCardJob(job)
+      if (!result.success) {
+        console.error("[AI 快捷制卡] 保留所选失败:", result.error)
+        orca.notify("error", `${result.error}。预览已保留，可重试。`, {
+          title: "AI 快捷制卡"
+        })
+        return
+      }
+      removeJob(jobId)
       return
     }
     if (job.status !== "ready" || job.resultRootBlockId == null) {

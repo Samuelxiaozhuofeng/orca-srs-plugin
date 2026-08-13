@@ -14,6 +14,7 @@
 import {
   AI_CARD_LANGUAGES,
   AI_CUSTOM_INSTRUCTION_MAX,
+  AUTO_CARD_CAP_FALLBACK,
   DEFAULT_AI_CARD_LANGUAGE,
   type AICardLanguage
 } from "./aiDraftTypes"
@@ -21,14 +22,38 @@ import {
 /** plugin data 键。与 AI 连接设置分开，避免互相覆盖。 */
 export const QUICK_CARD_PREFS_DATA_KEY = "ai.quickCard" as const
 
+/** 单次快捷制卡允许的最大卡片数上限（防预览块挂几十张卡）。 */
+export const QUICK_CARD_MAX_CAP = AUTO_CARD_CAP_FALLBACK
+/** 缺省单次上限：与历史「概要档 2 张」行为一致。 */
+export const DEFAULT_QUICK_CARD_MAX = 2
+
 export interface QuickCardPrefs {
   cardLanguage: AICardLanguage
   customInstruction: string
   /** 专用 model id；空 = 用「AI 服务设置」的全局 model。 */
   model: string
+  /**
+   * 单次生成的卡片上限。0 = 由 AI 根据 block 内容自主决定数量；
+   * >0 = 硬上限（clamp 到 QUICK_CARD_MAX_CAP）。
+   */
+  maxCards: number
 }
 
 const cache = new Map<string, QuickCardPrefs>()
+
+/**
+ * 归一化单次上限：0 合法（AI 自主）；负/NaN/缺失回退默认；>上限钳制。
+ * null/undefined（旧数据缺字段）回退默认，与「0=自主」区分开。
+ */
+function normalizeMaxCards(value: unknown): number {
+  if (value == null) return DEFAULT_QUICK_CARD_MAX
+  const n = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_QUICK_CARD_MAX
+  const floored = Math.floor(n)
+  if (floored === 0) return 0
+  if (floored < 0) return DEFAULT_QUICK_CARD_MAX
+  return Math.min(floored, QUICK_CARD_MAX_CAP)
+}
 
 export function normalizeQuickCardPrefs(
   input: Partial<QuickCardPrefs> | null | undefined
@@ -46,7 +71,12 @@ export function normalizeQuickCardPrefs(
 
   const model = typeof input?.model === "string" ? input.model.trim() : ""
 
-  return { cardLanguage: language, customInstruction: instruction, model }
+  return {
+    cardLanguage: language,
+    customInstruction: instruction,
+    model,
+    maxCards: normalizeMaxCards(input?.maxCards)
+  }
 }
 
 export function clearQuickCardPrefsCache(pluginName?: string): void {

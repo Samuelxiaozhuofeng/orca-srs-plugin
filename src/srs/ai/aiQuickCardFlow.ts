@@ -11,11 +11,13 @@
 import type { Block, CursorData, DbId } from "../../orca.d.ts"
 import {
   AI_CARD_TYPE_LABELS,
-  type AICardType
+  type AICardType,
+  type AIDetailLevel
 } from "./aiDraftTypes"
 import { generateFlashcardDrafts } from "./aiService"
 import { resolveBlockBackendFirst, writeAICardDrafts } from "./aiCardWriter"
 import { getQuickCardPrefs } from "./aiQuickCardPrefs"
+import { collectExistingCardExclusionSummaries } from "./aiQuickCardDedupe"
 import { isAIConfigured } from "./aiSettingsSchema"
 import {
   collectBoundedSubtreePlainText,
@@ -34,8 +36,13 @@ import { sanitizePublicError } from "../http/redactSecrets"
 
 const TITLE = "AI 快捷制卡"
 
-/** 快捷路径固定用概要档，理由见文件头。 */
-const QUICK_DETAIL_LEVEL = "summary" as const
+/**
+ * 快捷制卡的深度档：默认概要档（一眼看完）；当数量由 AI 自主决定（maxCards=0）
+ * 时改用「重要观点」档，避免概要档「只取一两点」的措辞与「不限数量」冲突。
+ */
+function resolveQuickDetailLevel(maxCards: number): AIDetailLevel {
+  return maxCards === 0 ? "key" : "summary"
+}
 
 /**
  * 写入阶段看门狗。
@@ -153,18 +160,24 @@ export function resolveQuickCardSource(
   }
 }
 
+/** 预览标题 / 任务标签用的卡型名：单类型用其名，多类型统一「闪卡」。 */
+function quickCardTypeLabel(cardTypes: readonly AICardType[]): string {
+  return cardTypes.length === 1 ? AI_CARD_TYPE_LABELS[cardTypes[0]] : "闪卡"
+}
+
 /** 预览包装块标题。 */
 export function buildQuickCardRootText(
-  cardType: AICardType,
+  cardTypes: readonly AICardType[],
   count: number
 ): string {
-  return `AI 快捷制卡 · ${AI_CARD_TYPE_LABELS[cardType]}（${count} 张，待确认）`
+  return `AI 快捷制卡 · ${quickCardTypeLabel(cardTypes)}（${count} 张，待确认）`
 }
 
 export type StartQuickCardOptions = {
   pluginName: string
   cursor: CursorData
-  cardType: AICardType
+  /** 允许的卡型集合；单个即锁定一种，多个让模型按内容自行分配。 */
+  cardTypes: AICardType[]
 }
 
 /**
@@ -173,7 +186,7 @@ export type StartQuickCardOptions = {
 export async function startQuickCardJob(
   options: StartQuickCardOptions
 ): Promise<string | null> {
-  const { pluginName, cursor, cardType } = options
+  const { pluginName, cursor, cardTypes } = options
 
   if (!isAIConfigured(pluginName)) {
     try {
@@ -216,6 +229,12 @@ export async function startQuickCardJob(
   }
 
   const prefs = getQuickCardPrefs(pluginName)
+  // 去重：把源块子树里已有的 basic/cloze/choice 卡片摘要喂给模型，
+  // 只出覆盖新内容的卡，避免对同一段文字反复制卡一遍遍重复。
+  const excludeSummaries = collectExistingCardExclusionSummaries(
+    source.blockId,
+    pluginName
+  )
   const panelSnap = captureActivePanelViewSnapshot()
   const jobId = nextQuickCardJobId()
 
@@ -226,7 +245,7 @@ export async function startQuickCardJob(
     sourceBlockId: source.blockId,
     selectedText: source.text,
     blockText: source.text,
-    promptLabel: AI_CARD_TYPE_LABELS[cardType],
+    promptLabel: quickCardTypeLabel(cardTypes),
     promptText: "",
     includeBlockContext: false,
     model: prefs.model,
@@ -247,10 +266,13 @@ export async function startQuickCardJob(
     const generated = await generateFlashcardDrafts({
       pluginName,
       sourceText: source.text,
-      cardTypes: [cardType],
-      detailLevel: QUICK_DETAIL_LEVEL,
+      cardTypes,
+      detailLevel: resolveQuickDetailLevel(prefs.maxCards),
+      // 单次上限由偏好控制：>0 硬上限；0 = 由 AI 根据内容自主决定。
+      cardCap: prefs.maxCards,
       cardLanguage: prefs.cardLanguage,
-      customInstruction: prefs.customInstruction
+      customInstruction: prefs.customInstruction,
+      excludeSummaries
     })
 
     if (!findJob(jobId)) return null // 已被取消/卸载
@@ -294,7 +316,7 @@ export async function startQuickCardJob(
       null,
       sourceBlock,
       "lastChild",
-      [{ t: "t", v: buildQuickCardRootText(cardType, generated.cards.length) }]
+      [{ t: "t", v: buildQuickCardRootText(cardTypes, generated.cards.length) }]
     )) as number | null
 
     if (typeof createdRoot !== "number") {
@@ -351,7 +373,7 @@ export async function startQuickCardJob(
       status: "ready",
       resultRootBlockId: rootId,
       cardBlockIds,
-      resultText: `${cardBlockIds.length} 张${AI_CARD_TYPE_LABELS[cardType]}`
+      resultText: `${cardBlockIds.length} 张${quickCardTypeLabel(cardTypes)}`
     })
     return jobId
   } catch (error) {

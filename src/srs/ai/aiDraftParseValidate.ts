@@ -386,7 +386,7 @@ export function parseAndValidateDrafts(
   sourceText: string,
   /** 允许的卡型集合；模型返回集合外的类型一律计入 rejected。 */
   allowedTypes: AICardType[],
-  /** 硬上限（由详细程度档位推出）；超出部分计入 truncatedCount。 */
+  /** 硬上限；<=0 表示不设硬上限（不截断，由模型自主决定数量）。 */
   maxCards: number
 ): AIDraftValidationResult {
   const jsonText = extractJsonText(rawContent)
@@ -498,7 +498,7 @@ export function parseAndValidateDrafts(
 
   let truncatedCount = 0
   let cards = accepted
-  if (accepted.length > maxCards) {
+  if (maxCards > 0 && accepted.length > maxCards) {
     truncatedCount = accepted.length - maxCards
     cards = accepted.slice(0, maxCards)
     // Do NOT push truncated items into rejected

@@ -9,7 +9,11 @@ import type {
   AIReasoningEffort,
   AISettings
 } from "../srs/ai/aiSettingsSchema"
-import type { QuickCardPrefs } from "../srs/ai/aiQuickCardPrefs"
+import {
+  DEFAULT_QUICK_CARD_MAX,
+  QUICK_CARD_MAX_CAP,
+  type QuickCardPrefs
+} from "../srs/ai/aiQuickCardPrefs"
 import {
   AI_CARD_LANGUAGE_LABELS,
   AI_CARD_LANGUAGES,
@@ -219,6 +223,9 @@ function ServiceSettingsForm(props: {
   const [quickCardModel, setQuickCardModel] = useState(
     props.initialQuickCard.model
   )
+  const [quickCardMaxCards, setQuickCardMaxCards] = useState(
+    String(props.initialQuickCard.maxCards)
+  )
   const [firecrawlApiKey, setFirecrawlApiKey] = useState(
     props.initialFirecrawl.firecrawlApiKey
   )
@@ -281,7 +288,10 @@ function ServiceSettingsForm(props: {
     quickCard: {
       cardLanguage: quickCardLanguage,
       customInstruction: quickCardInstruction,
-      model: quickCardModel
+      model: quickCardModel,
+      // 空输入 → NaN → normalize 回退默认；0 合法（由 AI 自主决定数量）
+      maxCards:
+        quickCardMaxCards.trim() === "" ? Number.NaN : Number(quickCardMaxCards)
     },
     chapterQuiz: {
       // 非法输入交给 normalizeChapterQuizPrefs 兜底钳制，这里不静默改用户的字；
@@ -645,9 +655,26 @@ function ServiceSettingsForm(props: {
               快捷制卡
             </h3>
             <p className="ai-service-settings__section-desc">
-              三个快捷命令（问答 / 填空 / 选择题）的默认偏好。批量制卡请用「AI
-              生成闪卡」弹窗。
+              四个快捷命令（问答 / 填空 / 选择题 / 自动）的默认偏好。批量制卡请用
+              「AI 生成闪卡」弹窗。
             </p>
+
+            <label className="ai-service-settings__field">
+              <span className="ai-service-settings__label">单次生成卡片上限</span>
+              <input
+                type="number"
+                className="ai-service-settings__input"
+                value={quickCardMaxCards}
+                min={0}
+                max={QUICK_CARD_MAX_CAP}
+                step={1}
+                placeholder={String(DEFAULT_QUICK_CARD_MAX)}
+                onChange={(e) => setQuickCardMaxCards(e.target.value)}
+                onKeyDown={stopKeys}
+                disabled={busy}
+              />
+              <FieldHint summary="0 = 由 AI 根据内容自主决定数量（仍最多 20 张）；1–20 为硬上限。缺省 2 张。" />
+            </label>
 
             <label className="ai-service-settings__field">
               <span className="ai-service-settings__label">卡片语言</span>

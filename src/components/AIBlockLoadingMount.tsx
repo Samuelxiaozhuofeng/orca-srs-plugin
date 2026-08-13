@@ -95,19 +95,25 @@ function clearResultChrome(blockEl: HTMLElement): void {
     })
 }
 
-/** 在预览根下每个子孙块挂候选选择按钮（不含根本身）。 */
+/**
+ * 在预览根下每个候选块挂选择按钮（不含根本身）。
+ * `selectableIds` 传入时只对集合内块挂按钮——卡片类只传 `cardBlockIds`，
+ * 避免在卡的答案/选项子块上误挂。
+ */
 function mountChildSelectionActions(
   rootEl: HTMLElement,
   jobId: string,
   rootBlockId: number,
-  selectedBlockIds: readonly number[]
+  selectedBlockIds: readonly number[],
+  selectableIds?: ReadonlySet<number>
 ): void {
   const descendants = Array.from(
     rootEl.querySelectorAll<HTMLElement>(".orca-block[data-id]")
   ).filter((el) => {
     if (el === rootEl) return false
     const id = Number(el.getAttribute("data-id"))
-    return Number.isFinite(id) && id !== rootBlockId
+    if (!Number.isFinite(id) || id === rootBlockId) return false
+    return selectableIds == null || selectableIds.has(id)
   })
 
   // 先清掉已不在树上的旧按钮
@@ -486,12 +492,19 @@ export function AIBlockLoadingMount() {
       }
 
       if (childSelectionEnabled) {
-        // 文本预览支持选择子树；快捷卡片只能整张保留或丢弃。
+        // 文本预览支持选择子树；卡片类只对顶层卡块挂按钮（每张卡原子勾选）。
         mountChildSelectionActions(
           rootEl,
           job.id,
           rootId,
-          job.selectedResultBlockIds
+          job.selectedResultBlockIds,
+          job.kind === "card"
+            ? new Set(
+                (job.cardBlockIds ?? []).filter(
+                  (id): id is number => typeof id === "number"
+                )
+              )
+            : undefined
         )
       } else {
         clearChildKeepChrome(rootEl)
@@ -518,6 +531,15 @@ export function AIBlockLoadingMount() {
       )
       if (!rootEl || typeof MutationObserver === "undefined") continue
 
+      const selectableIds =
+        job.kind === "card"
+          ? new Set(
+              (job.cardBlockIds ?? []).filter(
+                (id): id is number => typeof id === "number"
+              )
+            )
+          : undefined
+
       const observer = new MutationObserver((records) => {
         const onlyOwnChromeChanged = records.every((record) =>
           (record.target as Element).closest?.(
@@ -533,7 +555,8 @@ export function AIBlockLoadingMount() {
           rootEl,
           job.id,
           rootId,
-          currentJob.selectedResultBlockIds
+          currentJob.selectedResultBlockIds,
+          selectableIds
         )
       })
       observer.observe(rootEl, { childList: true, subtree: true })
@@ -543,7 +566,8 @@ export function AIBlockLoadingMount() {
         rootEl,
         job.id,
         rootId,
-        job.selectedResultBlockIds
+        job.selectedResultBlockIds,
+        selectableIds
       )
     }
 

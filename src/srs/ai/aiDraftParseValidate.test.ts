@@ -377,6 +377,26 @@ describe("parseAndValidateDrafts grounding", () => {
     expect(result.rejected).toHaveLength(0)
   })
 
+  it("does not truncate when maxCards is 0 (auto count)", () => {
+    const cards = [1, 2, 3, 4].map(i => ({
+      id: `b${i}`,
+      type: "basic",
+      question: `问题 ${i}：使役形`,
+      answer: "让某人做某事",
+      sourceQuote: "使役形（～させる）表示让某人做某事"
+    }))
+    cards[1].question = "问题 2：使役形用法"
+    cards[2].question = "问题 3：使役形意义"
+    cards[3].question = "问题 4：使役形扩展"
+    const raw = JSON.stringify({ cards })
+
+    const result = parseAndValidateDrafts(raw, SOURCE_ZH, ["basic"], 0)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.cards).toHaveLength(4)
+    expect(result.truncatedCount).toBe(0)
+  })
+
   it("keeps valid cards and reports rejected items on partial invalid response", () => {
     const raw = JSON.stringify({
       cards: [

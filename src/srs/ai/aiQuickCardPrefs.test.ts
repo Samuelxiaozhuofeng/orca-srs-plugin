@@ -4,10 +4,14 @@ import {
   getQuickCardPrefs,
   hydrateQuickCardPrefs,
   normalizeQuickCardPrefs,
+  QUICK_CARD_MAX_CAP,
   QUICK_CARD_PREFS_DATA_KEY,
   saveQuickCardPrefs
 } from "./aiQuickCardPrefs"
-import { AI_CUSTOM_INSTRUCTION_MAX } from "./aiDraftTypes"
+import {
+  AI_CUSTOM_INSTRUCTION_MAX,
+  AUTO_CARD_CAP_FALLBACK
+} from "./aiDraftTypes"
 
 const PLUGIN = "test-quick-card"
 
@@ -25,7 +29,8 @@ describe("normalizeQuickCardPrefs", () => {
     expect(normalizeQuickCardPrefs(null)).toEqual({
       cardLanguage: "auto",
       customInstruction: "",
-      model: ""
+      model: "",
+      maxCards: 2
     })
   })
 
@@ -44,6 +49,18 @@ describe("normalizeQuickCardPrefs", () => {
   it("trims the model id", () => {
     expect(normalizeQuickCardPrefs({ model: "  m1  " }).model).toBe("m1")
   })
+
+  it("normalizes maxCards: 0 stays as auto, negatives/NaN fall back, over-cap clamps", () => {
+    expect(QUICK_CARD_MAX_CAP).toBe(AUTO_CARD_CAP_FALLBACK)
+    expect(normalizeQuickCardPrefs({ maxCards: 0 }).maxCards).toBe(0)
+    expect(normalizeQuickCardPrefs({ maxCards: -3 }).maxCards).toBe(2)
+    expect(normalizeQuickCardPrefs({ maxCards: Number.NaN }).maxCards).toBe(2)
+    expect(normalizeQuickCardPrefs({ maxCards: "5" as never }).maxCards).toBe(5)
+    expect(normalizeQuickCardPrefs({ maxCards: 999 }).maxCards).toBe(
+      AUTO_CARD_CAP_FALLBACK
+    )
+    expect(normalizeQuickCardPrefs({ maxCards: undefined }).maxCards).toBe(2)
+  })
 })
 
 describe("quick card prefs persistence", () => {
@@ -58,7 +75,8 @@ describe("quick card prefs persistence", () => {
     await saveQuickCardPrefs(PLUGIN, {
       cardLanguage: "en",
       customInstruction: "只做定义类",
-      model: "m1"
+      model: "m1",
+      maxCards: 0
     })
     expect(setData).toHaveBeenCalledWith(
       PLUGIN,
@@ -72,7 +90,8 @@ describe("quick card prefs persistence", () => {
     expect(loaded).toEqual({
       cardLanguage: "en",
       customInstruction: "只做定义类",
-      model: "m1"
+      model: "m1",
+      maxCards: 0
     })
   })
 

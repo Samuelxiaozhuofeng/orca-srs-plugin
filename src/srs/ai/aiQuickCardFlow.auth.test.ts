@@ -50,7 +50,7 @@ describe("startQuickCardJob authorization errors", () => {
         focus: { blockId: 7, isInline: true, index: 0, offset: 0 },
         isForward: true
       } as CursorData,
-      cardType: "basic"
+      cardTypes: ["basic"]
     })
     return (aiQuickJobsState.jobs as Array<{
       id: string

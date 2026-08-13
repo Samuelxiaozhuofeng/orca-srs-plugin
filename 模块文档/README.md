@@ -4,6 +4,15 @@
 
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
+> **索引增补：2026-08-13（快捷制卡默认快捷键）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：`aiQuickCardShortcuts.ts` 给 `quickAutoCard` 绑默认 `Alt+C`（一次性播种 `ai.quickCardShortcutsSeeded`）；[SRS_注册模块.md](SRS_注册模块.md) 更正「不支持自定义快捷键」的过时说明
+>
+> **索引增补：2026-08-13（快捷制卡单次上限 + 逐张保留）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：`ai.quickCard.maxCards`（0 = 由 AI 根据内容自主决定数量；1–20 硬上限）；设置页新增「单次生成卡片上限」；`generateFlashcardDrafts` 支持 `cardCap` 覆盖；card job 开放逐张勾选（`keepSelectedQuickCardJob` 只保留所选卡）
+>
+> **索引增补：2026-08-13（AI 快捷制卡去重 + 自动卡型）**：
+> - [SRS_AI模块.md](SRS_AI模块.md)：`collectExistingCardExclusionSummaries` 只读有界扫描源块子树已有 basic/cloze/choice 卡片作 `excludeSummaries` 去重；新增 `${pluginName}.quickAutoCard`「快捷制卡（自动）」让模型自行分配卡型
+>
 > **索引增补：2026-08-10（AI 正式制卡选区源文）**：
 > - [AI智能制卡使用指南.md](AI智能制卡使用指南.md) / [SRS_AI模块.md](SRS_AI模块.md)：非空选区优先（单 fragment / 同块跨样式 / 跨块）；折叠光标保持整块 + 有界子树；弹窗与请求共用 6000 字源文并显示「已截断」
 >
@@ -261,7 +270,7 @@
 
 ### AI
 
-30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-10 更新 — **正式制卡非空选区优先**（单 fragment / 同块跨样式 / 跨块；折叠光标保持整块 + 有界子树；弹窗与请求共用 6000 字实际源文并显示截断）；**IR 摘录/主题可作 AI 源文**（`isExcludedAiSourceBlock` 仅排除纯 SRS 闪卡与预览根）；服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
+30. **[SRS_AI模块.md](SRS_AI模块.md)** ⭐ 2026-08-13 更新 — **快捷制卡默认快捷键 `Alt+C`**（`aiQuickCardShortcuts.ts` 一次性播种，`quickAutoCard` 选中即出卡）；**快捷制卡单次上限可配 + 逐张保留**（`ai.quickCard.maxCards`：0 = AI 自主 / 1–20 硬上限，`cardCap` 覆盖生成上限；card job 逐张勾选，`keepSelectedQuickCardJob` 只保留所选卡）；**快捷制卡去重 + 自动卡型**（`collectExistingCardExclusionSummaries` 只读有界扫描源块子树已有卡片作 `excludeSummaries`；新增 `quickAutoCard` 自动分配卡型）；**正式制卡非空选区优先**（单 fragment / 同块跨样式 / 跨块；折叠光标保持整块 + 有界子树；弹窗与请求共用 6000 字实际源文并显示截断）；**IR 摘录/主题可作 AI 源文**（`isExcludedAiSourceBlock` 仅排除纯 SRS 闪卡与预览根）；服务设置 **渐进阅读** Tab（选区工具栏偏好 `ir.selectionToolbar`）；制卡 + 块解释 + Quick AI + **摘录处理建议**；**传输层统一到 `aiChatClient` 单一出口**（重试/并发闸门/超时分级/usage/请求日志）；联网仅一勾选，按 model 自动 Grok `web_search` / Gemini Flash nested `google_search`；制卡弹窗 v2（详细程度 · 卡型多选 · 语言 · 自定义指令 · 再来一批）；新增选择题卡；同批聚簇 + 待激活；输出预算可配 + 截断可诊断；`extract-coach` 请求类型（有界上下文 / 严格 JSON + 接地 / 会话缓存）
     - 新增「**视觉规范**」小节：`ai-card-dialog.css` / `ai-quick-interact.css` 已对齐 [SRS_UI设计规范.md](SRS_UI设计规范.md)；删除全部 `prefers-color-scheme` / `.theme-dark` 硬编码分支（历史上引用了不存在的 `--orca-bg-primary` / `--orca-border` / `--orca-color-dangerous` 等变量，永远落到十六进制 fallback，Orca 主题与系统主题不一致时会浅底深字）
 31. **[AI智能制卡使用指南.md](AI智能制卡使用指南.md)** — AI 生成闪卡使用向导
 32. **[AI_API_404错误排查指南.md](AI_API_404错误排查指南.md)** — 排查类

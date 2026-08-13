@@ -20,7 +20,7 @@ import { resolveBlockBackendFirst } from "./aiCardWriter"
 import type { QuickBackgroundJob } from "./aiQuickInteractJobs"
 
 export type QuickCardActionResult =
-  | { success: true }
+  | { success: true; keptCount?: number }
   | { success: false; error: string }
 
 function cardIdsOf(job: QuickBackgroundJob): DbId[] {
@@ -98,6 +98,86 @@ export async function keepQuickCardJob(
   }
 
   return { success: true }
+}
+
+/**
+ * 保留所选卡片：把用户勾选的卡片提出包装块 → 激活 → 删掉包装块（含未选卡片）。
+ *
+ * 与整张保留（keepQuickCardJob）同一套失败原则：
+ * - 移动失败：放弃，卡片仍在包装块下且 pending，可重试
+ * - 激活失败：位置已对，warn 并指路激活命令
+ * - 删壳失败：只剩空壳，warn 即可
+ */
+export async function keepSelectedQuickCardJob(
+  job: QuickBackgroundJob
+): Promise<QuickCardActionResult> {
+  const rootId = job.resultRootBlockId
+  const allCardIds = cardIdsOf(job)
+  // 按预览原顺序（cardBlockIds）过滤所选，而不是按勾选先后。
+  const selectedSet = new Set(
+    (job.selectedResultBlockIds ?? []).filter(
+      (id): id is number => typeof id === "number"
+    )
+  )
+  const selected = allCardIds.filter((id) => selectedSet.has(id))
+
+  if (rootId == null || allCardIds.length === 0) {
+    return { success: true, keptCount: 0 }
+  }
+  if (selected.length === 0) {
+    return { success: false, error: "请先选择要保留的卡片" }
+  }
+
+  try {
+    const rootBlock = await resolveBlockBackendFirst(rootId)
+    if (!rootBlock) {
+      // 包装块没了：卡片多半也一起没了，没有可保留的东西
+      return { success: false, error: "结果块已不存在" }
+    }
+
+    await orca.commands.invokeGroup(
+      async () => {
+        await orca.commands.invokeEditorCommand(
+          "core.editor.moveBlocks",
+          null,
+          selected,
+          rootId,
+          "after"
+        )
+      },
+      { undoable: true, topGroup: true }
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error("[AI 快捷制卡] 移出所选卡片失败:", error)
+    return { success: false, error: `移出所选卡片失败：${message}` }
+  }
+
+  const { activated, failed } = await activatePendingCards(selected)
+  if (failed.length > 0) {
+    orca.notify(
+      "warn",
+      `已保留 ${selected.length} 张卡片，其中 ${failed.length} 张未能激活（仍为待激活）。可运行「SRS: 激活待激活卡片」重试。`,
+      { title: "AI 快捷制卡" }
+    )
+  } else {
+    orca.notify("success", `已保留 ${activated.length} 张卡片`, {
+      title: "AI 快捷制卡"
+    })
+  }
+
+  try {
+    await orca.commands.invokeEditorCommand(
+      "core.editor.deleteBlocks",
+      null,
+      [rootId]
+    )
+  } catch (error) {
+    // 所选卡片已移出，剩下的只是一个含未选卡的外壳
+    console.warn("[AI 快捷制卡] 删除结果外壳失败，可能残留预览块:", error)
+  }
+
+  return { success: true, keptCount: selected.length }
 }
 
 /** 丢弃：连包装块带卡片一起删。 */

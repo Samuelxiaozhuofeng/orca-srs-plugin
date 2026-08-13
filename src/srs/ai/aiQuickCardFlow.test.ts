@@ -273,10 +273,16 @@ describe("resolveQuickCardSource", () => {
 
 describe("buildQuickCardRootText", () => {
   it("names the card type and count so the preview is self-explanatory", () => {
-    expect(buildQuickCardRootText("basic", 2)).toBe(
+    expect(buildQuickCardRootText(["basic"], 2)).toBe(
       "AI 快捷制卡 · 问答卡（2 张，待确认）"
     )
-    expect(buildQuickCardRootText("choice", 1)).toContain("选择题")
+    expect(buildQuickCardRootText(["choice"], 1)).toContain("选择题")
+  })
+
+  it("uses a generic label for the auto multi-type command", () => {
+    expect(buildQuickCardRootText(["basic", "cloze", "choice"], 3)).toBe(
+      "AI 快捷制卡 · 闪卡（3 张，待确认）"
+    )
   })
 })
 
@@ -302,7 +308,7 @@ describe("startQuickCardJob missing configuration", () => {
     const result = await startQuickCardJob({
       pluginName: "orca-srs",
       cursor: cursor(7),
-      cardType: "basic"
+      cardTypes: ["basic"]
     })
 
     expect(result).toBeNull()

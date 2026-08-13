@@ -5,6 +5,7 @@
  */
 
 import type { Block } from "../../orca.d.ts"
+import type { AICardType } from "../ai/aiDraftTypes"
 import { scanCardsFromTags, makeCardFromBlock } from "../cardCreator"
 import { createChoiceCardFromBlock } from "../choiceCardCreator"
 import { createClozeFromEditorCommand } from "../incremental-reading/irClozeCommandService"
@@ -489,12 +490,17 @@ export function registerCommands(
   // ============ 快捷制卡（选中即生成，块下方预览） ============
   const QUICK_CARD_COMMANDS: Array<{
     suffix: string
-    cardType: "basic" | "cloze" | "choice"
+    cardTypes: AICardType[]
     label: string
   }> = [
-    { suffix: "quickBasicCard", cardType: "basic", label: "SRS: 快捷问答卡" },
-    { suffix: "quickClozeCard", cardType: "cloze", label: "SRS: 快捷填空卡" },
-    { suffix: "quickChoiceCard", cardType: "choice", label: "SRS: 快捷选择题" }
+    { suffix: "quickBasicCard", cardTypes: ["basic"], label: "SRS: 快捷问答卡" },
+    { suffix: "quickClozeCard", cardTypes: ["cloze"], label: "SRS: 快捷填空卡" },
+    { suffix: "quickChoiceCard", cardTypes: ["choice"], label: "SRS: 快捷选择题" },
+    {
+      suffix: "quickAutoCard",
+      cardTypes: ["basic", "cloze", "choice"],
+      label: "SRS: 快捷制卡（自动）"
+    }
   ]
 
   for (const entry of QUICK_CARD_COMMANDS) {
@@ -520,7 +526,7 @@ export function registerCommands(
         void startQuickCardJob({
           pluginName: _pluginName,
           cursor,
-          cardType: entry.cardType
+          cardTypes: entry.cardTypes
         }).catch((error) => {
           console.error("[AI 快捷制卡] 任务失败:", error)
         })
@@ -954,6 +960,7 @@ export function unregisterCommands(pluginName: string): void {
   orca.commands.unregisterEditorCommand(`${pluginName}.quickBasicCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.quickClozeCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.quickChoiceCard`)
+  orca.commands.unregisterEditorCommand(`${pluginName}.quickAutoCard`)
   orca.commands.unregisterEditorCommand(`${pluginName}.irRecordProgress`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionNext`)
   orca.commands.unregisterCommand(`${pluginName}.irSessionPostpone`)
