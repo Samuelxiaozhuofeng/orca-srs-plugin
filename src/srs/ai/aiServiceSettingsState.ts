@@ -37,6 +37,11 @@ import {
   type TtsSettings
 } from "../tts/ttsSettingsSchema"
 import {
+  getDefaultReviewAdvancedSettingsDraft,
+  loadReviewAdvancedSettings,
+  type ReviewAdvancedSettingsDraft
+} from "../settings/reviewAdvancedSettings"
+import {
   getDefaultReviewServiceSettingsDraft,
   loadReviewServiceSettings,
   type ReviewServiceSettingsDraft
@@ -69,11 +74,14 @@ export interface AIServiceSettingsState {
   /**
    * 复习页可见项（日新卡 / 日复习 / 保留率 / Pass-Fail / 显示下次时间；仍存 plugin settings）。
    * 打开时填安全生效值；非法旧配置时见 reviewLoadWarning。
-   * 不含权重 / 最大间隔草稿。
    */
   initialReview: ReviewServiceSettingsDraft
   /** 打开时若可见复习项非法，展示 runtime 警告文案 */
   reviewLoadWarning: string | null
+  /** 进阶五项（权重 / 最大间隔 / 图片遮罩 / 通知 / IR 首次学习时间） */
+  initialReviewAdvanced: ReviewAdvancedSettingsDraft
+  /** 打开时若进阶项非法，展示 runtime 警告文案 */
+  reviewAdvancedLoadWarning: string | null
 }
 
 const emptyAI: AISettings = {
@@ -123,6 +131,9 @@ const emptyTts: TtsSettings = {
 const emptyReview: ReviewServiceSettingsDraft =
   getDefaultReviewServiceSettingsDraft()
 
+const emptyReviewAdvanced: ReviewAdvancedSettingsDraft =
+  getDefaultReviewAdvancedSettingsDraft()
+
 export const aiServiceSettingsState = proxy({
   isOpen: false,
   pluginName: null as string | null,
@@ -138,7 +149,9 @@ export const aiServiceSettingsState = proxy({
   },
   initialTts: { ...emptyTts },
   initialReview: { ...emptyReview },
-  reviewLoadWarning: null as string | null
+  reviewLoadWarning: null as string | null,
+  initialReviewAdvanced: { ...emptyReviewAdvanced },
+  reviewAdvancedLoadWarning: null as string | null
 }) as AIServiceSettingsState
 
 export function isAIServiceSettingsOpen(): boolean {
@@ -182,6 +195,10 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
   const reviewLoaded = loadReviewServiceSettings(pluginName)
   aiServiceSettingsState.initialReview = reviewLoaded.draft
   aiServiceSettingsState.reviewLoadWarning = reviewLoaded.warningMessage
+  const reviewAdvancedLoaded = loadReviewAdvancedSettings(pluginName)
+  aiServiceSettingsState.initialReviewAdvanced = reviewAdvancedLoaded.draft
+  aiServiceSettingsState.reviewAdvancedLoadWarning =
+    reviewAdvancedLoaded.warningMessage
   aiServiceSettingsState.isOpen = true
 
   try {
@@ -210,6 +227,10 @@ export async function openAIServiceSettings(pluginName: string): Promise<void> {
     const reviewAgain = loadReviewServiceSettings(pluginName)
     aiServiceSettingsState.initialReview = reviewAgain.draft
     aiServiceSettingsState.reviewLoadWarning = reviewAgain.warningMessage
+    const reviewAdvancedAgain = loadReviewAdvancedSettings(pluginName)
+    aiServiceSettingsState.initialReviewAdvanced = reviewAdvancedAgain.draft
+    aiServiceSettingsState.reviewAdvancedLoadWarning =
+      reviewAdvancedAgain.warningMessage
   } catch (error) {
     console.error("[AI ServiceSettings] 加载失败:", error)
     if (
@@ -247,6 +268,8 @@ export function closeAIServiceSettings(): void {
     aiServiceSettingsState.initialTts = { ...emptyTts }
     aiServiceSettingsState.initialReview = { ...emptyReview }
     aiServiceSettingsState.reviewLoadWarning = null
+    aiServiceSettingsState.initialReviewAdvanced = { ...emptyReviewAdvanced }
+    aiServiceSettingsState.reviewAdvancedLoadWarning = null
   }, 300)
 }
 

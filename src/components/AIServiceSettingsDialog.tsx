@@ -40,24 +40,22 @@ import {
   type TtsSettings
 } from "../srs/tts/ttsSettingsSchema"
 import {
-  FSRS_REQUEST_RETENTION_MAX,
-  FSRS_REQUEST_RETENTION_MIN
-} from "../srs/settings/reviewSettingsSchema"
-import { MAX_DAILY_CARD_LIMIT } from "../srs/reviewSessionBudget"
+  getDefaultReviewAdvancedSettingsDraft,
+  type ReviewAdvancedSettingsDraft
+} from "../srs/settings/reviewAdvancedSettings"
 import {
   getDefaultReviewServiceSettingsDraft,
   type ReviewServiceSettingsDraft
 } from "../srs/settings/reviewServiceSettings"
 import {
   getDefaultIRSelectionToolbarSettings,
-  IR_NATIVE_FORMAT_GROUP_IDS,
-  IR_NATIVE_FORMAT_GROUP_LABELS,
-  IR_TOOLBAR_ACTION_IDS,
-  IR_TOOLBAR_ACTION_LABELS,
   type IRNativeFormatGroupId,
   type IRSelectionToolbarSettings,
   type IRToolbarActionId
 } from "../srs/settings/irSelectionToolbarSettings"
+import { FieldHint, stopBubble, stopKeys } from "./ai-service-settings/FieldHint"
+import { IncrementalReadingSettingsTab } from "./ai-service-settings/IncrementalReadingSettingsTab"
+import { ReviewSettingsTab } from "./ai-service-settings/ReviewSettingsTab"
 
 export type ServiceSettingsDraft = {
   ai: AISettings
@@ -67,6 +65,7 @@ export type ServiceSettingsDraft = {
   irSelectionToolbar: IRSelectionToolbarSettings
   tts: TtsSettings
   review: ReviewServiceSettingsDraft
+  reviewAdvanced: ReviewAdvancedSettingsDraft
 }
 
 export interface AIServiceSettingsDialogProps {
@@ -85,8 +84,11 @@ export interface AIServiceSettingsDialogProps {
   initialIRSelectionToolbar: IRSelectionToolbarSettings
   initialTts: TtsSettings
   initialReview: ReviewServiceSettingsDraft
+  initialReviewAdvanced: ReviewAdvancedSettingsDraft
   /** 打开时非法可见复习设置的警告（runtime 文案） */
   reviewLoadWarning: string | null
+  /** 打开时非法进阶复习设置的警告（runtime 文案） */
+  reviewAdvancedLoadWarning: string | null
   modelOptions: readonly string[]
   isFetchingModels: boolean
   isTestingAI: boolean
@@ -130,51 +132,6 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "diagnostics", label: "诊断", icon: "ti-activity" }
 ]
 
-function stopKeys(e: {
-  stopPropagation: () => void
-  nativeEvent?: { stopImmediatePropagation?: () => void }
-}): void {
-  e.stopPropagation()
-  e.nativeEvent?.stopImmediatePropagation?.()
-}
-
-function stopBubble(e: { stopPropagation: () => void }): void {
-  e.stopPropagation()
-}
-
-/** 短说明 + 可选「了解更多」展开技术细节 */
-function FieldHint(props: {
-  summary: string
-  details?: string
-}) {
-  const { useState } = window.React
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="ai-service-settings__hint-block">
-      <p className="ai-service-settings__hint">{props.summary}</p>
-      {props.details ? (
-        <>
-          <button
-            type="button"
-            className="ai-service-settings__more-toggle"
-            aria-expanded={open}
-            onClick={() => setOpen((v: boolean) => !v)}
-            onKeyDown={stopKeys}
-            onMouseDown={stopBubble}
-          >
-            {open ? "收起说明" : "了解更多"}
-          </button>
-          {open ? (
-            <p className="ai-service-settings__hint ai-service-settings__hint--details">
-              {props.details}
-            </p>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  )
-}
-
 function ServiceSettingsForm(props: {
   initialAI: AISettings
   initialFirecrawl: WebImportSettings
@@ -183,6 +140,7 @@ function ServiceSettingsForm(props: {
   initialIRSelectionToolbar: IRSelectionToolbarSettings
   initialTts: TtsSettings
   initialReview: ReviewServiceSettingsDraft
+  initialReviewAdvanced: ReviewAdvancedSettingsDraft
   busy: boolean
   modelOptions: readonly string[]
   isFetchingModels: boolean
@@ -270,6 +228,21 @@ function ServiceSettingsForm(props: {
   const [showNextReviewTime, setShowNextReviewTime] = useState(
     props.initialReview.showNextReviewTime
   )
+  const [fsrsWeights, setFsrsWeights] = useState(
+    props.initialReviewAdvanced.fsrsWeights
+  )
+  const [fsrsMaximumInterval, setFsrsMaximumInterval] = useState(
+    props.initialReviewAdvanced.fsrsMaximumInterval
+  )
+  const [imageOcclusionMode, setImageOcclusionMode] = useState(
+    props.initialReviewAdvanced.imageOcclusionMode
+  )
+  const [disableNotifications, setDisableNotifications] = useState(
+    props.initialReviewAdvanced.disableNotifications
+  )
+  const [irItemInitialDueMode, setIrItemInitialDueMode] = useState(
+    props.initialReviewAdvanced.irItemInitialDueMode
+  )
 
   const busy = props.busy
   const draft = (): ServiceSettingsDraft => ({
@@ -324,16 +297,32 @@ function ServiceSettingsForm(props: {
       requestRetention,
       passFailButtons,
       showNextReviewTime
+    },
+    reviewAdvanced: {
+      fsrsWeights,
+      fsrsMaximumInterval,
+      imageOcclusionMode,
+      disableNotifications,
+      irItemInitialDueMode
     }
   })
 
   const restoreReviewDefaults = () => {
     const defaults = getDefaultReviewServiceSettingsDraft()
+    const advanced = getDefaultReviewAdvancedSettingsDraft()
     setNewCardsPerDay(defaults.newCardsPerDay)
     setReviewCardsPerDay(defaults.reviewCardsPerDay)
     setRequestRetention(defaults.requestRetention)
     setPassFailButtons(defaults.passFailButtons)
     setShowNextReviewTime(defaults.showNextReviewTime)
+    setFsrsWeights(advanced.fsrsWeights)
+    setFsrsMaximumInterval(advanced.fsrsMaximumInterval)
+    setImageOcclusionMode(advanced.imageOcclusionMode)
+    setDisableNotifications(advanced.disableNotifications)
+  }
+
+  const restoreDefaultWeights = () => {
+    setFsrsWeights(getDefaultReviewAdvancedSettingsDraft().fsrsWeights)
   }
 
   const restoreIRSelectionToolbarDefaults = () => {
@@ -843,212 +832,42 @@ function ServiceSettingsForm(props: {
         ) : null}
 
         {activeTab === "incrementalReading" ? (
-          <section
-            className="ai-service-settings__section"
-            role="tabpanel"
-            id="ai-service-panel-incrementalReading"
-            aria-labelledby="ai-service-tab-incrementalReading"
-          >
-            <h3 className="ai-service-settings__section-title">
-              <i className="ti ti-book-2" aria-hidden="true" />
-              渐进阅读
-            </h3>
-            <p className="ai-service-settings__section-desc">
-              仅影响渐进阅读会话内的 Orca 原生选区工具栏；会话外工具栏保持宿主原样。
-            </p>
-
-            <div className="ai-service-settings__subsection">
-              <h4 className="ai-service-settings__subsection-title">选区工具栏</h4>
-              <FieldHint
-                summary="在阅读/编辑模式选中文字时，按开关显示已知按钮；未知的新宿主按钮默认仍可见。"
-                details="Topic 选区永不显示「挖空」；Extract 选区永不显示「摘录」。一键「解释」仅在 IR 内生效，使用现有块下内联解释（选区为 FOCUS）。右侧主栏不再放摘录/挖空，快捷键 Alt+X / Alt+Z 仍可用。"
-              />
-
-              <span className="ai-service-settings__label">插件动作</span>
-              {IR_TOOLBAR_ACTION_IDS.map((id) => (
-                <label
-                  key={id}
-                  className="ai-service-settings__checkbox-row"
-                >
-                  <input
-                    type="checkbox"
-                    className="ai-service-settings__checkbox"
-                    checked={stbActions[id]}
-                    onChange={(e) => setStbAction(id, e.target.checked)}
-                    onKeyDown={stopKeys}
-                    onMouseDown={stopBubble}
-                    disabled={busy}
-                  />
-                  <span>{IR_TOOLBAR_ACTION_LABELS[id]}</span>
-                </label>
-              ))}
-
-              <span className="ai-service-settings__label ai-service-settings__label--spaced">
-                原生格式（分组）
-              </span>
-              {IR_NATIVE_FORMAT_GROUP_IDS.map((id) => (
-                <label
-                  key={id}
-                  className="ai-service-settings__checkbox-row"
-                >
-                  <input
-                    type="checkbox"
-                    className="ai-service-settings__checkbox"
-                    checked={stbFormatGroups[id]}
-                    onChange={(e) => setStbFormatGroup(id, e.target.checked)}
-                    onKeyDown={stopKeys}
-                    onMouseDown={stopBubble}
-                    disabled={busy}
-                  />
-                  <span>{IR_NATIVE_FORMAT_GROUP_LABELS[id]}</span>
-                </label>
-              ))}
-
-              <div className="ai-service-settings__row-actions">
-                <button
-                  type="button"
-                  className="ai-service-settings__btn ai-service-settings__btn--secondary"
-                  onClick={restoreIRSelectionToolbarDefaults}
-                  disabled={busy}
-                  title="仅更新本页草稿，需点底部「保存」才生效"
-                >
-                  恢复推荐设置
-                </button>
-              </div>
-              <FieldHint summary="推荐：摘录 / 挖空 / 一键解释 开；AI 菜单与 TTS 关；全部原生格式组关。须底部保存后立即作用于当前会话。" />
-            </div>
-          </section>
+          <IncrementalReadingSettingsTab
+            busy={busy}
+            stbActions={stbActions}
+            stbFormatGroups={stbFormatGroups}
+            irItemInitialDueMode={irItemInitialDueMode}
+            onActionChange={setStbAction}
+            onFormatGroupChange={setStbFormatGroup}
+            onIrItemInitialDueModeChange={setIrItemInitialDueMode}
+            onRestoreToolbarDefaults={restoreIRSelectionToolbarDefaults}
+          />
         ) : null}
 
         {activeTab === "review" ? (
-          <section
-            className="ai-service-settings__section"
-            role="tabpanel"
-            id="ai-service-panel-review"
-            aria-labelledby="ai-service-tab-review"
-          >
-            <h3 className="ai-service-settings__section-title">
-              <i className="ti ti-cards" aria-hidden="true" />
-              复习
-            </h3>
-            <p className="ai-service-settings__section-desc">
-              控制每天进入队列的新卡与复习卡数量、目标记忆保留率，以及复习界面按钮显示。
-            </p>
-
-            <label className="ai-service-settings__field">
-              <span className="ai-service-settings__label">每日新卡上限</span>
-              <input
-                type="number"
-                className="ai-service-settings__input"
-                value={newCardsPerDay}
-                min={0}
-                max={MAX_DAILY_CARD_LIMIT}
-                step={1}
-                onChange={(e) => setNewCardsPerDay(e.target.value)}
-                onKeyDown={stopKeys}
-                onKeyUp={stopKeys}
-                onMouseDown={stopBubble}
-                disabled={busy}
-              />
-              <FieldHint
-                summary={`0–${MAX_DAILY_CARD_LIMIT} 的整数。0 表示当天不安排新卡。`}
-              />
-            </label>
-
-            <label className="ai-service-settings__field">
-              <span className="ai-service-settings__label">每日复习上限</span>
-              <input
-                type="number"
-                className="ai-service-settings__input"
-                value={reviewCardsPerDay}
-                min={0}
-                max={MAX_DAILY_CARD_LIMIT}
-                step={1}
-                onChange={(e) => setReviewCardsPerDay(e.target.value)}
-                onKeyDown={stopKeys}
-                onKeyUp={stopKeys}
-                onMouseDown={stopBubble}
-                disabled={busy}
-              />
-              <FieldHint
-                summary={`0–${MAX_DAILY_CARD_LIMIT} 的整数。0 表示当天不安排复习卡。`}
-              />
-            </label>
-
-            <label className="ai-service-settings__field">
-              <span className="ai-service-settings__label">目标记忆保留率</span>
-              <input
-                type="number"
-                className="ai-service-settings__input"
-                value={requestRetention}
-                min={FSRS_REQUEST_RETENTION_MIN}
-                max={FSRS_REQUEST_RETENTION_MAX}
-                step={0.01}
-                onChange={(e) => setRequestRetention(e.target.value)}
-                onKeyDown={stopKeys}
-                onKeyUp={stopKeys}
-                onMouseDown={stopBubble}
-                disabled={busy}
-              />
-              <FieldHint
-                summary={`范围 ${FSRS_REQUEST_RETENTION_MIN}–${FSRS_REQUEST_RETENTION_MAX}，推荐 0.9。越高复习越勤。`}
-              />
-            </label>
-
-            <label className="ai-service-settings__field ai-service-settings__field--toggle">
-              <span className="ai-service-settings__label">仅失败 / 通过按钮</span>
-              <label className="ai-service-settings__checkbox-row">
-                <input
-                  type="checkbox"
-                  className="ai-service-settings__checkbox"
-                  checked={passFailButtons}
-                  onChange={(e) => setPassFailButtons(e.target.checked)}
-                  onKeyDown={stopKeys}
-                  onMouseDown={stopBubble}
-                  disabled={busy}
-                />
-                <span>复习界面只显示失败与通过（映射为 Again / Good）</span>
-              </label>
-              <FieldHint
-                summary="默认关闭，显示四级评分（忘记 / 困难 / 良好 / 简单）。开启后隐藏困难与简单。"
-                details="失败写入 again、通过写入 good；不改变 FSRS 算法本身。快捷键：1=失败，3 或空格=通过；2/4 无效。选择题始终保持四级（含「困难」建议），不受此开关影响。"
-              />
-            </label>
-
-            <label className="ai-service-settings__field ai-service-settings__field--toggle">
-              <span className="ai-service-settings__label">
-                按钮上方显示下次复习时间
-              </span>
-              <label className="ai-service-settings__checkbox-row">
-                <input
-                  type="checkbox"
-                  className="ai-service-settings__checkbox"
-                  checked={showNextReviewTime}
-                  onChange={(e) => setShowNextReviewTime(e.target.checked)}
-                  onKeyDown={stopKeys}
-                  onMouseDown={stopBubble}
-                  disabled={busy}
-                />
-                <span>Show next review time over buttons</span>
-              </label>
-              <FieldHint
-                summary="默认关闭（隐藏时间，便于专注答题）。开启后在评分按钮上方显示预估间隔与到期日。"
-              />
-            </label>
-
-            <div className="ai-service-settings__row-actions">
-              <button
-                type="button"
-                className="ai-service-settings__btn ai-service-settings__btn--secondary"
-                onClick={restoreReviewDefaults}
-                disabled={busy}
-                title="仅更新本页草稿，需点底部「保存」才生效"
-              >
-                恢复默认值
-              </button>
-            </div>
-            <FieldHint summary="「恢复默认值」只改当前草稿（30 / 200 / 0.9，两项界面开关关闭），仍须底部保存才会生效。" />
-          </section>
+          <ReviewSettingsTab
+            busy={busy}
+            newCardsPerDay={newCardsPerDay}
+            reviewCardsPerDay={reviewCardsPerDay}
+            requestRetention={requestRetention}
+            passFailButtons={passFailButtons}
+            showNextReviewTime={showNextReviewTime}
+            fsrsWeights={fsrsWeights}
+            fsrsMaximumInterval={fsrsMaximumInterval}
+            imageOcclusionMode={imageOcclusionMode}
+            disableNotifications={disableNotifications}
+            onNewCardsPerDayChange={setNewCardsPerDay}
+            onReviewCardsPerDayChange={setReviewCardsPerDay}
+            onRequestRetentionChange={setRequestRetention}
+            onPassFailButtonsChange={setPassFailButtons}
+            onShowNextReviewTimeChange={setShowNextReviewTime}
+            onFsrsWeightsChange={setFsrsWeights}
+            onFsrsMaximumIntervalChange={setFsrsMaximumInterval}
+            onImageOcclusionModeChange={setImageOcclusionMode}
+            onDisableNotificationsChange={setDisableNotifications}
+            onRestoreDefaults={restoreReviewDefaults}
+            onRestoreDefaultWeights={restoreDefaultWeights}
+          />
         ) : null}
 
         {activeTab === "tts" ? (
@@ -1350,7 +1169,9 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
     initialIRSelectionToolbar,
     initialTts,
     initialReview,
+    initialReviewAdvanced,
     reviewLoadWarning,
+    reviewAdvancedLoadWarning,
     modelOptions,
     isFetchingModels,
     isTestingAI,
@@ -1389,7 +1210,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
               <span>服务与算法设置</span>
             </h2>
             <p className="ai-service-settings__subtitle">
-              连接 AI、语音 TTS、网页导入、渐进阅读选区工具栏与每日复习额度。
+              连接 AI、语音 TTS、网页导入、渐进阅读与复习算法参数。
             </p>
           </div>
           <button
@@ -1413,14 +1234,16 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
           </div>
         ) : null}
 
-        {!errorMessage && reviewLoadWarning ? (
+        {!errorMessage && (reviewLoadWarning || reviewAdvancedLoadWarning) ? (
           <div
             className="ai-service-settings__banner ai-service-settings__banner--warning"
             role="alert"
           >
-            {reviewLoadWarning}
+            {[reviewLoadWarning, reviewAdvancedLoadWarning]
+              .filter((msg): msg is string => Boolean(msg))
+              .join(" ")}
             <p className="ai-service-settings__hint ai-service-settings__hint--after-banner">
-              「复习」页已填入当前可用值，请确认后保存，或恢复默认值。
+              相关页已填入当前可用值，请确认后保存，或恢复默认值。
             </p>
           </div>
         ) : null}
@@ -1437,6 +1260,7 @@ export function AIServiceSettingsDialog(props: AIServiceSettingsDialogProps) {
             initialIRSelectionToolbar={initialIRSelectionToolbar}
             initialTts={initialTts}
             initialReview={initialReview}
+            initialReviewAdvanced={initialReviewAdvanced}
             busy={busy}
             modelOptions={modelOptions}
             isFetchingModels={isFetchingModels}

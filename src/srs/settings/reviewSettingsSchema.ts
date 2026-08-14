@@ -154,7 +154,9 @@ export const reviewSettingsSchema = {
     label: "关闭通知提醒",
     type: "boolean" as const,
     defaultValue: false,
-    description: "开启后不显示任何 SRS 相关的通知提醒（评分、创建卡片等）"
+    description:
+      "开启后不显示任何 SRS 相关的通知提醒（评分、创建卡片等）。"
+      + "推荐在『服务与算法设置』面板修改。"
   },
   // 每日额度 + FSRS 五项必须注册：未注册的 key 无法被 orca.plugins.setSettings 持久化。
   [REVIEW_SETTINGS_KEYS.newCardsPerDay]: {
@@ -177,6 +179,7 @@ export const reviewSettingsSchema = {
       "FSRS v6 权重参数，逗号分隔的 21 个数字。"
       + "填写非法值时运行时回退默认权重并给出诊断；"
       + "可用「恢复 FSRS 默认」命令还原。"
+      + "推荐在『服务与算法设置』面板修改。"
   },
   [REVIEW_SETTINGS_KEYS.fsrsRequestRetention]: {
     label: "目标记忆保留率",
@@ -192,6 +195,7 @@ export const reviewSettingsSchema = {
     defaultValue: DEFAULT_MAXIMUM_INTERVAL,
     description:
       `单张卡的最长复习间隔，有效范围 ${FSRS_MAXIMUM_INTERVAL_MIN}–${FSRS_MAXIMUM_INTERVAL_MAX} 天。`
+      + "推荐在『服务与算法设置』面板修改。"
   },
   [REVIEW_SETTINGS_KEYS.irItemInitialDueMode]: {
     label: "IR 源记忆卡首次学习时间",
@@ -202,6 +206,7 @@ export const reviewSettingsSchema = {
       + "普通笔记制卡保持原行为。"
       + "取值：dispersed（默认，按优先级分散到约 1–14 天后）、today、tomorrow。"
       + "已有卡片的 due 不会因升级或改设置而重算。"
+      + "推荐在『服务与算法设置』面板修改。"
   },
   [REVIEW_SETTINGS_KEYS.imageOcclusionMode]: {
     label: "图片遮罩复习模式（全局默认）",
@@ -212,6 +217,7 @@ export const reviewSettingsSchema = {
       + "hideOne（默认）：题面只遮当前编号，答案全部揭开；"
       + "hideAll：题面全遮，答案只揭当前编号；"
       + "hideAllRevealAll：题面全遮，答案全部揭开。"
+      + "推荐在『服务与算法设置』面板修改。"
   }
 }
 

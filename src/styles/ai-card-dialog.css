@@ -1521,6 +1521,13 @@
   opacity: 0.55;
 }
 
+.ai-service-settings__input--textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.45;
+}
+
 .ai-service-settings__model-row {
   display: flex;
   gap: var(--srs-space-2);

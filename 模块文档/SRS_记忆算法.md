@@ -1,7 +1,7 @@
 # SRS 记忆算法模块
 
-> **文档同步日期：2026-08-02**
-> 变更说明：每日新卡/复习上限 + 目标保留率迁入独立服务面板 **「复习」** 页签；同页另有两项**仅 UI** 开关（Pass-Fail 按钮、显示下次复习时间，默认关闭，不改排期）。原生 schema 不含每日额度与 FSRS 五项 UI。权重 / 最大间隔底层存储与算法读取保留，**无**面板编辑 UI。表单 helper：`reviewServiceSettings.ts`。
+> **文档同步日期：2026-08-14**
+> 变更说明：独立服务面板 **「复习」** 页补齐原先只在原生设置页可改的四项（FSRS 权重、最大间隔、图片遮罩模式、关闭通知）；**「渐进阅读」** 页补齐 IR 源记忆卡首次学习时间。五者仍写 `REVIEW_SETTINGS_KEYS` 原 key，与原生页同一份数据；原生页保留为兜底入口。进阶五项 helper：`reviewAdvancedSettings.ts`；额度/保留率/界面开关仍为 `reviewServiceSettings.ts`。
 > 2026-07-26：新增「FSRS Fuzz」小节——运行时实例创建启用 `enable_fuzz: true`。
 > 2026-07-13：校正 `nextReviewState` / 预览函数的 `pluginName` 参数位置；对齐 F2-08 校验与运行时 cache。
 
@@ -21,10 +21,11 @@
 ### 核心文件
 
 - `src/srs/algorithm.ts` — FSRS 运行时实例、评分、预览
-- `src/srs/settings/reviewSettingsSchema.ts` — 原生复习 Schema（**不含**每日额度与 FSRS 五项 UI）+ `validateFsrsConfig` / runtime read / default patch；key 与 `getReviewSettings` 仍保留
-- `src/srs/settings/reviewServiceSettings.ts` — 独立面板「复习」页 load / 严格 parse / save（额度三项 + 两项 UI 显示开关；`getReviewUiDisplaySettings`）
+- `src/srs/settings/reviewSettingsSchema.ts` — 原生复习 Schema（`REVIEW_SETTINGS_KEYS` 必须全部注册）+ `validateFsrsConfig` / runtime read / default patch；key 与 `getReviewSettings` 仍保留
+- `src/srs/settings/reviewServiceSettings.ts` — 独立面板「复习」页额度三项 + 两项 UI 显示开关的 load / 严格 parse / save
+- `src/srs/settings/reviewAdvancedSettings.ts` — 服务面板进阶五项（权重 / 最大间隔 / 图片遮罩 / 关闭通知 / IR 首次学习时间）的 load / 严格 parse / save
 - `src/srs/reviewSessionBudget.ts` — 每日额度统一规则（`isValidDailyCardLimit` / `resolveDailyQueueLimits`）
-- `src/components/AIServiceSettingsDialog.tsx` / `AIServiceSettingsMount.tsx` — 「复习」页签 UI 与整包保存
+- `src/components/AIServiceSettingsDialog.tsx` / `AIServiceSettingsMount.tsx` — 「复习」「渐进阅读」页签 UI 与整包保存；复习/渐进阅读 Tab 拆至 `src/components/ai-service-settings/`
 - `src/srs/types.ts` — `SrsState` / `Grade`
 - `src/srs/registry/commands.ts` — 恢复 FSRS 默认设置命令（`resetFsrsSettingsToDefaults`，仍写权重/保留率/最大间隔三项）
 
@@ -154,13 +155,13 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 | --- | --- |
 | **存储** | 仍为 Orca plugin settings 原 key：`review.newCardsPerDay` / `review.reviewCardsPerDay` / `review.fsrsWeights` / `review.fsrsRequestRetention` / `review.fsrsMaximumInterval`。**不**迁到 plugin data。 |
 | **原生设置页** | `reviewSettingsSchema` **必须**注册 `REVIEW_SETTINGS_KEYS` 的全部 key（含每日额度两项与 FSRS 三项）。`orca.plugins.setSettings` 只持久化已注册进 schema 的 key，漏注册 = 改完关窗即丢（2026-08-11 修复）。副作用：这五项同时出现在 Orca 原生插件设置 UI，与独立面板并存，写同一批 key。 |
-| **独立面板「复习」页** | 数值三项：每日新卡上限、每日复习上限、目标记忆保留率；界面两项（默认关）：仅失败/通过按钮、`Show next review time over buttons`；+「恢复默认值」（草稿 30/200/0.9 + 两开关关）。**不**显示权重与最大间隔。 |
-| **权重 / 最大间隔** | 无面板编辑 UI；仍由算法 runtime 读取与严格校验；命令 `resetFsrsSettingsToDefaults` 可写回默认。普通面板保存**不得**写回或规范化这两项（保护个人优化权重）。 |
+| **独立面板「复习」页** | 数值三项：每日新卡上限、每日复习上限、目标记忆保留率；**算法参数**：FSRS 权重（多行）+ 最大间隔 +「恢复默认权重」；界面两项（默认关）：仅失败/通过按钮、显示下次复习时间；底部：图片遮罩模式、关闭通知；+「恢复默认值」（草稿含上述复习字段，不含 IR 首次学习时间）。 |
+| **权重 / 最大间隔** | 独立面板与原生页写同一批 key。面板保存走 `parseReviewAdvancedSettingsDraftStrict`：非法整包不写盘。命令 `resetFsrsSettingsToDefaults` 仍可直接写回默认三项。 |
 | **算法 / 额度读取** | 不变：`getFsrsInstance` / `readAndValidateFsrsSettings` 读 FSRS 三项；`resolveDailyQueueLimits` / `getReviewSettings` 读每日额度。 |
 | **兼容** | 已有用户数据与恢复 FSRS 默认命令共用同一 key / patch。 |
 
-打开独立面板：`loadReviewServiceSettings`（`reviewServiceSettings.ts`）→ 可见三项填**安全生效值**；若旧值非法，全局 banner 展示中文警告。隐藏权重/最大间隔的旧错误由算法 runtime 警告负责，**不**阻止保存可见三项。
-保存：`parseReviewServiceSettingsDraftStrict` 先严格校验可见数值三项；失败则**整包保存中止**（不先写 AI/Firecrawl 等）；合法则 `saveReviewServiceSettingsFromForm` → `setSettings` 写三项数值 + 两项 UI 开关 patch + `clearFsrsRuntimeState()`（使 retention 立即生效）。UI 开关**不**参与 FSRS 计算。
+打开独立面板：`loadReviewServiceSettings` + `loadReviewAdvancedSettings` → 表单填**安全生效值**；若旧值非法，全局 banner 展示中文警告（不得静默改用户已落盘的值）。
+保存：先 `parseReviewServiceSettingsDraftStrict` 再 `parseReviewAdvancedSettingsDraftStrict`；任一失败则**整包保存中止**（不先写 AI/Firecrawl 等）。合法则依次 `saveReviewServiceSettingsFromForm`（额度/保留率/两项 UI）与 `saveReviewAdvancedSettingsFromForm`（进阶五项），各自 `setSettings` 只打自己那份 patch，并都调用 `clearFsrsRuntimeState()`（下次 `getFsrsInstance` 重读权重/保留率/最大间隔）。UI 开关与通知开关**不**参与 FSRS 计算。
 
 ### 校验规则（`src/srs/settings/reviewSettingsSchema.ts`）
 
@@ -174,7 +175,7 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 - 其它非法值：逐项写入 `FsrsSettingIssue`（`field` / `rawSummary` / 中文 `reason` / `fallback`），并回退默认。
 - **禁止**把原始非法值传入 `generatorParameters` / `FSRS`；不依赖 ts-fsrs 静默 clip/migrate。
 - 纯入口：`validateFsrsConfig(raw)` → `ValidatedFsrsConfig`；`readAndValidateFsrsSettings(pluginName)` 从 settings 读 raw 再校验。
-- 独立面板表单严格入口（`reviewServiceSettings.ts`）：`parseReviewServiceSettingsDraftStrict` / `saveReviewServiceSettingsFromForm`（有 issue 则失败，**不**回退写盘；patch **仅**含日额度 + 保留率，不含 weights / maximumInterval）。
+- 独立面板表单严格入口：`parseReviewServiceSettingsDraftStrict`（日额度 + 保留率 + 两项 UI；patch 不含进阶五项）与 `parseReviewAdvancedSettingsDraftStrict`（进阶五项；有 issue 则失败，**不**回退写盘）。
 - 每日额度校验复用 `isValidDailyCardLimit`（0..10000 有限非负整数；0 = 当天不安排该类卡，非无限）。
 - 恢复 FSRS 默认写入（命令）：`getDefaultFsrsSettingsPatch()` 返回权重/保留率/最大间隔三项默认 key/value。
 
@@ -182,13 +183,14 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 
 | 键 | 默认 | UI 入口 | 说明 |
 |----|------|---------|------|
-| `review.disableNotifications` | false | 原生插件设置 | 关闭 SRS 通知 |
+| `review.disableNotifications` | false | 服务面板 **复习** 页 + 原生插件设置（兜底） | 关闭 SRS 通知 |
 | `review.newCardsPerDay` | 30 | 服务面板 **复习** 页 + 原生插件设置 | 每日新卡上限（budget：`isValidDailyCardLimit`） |
 | `review.reviewCardsPerDay` | 200 | 服务面板 **复习** 页 + 原生插件设置 | 每日复习上限 |
 | `review.fsrsRequestRetention` | 0.9 | 服务面板 **复习** 页 + 原生插件设置 | 目标保留率 0.7..0.99 |
-| `review.fsrsWeights` | FSRS v6 默认 21 个 | 原生插件设置（无独立面板 UI） | 算法 runtime + 恢复默认命令 |
-| `review.fsrsMaximumInterval` | 36500 | 原生插件设置（无独立面板 UI） | 算法 runtime + 恢复默认命令 |
-| `review.irItemInitialDueMode` 等 | … | 原生插件设置 | 其它复习相关项 |
+| `review.fsrsWeights` | FSRS v6 默认 21 个 | 服务面板 **复习** 页 + 原生插件设置（兜底） | 算法 runtime + 恢复默认命令 |
+| `review.fsrsMaximumInterval` | 36500 | 服务面板 **复习** 页 + 原生插件设置（兜底） | 算法 runtime + 恢复默认命令 |
+| `review.imageOcclusionMode` | hideOne | 服务面板 **复习** 页 + 原生插件设置（兜底） | 全局默认；每图可单独覆盖 |
+| `review.irItemInitialDueMode` | dispersed | 服务面板 **渐进阅读** 页 + 原生插件设置（兜底） | 仅 Topic/Extract 上新建记忆卡的首次 due |
 
 `getReviewSettings(pluginName)` 返回**原始读取**（含每日额度与 FSRS 字段，供兼容读取）；正式评分/预览必须走 algorithm 的 validated 路径，勿把原始 FSRS 字段直接喂给 `generatorParameters`。
 
@@ -206,12 +208,12 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
   - `orca.plugins.setSettings("app", pluginName, getDefaultFsrsSettingsPatch())`
   - 成功后 `clearFsrsRuntimeState()`
 - 成功/失败均 `orca.notify`；失败 `console.error`，不假装成功
-- 独立面板「复习」页「恢复默认值」**仅改可见三项草稿**（30 / 200 / 0.9），须底部保存才写盘（与命令直接写盘 FSRS 三项不同；命令仍写权重/保留率/最大间隔）
+- 独立面板「复习」页「恢复默认值」只改本页草稿（额度/保留率/权重/最大间隔/图片遮罩/通知/两项界面开关），须底部保存才写盘；「恢复默认权重」只改权重草稿。与命令直接写盘 FSRS 三项不同
 
 ## 测试验证
 
 - `runExamples()`（若存在）/ 单元测试覆盖典型评分场景
-- F2-08 / 面板迁移：`reviewSettingsSchema.test.ts`（schema 不含每日额度与 FSRS 五项 UI + 核心 validator）、`reviewServiceSettings.test.ts`（合法只写三项 / 非法不 setSettings / 不覆盖权重 / runtime 刷新）、`algorithm.fsrsSettings.test.ts`、`resetFsrsSettings.test.ts`、`reviewSessionBudget.test.ts`、`fsrsPreviewPluginName.harness.test.ts`
+- F2-08 / 面板迁移：`reviewSettingsSchema.test.ts`（`REVIEW_SETTINGS_KEYS` 必须全部注册 + 核心 validator）、`reviewServiceSettings.test.ts`（额度/保留率/UI 开关）、`reviewAdvancedSettings.test.ts`（进阶五项 load/parse/save）、`algorithm.fsrsSettings.test.ts`、`resetFsrsSettings.test.ts`、`reviewSessionBudget.test.ts`、`fsrsPreviewPluginName.harness.test.ts`
 - 其它：`algorithm.test.ts`
 
 ## 扩展点
@@ -228,10 +230,11 @@ const previews = previewIntervals(initialState, new Date(), pluginName);
 | 文件 | 说明 |
 | --- | --- |
 | `src/srs/algorithm.ts` | FSRS 算法核心与运行时 cache |
-| `src/srs/settings/reviewSettingsSchema.ts` | 原生复习 Schema（无每日额度 / FSRS UI）+ FSRS 纯校验 / runtime read / default patch |
-| `src/srs/settings/reviewServiceSettings.ts` | 独立面板「复习」页 load / 严格 parse / save（仅三项可见） |
-| `src/components/AIServiceSettingsDialog.tsx` | 独立面板「复习」页签（面板标题「服务与算法设置」） |
-| `src/components/AIServiceSettingsMount.tsx` | 整包保存：先严格校验复习三项再写盘 |
+| `src/srs/settings/reviewSettingsSchema.ts` | 原生复习 Schema（须注册全部 `REVIEW_SETTINGS_KEYS`）+ FSRS 纯校验 / runtime read / default patch |
+| `src/srs/settings/reviewServiceSettings.ts` | 独立面板「复习」页额度/保留率/UI 开关 load / 严格 parse / save |
+| `src/srs/settings/reviewAdvancedSettings.ts` | 服务面板进阶五项 load / 严格 parse / save |
+| `src/components/AIServiceSettingsDialog.tsx` | 独立面板（标题「服务与算法设置」）；复习/渐进阅读 Tab 拆至 `ai-service-settings/` |
+| `src/components/AIServiceSettingsMount.tsx` | 整包保存：先严格校验复习可见项与进阶五项再写盘 |
 | `src/srs/types.ts` | `SrsState` / `Grade` |
 | `src/srs/storage.ts` | 状态持久化（调用 `nextReviewState`） |
 | `src/srs/reviewCardGrading.ts` | 正式评分路径 |

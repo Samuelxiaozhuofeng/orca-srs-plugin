@@ -2,6 +2,9 @@
 
 本文件夹包含 SRS 插件各功能模块的中文技术文档。**以仓库当前代码为实现真相**；计划类文档须标明已落地 / 仍为计划。
 
+> **索引增补：2026-08-14（服务面板进阶五项）**：
+> - [SRS_记忆算法.md](SRS_记忆算法.md) / [SRS_AI模块.md](SRS_AI模块.md) / [渐进阅读.md](渐进阅读.md)：原先只在原生设置页可改的 FSRS 权重、最大间隔、图片遮罩模式、关闭通知、IR 源记忆卡首次学习时间，收敛进「服务与算法设置」；helper `reviewAdvancedSettings.ts`；原生页保留为兜底入口（`REVIEW_SETTINGS_KEYS` 仍须全部注册）
+>
 > **全量对照同步日期：2026-07-19**（发布前加固：打包/EPUB 安全/HTTP 脱敏/困难卡分页；禁止将本文索引中的路径当作臆造 API 使用）。
 >
 > **索引增补：2026-08-13（快捷制卡默认快捷键）**：
@@ -127,10 +130,10 @@
 
 ### 核心功能
 
-1. **[SRS_记忆算法.md](SRS_记忆算法.md)** ⭐ 2026-08-02 更新
+1. **[SRS_记忆算法.md](SRS_记忆算法.md)** ⭐ 2026-08-14 更新
    - FSRS 算法、状态、设置严格校验与统一运行时参数（F2-08）；运行时实例启用 `enable_fuzz`（削峰分散到期，确定性播种保证预览=正式一致）
-   - 独立服务面板 **复习** 页：每日新卡/复习上限 + 目标保留率；权重/最大间隔无 UI；原生 schema 不含每日额度与 FSRS 五项；helper：`reviewServiceSettings.ts`
-   - 关联：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/settings/reviewServiceSettings.ts`、`src/srs/reviewSessionBudget.ts`、`src/components/AIServiceSettingsDialog.tsx`、`src/srs/types.ts`
+   - 独立服务面板 **复习** 页：每日新卡/复习上限 + 目标保留率 + 权重/最大间隔/图片遮罩/关闭通知；IR 首次学习时间在 **渐进阅读** 页；原生 schema 必须注册全部 `REVIEW_SETTINGS_KEYS`；helper：`reviewServiceSettings.ts` + `reviewAdvancedSettings.ts`
+   - 关联：`src/srs/algorithm.ts`、`src/srs/settings/reviewSettingsSchema.ts`、`src/srs/settings/reviewServiceSettings.ts`、`src/srs/settings/reviewAdvancedSettings.ts`、`src/srs/reviewSessionBudget.ts`、`src/components/AIServiceSettingsDialog.tsx`、`src/srs/types.ts`
 
 2. **[SRS_数据存储.md](SRS_数据存储.md)** ⭐ 2026-08-09 更新
    - 卡片属性持久化；块 exists/missing/unknown；日志与会话进度等存储面
@@ -229,7 +232,7 @@
 
 ### 渐进阅读与导入
 
-24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-10 更新 — **块解释并发状态隔离与单块选区边界**（举例/反驳互不取消；跨块选区可见提示）；可配置紧凑原生选区工具栏（服务设置「渐进阅读」Tab；摘录/挖空/一键解释在工具栏；主栏 下篇→重要→完成→⋯）；due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
+24. **[渐进阅读.md](渐进阅读.md)** ⭐ 2026-08-14 更新 — 服务设置「渐进阅读」Tab 新增「记忆卡排期」（`review.irItemInitialDueMode`）；**块解释并发状态隔离与单块选区边界**（举例/反驳互不取消；跨块选区可见提示）；可配置紧凑原生选区工具栏（摘录/挖空/一键解释在工具栏；主栏 下篇→重要→完成→⋯）；due-only 分散 Phase 0+1 短记；`syncCardTagPriority` 失败 `console.error` 不打断 `saveIRState`；Extract 摘录处理建议 AI 虚拟块；章末小测见专文；
 24a. **[渐进阅读_章末小测.md](渐进阅读_章末小测.md)** ⭐ 2026-08-10 更新 — Topic 章末小测；**正文完整性门禁**：批读少返逐块补读，仍缺则在 AI 前可见失败并可重试；**P0 UX**：5/10/15 题选择、生成三阶段+重试计数、稳定打乱、完成后续轻量 offer；**P1 学习闭环**：首轮分类/修复轮/动作小结/整理薄弱点/定向反馈；Custom Panel + 共享生成 / live 同步；制卡落点=sourceBlockId 子块；键盘与 aria-live；panel nav A→B
     - **会话块 insertBlock ID 校验**（2026-07-28）：与复习会话块相同的有限正数校验；坏 ID 零落盘、不污染内存指针
     - **今日学习统一推送 + 移除时间盒**（2026-07-27）：阅读条目与记忆卡在**同一会话、同一面板**交错推送，不再「先读完 IR 再回首页点复习另开面板」。**10/20/30 时间盒整体删除**，队列长度改由每日上限决定（`UNLIMITED_TIME_BUDGET_MINUTES`）；纳入新卡、阅读队列为空产出纯复习队列、交错不丢条目、完成页「再学一轮」原地重装、IR 日额度不再被复习吃掉；删除 `mixedLearningReviewRatio` 与 resume 时长字段

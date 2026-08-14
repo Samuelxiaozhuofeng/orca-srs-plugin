@@ -36,6 +36,11 @@ import {
   type TtsSettings
 } from "../srs/tts/ttsSettingsSchema"
 import {
+  parseReviewAdvancedSettingsDraftStrict,
+  saveReviewAdvancedSettingsFromForm,
+  type ReviewAdvancedSettingsDraft
+} from "../srs/settings/reviewAdvancedSettings"
+import {
   parseReviewServiceSettingsDraftStrict,
   saveReviewServiceSettingsFromForm,
   type ReviewServiceSettingsDraft
@@ -134,18 +139,32 @@ export function AIServiceSettingsMount({
     snap.initialReview.requestRetention,
     snap.initialReview.passFailButtons ? "pf1" : "pf0",
     snap.initialReview.showNextReviewTime ? "t1" : "t0",
-    snap.reviewLoadWarning ? "review-warn" : "review-ok"
+    snap.reviewLoadWarning ? "review-warn" : "review-ok",
+    snap.initialReviewAdvanced.fsrsWeights,
+    snap.initialReviewAdvanced.fsrsMaximumInterval,
+    snap.initialReviewAdvanced.imageOcclusionMode,
+    snap.initialReviewAdvanced.disableNotifications ? "dn1" : "dn0",
+    snap.initialReviewAdvanced.irItemInitialDueMode,
+    snap.reviewAdvancedLoadWarning ? "review-adv-warn" : "review-adv-ok"
   ].join(":")
 
   const handleSave = async (draft: ServiceSettingsDraft) => {
     setServiceSettingsError(null)
     setStatusMessage(null)
 
-    // 先严格校验复习可见三项：非法则整包中止，绝不先写入 AI/Firecrawl 等
+    // 先严格校验复习可见项与进阶五项：非法则整包中止，绝不先写入 AI/Firecrawl 等
     const reviewParsed = parseReviewServiceSettingsDraftStrict(draft.review)
     if (!reviewParsed.ok) {
       setServiceSettingsError(reviewParsed.message)
       orca.notify("error", reviewParsed.message, { title: "服务设置" })
+      return
+    }
+    const reviewAdvancedParsed = parseReviewAdvancedSettingsDraftStrict(
+      draft.reviewAdvanced
+    )
+    if (!reviewAdvancedParsed.ok) {
+      setServiceSettingsError(reviewAdvancedParsed.message)
+      orca.notify("error", reviewAdvancedParsed.message, { title: "服务设置" })
       return
     }
 
@@ -160,8 +179,13 @@ export function AIServiceSettingsMount({
         draft.irSelectionToolbar
       )
       await saveTtsSettings(activePlugin, draft.tts)
-      // 写回复习页可见项（额度 / 保留率 / 界面开关）并 clearFsrsRuntimeState（不写权重/最大间隔）
+      // 写回复习页可见项（额度 / 保留率 / 界面开关）并 clearFsrsRuntimeState
       await saveReviewServiceSettingsFromForm(activePlugin, draft.review)
+      // 写回进阶五项（权重 / 最大间隔 / 图片遮罩 / 通知 / IR 首次学习）并再次清 runtime
+      await saveReviewAdvancedSettingsFromForm(
+        activePlugin,
+        draft.reviewAdvanced
+      )
 
       // 持久化已成功；立即刷新失败必须可见，不得静默宣称已即时生效
       let toolbarRefreshFailed = false
@@ -394,7 +418,11 @@ export function AIServiceSettingsMount({
       }
       initialTts={snap.initialTts as TtsSettings}
       initialReview={snap.initialReview as ReviewServiceSettingsDraft}
+      initialReviewAdvanced={
+        snap.initialReviewAdvanced as ReviewAdvancedSettingsDraft
+      }
       reviewLoadWarning={snap.reviewLoadWarning}
+      reviewAdvancedLoadWarning={snap.reviewAdvancedLoadWarning}
       modelOptions={modelOptions}
       isFetchingModels={isFetchingModels}
       isTestingAI={isTestingAI}
