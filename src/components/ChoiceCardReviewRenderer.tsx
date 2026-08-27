@@ -12,7 +12,7 @@
  */
 
 const { useState, useMemo, useCallback, useRef, useEffect } = window.React
-const { Button } = orca.components
+const { Button, BlockBreadcrumb } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState, ChoiceOption, ChoiceMode } from "../srs/types"
@@ -85,6 +85,7 @@ export default function ChoiceCardReviewRenderer({
   const [selectedIds, setSelectedIds] = useState<Set<DbId>>(new Set())
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(!!readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
+  const [showBreadcrumb, setShowBreadcrumb] = useState(false)
   const [currentSuggestedGrade, setCurrentSuggestedGrade] = useState<Grade | null>(null)
 
   const currentCardKey = buildCardKey({
@@ -130,6 +131,7 @@ export default function ChoiceCardReviewRenderer({
     setSelectedIds(new Set())
     setIsAnswerRevealed(!!readOnlyRef.current)
     setShowCardInfo(false)
+    setShowBreadcrumb(false)
     setCurrentSuggestedGrade(null)
   }, [currentCardKey, clearPendingTimeout])
 
@@ -394,6 +396,16 @@ export default function ChoiceCardReviewRenderer({
           )}
           <Button
             variant="plain"
+            onClick={() => setShowBreadcrumb((visible: boolean) => !visible)}
+            title="显示上级路径"
+            className={`srs-review-icon-btn ${
+              showBreadcrumb ? "srs-review-icon-btn--active" : ""
+            }`}
+          >
+            <i className="ti ti-list-tree" />
+          </Button>
+          <Button
+            variant="plain"
             onClick={() => setShowCardInfo(!showCardInfo)}
             title="卡片信息"
             className={`srs-review-icon-btn ${
@@ -407,6 +419,12 @@ export default function ChoiceCardReviewRenderer({
 
       {/* 可折叠的卡片信息面板（选择题卡历史上不显示间隔/稳定性/难度三行） */}
       {showCardInfo && <CardInfoPanel srsInfo={srsInfo} showSchedulingDetails={false} />}
+
+      {blockId && showBreadcrumb && (
+        <div contentEditable={false} className="srs-review-breadcrumb">
+          <BlockBreadcrumb key={blockId} blockId={blockId} />
+        </div>
+      )}
 
       {/* 题目区域：只渲染题干纯文本，绝不挂载 srs.choice-card 块渲染器（会泄露选项与正确标记） */}
       <div

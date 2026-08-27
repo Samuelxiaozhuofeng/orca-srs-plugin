@@ -82,6 +82,7 @@ export default function BasicCardReviewRenderer({
 }: BasicCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
+  const [showBreadcrumb, setShowBreadcrumb] = useState(false)
   const [ttsPlayUrl, setTtsPlayUrl] = useState<string | null>(null)
   const [ttsLoading, setTtsLoading] = useState(false)
   const [ttsPlaying, setTtsPlaying] = useState(false)
@@ -93,6 +94,7 @@ export default function BasicCardReviewRenderer({
     if (previousCardKeyRef.current !== cardKey) {
       setShowAnswer(readOnly)
       setShowCardInfo(false)
+      setShowBreadcrumb(false)
       setTtsPlayUrl(null)
       setTtsError(null)
       setTtsPlaying(false)
@@ -286,6 +288,16 @@ export default function BasicCardReviewRenderer({
             )}
             <Button
               variant="plain"
+              onClick={() => setShowBreadcrumb((visible: boolean) => !visible)}
+              title="显示上级路径"
+              className={`srs-review-icon-btn ${
+                showBreadcrumb ? "srs-review-icon-btn--active" : ""
+              }`}
+            >
+              <i className="ti ti-list-tree" />
+            </Button>
+            <Button
+              variant="plain"
               onClick={() => setShowCardInfo((visible: boolean) => !visible)}
               title="卡片信息"
               className={`srs-review-icon-btn ${
@@ -341,6 +353,11 @@ export default function BasicCardReviewRenderer({
             避免同 panelId+blockId 双实例抢 selection / 破坏编辑会话。
             摘录路径不走此处。
           */}
+          {blockId && showBreadcrumb && (
+            <div contentEditable={false} className="srs-review-breadcrumb">
+              <BlockBreadcrumb key={blockId} blockId={blockId} />
+            </div>
+          )}
           <EmbeddedQuestionBlock blockId={blockId} panelId={panelId} fallback={front} />
           {ttsPlayUrl && (
             <div contentEditable={false} className="srs-review-tts-actions">

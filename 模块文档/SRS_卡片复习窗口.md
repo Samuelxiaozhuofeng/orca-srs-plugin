@@ -396,6 +396,7 @@ stateDiagram-v2
 - 评分按钮：默认 Again / Hard / Good / Easy；开启 `review.passFailButtons` 时为失败/通过（again/good）。**选择题始终四级**（`passFailButtons={false}`），以便「部分正确 → hard」建议可用。间隔/到期预览走 F2-08，是否显示由 `review.showNextReviewTime` 控制（默认关）。
 - 界面默认**不展示**完整 SRS 技术字段（稳定度、完整时间戳等）；评分后日志可用简化日期 `M-D`。
 - **「卡片信息」面板统一实现**：`src/components/review-card/CardInfoPanel.tsx`（Basic / Cloze / Direction / List / Choice 复习渲染器共用，替代此前各渲染器内联的重复实现）。`formatCardState` / `formatDateTime` 为 named export，唯一实现在该文件。可选 prop `showSchedulingDetails`（默认 `true`）控制「间隔天数 / 稳定性 / 难度」三行；`ChoiceCardReviewRenderer` 传 `false` 保持其历史 5 行输出。回归：`CardInfoPanel.test.ts`（含与旧实现逐输入等价断言）。
+- **「显示上级路径」面包屑开关**（工具栏 `ti-list-tree` 图标，位于「跳转到卡片」与「卡片信息」之间）：`showBreadcrumb` state（默认关，切换卡片时随 `showCardInfo` 一起重置为关），开启后在题目区上方渲染 `orca.components.BlockBreadcrumb`（`.srs-review-breadcrumb` 容器）。用于复习嵌套子块卡片时快速查看祖先上下文（如父块「数学」）。**六种复习渲染器各有独立工具栏，均已加此开关**：`BasicCardReviewRenderer` / `ClozeCardReviewRenderer` / `ChoiceCardReviewRenderer` / `ListCardReviewRenderer` / `DirectionCardReviewRenderer` / `image-occlusion/ImageOcclusionReviewRenderer`。摘录卡分支本就常驻面包屑，不受此开关影响。
 
 ### Basic 答案编辑：自动化 vs Orca 实例验证
 

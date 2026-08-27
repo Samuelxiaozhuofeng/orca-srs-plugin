@@ -28,7 +28,7 @@ import { regionStylePercent } from "./ioGeometry"
 
 const { useState, useMemo, useRef, useEffect } = window.React
 const { useSnapshot } = window.Valtio
-const { Button } = orca.components
+const { Button, BlockBreadcrumb } = orca.components
 
 type Props = {
   blockId: DbId
@@ -84,6 +84,7 @@ export default function ImageOcclusionReviewRenderer({
 }: Props) {
   const [showAnswer, setShowAnswer] = useState(!!readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
+  const [showBreadcrumb, setShowBreadcrumb] = useState(false)
   const prevKeyRef = useRef("")
   const currentKey = `${blockId}-${clozeNumber ?? 0}`
 
@@ -91,6 +92,7 @@ export default function ImageOcclusionReviewRenderer({
     if (prevKeyRef.current !== currentKey) {
       setShowAnswer(!!readOnly)
       setShowCardInfo(false)
+      setShowBreadcrumb(false)
       prevKeyRef.current = currentKey
     } else if (readOnly) {
       setShowAnswer(true)
@@ -251,6 +253,16 @@ export default function ImageOcclusionReviewRenderer({
           )}
           <Button
             variant="plain"
+            onClick={() => setShowBreadcrumb((visible: boolean) => !visible)}
+            title="显示上级路径"
+            className={`srs-review-icon-btn ${
+              showBreadcrumb ? "srs-review-icon-btn--active" : ""
+            }`}
+          >
+            <i className="ti ti-list-tree" />
+          </Button>
+          <Button
+            variant="plain"
             onClick={() => setShowCardInfo(!showCardInfo)}
             title="卡片信息"
             className={`srs-review-icon-btn ${
@@ -273,6 +285,12 @@ export default function ImageOcclusionReviewRenderer({
       </div>
 
       {showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
+
+      {blockId && showBreadcrumb && (
+        <div contentEditable={false} className="srs-review-breadcrumb">
+          <BlockBreadcrumb key={blockId} blockId={blockId} />
+        </div>
+      )}
 
       <div className="srs-io-review__scroll">
         {displayUrl ? (

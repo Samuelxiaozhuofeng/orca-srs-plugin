@@ -9,7 +9,7 @@
 
 const { useState, useMemo, useRef, useEffect } = window.React
 const { useSnapshot } = window.Valtio
-const { Button } = orca.components
+const { Button, BlockBreadcrumb } = orca.components
 
 import type { DbId } from "../orca.d.ts"
 import type { Grade, SrsState } from "../srs/types"
@@ -61,6 +61,7 @@ export default function DirectionCardReviewRenderer({
 }: DirectionCardReviewRendererProps) {
   const [showAnswer, setShowAnswer] = useState(!!readOnly)
   const [showCardInfo, setShowCardInfo] = useState(false)
+  const [showBreadcrumb, setShowBreadcrumb] = useState(false)
 
   // 用于追踪上一个卡片的唯一标识，检测卡片切换
   const prevCardKeyRef = useRef<string>("")
@@ -75,6 +76,7 @@ export default function DirectionCardReviewRenderer({
     if (prevCardKeyRef.current !== currentCardKey) {
       setShowAnswer(!!readOnly)
       setShowCardInfo(false)
+      setShowBreadcrumb(false)
       prevCardKeyRef.current = currentCardKey
     } else if (readOnly) {
       setShowAnswer(true)
@@ -236,6 +238,17 @@ export default function DirectionCardReviewRenderer({
               <i className="ti ti-external-link" />
             </Button>
           )}
+          {/* 显示上级路径（面包屑）开关 */}
+          <Button
+            variant="plain"
+            onClick={() => setShowBreadcrumb((visible: boolean) => !visible)}
+            title="显示上级路径"
+            className={`srs-review-icon-btn ${
+              showBreadcrumb ? "srs-review-icon-btn--active" : ""
+            }`}
+          >
+            <i className="ti ti-list-tree" />
+          </Button>
           {/* 卡片信息按钮 */}
           <Button
             variant="plain"
@@ -252,6 +265,12 @@ export default function DirectionCardReviewRenderer({
 
       {/* 可折叠的卡片信息面板 */}
       {showCardInfo && <CardInfoPanel srsInfo={srsInfo} />}
+
+      {blockId && showBreadcrumb && (
+        <div contentEditable={false} className="srs-review-breadcrumb">
+          <BlockBreadcrumb key={blockId} blockId={blockId} />
+        </div>
+      )}
 
       {/* 题目区域 */}
       <div className="srs-direction-question srs-review-face">
