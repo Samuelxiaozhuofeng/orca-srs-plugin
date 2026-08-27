@@ -1,32 +1,32 @@
 {
-  "version": "1.0.10",
+  "version": "1.0.11",
   "go": true,
   "orcaRuntimeVerified": true,
   "maintainerRuntimeAccepted": true,
-  "updatedAt": "2026-08-15",
-  "verifiedDistSha256": "b0f7a29332713dfd187364d093072c65cdd6a891359c1e22eaa53336e50e5ffe",
+  "updatedAt": "2026-08-27",
+  "verifiedDistSha256": "ba60b836134068ef74584a0f966a60be96dc5237089d0ed4219c986d87c2e2c8",
   "approvedBy": "Samuelxiaozhuofeng",
-  "verifiedAt": "2026-08-15T06:22:15.000Z",
+  "verifiedAt": "2026-08-27T05:19:03.000Z",
   "iconAccepted": true,
   "evidenceRepo": "sgf9fkhr9z3yz",
   "automation": {
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
     "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": true,
-    "tagGate": true,
+    "formalZipAccepted": false,
+    "tagGate": false,
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
-    "githubReleasePublished": true,
-    "awesomeOrcanotePr": true
+    "githubReleasePublished": false,
+    "awesomeOrcanotePr": false
   },
   "externalOps": {
-    "tag": "completed: v1.0.10",
-    "formalZip": "completed: orca-srs-1.0.10.zip",
-    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.10",
-    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/143",
+    "tag": "pending",
+    "formalZip": "pending",
+    "githubRelease": "pending",
+    "awesomeOrcanotePr": "pending",
     "owner": "Grok",
-    "note": "GitHub Release v1.0.10 is published. awesome-orcanote PR #143 is submitted and awaits upstream review/merge."
+    "note": "Maintainer requested v1.0.11 publish from post-1.0.10 main (adds review-panel breadcrumb toggle across all six card renderers). verifiedDistSha256 frozen from local production build (Node 25.9 local / CI Node 20.19); tag/zip/GitHub Release/awesome-orcanote PR remain external steps."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-published-upstream-pr-pending"
+    "WP-13": "release-1.0.11-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
@@ -56,8 +56,8 @@
         "WP-07"
       ],
       "summary": "EPUB ZIP 中央目录声明预算未独立预检",
-      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.10 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.10"
+      "detail": "Static audit residual: ZIP central-directory declared-size budget is not independently preflighted before import. Maintainer accepts this remaining risk for the 1.0.11 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.11"
     },
     {
       "id": "write-path-cancellation-not-unified",
@@ -66,15 +66,15 @@
         "WP-11"
       ],
       "summary": "EPUB/Web/AI 写入阶段取消未形成统一可中断事务",
-      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.10 release decision; it is not claimed fixed.",
-      "status": "accepted-for-1.0.10"
+      "detail": "Static audit residual: EPUB import write/resume, web import, and AI save cancellation paths are not unified into a single interruptible transaction model. Maintainer accepts this remaining risk for the 1.0.11 release decision; it is not claimed fixed.",
+      "status": "accepted-for-1.0.11"
     }
   ],
   "decision": {
     "type": "maintainer-runtime-acceptance",
-    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.10 and accepts release readiness. The v1.0.10 GitHub Release is published and awesome-orcanote PR #143 is submitted. Residual static-audit risks live in acceptedRisks.",
-    "verifiedDistSha256": "b0f7a29332713dfd187364d093072c65cdd6a891359c1e22eaa53336e50e5ffe",
+    "statement": "Maintainer Samuelxiaozhuofeng requested publication of 1.0.11 from post-1.0.10 main and accepts release readiness after runtime-verifying the new review-panel breadcrumb toggle. Tag/formal zip/GitHub Release/awesome-orcanote PR remain external steps. Residual static-audit risks live in acceptedRisks.",
+    "verifiedDistSha256": "ba60b836134068ef74584a0f966a60be96dc5237089d0ed4219c986d87c2e2c8",
     "approvedBy": "Samuelxiaozhuofeng",
-    "verifiedAt": "2026-08-15T06:22:15.000Z"
+    "verifiedAt": "2026-08-27T05:19:03.000Z"
   }
 }
