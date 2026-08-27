@@ -13,20 +13,20 @@
     "ciStructuralVerify": true,
     "releaseScriptsPresent": true,
     "maintainerRuntimeAccepted": true,
-    "formalZipAccepted": false,
-    "tagGate": false,
+    "formalZipAccepted": true,
+    "tagGate": true,
     "rebuildHashFrozen": true,
     "coldInstallMatrix": false,
-    "githubReleasePublished": false,
-    "awesomeOrcanotePr": false
+    "githubReleasePublished": true,
+    "awesomeOrcanotePr": true
   },
   "externalOps": {
-    "tag": "pending",
-    "formalZip": "pending",
-    "githubRelease": "pending",
-    "awesomeOrcanotePr": "pending",
+    "tag": "completed: v1.0.11",
+    "formalZip": "completed: orca-srs-1.0.11.zip",
+    "githubRelease": "completed: https://github.com/Samuelxiaozhuofeng/orca-srs-plugin/releases/tag/v1.0.11",
+    "awesomeOrcanotePr": "submitted: https://github.com/sethyuan/awesome-orcanote/pull/160",
     "owner": "Grok",
-    "note": "Maintainer requested v1.0.11 publish from post-1.0.10 main (adds review-panel breadcrumb toggle across all six card renderers). verifiedDistSha256 frozen from local production build (Node 25.9 local / CI Node 20.19); tag/zip/GitHub Release/awesome-orcanote PR remain external steps."
+    "note": "GitHub Release v1.0.11 is published (tag workflow, CI Node 20.19). awesome-orcanote PR #160 is submitted and awaits upstream review/merge. verifiedDistSha256 frozen from local production build (Node 25.9)."
   },
   "workPackages": {
     "WP-00": "maintainer-accepted",
@@ -42,7 +42,7 @@
     "WP-10": "maintainer-accepted",
     "WP-11": "accepted-with-risks",
     "WP-12": "maintainer-accepted",
-    "WP-13": "release-1.0.11-pending"
+    "WP-13": "release-published-upstream-pr-pending"
   },
   "evidenceFiles": [
     "release-evidence/console-readonly-scripts.md",
